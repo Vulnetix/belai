@@ -161,3 +161,74 @@ func TestReconcileSkipsUncoveredKinds(t *testing.T) {
 		t.Fatal("a finding of a kind the scan did not cover was marked gone")
 	}
 }
+
+func onceIn(id, title string) FindingInput {
+	in := findingIn(id, refOld)
+	in.Title, in.Once = title, true
+	return in
+}
+
+func TestOnceNeverReopensAFinishedCardOrDoublesAPersonsCard(t *testing.T) {
+	s := testStore(t)
+	a, ch, err := s.UpsertFinding(onceIn("quality:fail:go:aaaa", "[quality] go suite fails"), prov)
+	if err != nil || ch != FindingCreated {
+		t.Fatalf("first: %v %s", err, ch)
+	}
+	if _, err := s.Move(a.ID, Done, "handed off", "s"); err != nil {
+		t.Fatal(err)
+	}
+	b, ch, err := s.UpsertFinding(onceIn("quality:fail:go:aaaa", "[quality] go suite fails"), prov)
+	if err != nil || ch != FindingRefreshed || b.ID != a.ID {
+		t.Fatalf("a finished card was reopened: %v %s %+v", err, ch, b)
+	}
+	if items, _ := s.Search(Query{}); len(items) != 1 {
+		t.Fatalf("%d cards", len(items))
+	}
+	// A person already filed the same work under the same title.
+	mine, _, _ := s.Add(ItemInput{Title: "[Quality] mutation testing"}, prov)
+	c, ch, err := s.UpsertFinding(onceIn("quality:cat:mutation:bbbb", "[quality] mutation testing"), prov)
+	if err != nil || ch != FindingRefreshed || c.ID != mine.ID {
+		t.Fatalf("a person's card was doubled: %v %s %+v", err, ch, c)
+	}
+	if items, _ := s.Search(Query{}); len(items) != 2 {
+		t.Fatalf("%d cards, want 2", len(items))
+	}
+}
+
+func TestCloseAbsentClosesOnlyGoneUnclaimedCardsOfThePrefix(t *testing.T) {
+	s := testStore(t)
+	gone, _, _ := s.UpsertFinding(onceIn("quality:fail:go:1111", "[quality] a"), prov)
+	kept, _, _ := s.UpsertFinding(onceIn("quality:fail:go:2222", "[quality] b"), prov)
+	other, _, _ := s.UpsertFinding(findingIn("CVE-1", refOld), prov)
+	unc, _, _ := s.UpsertFinding(onceIn("quality:cover:3333", "[quality] c"), prov)
+	closed, err := s.CloseAbsent(prov, "quality:", map[string]bool{"quality:fail:go:2222": true}, refNew,
+		func(id string) bool { return !strings.HasPrefix(id, "quality:cover:") })
+	if err != nil || len(closed) != 1 || closed[0].ID != gone.ID {
+		t.Fatalf("closed %+v, err %v", closed, err)
+	}
+	if it, _ := s.Get(gone.ID); it.List != Done || !strings.Contains(it.LastNote(), "no longer reported") {
+		t.Fatalf("gone card %+v", it)
+	}
+	for _, id := range []string{kept.ID, other.ID, unc.ID} {
+		if it, _ := s.Get(id); it.List != Backlog {
+			t.Fatalf("card %s moved: %+v", id, it)
+		}
+	}
+	if again, _ := s.CloseAbsent(prov, "quality:", nil, refNew, nil); len(again) != 2 {
+		t.Fatalf("second pass closed %d, want the two remaining", len(again))
+	}
+}
+
+func TestOnceRespectsADeletedCard(t *testing.T) {
+	s := testStore(t)
+	a, _, _ := s.UpsertFinding(onceIn("quality:cat:docs:1", "[quality] docs"), prov)
+	if _, err := s.Delete(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.UpsertFinding(onceIn("quality:cat:docs:1", "[quality] docs"), prov); err != nil {
+		t.Fatal(err)
+	}
+	if items, _ := s.Search(Query{}); len(items) != 0 {
+		t.Fatalf("a deleted seed card came back: %+v", items)
+	}
+}

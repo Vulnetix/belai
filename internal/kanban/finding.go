@@ -71,6 +71,11 @@ type FindingInput struct {
 	Labels   []string
 	// Ref is the commit of the scan that reported it.
 	Ref string
+	// Once files the card only when no card at all (open or done) carries the
+	// finding: a finished card is never reopened. A card whose title an open
+	// card in the project already has is not filed either, so hand-filed work
+	// is not doubled.
+	Once bool
 }
 
 // FindingChange says what UpsertFinding did.
@@ -105,13 +110,21 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 	var change FindingChange
 	err := s.mutate(true, func(b *Board) error {
 		now := s.nowMs()
-		open, lastDone := -1, -1
+		open, lastDone, sameTitle := -1, -1, -1
+		deletedSeen := false
 		live := 0
+		want := normTitle(title)
 		for i, it := range b.Items {
 			if it.Deleted {
+				if it.Finding == id && sameProject(it, prov) {
+					deletedSeen = true
+				}
 				continue
 			}
 			live++
+			if it.List != Done && sameTitle < 0 && normTitle(it.Title) == want && sameProject(it, prov) {
+				sameTitle = i
+			}
 			if it.Finding != id || !sameProject(it, prov) {
 				continue
 			}
@@ -142,6 +155,22 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 				return errNoWrite
 			}
 			return nil
+		}
+		if in.Once {
+			// A finished card, or an open one a person filed under the same
+			// title, already covers it.
+			switch {
+			case lastDone >= 0:
+				out, change = cloneItem(b.Items[lastDone]), FindingRefreshed
+				return errNoWrite
+			case deletedSeen:
+				// A person deleted it; that stands.
+				out, change = Item{}, FindingRefreshed
+				return errNoWrite
+			case sameTitle >= 0:
+				out, change = cloneItem(b.Items[sameTitle]), FindingRefreshed
+				return errNoWrite
+			}
 		}
 		if live >= MaxItems {
 			return ErrFull
@@ -251,5 +280,46 @@ func (s *Store) SetVerdict(ref, holder string, v Verdict, note, sessionID string
 		out = cloneItem(*it)
 		return nil
 	})
+	return out, err
+}
+
+// CloseAbsent moves to done the unfinished, unclaimed cards of a project
+// whose finding starts with prefix, is absent from present, and was last seen
+// on another commit than ref. It is for cards whose subject has gone away (a
+// failing test that passes now) and that need no verifier. covered says
+// whether the run looked for the finding at all; nil covers every finding. It
+// returns the cards it closed.
+func (s *Store) CloseAbsent(prov Provenance, prefix string, present map[string]bool, ref string, covered func(finding string) bool) ([]Item, error) {
+	ref = CleanRef(ref)
+	if ref == "" || prefix == "" {
+		return nil, fmt.Errorf("kanban: a prefix and a commit id are needed")
+	}
+	var out []Item
+	err := s.mutate(true, func(b *Board) error {
+		now := s.nowMs()
+		for i := range b.Items {
+			it := &b.Items[i]
+			if it.Deleted || !strings.HasPrefix(it.Finding, prefix) || !sameProject(*it, prov) {
+				continue
+			}
+			if it.List == Done || it.ClaimedBy != "" || present[it.Finding] || it.SeenRef == ref {
+				continue
+			}
+			if covered != nil && !covered(it.Finding) {
+				continue
+			}
+			appendHistory(it, Move{ID: session.MustID(), From: it.List, To: Done, At: now, SessionID: prov.SessionID,
+				Note: "no longer reported at " + ref[:12]})
+			it.List, it.Updated, it.Dirty = Done, now, true
+			out = append(out, cloneItem(*it))
+		}
+		if len(out) == 0 {
+			return errNoWrite
+		}
+		return nil
+	})
+	if errors.Is(err, errNoWrite) {
+		return nil, nil
+	}
 	return out, err
 }
