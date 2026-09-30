@@ -304,7 +304,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `Attempts` | Claims that ended without success. | the harness |
 | `Branch` | The git branch holding the item's work. | the harness |
 | `PR` | The draft pull request opened for the branch. | the harness |
-| `Finding` | The advisory id (or `<kind>:<rule>:<hash>` for a SARIF result) a security card is about. At most 64 characters of `[A-Za-z0-9._:-]`. | the harness (`UpsertFinding`) |
+| `Finding` | The advisory id (or `<kind>:<rule>:<hash>` for a SARIF result) a security card is about. At most 64 characters of `[A-Za-z0-9._:-]`. `Finding`, `SeenRef`, `Verdict` and `VEX` sync on the wire (`agent.finding`, `seenRef`, `verdict`, `vex`); a pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. | the harness (`UpsertFinding`) |
 | `SeenRef` | The full commit id of the latest scan that still showed the finding. | the harness (`UpsertFinding`) |
 | `Verdict` | A security worker's recorded verdict: `fixed`, `false_positive`, `no_fix`, `needs_human` or `rejected`. | the harness (`Reconcile`, `SetVerdict`, `Release`) |
 | `VEX` | The repository-relative path of the VEX written for the verdict. | the harness (`Release`) |

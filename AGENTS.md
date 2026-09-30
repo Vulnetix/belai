@@ -591,8 +591,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   or matched text (a secret's value never reaches a card). A reconcile compares
   only a kind whose own artefact records HEAD, so a missing report never closes
   a card, and a patcher's reconcile never scans. `Finding`, `SeenRef`,
-  `Verdict` and `VEX` on a card are harness-set, host-local and never taken from
-  a model argument. `KanbanVerdict` is bound to the claim: it takes no item id,
+  `Verdict` and `VEX` on a card are harness-set and never taken from a model
+  argument. They sync with the card, but a pulled copy is only ever offered to an
+  empty field: `Merge` validates each value against the shape the harness gives
+  it (`CleanFinding`, `CleanRef`, `Verdict.Valid`, a `.vulnetix/vex/*.openvex.json`
+  path) and never replaces or clears a value this host holds, and the website
+  cannot set them. `KanbanVerdict` is bound to the claim: it takes no item id,
   writes only the claimed item's verdict and note, and moves no list; the
   harness routes the card from the recorded verdict. Only the verifier's profile
   (`kanban.security.vex`) may reject or close a card, and it closes one only

@@ -61,6 +61,13 @@ type KanbanAgent struct {
 	Attempts   int      `json:"attempts,omitempty"`
 	Branch     string   `json:"branch,omitempty"`
 	PR         string   `json:"pr,omitempty"`
+	// Finding, SeenRef, Verdict and VEX are a security card's facts. Only a
+	// host sets them (the website ignores them on an edit), and a host that
+	// pulls them takes a value only into a field it holds none for.
+	Finding string `json:"finding,omitempty"`
+	SeenRef string `json:"seenRef,omitempty"`
+	Verdict string `json:"verdict,omitempty"`
+	VEX     string `json:"vex,omitempty"`
 }
 
 // KanbanAck is the server's answer for one pushed item. Applied is false when

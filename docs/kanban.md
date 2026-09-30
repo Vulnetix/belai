@@ -232,8 +232,12 @@ any draft pull request show on the item.
 
 A security card also carries four fields only the harness sets, never a model
 argument: the **finding** id, the **seen ref** (the commit whose scan last
-showed it), the recorded **verdict** and the **VEX** path. They stay on the host
-that wrote them and a pulled copy never replaces them. The `vuln`, `gone` and
+showed it), the recorded **verdict** and the **VEX** path. They sync with the
+card so the website can link it to its vulnerability and a second host finds the
+card instead of filing another. Only a host sets them: the website ignores them
+on an edit, and a pulled copy fills a field this host holds none for, after the
+value is checked against the shape the harness gives it, and never replaces or
+clears one. The `vuln`, `gone` and
 `needs-verify` labels route a card through the
 [security crew](fleet.md#the-security-crew).
 
