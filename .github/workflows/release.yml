@@ -130,10 +130,13 @@ jobs:
           # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak
           build_target() {
             local variant="$1" goos="$2" goarch="$3" suffix="$4"
-            local name="belai" tags="-tags belai_voice" extra=""
+            # The plain belai build embeds nothing, the speech model included: it
+            # is the small build. Every other family embeds the model for voice.
+            local name="belai" tags="" extra=""
             case "$variant" in
               no-classifier)
                 name="belai-no-classifier"
+                tags="-tags belai_voice"
                 extra="-X github.com/vulnetix/belai/internal/version.Variant=no-classifier"
                 ;;
               bert-guardrails)

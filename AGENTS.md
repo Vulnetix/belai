@@ -589,7 +589,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   tool call; `voice.device` is a plain identifier that cannot add an option)
   and recognises it with `internal/voice/asr`, pure Go, so the release stays
   `CGO_ENABLED=0`. Audio stays in memory: it is never written, logged, sent
-  or put in telemetry. Release builds embed the speech model (the `belai_voice`
+  or put in telemetry. Every release family except plain `belai` embeds the speech model (the `belai_voice`
   build tag, fetched by `tools/voiceprep`) and hash it against the SHA-256
   pinned in `internal/voice/models.go` on every load. A build without it
   downloads the file only after `/voice download`, checks it against the

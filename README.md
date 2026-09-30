@@ -58,10 +58,15 @@ configured. The others:
 
 | Asset family | What is embedded | Approx size |
 | ------------ | ---------------- | ----------- |
-| `belai` | nothing (LLM sentinel only, exactly the pre-embed behaviour) | ~23 MB |
-| `belai-bert-guardrails` **(default)** | phase-1 prompt-saturation model | ~40 MB |
-| `belai-bert-guardrails-jailbreak` | phase-1 + phase-2 jailbreak model | ~485 MB |
-| `belai-no-classifier` | nothing | ~23 MB |
+| `belai` | nothing (LLM sentinel only, exactly the pre-embed behaviour; voice input downloads its speech model on `/voice download`) | ~24 MB |
+| `belai-bert-guardrails` **(default)** | phase-1 prompt-saturation model, and the speech model for voice input | ~77 MB |
+| `belai-bert-guardrails-jailbreak` | phase-1 + phase-2 jailbreak model, and the speech model | ~517 MB |
+| `belai-no-classifier` | the speech model only | ~56 MB |
+
+Sizes are for Linux amd64; other platforms differ by a few megabytes. The speech
+model is a 32 MB file that voice input runs in pure Go: every family except the
+plain `belai` build carries it, so voice works with no download. Plain `belai`
+stays small and fetches it only when you run `/voice download`.
 
 `install.sh` accepts `--variant` (or `BELAI_VARIANT`) to pick one of
 `no-classifier`, `bert-guardrails`, or `bert-guardrails-jailbreak`. The on-disk
@@ -223,7 +228,7 @@ scope, following the same precedence rules.
 | `defer_tools` | advertise the core tools in full and load the rest (native catalogue, cloud CLIs, repo and agent-store tools, MCP tools) on demand with `ToolSearch`, keeping every request small (default on; `-defer-tools=false` for one run). Deferred tools stay callable by name. `ToolSearch` also finds installed skills, and with a decision backend it ranks its matches and the request's likely tools and skills are ready before the model asks (see [docs/jev-jobs.md](docs/jev-jobs.md)) |
 | `offload` | keep oversized tool output out of the context: a head-and-tail preview stays inline and `ReadResult` reads the rest; `enabled` (default on), `threshold_tokens` (default 4000), `preview_tokens` (default 1500) — see [docs/context-offload.md](docs/context-offload.md) |
 | `jev` | relevance jobs that use a decision backend: `jobs.<job>` switches (bash swap, compaction prune, tool selection and search, LSP triage, option order and explore locate; default on, and only while a decision backend is the classifier, when `/settings` shows them) and `locate_previews`; a project may only turn a job off — see [docs/jev-jobs.md](docs/jev-jobs.md) |
-| `voice` | speech input to the composer: `enabled` (on by default when the speech model is built into the binary, as in release builds; otherwise off), `mode` (`push_to_talk` default or `listen`), `delivery` (`insert` default or `submit`), `cleanup` (fast-model tidy-up streamed over the words as you speak, default on), `log` (voice notices and cleanup rows in the thread, default on), `key` (`f11` default; `ctrl+space` if your terminal keeps it) and `device`. `/voice debug` checks the microphone, shows a live level meter, the raw and tidied transcripts and a key event log. The speech model is built into release binaries and run as pure Go (a build without it downloads 32 MB after `/voice download`); a capture helper (`parecord`, `arecord`, `ffmpeg` or `sox`) supplies the audio. Per-user only: a project file cannot turn it on — see [docs/voice.md](docs/voice.md) |
+| `voice` | speech input to the composer: `enabled` (on by default when the speech model is built into the binary, as in every release family except the plain `belai` build; otherwise off), `mode` (`push_to_talk` default or `listen`), `delivery` (`insert` default or `submit`), `cleanup` (fast-model tidy-up streamed over the words as you speak, default on), `log` (voice notices and cleanup rows in the thread, default on), `key` (`f11` default; `ctrl+space` if your terminal keeps it) and `device`. `/voice debug` checks the microphone, shows a live level meter, the raw and tidied transcripts and a key event log. The speech model is built into release binaries and run as pure Go (a build without it downloads 32 MB after `/voice download`); a capture helper (`parecord`, `arecord`, `ffmpeg` or `sox`) supplies the audio. Per-user only: a project file cannot turn it on — see [docs/voice.md](docs/voice.md) |
 | `kanban` | the global kanban board: tools, wrap-up, composer pane, `/kanban` and sync (default on; a project may only turn it off) — see [docs/kanban.md](docs/kanban.md) |
 | `agents` | [fleet](docs/fleet.md) workers: `enabled` (default on), `max_workers` (default 4), `publish` (default on); a project may only turn them off or lower the cap |
 | `token_budgets` | global only: token allowances per provider, model and scope (`session`, `day`, `month`) — see [Token budgets](docs/token-budgets.md) |

@@ -20,10 +20,10 @@ const faqs = [
   {
     q: 'Which binary variant should I choose?',
     steps: [
-      { text: 'Default: phase-1 guardrails embedded (~40 MB, no API key needed):', cmd: 'belai-bert-guardrails (installed by Homebrew, Scoop and install.sh)' },
-      { text: 'Add the local jailbreak gate (~485 MB total):', cmd: 'install.sh --variant bert-guardrails-jailbreak' },
-      { text: 'Use the LLM sentinel only (smaller, requires a provider):', cmd: 'install.sh --variant vanilla' },
-      { text: 'No local classification at all:', cmd: 'install.sh --variant no-classifier' },
+      { text: 'Default: phase-1 guardrails and the speech model embedded (~77 MB, no API key needed):', cmd: 'belai-bert-guardrails (installed by Homebrew, Scoop and install.sh)' },
+      { text: 'Add the local jailbreak gate (~517 MB total):', cmd: 'install.sh --variant bert-guardrails-jailbreak' },
+      { text: 'Use the LLM sentinel only (about 24 MB, requires a provider, and voice input downloads its model on request):', cmd: 'install.sh --variant vanilla' },
+      { text: 'No local classification at all (about 56 MB, voice input built in):', cmd: 'install.sh --variant no-classifier' },
     ],
   },
   {

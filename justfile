@@ -49,14 +49,14 @@ detect-mode $TEXT:
 # ----------------------------------------------------------------------------
 
 # Fetch the speech model that voice input embeds: one 32 MB download, checked
-# against a pinned SHA-256, and kept once prepared. Every build below runs it,
-# and builds with the belai_voice tag so the model is inside the binary.
+# against a pinned SHA-256, and kept once prepared. Every build below except the
+# plain one runs it and builds with the belai_voice tag so the model is inside.
 voiceprep:
     go run ./tools/voiceprep
 
 # Build ./belai for this host.
-build: voiceprep
-    go build -tags belai_voice -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
+build:
+    go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
 
 # Prepare the embedded classifier models (download + convert + verify).
 # When `uv` is available this runs under `uv run --with torch --with
@@ -91,8 +91,8 @@ build-bert *ARGS: (modelprep '-phase1' ARGS) voiceprep
     go build -tags belai_bert,belai_voice -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
 
 # Install belai into $(go env GOPATH)/bin.
-install: voiceprep
-    go install -tags belai_voice -ldflags '{{ ldflags }}' {{ pkg }}
+install:
+    go install -ldflags '{{ ldflags }}' {{ pkg }}
 
 # Cross-compile every release target and variant into bin/, mirroring
 # .github/workflows/release.yml. Needs the prepared models (run modelprep).
@@ -103,10 +103,13 @@ build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
     mkdir -p {{ bin }}
     build() {
       local variant="$1" goos="$2" goarch="$3" suffix="${4:-}"
-      local name="{{ binary }}" tags="-tags belai_voice" extra=""
+      # Plain belai embeds nothing, the speech model included; the other
+      # variants embed it for voice.
+      local name="{{ binary }}" tags="" extra=""
       case "$variant" in
         no-classifier)
           name="{{ binary }}-no-classifier"
+          tags="-tags belai_voice"
           extra="-X {{ module }}/internal/version.Variant=no-classifier"
           ;;
         bert-guardrails)
