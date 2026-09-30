@@ -70,6 +70,39 @@ func (w *Writer) append(e Entry) string {
 	return e.ID
 }
 
+// Branch moves the transcript to continue from an earlier entry: it writes a
+// branch marker parented there, so later entries chain from that point and the
+// file stays append-only. An empty to is refused.
+func (w *Writer) Branch(to string) string {
+	if to == "" {
+		return ""
+	}
+	w.mu.Lock()
+	from := w.last
+	w.mu.Unlock()
+	m := BranchMarker(from, to)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.err != nil {
+		return ""
+	}
+	m.ID = MustID()
+	m.Timestamp = time.Now().UnixMilli()
+	if err := w.store.AppendTo(w.key, w.id, m); err != nil {
+		w.err = err
+		return ""
+	}
+	w.last = m.ID
+	return m.ID
+}
+
+// Last is the id the next entry will parent to.
+func (w *Writer) Last() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.last
+}
+
 // User writes a user turn.
 func (w *Writer) User(text string) { w.append(Entry{Type: "user", Role: "user", Content: text}) }
 
