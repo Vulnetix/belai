@@ -9,7 +9,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Agents: subagents, background agents and crews. Subagents (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Crews (belai agent start) are worker processes that claim items off the kanban board, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. With nothing filed, the scout surveys the repository at most once a day: it runs the tests and compares docs, specs and site prose with the code, then files what it finds into Review for you to confirm.';
+  'Agents: helpers, background agents, workers and crews. Helpers (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Workers (belai agent start) are processes that claim items off the kanban board, alone or in a crew, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. With nothing filed, the scout surveys the repository at most once a day: it runs the tests and compares docs, specs and site prose with the code, then files what it finds into Review for you to confirm.';
 
 type Step = {
   n: string;
@@ -24,9 +24,9 @@ const rows = ['Tools', 'Writes to', 'Runs', 'Stops at', 'When it would ask', 'Ha
 const steps: Step[] = [
   {
     n: '01',
-    name: 'Subagents',
+    name: 'Helpers',
     key: 'f8',
-    lead: 'Several read-only agents work on parts of one question at the same time and report back to your session.',
+    lead: 'Several read-only helpers work on parts of one question at the same time and report back to your session.',
     facts: {
       Tools: 'Read-only: Read, Grep, Glob and the native readers',
       'Writes to': 'Nothing',
@@ -52,7 +52,7 @@ const steps: Step[] = [
   },
   {
     n: '03',
-    name: 'Crews',
+    name: 'Workers and crews',
     key: 'belai agent start',
     lead: 'Worker processes that take items from the kanban board and work on each one in a branch of its own. A builder opens a draft pull request and a reviewer checks it. When nobody has filed anything, the scout goes looking for work and files it into Review for you to confirm.',
     facts: {

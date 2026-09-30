@@ -52,7 +52,7 @@ const limits = [
   ['Item text is classified', "Board items were written by other sessions' models and by people on the web, so `KanbanSearch` results always go through the security classifier."],
   ['Counts and ids per turn', 'Each turn carries the board as counts and item ids. Item text reaches the model through `KanbanSearch`, which classifies it.'],
   ['Stamped by the harness', 'The harness stamps the session, project and directory on each item, and the model cannot set them.'],
-  ['Subagents only search', 'Subagents can search the board but never write it, so a poisoned file they read cannot end up there.'],
+  ['Helpers only search', 'Helpers can search the board but never write it, so a poisoned file they read cannot end up there.'],
   ['A bad file is left alone', 'A board file that fails its magic, version or SHA-256 is refused and left as it is.'],
   ['Switched on by you', "A project's settings can switch `kanban` off. Switching it on belongs to your own settings."],
 ];
