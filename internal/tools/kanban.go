@@ -87,6 +87,10 @@ type WorkerClaim struct {
 	// harness writes a VEX for (and which may reject a claim).
 	Verdicts []string
 	VEX      bool
+	// Notable lists items (full ids) the worker may add notes to but not edit
+	// or move: the harness sets it from board facts (an enrichment item
+	// names the cards its sweep filed), never from a model argument.
+	Notable []string
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -99,6 +103,11 @@ func (c *WorkerClaim) owns(id string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return id == c.Item || slices.Contains(c.handoff, id)
+}
+
+// notable reports whether id is one the worker may only add notes to.
+func (c *WorkerClaim) notable(id string) bool {
+	return slices.Contains(c.Notable, id)
 }
 
 // HandedOff returns the ids handed off under this claim.
@@ -121,6 +130,26 @@ func (b KanbanBase) checkWorkerTarget(ref string) error {
 		return fmt.Errorf("%s is not yours: a worker writes only to the item it holds (%s) and the items it hands off", it.Short(), kanban.ShortID(b.Claim.Item))
 	}
 	return nil
+}
+
+// noteOnlyTarget is checkWorkerTarget for a tool that adds notes: it also
+// accepts an item the claim lists as notable, and reports notesOnly true for
+// one, so the caller refuses a title or body change there.
+func (b KanbanBase) noteOnlyTarget(ref string) (notesOnly bool, err error) {
+	if b.Claim == nil {
+		return false, nil
+	}
+	it, err := b.Store.Get(ref)
+	if err != nil {
+		return false, kanbanErr(err, ref)
+	}
+	if b.Claim.owns(it.ID) {
+		return false, nil
+	}
+	if b.Claim.notable(it.ID) {
+		return true, nil
+	}
+	return false, fmt.Errorf("%s is not yours: a worker writes only to the item it holds (%s), the items it hands off and the items its claim names for notes", it.Short(), kanban.ShortID(b.Claim.Item))
 }
 
 // Subject has no permission subject: no path, no URL, no command.
@@ -311,8 +340,12 @@ func (t KanbanUpdate) Execute(ctx context.Context, args map[string]any) (Result,
 	if p.Title == nil && p.Body == nil && strings.TrimSpace(p.Note) == "" {
 		return Result{}, errors.New("KanbanUpdate needs a title, body or note to change")
 	}
-	if err := t.checkWorkerTarget(id); err != nil {
+	notesOnly, err := t.noteOnlyTarget(id)
+	if err != nil {
 		return Result{}, err
+	}
+	if notesOnly && (p.Title != nil || p.Body != nil) {
+		return Result{}, errors.New("you may only add a note to this item, not change its title or body")
 	}
 	it, err := t.Store.UpdateAs(id, p, t.prov().SessionID, t.holder())
 	if err != nil {
