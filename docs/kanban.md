@@ -245,7 +245,7 @@ belai kanban list -label build
 belai kanban show K-3f9a2c
 belai kanban move K-3f9a2c done -note "shipped"
 belai kanban release K-3f9a2c        # clear a claim
-belai kanban import items.jsonl      # one {"title", "labels", …} per line
+belai kanban import items.jsonl      # one {"title", "labels", "gates", …} per line
 ```
 
 In `/kanban`, `a` assigns, `L` edits labels, `+` and `-` change priority, and

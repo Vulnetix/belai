@@ -57,3 +57,15 @@ func TestKanbanPageStatesTheGateLimits(t *testing.T) {
 		t.Errorf("docs/kanban.md lacks %q", want)
 	}
 }
+
+func TestImportOfGatesIsDocumented(t *testing.T) {
+	fleet := strings.Join(strings.Fields(docparity.Read(t, "docs/fleet.md")), " ")
+	for _, want := range []string{"A person files gates with `belai kanban import`", "and start `unmet`"} {
+		if !strings.Contains(fleet, want) {
+			t.Errorf("docs/fleet.md lacks %q", want)
+		}
+	}
+	if !strings.Contains(docparity.Read(t, "docs/kanban.md"), `{"title", "labels", "gates", …}`) {
+		t.Error("docs/kanban.md does not show gates in the import line")
+	}
+}

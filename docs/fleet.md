@@ -388,6 +388,13 @@ Rules and edge cases:
 - **`kanban.gates.require`** makes a handoff with no gate an error. The
   built-in `belai:scout` sets it. A worker without a `gates` block keeps the
   handoff tool exactly as it was, and the repository is not scanned for suites.
+- **A person files gates with `belai kanban import`.** A line of the JSONL file
+  may carry `gates`, a list of objects with `title`, `kind` and, for a runnable
+  gate, `suite` and optionally `dir` and `test`. They are checked exactly like a
+  scout's (an unsafe `dir`, a bad `test`, a repeated title or a ninth gate refuses
+  the line, with the line number), get harness ids and start `unmet`. The suite is
+  checked against the detected suites when the card is worked: one that is not
+  detected then is `unmet` with that note.
 - **A worker sees its card's gates.** The card a worker is given lists each gate
   with its id, what decides it, its state and its note (`- G1 [runnable go
   internal/parse TestLast] unmet: title (exit 1: TestLast)`), so a builder knows

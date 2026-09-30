@@ -309,6 +309,18 @@ type importLine struct {
 	Priority  int      `json:"priority"`
 	Assignee  string   `json:"assignee"`
 	DependsOn []string `json:"depends_on"`
+	// Gates are the card's acceptance gates; see kanban.Gate. The suite of a
+	// runnable gate is checked against the detected suites when the card is worked.
+	Gates []importGate `json:"gates"`
+}
+
+// importGate is one acceptance gate of an imported item.
+type importGate struct {
+	Title string `json:"title"`
+	Kind  string `json:"kind"`
+	Suite string `json:"suite"`
+	Dir   string `json:"dir"`
+	Test  string `json:"test"`
 }
 
 func (k *kanbanCLI) importItems(path string, stdin io.Reader, stdout io.Writer) (int, error) {
@@ -344,7 +356,11 @@ func (k *kanbanCLI) importItems(path string, stdin io.Reader, stdout io.Writer) 
 			}
 			l = pl
 		}
-		it, dup, err := k.store.Add(kanban.ItemInput{Title: in.Title, Body: in.Body, List: l, Labels: in.Labels, Priority: in.Priority, Assignee: in.Assignee, DependsOn: in.DependsOn}, k.prov)
+		var gates []kanban.Gate
+		for _, g := range in.Gates {
+			gates = append(gates, kanban.Gate{Title: g.Title, Kind: kanban.GateKind(g.Kind), Suite: g.Suite, Dir: g.Dir, Test: g.Test})
+		}
+		it, dup, err := k.store.Add(kanban.ItemInput{Title: in.Title, Body: in.Body, List: l, Labels: in.Labels, Priority: in.Priority, Assignee: in.Assignee, DependsOn: in.DependsOn, Gates: gates}, k.prov)
 		if err != nil {
 			return 1, fmt.Errorf("line %d: %w", line, err)
 		}
