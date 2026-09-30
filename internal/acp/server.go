@@ -93,8 +93,11 @@ type Options struct {
 	Models func(cwd, provider, model string) []ModelChoice
 	// Switch builds the agent for a picked choice, the way Builder builds the
 	// first one (the trust check and every gate apply again). Nil refuses a
-	// model change.
-	Switch func(ctx context.Context, cwd, id, provider, model string) (*agent.Session, error)
+	// model or toggle change.
+	Switch func(ctx context.Context, cwd, id, provider, model string, t Toggles) (*agent.Session, error)
+	// Toggles reports the guardrails, ask and caveman switches the user's
+	// settings give a session in cwd. Nil offers no toggles.
+	Toggles func(cwd string) Toggles
 }
 
 type acpSession struct {
@@ -121,6 +124,8 @@ type acpSession struct {
 	// provider and model are what the session runs on now; a model pick
 	// replaces them together with agent.
 	provider, model string
+	// toggles are the session's on/off switches (see Toggles).
+	toggles Toggles
 	// headed is set once the session's header has gone to the editor.
 	headed bool
 	// always holds tool names the editor allowed for the rest of the
@@ -248,6 +253,9 @@ func (s *Server) openSession(ctx context.Context, cwd string) (*acpSession, erro
 	ss := &acpSession{id: id, cwd: cwd, agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now(), mode: modeAuto, snaps: map[string]turnSnap{}}
 	if ag != nil {
 		ss.provider, ss.model = ag.ModelInfo()
+	}
+	if s.opts.Toggles != nil {
+		ss.toggles = s.opts.Toggles(cwd)
 	}
 	if s.opts.Transcript != nil {
 		if l := s.opts.Transcript(cwd, id); l != nil {

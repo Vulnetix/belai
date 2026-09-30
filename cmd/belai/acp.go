@@ -71,7 +71,10 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	opts := acp.Options{
 		PostEnd: acpPostEnd(*providerName, *model),
 		Models:  acpModelChoices,
-		Switch:  buildACPSession,
+		Switch: func(ctx context.Context, cwd, id, provider, model string, t acp.Toggles) (*agent.Session, error) {
+			return buildACPSessionWith(ctx, cwd, id, provider, model, &t)
+		},
+		Toggles: acpToggles,
 	}
 	if !*noTranscript {
 		// The transcript is the same private JSONL a TUI session keeps; it
@@ -97,6 +100,12 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 // trusted: the trust prompt never runs over ACP, so an untrusted directory
 // fails closed with instructions.
 func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model string) (*agent.Session, error) {
+	return buildACPSessionWith(ctx, cwd, sessionID, providerName, model, nil)
+}
+
+// buildACPSessionWith is buildACPSession with the editor's session-only
+// toggles applied over the user's settings. A nil t changes nothing.
+func buildACPSessionWith(ctx context.Context, cwd, sessionID, providerName, model string, t *acp.Toggles) (*agent.Session, error) {
 	st, err := trustgate.Check(cwd)
 	if err != nil {
 		return nil, fmt.Errorf("check trust for %s: %w", cwd, err)
@@ -104,7 +113,7 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 	if !st.Trusted {
 		return nil, fmt.Errorf("%s is not trusted yet: run `belai` there once to review and trust it, or `belai -trust-dir` from that directory", cwd)
 	}
-	cfg, settings, pol, err := acpConfig(cwd, providerName, model)
+	cfg, settings, pol, err := acpConfigWith(cwd, providerName, model, t)
 	if err != nil {
 		return nil, err
 	}
@@ -114,9 +123,19 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 // acpConfig resolves the model config, merged settings and effective posture
 // for an editor session's directory. The trust check is the caller's.
 func acpConfig(cwd, providerName, model string) (run.Config, config.Settings, posture.Policy, error) {
+	return acpConfigWith(cwd, providerName, model, nil)
+}
+
+// acpConfigWith is acpConfig with an editor's session-only toggles applied
+// over the merged settings before the posture and the session are derived from
+// them, so a toggle reaches every gate the setting feeds. Nothing is saved.
+func acpConfigWith(cwd, providerName, model string, t *acp.Toggles) (run.Config, config.Settings, posture.Policy, error) {
 	settings, err := config.LoadMerged(cwd)
 	if err != nil {
 		return run.Config{}, config.Settings{}, nil, fmt.Errorf("load settings: %w", err)
+	}
+	if t != nil {
+		settings.Guardrails, settings.AskPermission, settings.Caveman = &t.Guardrails, &t.Ask, &t.Caveman
 	}
 	projectPol, _ := posture.Load(cwd)
 	pol := posture.Defaults().Override(projectPol)
@@ -148,7 +167,7 @@ func acpConfig(cwd, providerName, model string) (run.Config, config.Settings, po
 // and returns false when the settings do not run the pass.
 func acpPostEnd(providerName, model string) func(context.Context, string, *agent.Session, testpass.Fixer, func(string)) (testpass.Outcome, bool) {
 	return func(ctx context.Context, cwd string, sess *agent.Session, fix testpass.Fixer, notify func(string)) (testpass.Outcome, bool) {
-		cfg, settings, pol, err := acpConfig(cwd, providerName, model)
+		cfg, settings, pol, err := acpConfigWith(cwd, providerName, model, nil)
 		if err != nil || !headless.ShouldPostEnd(ctx, settings, cwd, testpass.TriggerGoal) {
 			return testpass.Outcome{}, false
 		}
@@ -185,4 +204,15 @@ func acpModelChoices(cwd, curProvider, curModel string) []acp.ModelChoice {
 		}
 	}
 	return out
+}
+
+// acpToggles is where an editor session's switches start: the user's own
+// settings for the directory. A settings file that cannot load reads as the
+// defaults (guardrails and asks on, caveman off), the fail-closed side.
+func acpToggles(cwd string) acp.Toggles {
+	s, err := config.LoadMerged(cwd)
+	if err != nil {
+		return acp.Toggles{Guardrails: true, Ask: true}
+	}
+	return acp.Toggles{Guardrails: s.GuardrailsEnabled(), Ask: s.AskPermissionEnabled(), Caveman: s.CavemanEnabled()}
 }

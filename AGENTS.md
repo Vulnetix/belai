@@ -442,6 +442,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   rotated refresh token is written back only to the keychain or credentials
   file that held the old one. `AuthKiro` is reserved for the built-in `kiro`
   provider, which is never routed through the AI Firewall.
+- **ACP toggles are the user's session-only choice.** The `guardrails`, `ask`
+  and `caveman` config options, like the model pick, are matched against the
+  fixed option ids and the values `on`/`off` or a value Belai listed, rebuild
+  the session through the original builder (`buildACPSessionWith`, trust check
+  included) and are never written to a settings file. They start from the
+  user's settings, and a change is refused while a turn runs. Guardrails off
+  is `posture.AllIgnore()` through `settings.Guardrails`, as everywhere.
 - **ACP never widens what an editor can do.** `belai acp` builds each
   session with `newCLISession`, the headless path, so every gate, rule,
   sandbox and budget applies. `session/new` fails closed in a directory
