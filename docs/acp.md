@@ -41,14 +41,19 @@ from your normal Belai settings for the project directory.
 
 | ACP method or update | Belai behaviour |
 | --- | --- |
-| `initialize` | protocol version 1; embedded file context and images accepted, audio not; no session loading |
+| `initialize` | protocol version 1; embedded file context and images accepted, audio not; no session loading; advertises `sessionCapabilities` `list` and `close`; reads `clientInfo` to name sessions |
 | `session/new` | starts a session in the editor's project directory |
 | `session/prompt` | runs one turn; text, file links and embedded file text become the prompt, and `image` blocks are attached as images |
 | `session/cancel` | stops the turn; the prompt returns `cancelled` |
+| `session/list` | the sessions open on this connection, newest first, optionally for one absolute `cwd`; no paging, and nothing from the session store |
+| `session/close` | stops a running turn, flushes the transcript and forgets the session |
+| `session_info_update` | after each turn: a harness title (editor, folder, turn count) and the time |
 | `agent_message_chunk` | streamed reply text |
-| `agent_thought_chunk` | streamed reasoning |
+| `agent_thought_chunk` | streamed reasoning, plus short status lines while Belai works before the first token: checking the prompt, retrying the model, the pass number, files read for context, the chosen mode, and "Still working" after ten quiet seconds. Status lines are fixed templates; provider error text never appears in them |
 | `tool_call` | each tool call as it starts, with its kind (`read`, `edit`, `search`, `execute`, `fetch`, `think`, `other`) and arguments |
 | `tool_call_update` | the file diff a call made, then its result, `completed` or `failed` |
+| `tool_call` (pending) | a tool call announced from its first streamed fragment, filled in when it starts |
+| `tool_call` for a subagent | each explore or `Task` subagent as a `think` call, with one-line activity (tool and argument excerpt) and its final state |
 | `plan` | the goal-mode todo list |
 | `session/request_permission` | a permission ask, offering allow once, allow for this session, or reject |
 
