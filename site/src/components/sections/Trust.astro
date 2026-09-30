@@ -31,12 +31,17 @@ const shaped = [
   ['Glob', 'a list of paths'],
   ['Write · Edit', 'a confirmation Belai wrote'],
   ['LS · Find · File · Cmp · Date …', 'fixed-argv metadata'],
+  ['Screenshot', 'text Belai wrote, and an image it checked itself'],
 ];
 
 const facts = [
   {
     title: 'Offloaded output is checked as it is read',
     body: 'A long result waits in memory behind a short preview. Each slice the model pulls in with `ReadResult` is classified at that moment while guardrails are on, so output saved while they were off is checked before the model sees it. A withheld result is never kept.',
+  },
+  {
+    title: 'Images are checked by Belai, not by the classifier',
+    body: 'A text classifier cannot read pixels, so an image from `Screenshot` is decoded as PNG or JPEG inside a size and pixel limit, reduced to 1568 pixels on its long edge and re-encoded as a new PNG. Metadata, trailing bytes and a file that only looks like an image do not survive, and any failure refuses the image. Only that tool can return one, only the newest is sent, and a model without image input is told it was not. Text inside a screenshot is what was on screen, never an instruction.',
   },
   {
     title: 'WebFetch answers from a model with no tools',
