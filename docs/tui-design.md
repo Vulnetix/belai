@@ -235,6 +235,31 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | Full-screen views, pickers, overlays | full rounded box | unchanged |
 | Runs panel, intel tab (`f12`) | tab bar and a bottom rule, half the terminal height | `Teal` for the active tab; bars and marks take the state colour |
 
+### Grouped lists
+
+A screen with more rows than a terminal holds is a grouped list
+(`internal/tui/grouplist.go`, used by `/settings`, language servers and
+permissions; `/model` shares its breakpoint and key line):
+
+- **Layout.** From 100 columns a rail of groups sits beside the list, with a
+  count per group and a `●` where a value differs from its default. Narrower
+  terminals get a one-line tab strip (`‹ … ›`, `n/m`) above the list. Below
+  the list a detail pane shows the selected row's name, choices, help and
+  where it comes from and is saved.
+- **Height.** The body is exactly as tall as the terminal leaves it. Rows scroll
+  inside their own box with an `↑ n above · ↓ n below` line, and the scroll
+  offset is kept between frames. Nothing scrolls the page.
+- **Rows.** A value is drawn as plain text, the source column stays blank for a
+  default, and a row that has no effect while another setting is off is
+  `Muted` but still editable. Section headings label a run of rows and never
+  take the cursor.
+- **Keys.** `↑↓` move inside the group, `[` `]` (and `tab`) change group,
+  `/` filters across every group, `m` shows only changed values, `esc` closes a
+  filter before it closes the screen. The key line drops its least important
+  keys first when the width runs out (`glHelpLine`), so movement, edit and
+  back always stay.
+- **Sliders.** A score cut-off is a 20 cell track with a `│` at its default.
+
 ## States
 
 - **Turn in flight.** The running row shows its elapsed time and a spinner;
