@@ -229,7 +229,7 @@ func (a *App) renderRunsPanel() string {
 		placeholder := components.MutedStyle.Render("  no activities this turn")
 		switch a.runsTab {
 		case tabSubagents:
-			placeholder = components.MutedStyle.Render("  no subagents this turn")
+			placeholder = components.MutedStyle.Render("  no helpers this turn")
 		case tabProcesses:
 			placeholder = components.MutedStyle.Render("  no running processes")
 		case tabKanban:

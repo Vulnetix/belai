@@ -1,4 +1,4 @@
-activity  subagents  processes  kanban  crew  git  [ ci ]  intel      f9 close
+activity  helpers  processes  kanban  crew  git  [ ci ]  intel        f9 close
   PR #42 · 1 pass · 1 fail · 1 pending
 ▸ build  CI · ✓ pass
   test  CI · ✗ fail
