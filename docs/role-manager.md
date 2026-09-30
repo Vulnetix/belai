@@ -730,6 +730,25 @@ transcript. Each outcome is a `voice_cleanup` role-manager activity with the
 verdict `cleaned`, `empty`, `runaway` or `error` and the serving model. It
 never records the transcript.
 
+### Streaming the voice-cleanup reply
+
+`rolemanager.StreamClassifier` is a `Classifier` that can hand over its answer as
+the model writes it (`ClassifyStream`), and `rolemanager.ClassifyStreaming`
+uses that when a classifier can and otherwise answers in one piece, so a caller
+needs no second path. The chat classifier in `internal/run` streams over the
+same request factory, retry policy and usage accounting as the main turn, and
+the tiered and routed classifiers pass streaming through to whichever
+classifier they pick.
+
+`rolemanager.CleanVoiceStream` is `CleanVoice` for a caller that shows the text
+as it is written. After each piece it calls `onText` with the whole cleaned
+text so far (sanitised and unwrapped), so the caller replaces what it shows
+instead of appending. A reply that grows past the runaway limit is cut off
+mid-stream and reported as `ErrRunawayVoiceCleanup`, so a model that starts
+answering rather than tidying is stopped, not displayed. The end result passes
+the same checks as `CleanVoice`, and `CleanVoice` is `CleanVoiceStream` with no
+callback.
+
 ### Security decision tree
 
 ```mermaid

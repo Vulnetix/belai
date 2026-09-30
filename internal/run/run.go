@@ -1493,28 +1493,88 @@ func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 // the single construction point shared by the guardrail classifier, the
 // defined role classifier and every routed candidate classifier.
 func classifierFromConfig(c Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
-	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-		if p.MaxTokens > 0 {
-			c.MaxTokens = p.MaxTokens
+	return &chatClassifier{cfg: c, client: client, onRetry: onRetry}
+}
+
+// chatClassifier is the tool-less chat call every role uses. It answers in one
+// piece (Classify) or as the model writes (ClassifyStream), through the same
+// request factory, retry policy and usage accounting as the main turn.
+type chatClassifier struct {
+	cfg     Config
+	client  *http.Client
+	onRetry func(resilience.Attempt)
+}
+
+// prepare applies the payload's budget and notes the model that will be asked.
+// It is noted before the call, so a timeout or a provider error still names
+// the model that was asked rather than the agent model.
+func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPayload) (context.Context, Config) {
+	cfg := c.cfg
+	if p.MaxTokens > 0 {
+		cfg.MaxTokens = p.MaxTokens
+	}
+	rolemanager.NoteServedModel(ctx, cfg.Provider+"/"+cfg.Model)
+	role := p.UseCase
+	if role == "" {
+		role = RoleSecurity
+	}
+	return withUsageRole(ctx, role), cfg
+}
+
+func (c *chatClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+	ctx, cfg := c.prepare(ctx, p)
+	a, err := chatWithRetryAssistant(ctx, cfg, p.System, p.User, c.client, c.onRetry)
+	if err != nil {
+		return "", err
+	}
+	text := a.Text
+	if p.AllowReasoningFallback && strings.TrimSpace(text) == "" {
+		text = a.Reasoning
+	}
+	return text, nil
+}
+
+// ClassifyStream is Classify over the streaming transport: onText gets each
+// piece of text as it arrives and the whole text is returned at the end. Only
+// the answer text streams; reasoning is not shown.
+func (c *chatClassifier) ClassifyStream(ctx context.Context, p rolemanager.ClassifierPayload, onText func(string)) (string, error) {
+	ctx, cfg := c.prepare(ctx, p)
+	ch, err := StreamTurnsWithTools(ctx, cfg, p.System, []Turn{{Role: "user", Content: p.User}}, c.client, nil, nil, nil, c.onRetry)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	var final *Assistant
+	for chunk := range ch {
+		if chunk.Err != nil {
+			// Drain so the stream's goroutine can finish and close.
+			go func() {
+				for range ch {
+				}
+			}()
+			return "", chunk.Err
 		}
-		// Noted before the call, so a timeout or a provider error still names
-		// the model that was asked rather than the agent model.
-		rolemanager.NoteServedModel(ctx, c.Provider+"/"+c.Model)
-		role := p.UseCase
-		if role == "" {
-			role = RoleSecurity
+		if chunk.Text != "" {
+			sb.WriteString(chunk.Text)
+			if onText != nil {
+				onText(chunk.Text)
+			}
 		}
-		ctx = withUsageRole(ctx, role)
-		a, err := chatWithRetryAssistant(ctx, c, p.System, p.User, client, onRetry)
-		if err != nil {
-			return "", err
+		if chunk.Done && chunk.Assistant != nil {
+			final = chunk.Assistant
 		}
-		text := a.Text
-		if p.AllowReasoningFallback && strings.TrimSpace(text) == "" {
-			text = a.Reasoning
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if sb.Len() == 0 && final != nil {
+		// A transport that delivered the answer only in the closing chunk.
+		if onText != nil && final.Text != "" {
+			onText(final.Text)
 		}
-		return text, nil
-	})
+		return final.Text, nil
+	}
+	return sb.String(), nil
 }
 
 // mainClassifierConfig returns the main config with reasoning off, the shape
@@ -2692,4 +2752,22 @@ func envHintsFor(provider string, missing []string) []string {
 		}
 	}
 	return envHints
+}
+
+// ClassifyStream sends a fast use case to the fast tier and everything else to
+// the main model, streaming when the chosen classifier can.
+func (t tieredClassifier) ClassifyStream(ctx context.Context, p rolemanager.ClassifierPayload, onText func(string)) (string, error) {
+	if IsFastUseCase(p.UseCase) {
+		return rolemanager.ClassifyStreaming(ctx, t.fast, p, onText)
+	}
+	return rolemanager.ClassifyStreaming(ctx, t.main, p, onText)
+}
+
+// ClassifyStream resolves the use case's classifier the way Classify does, and
+// streams through it when it can.
+func (r *routedClassifier) ClassifyStream(ctx context.Context, p rolemanager.ClassifierPayload, onText func(string)) (string, error) {
+	if r.fast != nil && IsFastUseCase(p.UseCase) {
+		return rolemanager.ClassifyStreaming(ctx, r.fast, p, onText)
+	}
+	return rolemanager.ClassifyStreaming(ctx, r.forUseCase(ctx, p.UseCase), p, onText)
 }
