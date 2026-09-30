@@ -48,6 +48,7 @@ from your normal Belai settings for the project directory.
 | `session/list` | the sessions open on this connection, newest first, optionally for one absolute `cwd`; no paging, and nothing from the session store |
 | `session/set_mode` | the editor's mode picker: `auto` (Belai chooses per prompt, the default), `agent`, `plan` (read only, no shell) or `goal`. A chosen mode engages that mode's own tool surface and gates, and the change is echoed as `current_mode_update` |
 | `session/close` | stops a running turn, flushes the transcript and forgets the session |
+| `available_commands_update` | sent once `session/new` has answered: the `/tree` command (see [Session tree](#session-tree)) |
 | `session_info_update` | after each turn: a harness title (editor, folder, turn count) and the time |
 | `agent_message_chunk` | streamed reply text. The first turn of a session opens with the TUI's header as markdown: `belai` and its tagline, then the version, build, provider and model |
 | `agent_thought_chunk` | streamed reasoning, plus short status lines while Belai works before the first token: checking the prompt, retrying the model, the pass number, files read for context, the chosen mode, and "Still working" after ten quiet seconds. Status lines are fixed templates; provider error text never appears in them |
@@ -107,7 +108,32 @@ classifier refuses it.
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.
 - Audio in prompts is not accepted. Images are: see below.
-- Slash commands and the TUI panels are not exposed.
+- `/tree` is the only slash command, and the TUI panels are not exposed.
+  `/fork` is TUI only: a forked session could not be opened from the editor
+  without `loadSession`.
+
+## Session tree
+
+A session is a tree: each transcript entry points at the one before it.
+`/tree` lists the branches as a code block, one row per user message or final
+reply, each starting with a short id. `●` marks where the session is, `•` the
+branch it is on, `○` other branches and `┬` a point where a branch was taken.
+
+`/tree <id>` continues from that row and answers with where it went:
+
+- A reply row continues from that reply.
+- A user row continues from just before it, and Belai echoes the prompt so it
+  can be reworded and sent again.
+
+The transcript only grows: Belai appends a `branch` entry, and later entries
+hang from the chosen row. The model then sees the history up to that point and
+nothing from the abandoned branch. That history is the one kept when each turn
+finished, so it holds the same cleaned prompts the model was given, never the
+transcript's raw text. Only turns that finished on this connection can be
+returned to. Files on disk are not rolled back.
+
+`/tree` and `/tree <id>` are answered by Belai and never reach the model. While
+a prompt is running they ask you to cancel it first.
 
 ## Edge cases
 
