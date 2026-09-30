@@ -132,6 +132,9 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(fmt.Sprintf("todos: %d/%d done", p.Completed(), p.Total))
 		return nil
 	})
+	r.Register("handoff", "execute a plan file directly: /handoff <plan file path> [extra direction]", nil, func(a *App, arg string) tea.Cmd {
+		return a.startHandoff(arg)
+	})
 	r.Register("execute", "leave plan mode and execute the plan", nil, func(a *App, arg string) tea.Cmd {
 		if a.planReview.name == "" || a.planReview.path == "" {
 			a.mode = "agent"

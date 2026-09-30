@@ -45,9 +45,20 @@ func DetectHandoff(label, body, plansDir string) (HandoffFacts, bool) {
 	if !hasHint && count < taskCountThreshold {
 		return HandoffFacts{}, false
 	}
+	return HandoffFactsFor(label, body)
+}
+
+// HandoffFactsFor computes the handoff facts of a file the user named
+// explicitly (/handoff). It applies no path or task-count hint, because the
+// user has already said this file is the plan; it still requires a Markdown
+// file with a body.
+func HandoffFactsFor(label, body string) (HandoffFacts, bool) {
+	if !isMarkdown(label) || strings.TrimSpace(body) == "" {
+		return HandoffFacts{}, false
+	}
 	return HandoffFacts{
 		Label: label,
-		Tasks: count,
+		Tasks: CountTasks(body),
 		Paths: ReferencedPaths(body),
 	}, true
 }

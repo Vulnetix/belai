@@ -241,6 +241,9 @@ type App struct {
 	// classifier picks the mode and intent for each prompt. a.mode still
 	// holds the effective mode (agent until a decision lands).
 	modeAuto bool
+	// pendingHandoff is set by /handoff: the next turn is a plan handoff for
+	// the attached plan file, with no intent detection. One-shot.
+	pendingHandoff bool
 	// forceMode carries that manual choice into the agent session. Suppressing
 	// the TUI's own classification is not enough: Session.run classifies again
 	// internally, so without this the user's explicit mode is discarded.
@@ -1511,6 +1514,16 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 			}
 		}
 	}
+	if a.pendingHandoff {
+		a.pendingHandoff = false
+		if facts := handoffFactsFrom(in.Attachments); facts != nil {
+			in.Handoff = facts
+			in.ForceAgent = ""
+			in.ForceMode = ""
+		} else {
+			a.addSystem("handoff: the plan file was not attached, so this runs as an ordinary prompt")
+		}
+	}
 	if a.cancel != nil {
 		a.cancel()
 	}
@@ -1583,6 +1596,12 @@ func (a *App) submitInput(input string) tea.Cmd {
 func (a *App) dispatchPrompt(input string, safe []run.Attachment, directive string, firstUser bool) tea.Cmd {
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 
+	if a.pendingHandoff {
+		// /handoff named the plan: the agent builds the decision itself, so
+		// neither a forced mode nor the classifier runs here.
+		a.modeExplicit = false
+		return a.sendTurn(firstUser, input, safe, directive)
+	}
 	if a.modeSticky || a.modeExplicit || a.classifier == nil {
 		a.forceMode = modes.Mode(a.mode)
 		a.modeExplicit = false
