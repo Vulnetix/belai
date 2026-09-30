@@ -232,6 +232,12 @@ type Item struct {
 	Branch     string
 	PR         string
 
+	// Security card, set only by the harness and never pushed.
+	Finding string
+	SeenRef string
+	Verdict Verdict
+	VEX     string
+
 	remoteAgent bool // in memory only; gob never stores it
 
 	// Sync state. ServerVersion is the backend's version of the item (0 when
@@ -291,6 +297,10 @@ type List string // backlog | review | in_progress | blocked | done
 | `Attempts` | Claims that ended without success. | the harness |
 | `Branch` | The git branch holding the item's work. | the harness |
 | `PR` | The draft pull request opened for the branch. | the harness |
+| `Finding` | The advisory id (or `<kind>:<rule>:<hash>` for a SARIF result) a security card is about. At most 64 characters of `[A-Za-z0-9._:-]`. | the harness (`UpsertFinding`) |
+| `SeenRef` | The full commit id of the latest scan that still showed the finding. | the harness (`UpsertFinding`) |
+| `Verdict` | A security worker's recorded verdict: `fixed`, `false_positive`, `no_fix`, `needs_human` or `rejected`. | the harness (`Reconcile`, `SetVerdict`, `Release`) |
+| `VEX` | The repository-relative path of the VEX written for the verdict. | the harness (`Release`) |
 | `remoteAgent` | Not stored (unexported). Set on a pulled item that carried the `agent` block, so a backend that predates it cannot clear the local routing and claim. | sync |
 | `ServerVersion` | The backend's version of the item, or 0 if it has never been pushed. | sync |
 | `Dirty` | A local change not yet pushed. | local writes; cleared by sync |
@@ -517,6 +527,7 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `Labels`, `Priority`, `Assignee`, `Parent`, `DependsOn`, `Hops` | `agent.labels`, `agent.priority`, `agent.assignee`, `agent.parent`, `agent.dependsOn`, `agent.hops` | Always sent. |
 | `PinHost` | `agent.pinHost` | A sync host id; the website may set or clear it. Only a worker on that host claims the item. |
 | `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
+| `Finding`, `SeenRef`, `Verdict`, `VEX` | — | Local only; never sent, and a pulled copy keeps the local values. |
 | `Dirty` | — | Local only; never sent. |
 
 The routing and claim fields travel in one optional `agent` object

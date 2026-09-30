@@ -217,6 +217,13 @@ never hold the same item, and a lease that lapses (a crashed worker) returns
 the item to the list it came from. The claim, the branch holding the work and
 any draft pull request show on the item.
 
+A security card also carries four fields only the harness sets, never a model
+argument: the **finding** id, the **seen ref** (the commit whose scan last
+showed it), the recorded **verdict** and the **VEX** path. They stay on the host
+that wrote them and a pulled copy never replaces them. The `vuln`, `gone` and
+`needs-verify` labels route a card through the
+[security crew](fleet.md#the-security-crew).
+
 From the command line:
 
 ```sh

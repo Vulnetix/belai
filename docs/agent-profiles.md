@@ -235,6 +235,10 @@ items and works each as a goal. It adds these fields:
 | `kanban.survey.title`, `kanban.survey.body` | string | When the board has nothing for the worker, it files and works one survey item with this title (`{project}` replaced, date appended) and body. `title` is required in a `survey` block. See [Finding work](fleet.md#finding-work-kanbansurvey). |
 | `kanban.survey.list` | string | Where the survey's handoffs go, whatever the model asks: `review` (default) or `backlog`. |
 | `kanban.survey.every` | duration | At most one survey per this interval for the same profile and repository on one machine (at least `1h`, default `24h`). |
+| `kanban.security.sweep` | bool | At start, make sure a review ran on HEAD (running it only when no artefact records that commit) and that every finding has a card. Needs the `Vulnetix` tool. See [the security crew](fleet.md#the-security-crew). |
+| `kanban.security.reconcile` | bool | Before each claim, compare the cards with the artefacts on disk: a finding that left the report becomes a gone card for the verifier. Never scans. |
+| `kanban.security.verdicts` | string[] | The verdicts `KanbanVerdict` may record: `fixed`, `false_positive`, `no_fix`, `needs_human`, `rejected`. Empty: the worker has no such tool. |
+| `kanban.security.vex` | bool | The harness writes a VEX for each verdict the worker records, and the worker may reject a claim. Needs `verdicts`. |
 | `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
 | `workspace.read_only` | bool | The worker runs checks in its worktree but changes nothing: leftovers are not committed, and the worktree and branch are deleted after each item. See [Read-only workspaces](fleet.md#read-only-workspaces). |
 | `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `publish` is `none`, `agent` (the agent may push its branch and open a draft pull request with `PublishBranch`) or `draft_pr` (the harness does so when the item reaches `done`); see [Publishing](fleet.md#publishing). |
@@ -251,7 +255,8 @@ Validation fails closed:
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
 - `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
-- a `survey` block needs a `title`, a `list` of `review` or `backlog`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`.
+- a `survey` block needs a `title`, a `list` of `review` or `backlog`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
+- a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, and only a worker with `vex` may list `rejected`.
 
 A definition can also be written as Markdown with YAML front-matter, the
 shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,
@@ -265,9 +270,9 @@ validates it and saves it as JSON.
 | `belai:scout` | backlog items labelled `scout`; with none, a daily survey of its own (tests, docs, specs and site prose against the code) | `build` items for `belai:builder`: to backlog for a request, to review for a survey |
 | `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review` |
 | `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR), or back to `build` with notes |
-| `belai:vuln-scout` | backlog items labelled `vuln-scan` | `vuln` items for `belai:patcher` |
-| `belai:patcher` | backlog `vuln` items, on a worktree branch | review, labelled `needs-verify` |
-| `belai:verifier` | review `needs-verify` items, on their branch | done (and a draft PR), or back to `vuln` with notes |
+| `belai:vuln-scout` | at start, a review sweep of HEAD (harness); backlog items labelled `vuln-scan` for a targeted look | a `vuln` card per finding (harness), and `vuln` items for `belai:patcher` |
+| `belai:patcher` | backlog `vuln` items, on a worktree branch; reconciles cards before each claim | review, labelled `needs-verify`: a fix, or a false positive, no known fix or needs-a-human verdict |
+| `belai:verifier` | review `needs-verify` items, including gone cards, on their branch | done (and a draft PR) or blocked, each with a VEX, or back to `vuln` when it rejects the claim |
 
 The crews `belai:delivery` and `belai:security` start one scout, two
 builders or patchers, and one reviewer or verifier.
