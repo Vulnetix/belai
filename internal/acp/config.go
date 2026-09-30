@@ -64,10 +64,26 @@ func (s *Server) configOptions(ss *acpSession) []any {
 	for i, x := range modeList {
 		modeOpts[i] = map[string]any{"value": x["id"], "name": x["name"], "description": x["description"]}
 	}
-	return append(out, map[string]any{
+	out = append(out, map[string]any{
 		"id": "mode", "name": "Mode", "category": "mode", "type": "select",
 		"currentValue": mode, "options": modeOpts,
 	})
+	if s.opts.Toggles != nil {
+		ss.mu.Lock()
+		t := ss.toggles
+		ss.mu.Unlock()
+		for _, o := range toggleOptions {
+			out = append(out, map[string]any{
+				"id": o.id, "name": o.name, "description": o.desc, "type": "select",
+				"currentValue": t.value(o.id),
+				"options": []any{
+					map[string]any{"value": "on", "name": "On"},
+					map[string]any{"value": "off", "name": "Off"},
+				},
+			})
+		}
+	}
+	return out
 }
 
 // setConfigOption answers session/set_config_option for the model and mode.
@@ -100,6 +116,13 @@ func (s *Server) setConfigOption(ctx context.Context, params json.RawMessage) (a
 		if err := s.switchModel(ctx, ss, p.Value); err != nil {
 			return nil, err
 		}
+	case "guardrails", "ask", "caveman":
+		if s.opts.Toggles == nil {
+			return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "unknown config option %q", p.ConfigID)
+		}
+		if err := s.switchToggle(ctx, ss, p.ConfigID, p.Value); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "unknown config option %q", p.ConfigID)
 	}
@@ -107,9 +130,6 @@ func (s *Server) setConfigOption(ctx context.Context, params json.RawMessage) (a
 }
 
 func (s *Server) switchModel(ctx context.Context, ss *acpSession, value string) error {
-	if s.opts.Switch == nil {
-		return jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "model choice is not available")
-	}
 	var pick *ModelChoice
 	for _, c := range s.modelChoices(ss) {
 		if c.value() == value {
@@ -122,18 +142,107 @@ func (s *Server) switchModel(ctx context.Context, ss *acpSession, value string) 
 		return jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "unknown model %q", value)
 	}
 	ss.mu.Lock()
+	t := ss.toggles
+	ss.mu.Unlock()
+	if err := s.rebuild(ctx, ss, pick.Provider, pick.Model, t); err != nil {
+		return err
+	}
+	s.note(ss, "Model: %s", value)
+	return nil
+}
+
+// switchToggle flips one of the on/off options. They are the user's own
+// session-only choices, like the TUI's toggles, and change nothing in their
+// settings; the session is rebuilt so the choice reaches every gate it feeds.
+func (s *Server) switchToggle(ctx context.Context, ss *acpSession, id, value string) error {
+	if value != "on" && value != "off" {
+		return jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "%s must be on or off", id)
+	}
+	on := value == "on"
+	ss.mu.Lock()
+	t, p, m := ss.toggles, ss.provider, ss.model
+	ss.mu.Unlock()
+	switch id {
+	case "guardrails":
+		t.Guardrails = on
+	case "ask":
+		t.Ask = on
+	case "caveman":
+		t.Caveman = on
+	}
+	if err := s.rebuild(ctx, ss, p, m, t); err != nil {
+		return err
+	}
+	s.note(ss, "%s: %s", id, value)
+	return nil
+}
+
+// rebuild replaces the session's agent with one built for the given model and
+// toggles, through the same builder that made the first (trust check, posture,
+// permission rules, sandbox and classifier all apply again). The conversation
+// is held here, so it carries over.
+func (s *Server) rebuild(ctx context.Context, ss *acpSession, provider, model string, t Toggles) error {
+	if s.opts.Switch == nil {
+		return jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "this option is not available")
+	}
+	ss.mu.Lock()
 	busy := ss.cancel != nil
 	ss.mu.Unlock()
 	if busy {
 		return jsonrpc.Errorf(jsonrpc.CodeInvalidRequest, "a prompt is running in this session")
 	}
-	ag, err := s.opts.Switch(ctx, ss.cwd, ss.id, pick.Provider, pick.Model)
+	ag, err := s.opts.Switch(ctx, ss.cwd, ss.id, provider, model, t)
 	if err != nil {
 		return &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
 	ss.mu.Lock()
-	ss.agent, ss.provider, ss.model = ag, pick.Provider, pick.Model
+	ss.agent, ss.provider, ss.model, ss.toggles = ag, provider, model, t
 	ss.mu.Unlock()
-	s.note(ss, "Model: %s", value)
 	return nil
+}
+
+// Toggles are the session's on/off switches. Each starts from the user's
+// settings for the directory; an editor changes them for its session only.
+type Toggles struct {
+	// Guardrails is the posture gates (off is all-ignore, as in the TUI).
+	Guardrails bool
+	// Ask is the permission-ask gate; off resolves an ask to allow.
+	Ask bool
+	// Caveman is the terse caveman voice.
+	Caveman bool
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+var toggleOptions = []struct{ id, name, desc string }{
+	{"guardrails", "Guardrails", "The posture gates and the security classifier. Off is for this session only."},
+	{"ask", "Ask before tools", "Permission asks come to you. Off allows a call the rules would ask about."},
+	{"caveman", "Caveman voice", "Short words in the model's replies."},
+}
+
+func (t Toggles) value(id string) string {
+	switch id {
+	case "guardrails":
+		return onOff(t.Guardrails)
+	case "ask":
+		return onOff(t.Ask)
+	}
+	return onOff(t.Caveman)
+}
+
+// String is a compact form of the switches, for logs and tests: g, a and c
+// for guardrails, ask and caveman, each followed by + when on and - when off.
+func (t Toggles) String() string {
+	f := func(name string, on bool) string {
+		if on {
+			return name + "+"
+		}
+		return name + "-"
+	}
+	return f("g", t.Guardrails) + f("a", t.Ask) + f("c", t.Caveman)
 }

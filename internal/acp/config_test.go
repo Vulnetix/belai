@@ -18,11 +18,12 @@ func configServer(t *testing.T, switched *[]string) (*Server, *acpSession) {
 			{Provider: "anthropic", Model: "claude-x", Label: "anthropic · X"},
 		}
 	}
-	s.opts.Switch = func(ctx context.Context, cwd, id, p, m string) (*agent.Session, error) {
-		*switched = append(*switched, p+"/"+m)
+	s.opts.Toggles = func(string) Toggles { return Toggles{Guardrails: true, Ask: true} }
+	s.opts.Switch = func(ctx context.Context, cwd, id, p, m string, t Toggles) (*agent.Session, error) {
+		*switched = append(*switched, p+"/"+m+" "+t.String())
 		return nil, nil
 	}
-	ss := &acpSession{id: "a", cwd: "/w", mode: modeAuto, provider: "cloudflare", model: "deepseek", always: map[string]bool{}, log: turnlog.New(nil)}
+	ss := &acpSession{id: "a", cwd: "/w", mode: modeAuto, provider: "cloudflare", model: "deepseek", toggles: Toggles{Guardrails: true, Ask: true}, always: map[string]bool{}, log: turnlog.New(nil)}
 	s.sessions["a"] = ss
 	return s, ss
 }
@@ -35,7 +36,7 @@ func TestConfigOptionsOfferModelAndMode(t *testing.T) {
 	var sw []string
 	s, ss := configServer(t, &sw)
 	opts := s.configOptions(ss)
-	if len(opts) != 2 {
+	if len(opts) != 5 {
 		t.Fatalf("options = %v", opts)
 	}
 	m := opts[0].(map[string]any)
@@ -54,7 +55,7 @@ func TestPickingAModelRebuildsTheSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sw) != 1 || sw[0] != "anthropic/claude-x" || ss.provider != "anthropic" || ss.model != "claude-x" {
+	if len(sw) != 1 || sw[0] != "anthropic/claude-x g+a+c-" || ss.provider != "anthropic" || ss.model != "claude-x" {
 		t.Fatalf("switched %v, session on %s/%s", sw, ss.provider, ss.model)
 	}
 	cur := res.(map[string]any)["configOptions"].([]any)[0].(map[string]any)["currentValue"]
@@ -100,3 +101,58 @@ func TestModeThroughConfigOption(t *testing.T) {
 }
 
 func mustJSON(v any) []byte { b, _ := json.Marshal(v); return b }
+
+func TestTogglesRebuildTheSessionAndKeepTheModel(t *testing.T) {
+	var sw []string
+	s, ss := configServer(t, &sw)
+	for _, c := range []string{
+		`{"sessionId":"a","configId":"guardrails","value":"off"}`,
+		`{"sessionId":"a","configId":"ask","value":"off"}`,
+		`{"sessionId":"a","configId":"caveman","value":"on"}`,
+	} {
+		if _, err := setOpt(s, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"cloudflare/deepseek g-a+c-", "cloudflare/deepseek g-a-c-", "cloudflare/deepseek g-a-c+"}
+	if len(sw) != 3 || sw[0] != want[0] || sw[1] != want[1] || sw[2] != want[2] {
+		t.Fatalf("rebuilds = %v", sw)
+	}
+	if ss.toggles.Guardrails || ss.toggles.Ask || !ss.toggles.Caveman {
+		t.Fatalf("toggles = %v", ss.toggles)
+	}
+	res, _ := setOpt(s, `{"sessionId":"a","configId":"guardrails","value":"on"}`)
+	got := map[string]any{}
+	for _, o := range res.(map[string]any)["configOptions"].([]any) {
+		m := o.(map[string]any)
+		got[m["id"].(string)] = m["currentValue"]
+	}
+	if got["guardrails"] != "on" || got["ask"] != "off" || got["caveman"] != "on" {
+		t.Fatalf("state = %v", got)
+	}
+}
+
+func TestBadToggleValueIsRefused(t *testing.T) {
+	var sw []string
+	s, _ := configServer(t, &sw)
+	for _, v := range []string{"maybe", "", "ON"} {
+		if _, err := setOpt(s, `{"sessionId":"a","configId":"ask","value":"`+v+`"}`); err == nil {
+			t.Fatalf("%q accepted", v)
+		}
+	}
+	if len(sw) != 0 {
+		t.Fatalf("rebuilt: %v", sw)
+	}
+}
+
+func TestNoTogglesWithoutTheHostHook(t *testing.T) {
+	var sw []string
+	s, ss := configServer(t, &sw)
+	s.opts.Toggles = nil
+	if len(s.configOptions(ss)) != 2 {
+		t.Fatal("toggles offered without a host hook")
+	}
+	if _, err := setOpt(s, `{"sessionId":"a","configId":"guardrails","value":"off"}`); err == nil {
+		t.Fatal("toggle accepted without a host hook")
+	}
+}

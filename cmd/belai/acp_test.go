@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/acp"
 	"github.com/vulnetix/belai/internal/config"
 )
 
@@ -48,5 +49,31 @@ func TestACPConfigHonoursSavedProvider(t *testing.T) {
 	cfg, _, _, err = acpConfig(t.TempDir(), "ollama", "flag-model")
 	if err != nil || cfg.Model != "flag-model" {
 		t.Fatalf("flag: %v %q", err, cfg.Model)
+	}
+}
+
+// An editor's toggles reach the settings the session and its posture are
+// built from, and only for that session: nothing is written.
+func TestACPToggleOverridesSettings(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("BELAI_PROVIDER", "ollama")
+	off := acp.Toggles{Guardrails: false, Ask: false, Caveman: true}
+	_, settings, pol, err := acpConfigWith(t.TempDir(), "ollama", "m", &off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.GuardrailsEnabled() || settings.AskPermissionEnabled() || !settings.CavemanEnabled() {
+		t.Fatalf("settings not overridden: %+v", settings)
+	}
+	if pol == nil {
+		t.Fatal("no posture")
+	}
+	on := acp.Toggles{Guardrails: true, Ask: true}
+	_, settings, _, err = acpConfigWith(t.TempDir(), "ollama", "m", &on)
+	if err != nil || !settings.GuardrailsEnabled() || !settings.AskPermissionEnabled() || settings.CavemanEnabled() {
+		t.Fatalf("on: %v %+v", err, settings)
+	}
+	if got := acpToggles(t.TempDir()); !got.Guardrails || !got.Ask || got.Caveman {
+		t.Fatalf("defaults = %+v", got)
 	}
 }
