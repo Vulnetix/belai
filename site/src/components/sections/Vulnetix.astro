@@ -1,6 +1,7 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import Walkthrough from '../ui/Walkthrough.astro';
 
 // The Vulnetix review is laid out like the agents ladder: scan, triage and
 // fix, where each stage can change more than the one before it. The firewall
@@ -139,6 +140,11 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
       each one can change more than the one before it.
     </p>
   </div>
+
+  <figure class="mt-10 m-0">
+    <Walkthrough id="ZyMn7kyyvuM" title="the Vulnetix review" />
+    <figcaption class="mono mt-3 text-xs text-vx-ink/75">Vulnetix, in motion</figcaption>
+  </figure>
 
   <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
     {stages.map((s, i) => {
