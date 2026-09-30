@@ -22,6 +22,7 @@ const classified = [
   ['SearchSessions · SearchMemory', "other agents' transcripts"],
   ['KanbanSearch', 'items other sessions wrote'],
   ['Task · SubAgentLog · BashOutput', 'subagent and process output'],
+  ['post-end test pass', "the suites' own stdout and stderr"],
   ['mcp__server__tool', 'MCP server results'],
   ['hooks · skills', 'text your extensions return'],
 ];
@@ -46,6 +47,10 @@ const facts = [
   {
     title: 'WebFetch answers from a model with no tools',
     body: 'When `WebFetch` answers a prompt, the model that reads the page has no tools, and its answer is classified before the agent sees it.',
+  },
+  {
+    title: 'The test pass is decided by an exit code',
+    body: 'The post-end test pass runs a command from the fixed detection table or your own `tests.command`, never one a model wrote, without a shell, under your permission rules and the sandbox. Pass or fail is the exit code. The output is classified before a model sees it and reaches the fix loop only as an attachment. A repository settings file can turn the pass off, and cannot turn it on or pick the command.',
   },
   {
     title: 'A cleaner for each destination',
