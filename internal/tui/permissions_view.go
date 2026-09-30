@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/permissions"
@@ -23,7 +23,13 @@ type permissionsViewState struct {
 	addDecision    string
 	errorMsg       string
 	previewSubject string
+	gl             glState
 }
+
+// permChromeRows is what the screen spends outside the grouped body: the
+// view's own padding (2), the header and its rule (2), the scope line and the
+// key line.
+const permChromeRows = 6
 
 // permRow is one rendered permission rule.
 type permRow struct {
@@ -86,71 +92,89 @@ func (a *App) permissionsView() string {
 		// The view opens before a scope has been chosen; it writes project.
 		scope = string(config.ScopeProject)
 	}
-	b.WriteString(components.Chip(scope, components.ColorTealSoft) + "\n\n")
+	b.WriteString(components.Chip(scope, components.ColorTealSoft) + "\n")
 
-	if len(rows) == 0 {
-		b.WriteString(components.MutedStyle.Render(
-			"  no rules — every tool call is allowed; add a deny rule to restrict") + "\n")
-	} else {
-		for i, row := range rows {
-			selected := i == a.permState.selected
-			decision := decisionStyle(row.decision).Width(8).Render(row.decision)
-
-			rule := fmt.Sprintf("%-34s", row.rule)
-			if selected {
-				rule = components.EmphStyle.Render(rule)
-			} else if row.inherited {
-				rule = components.MutedStyle.Render(rule)
-			}
-
-			var markers []string
-			if row.unknown {
-				markers = append(markers, components.MutedStyle.Render("? unknown tool"))
-			}
-			if row.broad {
-				markers = append(markers, components.WarnStyle.Render("! broad"))
-			}
-			if row.inherited {
-				markers = append(markers, components.MutedStyle.Render("inherited"))
-			}
-
-			b.WriteString(components.Cursor(selected) + decision + rule +
-				strings.Join(markers, components.MutedStyle.Render(" · ")) + "\n")
-		}
-	}
-
+	// tail is what sits under the body: the preview, the editor and an error.
+	var tail []string
 	if a.permState.mode == "preview" {
-		b.WriteString("\n" + components.MutedStyle.Render("preview  ") + a.permState.previewSubject + "\n")
+		tail = append(tail, components.MutedStyle.Render("preview  ")+ansi.Truncate(a.permState.previewSubject, max(w-10, 8), "…"))
 		if strings.TrimSpace(a.permState.previewSubject) != "" {
 			tool, subject := splitPreview(a.permState.previewSubject)
 			dec, rule := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny).Explain(tool, subject)
-			if rule == "" {
-				if a.effectivePosture().Level(posture.PermissionNoMatch) == posture.Enforce {
-					b.WriteString(components.DangerStyle.Render("         blocked (no rule matches; permission_no_match=enforce)") + "\n")
-				} else {
-					b.WriteString(components.AccentStyle.Render("         allowed (no rule matches — default)") + "\n")
-				}
-			} else {
-				b.WriteString("         " + decisionStyle(string(dec)).Render(string(dec)) +
-					components.MutedStyle.Render(" via "+rule) + "\n")
+			switch {
+			case rule != "":
+				tail = append(tail, "         "+decisionStyle(string(dec)).Render(string(dec))+
+					components.MutedStyle.Render(" via "+rule))
+			case a.effectivePosture().Level(posture.PermissionNoMatch) == posture.Enforce:
+				tail = append(tail, components.DangerStyle.Render("         blocked (no rule matches; permission_no_match=enforce)"))
+			default:
+				tail = append(tail, components.AccentStyle.Render("         allowed (no rule matches — default)"))
 			}
 		}
 	} else if a.permState.mode != "" {
-		b.WriteString("\n" + a.renderFieldEditor(a.permState.mode+" rule", w) + "\n")
+		tail = append(tail, strings.Split(a.renderFieldEditor(a.permState.mode+" rule", w), "\n")...)
 	}
-
 	if a.permState.errorMsg != "" {
-		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.permState.errorMsg) + "\n")
+		tail = append(tail, components.DangerStyle.Render(ansi.Truncate("✗ "+a.permState.errorMsg, w, "…")))
 	}
 
+	foot := glHelpLine([]glKey{
+		{"↑↓", "move", 1}, {"a", "add", 1}, {"esc", "back", 1},
+		{"e", "edit", 2}, {"d", "delete", 2}, {"[ ]", "group", 3},
+		{"←→", "decision", 3}, {"p", "preview", 4}, {"s", "scope", 4},
+	}, w)
 	if a.permState.mode != "" {
-		b.WriteString("\n" + components.HelpBar("enter", "save", "esc", "cancel") + "\n")
-	} else {
-		b.WriteString("\n" + components.HelpBar(
-			"a", "add", "←→", "decision", "e", "edit", "d", "delete",
-			"s", "scope", "p", "preview", "esc", "back") + "\n")
+		foot = components.HelpBar("enter", "save", "esc", "cancel")
 	}
+
+	groups := a.permissionGroups(rows)
+	a.permState.selected = glSnap(groups, a.permState.selected)
+	bodyH := 0
+	if a.height > 0 {
+		bodyH = max(a.height-permChromeRows-len(tail), 9)
+	}
+	empty := "no rules — every tool call is allowed; add a deny rule to restrict"
+	b.WriteString(glBody(glSpec{groups: groups, cursor: a.permState.selected, empty: empty}, &a.permState.gl, w, bodyH))
+	for _, l := range tail {
+		b.WriteString("\n" + l)
+	}
+	b.WriteString("\n" + foot)
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
+}
+
+// permissionGroups lists the rules under deny, allow and ask, in the order
+// permissionRows builds them, so a row's idx is still its place in that list.
+// The tint is the decision's colour: deny a stop, allow go, ask a pause.
+func (a *App) permissionGroups(rows []permRow) []glGroup {
+	titles := map[string]string{"deny": "Deny", "allow": "Allow", "ask": "Ask"}
+	var groups []glGroup
+	for i, r := range rows {
+		if len(groups) == 0 || groups[len(groups)-1].key != r.decision {
+			tint := decisionStyle(r.decision)
+			groups = append(groups, glGroup{key: r.decision, title: titles[r.decision], tint: &tint})
+		}
+		var marks []string
+		detail := []string{components.EmphStyle.Render(r.rule)}
+		if r.unknown {
+			marks = append(marks, "? unknown tool")
+			detail = append(detail, components.MutedStyle.Render("no tool by this name is registered, so the rule never matches"))
+		}
+		if r.broad {
+			marks = append(marks, "! broad")
+			detail = append(detail, components.WarnStyle.Render("no argument limit: it covers every call of this tool"))
+		}
+		src := ""
+		if r.inherited {
+			src = "inherited"
+			detail = append(detail, components.MutedStyle.Render("comes from another settings layer; edit it there"))
+		}
+		g := &groups[len(groups)-1]
+		g.rows = append(g.rows, glRow{
+			idx: i, key: r.rule, label: r.rule, value: strings.Join(marks, " · "),
+			src: src, dim: r.inherited, detail: detail,
+		})
+	}
+	return groups
 }
 
 // decisionStyle colours a permission decision: deny reads as a stop, allow as
@@ -227,15 +251,22 @@ func (a *App) handlePermissionsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		a.pop()
 		return a, nil
-	case "up", "k":
-		if a.permState.selected > 0 {
-			a.permState.selected--
+	case "up", "k", "down", "j":
+		delta := 1
+		if m.String() == "up" || m.String() == "k" {
+			delta = -1
 		}
+		groups := a.permissionGroups(a.permissionRows())
+		a.permState.selected = glStep(groups, glSnap(groups, a.permState.selected), delta)
 		return a, nil
-	case "down", "j":
-		if a.permState.selected < len(a.permissionRows())-1 {
-			a.permState.selected++
+	case "[", "]", "tab", "shift+tab":
+		delta := 1
+		if m.String() == "[" || m.String() == "shift+tab" {
+			delta = -1
 		}
+		groups := a.permissionGroups(a.permissionRows())
+		a.permState.selected = glStepGroup(groups, glSnap(groups, a.permState.selected), delta)
+		a.permState.gl.scroll = 0
 		return a, nil
 	case "s":
 		if a.permState.scope == config.ScopeGlobal {

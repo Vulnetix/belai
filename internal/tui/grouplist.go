@@ -53,6 +53,17 @@ type glGroup struct {
 	key   string
 	title string
 	rows  []glRow
+	// tint colours the title on the rail, the tab strip and the list heading;
+	// nil keeps the plain styles.
+	tint *lipgloss.Style
+}
+
+// styled renders the group title in its tint, or in fallback without one.
+func (g glGroup) styled(s string, fallback lipgloss.Style) string {
+	if g.tint != nil {
+		return g.tint.Render(s)
+	}
+	return fallback.Render(s)
 }
 
 // changed reports whether any row's value differs from its default.
@@ -334,7 +345,7 @@ func glRailLines(groups []glGroup, cur, iw, ih int) []string {
 		count := components.MutedStyle.Render(fmt.Sprintf("%d", g.selectable()))
 		title := g.title
 		if i == cur {
-			title = components.AccentStyle.Bold(true).Render(title)
+			title = g.styled(title, components.AccentStyle.Bold(true))
 		}
 		gap := max(iw-2-1-1-ansi.StringWidth(g.title)-ansi.StringWidth(fmt.Sprintf("%d", g.selectable())), 1)
 		lines = append(lines, components.Cursor(i == cur)+dot+" "+title+strings.Repeat(" ", gap)+count)
@@ -361,7 +372,7 @@ func glTabStrip(groups []glGroup, cur, w int) string {
 		if i == cur {
 			return components.Chip(name, components.ColorTeal)
 		}
-		return components.MutedStyle.Render(" " + name + " ")
+		return g.styled(" "+name+" ", components.MutedStyle)
 	}
 	count := components.MutedStyle.Render(fmt.Sprintf("%d/%d", cur+1, len(groups)))
 	room := w - ansi.StringWidth(count) - 1
@@ -419,7 +430,7 @@ func glListBox(g glGroup, cur glRow, spec glSpec, st *glState, w, h int) string 
 		tag += components.MutedStyle.Render(fmt.Sprintf("  %d match%s", g.selectable(), map[bool]string{true: "", false: "es"}[g.selectable() == 1]))
 		lines = append(lines, tag)
 	} else {
-		lines = append(lines, components.MutedStyle.Render(strings.ToUpper(g.title)))
+		lines = append(lines, g.styled(strings.ToUpper(g.title), components.MutedStyle))
 	}
 	head := len(lines)
 
