@@ -128,7 +128,9 @@ closed.
 
 ## TUI
 
-`/settings` has a `language servers` submenu. Each row shows:
+`/settings` has a `language servers` submenu, laid out as described in
+[Settings screens](settings.md#language-servers): rows are grouped *Detected* and
+*Not detected*, and a turned-off language shows `off`. Each row shows:
 
 | Glyph | Meaning |
 | ----- | ------- |
@@ -138,8 +140,9 @@ closed.
 | `·` | nothing available — install the server or accept no coverage |
 | `⋯` | detection in flight |
 
-Keys: `↑↓`/`kj` move, `space` toggle, `x` unset back to auto, `r` re-detect,
-`i` install (shows the exact command, `y` to run), `esc` back.
+Keys: `↑↓`/`kj` move, `[` `]`/`tab`/`←→` change group, `space` toggle, `x` unset
+back to auto, `r` re-detect, `i` install (shows the exact command, `y` to run),
+`esc` back. The detail pane shows the server, the note and the install command.
 
 Three new role-manager events appear in the internal-work feed:
 

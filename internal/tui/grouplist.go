@@ -31,6 +31,9 @@ const (
 	glSrcWidth = 13
 	// glDetailRows is the detail box's content rows when the body has room.
 	glDetailRows = 4
+	// glMinBody is the fewest rows a screen gives the grouped body, however short
+	// the terminal is.
+	glMinBody = 9
 )
 
 // glRow is one line of a group. A header row labels a run of rows under it and
