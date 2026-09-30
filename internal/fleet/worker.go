@@ -119,7 +119,7 @@ type Worker struct {
 
 	now        func() time.Time
 	surveyed   bool   // kanban.survey already considered this start
-	swept      bool   // kanban.security sweep already ran this start
+	sweptRef   string // HEAD the kanban.security sweep last ran for
 	reconciled string // artefact signature the cards were last reconciled against
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
