@@ -116,6 +116,11 @@ type acpSession struct {
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
+	// snaps keeps the history on either side of each finished turn, keyed by
+	// the turn's user entry in the transcript, so /tree can return to a point
+	// without rebuilding it from the transcript (which holds the raw prompt,
+	// not the sanitized one the model was given).
+	snaps map[string]turnSnap
 }
 
 // Serve runs the protocol on r and w until the peer disconnects.
@@ -209,14 +214,28 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	if !filepath.IsAbs(p.Cwd) {
 		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "cwd must be an absolute path")
 	}
-	id := session.MustID()
-	ag, err := s.build(ctx, filepath.Clean(p.Cwd), id)
+	ss, err := s.openSession(ctx, filepath.Clean(p.Cwd))
 	if err != nil {
 		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
-	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now(), mode: modeAuto}
+	// The editor learns the session's slash commands only after it has the id.
+	return &jsonrpc.Reply{
+		Result: map[string]any{"sessionId": ss.id, "modes": modeState(modeAuto)},
+		After:  func() { s.announceCommands(ss) },
+	}, nil
+}
+
+// openSession builds an agent and a transcript for a new editor session and
+// registers it with the server and the mirror.
+func (s *Server) openSession(ctx context.Context, cwd string) (*acpSession, error) {
+	id := session.MustID()
+	ag, err := s.build(ctx, cwd, id)
+	if err != nil {
+		return nil, err
+	}
+	ss := &acpSession{id: id, cwd: cwd, agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now(), mode: modeAuto, snaps: map[string]turnSnap{}}
 	if s.opts.Transcript != nil {
-		if l := s.opts.Transcript(filepath.Clean(p.Cwd), id); l != nil {
+		if l := s.opts.Transcript(cwd, id); l != nil {
 			ss.log = l
 		}
 	}
@@ -235,7 +254,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 			s.opts.Mirror.Opened(id, ss.cwd, name)
 		}
 	}
-	return map[string]any{"sessionId": id, "modes": modeState(modeAuto)}, nil
+	return ss, nil
 }
 
 func (s *Server) lookup(id string) *acpSession {
@@ -318,6 +337,11 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "empty prompt")
 	}
 
+	// /tree and /fork are the harness's own commands: the model never sees them.
+	if reply, ok := s.sessionCommand(ctx, ss, text); ok {
+		return reply, nil
+	}
+
 	ss.mu.Lock()
 	if ss.cancel != nil {
 		ss.mu.Unlock()
@@ -339,7 +363,7 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		// A marker per image and never the bytes, as in the TUI transcript.
 		userMeta = map[string]any{"images": markers}
 	}
-	ss.log.User(text, userMeta)
+	userID := ss.log.User(text, userMeta)
 	s.nameFromPrompt(ss, text)
 	s.touch(ss)
 	var res run.Result
@@ -398,7 +422,11 @@ run:
 	if prompt == "" {
 		prompt = text
 	}
+	n := len(ss.history)
 	ss.history = append(ss.history, run.Turn{Role: "user", Content: prompt}, run.Turn{Role: "assistant", Content: res.Reply})
+	if userID != "" {
+		ss.snaps[userID] = turnSnap{before: ss.history[:n:n], after: ss.history[: n+2 : n+2]}
+	}
 	ss.updated = time.Now()
 	turns := len(ss.history) / 2
 	ss.mu.Unlock()
