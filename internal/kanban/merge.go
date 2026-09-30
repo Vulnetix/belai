@@ -127,6 +127,9 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 // pulled copy of the same claim carries an older lease: the later one stands,
 // or the claim would lapse under a working worker.
 func keepAgent(r *Item, local Item) {
+	// The finding fields are host-local: the site does not carry them, so a
+	// pulled copy never clears or replaces them.
+	r.Finding, r.SeenRef, r.Verdict, r.VEX = local.Finding, local.SeenRef, local.Verdict, local.VEX
 	if !r.remoteAgent {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
