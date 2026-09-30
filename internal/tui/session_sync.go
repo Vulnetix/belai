@@ -265,6 +265,12 @@ func userEntry(m components.Message) session.Entry {
 	if m.RemoteID != "" {
 		e.Meta = map[string]any{"source": "web", "remote_prompt_id": m.RemoteID}
 	}
+	if imgs, ok := m.Meta["images"]; ok {
+		if e.Meta == nil {
+			e.Meta = map[string]any{}
+		}
+		e.Meta["images"] = imgs
+	}
 	return e
 }
 

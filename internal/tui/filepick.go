@@ -23,13 +23,6 @@ const noFileSelection = -1
 // answer is cached, not frozen.
 const fileListTTL = 30 * time.Second
 
-// imageExtensions are filtered out of the file chooser this round. See
-// docs/image-attachments.md for the deferred image attachment design.
-var imageExtensions = map[string]bool{
-	"png": true, "jpg": true, "jpeg": true, "gif": true, "webp": true,
-	"bmp": true, "ico": true, "tif": true, "tiff": true, "avif": true,
-}
-
 // filesLoadedMsg carries the result of an async workspace listing.
 type filesLoadedMsg struct {
 	files []string
@@ -64,7 +57,7 @@ func (a *App) fileListCmd() tea.Cmd {
 				if p == "" {
 					continue
 				}
-				if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))] {
+				if hiddenFromChooser(p) {
 					continue
 				}
 				// The primary root stays relative; extra roots are returned as
@@ -231,7 +224,7 @@ func fsListCmd(dir string) tea.Cmd {
 				out = append(out, name+"/")
 				continue
 			}
-			if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))] {
+			if hiddenFromChooser(name) {
 				continue
 			}
 			out = append(out, name)
@@ -292,7 +285,7 @@ func (a *App) fileCandidates() []string {
 	cands := filterCandidates(a.files, prefix)
 	var out []string
 	for _, p := range cands {
-		if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))] {
+		if hiddenFromChooser(p) {
 			continue
 		}
 		out = append(out, p)

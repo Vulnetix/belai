@@ -30,12 +30,26 @@ func normaliseTurns(in []run.Turn) []run.Turn {
 				} else {
 					prev.Content += t.Content
 				}
-				prev.Attachments = t.Attachments
+				// The later turn's text attachments win, as before; images from
+				// both turns are kept, so merging two prompts cannot silently
+				// drop a picture.
+				prev.Attachments = append(imageOnly(prev.Attachments), t.Attachments...)
 				prev.Directive = t.Directive
 				continue
 			}
 		}
 		out = append(out, t)
+	}
+	return out
+}
+
+// imageOnly returns the image attachments of atts.
+func imageOnly(atts []run.Attachment) []run.Attachment {
+	var out []run.Attachment
+	for _, a := range atts {
+		if a.Kind == run.AttachmentImage {
+			out = append(out, a)
+		}
 	}
 	return out
 }

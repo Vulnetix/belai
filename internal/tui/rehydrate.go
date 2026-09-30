@@ -144,6 +144,9 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 	for i, e := range emit {
 		switch e.Type {
 		case "user":
+			// The images a prompt carried come back as marker rows ahead of it, as
+			// they were shown live. Nothing is re-attached.
+			msgs = append(msgs, imageMarkerRows(e.Meta)...)
 			remoteID, _ := e.Meta["remote_prompt_id"].(string)
 			msgs = append(msgs, components.Message{Role: "user", Content: e.Content, RemoteID: remoteID})
 		case "assistant":

@@ -147,16 +147,16 @@ func TestKiroUserImageRidesTheUserMessage(t *testing.T) {
 
 func TestAcceptsImagesProfileDeclarationWins(t *testing.T) {
 	yes, no := true, false
-	if !(Config{Provider: "custom", Model: "my-local-vlm", Vision: &yes}).acceptsImages() {
+	if !(Config{Provider: "custom", Model: "my-local-vlm", Vision: &yes}).AcceptsImages() {
 		t.Fatal("a declared true was ignored")
 	}
-	if (Config{Provider: "custom", Model: "claude-opus-5", Vision: &no}).acceptsImages() {
+	if (Config{Provider: "custom", Model: "claude-opus-5", Vision: &no}).AcceptsImages() {
 		t.Fatal("a declared false was ignored")
 	}
-	if !(Config{Provider: "anthropic", Model: "claude-opus-5"}).acceptsImages() {
+	if !(Config{Provider: "anthropic", Model: "claude-opus-5"}).AcceptsImages() {
 		t.Fatal("the id rule should say yes for a Claude model")
 	}
-	if (Config{Provider: "custom", Model: "my-local-vlm"}).acceptsImages() {
+	if (Config{Provider: "custom", Model: "my-local-vlm"}).AcceptsImages() {
 		t.Fatal("an unknown id is text-only")
 	}
 }

@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/vulnetix/belai/internal/imageguard"
 	"github.com/vulnetix/belai/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/transcript"
 )
 
@@ -22,6 +24,10 @@ type attachMeta struct {
 	Trust     string
 	FileCount int   // recursive file count for directories
 	TotalSize int64 // recursive byte total for directories
+
+	// Width and Height are the admitted pixel size of an image attachment.
+	Width  int
+	Height int
 }
 
 // SetBodyTokens returns m with Tokens recomputed from body, so the estimate
@@ -120,4 +126,16 @@ func attachmentFileCountLabel(n int) string {
 		return "1 file"
 	}
 	return fmt.Sprintf("%d files", n)
+}
+
+// imageAttachmentMeta computes metadata for an admitted image attachment. The
+// token figure is the estimate for the re-encoded PNG that is actually sent.
+func imageAttachmentMeta(path string, adm imageguard.Image) attachMeta {
+	m := attachMeta{MIMEType: detectMIMEType(path), Trust: trustStatusForPath(path), Width: adm.Width, Height: adm.Height}
+	if info, err := os.Stat(path); err == nil {
+		m.FileSize = info.Size()
+		m.DiskSize = diskSize(info)
+	}
+	m.Tokens = run.ImageTokens(adm.PNG)
+	return m
 }

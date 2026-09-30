@@ -2043,7 +2043,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		// Kiro decides from its live catalogue below; every other surface
 		// decides from the model id.
 		if d.kind != kindKiro {
-			turns = prepareImages(turns, cfg.acceptsImages())
+			turns = prepareImages(turns, cfg.AcceptsImages())
 		}
 
 		switch d.kind {

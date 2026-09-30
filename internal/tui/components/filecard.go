@@ -19,6 +19,12 @@ type FileMeta struct {
 	Tokens    int
 	Trust     string
 	FileCount int
+	// Width and Height are the pixel size of an image attachment; zero for a
+	// file. ImageNote says whether the image goes to the model ("sent", "not
+	// sent: this model has no image input", "held for the next prompt").
+	Width     int
+	Height    int
+	ImageNote string
 }
 
 // fileCardMinWidth is the narrowest card that still renders a readable body.
@@ -38,7 +44,11 @@ func FileCard(meta FileMeta, width int) (string, LineMap) {
 	metaLine := fileMetaLine(meta)
 	trustLine := "trust: " + meta.Trust
 
-	body := strings.Join([]string{metaLine, trustLine}, "\n")
+	lines := []string{metaLine, trustLine}
+	if meta.ImageNote != "" {
+		lines = append(lines, "image: "+meta.ImageNote)
+	}
+	body := strings.Join(lines, "\n")
 	return Panel{
 		Title:  title,
 		Meta:   formatFileCardTokens(meta.Tokens),
@@ -62,8 +72,14 @@ func FileCardCompact(meta FileMeta, width int) string {
 		line += fmt.Sprintf(" · %d files · %s", meta.FileCount, formatAttachSize(meta.TotalSize))
 	} else {
 		line += fmt.Sprintf(" · %s · %s", meta.MIMEType, formatAttachSize(meta.FileSize))
+		if meta.Width > 0 {
+			line += fmt.Sprintf(" · %dx%d", meta.Width, meta.Height)
+		}
 	}
 	line += " · " + formatFileCardTokens(meta.Tokens)
+	if meta.ImageNote != "" {
+		line += " · " + meta.ImageNote
+	}
 	if visibleLen(line) > inner {
 		line = truncateRunes(line, inner)
 	}
@@ -135,6 +151,9 @@ func fileMetaLine(meta FileMeta) string {
 	line := meta.MIMEType
 	if meta.FileSize > 0 {
 		line += fmt.Sprintf(" · %s", formatAttachSize(meta.FileSize))
+	}
+	if meta.Width > 0 {
+		line += fmt.Sprintf(" · %dx%d", meta.Width, meta.Height)
 	}
 	if meta.DiskSize > 0 && meta.DiskSize != meta.FileSize {
 		line += fmt.Sprintf(" · disk %s", formatAttachSize(meta.DiskSize))

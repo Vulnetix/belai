@@ -95,14 +95,20 @@ func TestFileCandidatesFilter(t *testing.T) {
 	}
 }
 
-func TestFilePickerFiltersImageExtensions(t *testing.T) {
+func TestFilePickerOffersAttachableImagesOnly(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
-	setFileList(a, "README.md", "screenshot.png", "photo.jpg", "animation.gif", "doc.webp")
+	setFileList(a, "README.md", "screenshot.png", "photo.jpg", "shot.jpeg", "animation.gif", "doc.webp", "icon.ico")
 	a.editor.SetValue("see @")
 	a.editor.CursorEnd()
 	cands := a.fileCandidates()
-	if len(cands) != 1 || cands[0] != "README.md" {
-		t.Fatalf("candidates = %v, want only README.md", cands)
+	want := map[string]bool{"README.md": true, "screenshot.png": true, "photo.jpg": true, "shot.jpeg": true}
+	if len(cands) != len(want) {
+		t.Fatalf("candidates = %v, want %d (PNG and JPEG are offered, other image formats cannot be attached and are not)", cands, len(want))
+	}
+	for _, c := range cands {
+		if !want[c] {
+			t.Fatalf("unexpected candidate %q in %v", c, cands)
+		}
 	}
 }
 

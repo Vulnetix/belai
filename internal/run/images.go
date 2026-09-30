@@ -6,7 +6,9 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	"github.com/vulnetix/belai/internal/kiromodels"
 	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/wire"
 )
 
@@ -28,12 +30,19 @@ const (
 	imageEarlierNote = "\n[harness: an earlier image is not sent again]"
 )
 
-// acceptsImages reports whether the configured model takes image input. A
+// AcceptsImages reports whether the configured model takes image input. A
 // provider profile's declaration wins; otherwise the model id decides. Kiro
-// asks its live catalogue instead and does not use this.
-func (c Config) acceptsImages() bool {
+// asks its live catalogue, and until that has been fetched it says yes, since
+// the request path makes the final call from the live catalogue anyway.
+func (c Config) AcceptsImages() bool {
 	if c.Vision != nil {
 		return *c.Vision
+	}
+	if c.Auth == provider.AuthKiro {
+		if info, found, _ := kiromodels.Lookup(c.BaseURL, c.Model); found {
+			return info.Images
+		}
+		return true
 	}
 	return models.Vision(c.Provider, c.Model)
 }

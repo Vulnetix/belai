@@ -187,10 +187,12 @@ minutes, so it isn't retried on every request.
 - only when the model lists `IMAGE` among its input types. Otherwise the
   images are dropped and a harness note says so.
 
-Egress never folds image bytes into the text. The one thing that creates an
-image today is a capture tool (`Screenshot`): its admitted PNG rides on the
-current user message beside the tool result, under the same rules (see
-[Images](image-attachments.md)). A user-attached image is still not built.
+Egress never folds image bytes into the text. Images come from two places: a
+capture tool (`Screenshot`), whose admitted PNG rides on the current user
+message beside the tool result, and the user, whose attached image rides that
+message directly. Both follow the rules in [Images](image-attachments.md). An
+image the service would refuse (over 3.75 MB, or a format it does not list)
+is named in the message or the tool result rather than dropped silently.
 
 ## Limits
 

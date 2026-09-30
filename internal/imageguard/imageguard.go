@@ -7,9 +7,10 @@
 // or exotic format) does not survive the re-encode or is refused outright.
 // The result carries pixels and nothing else.
 //
-// Only harness-owned capture tools (Screenshot) may hand an image to this
-// package. It is not a general way to admit an image a model or a tool
-// fetched from elsewhere.
+// Only two kinds of caller may hand an image to this package: a harness-owned
+// capture tool (Screenshot), and the user attaching a file they chose (an @
+// path, and the other attach paths). It is not a way to admit an image a model
+// or a tool fetched from elsewhere.
 package imageguard
 
 import (

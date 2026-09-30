@@ -301,13 +301,18 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `resilience.max_background_processes` caps the running ones and a project
   layer may only lower it.
 - **Pixels are admitted by `internal/imageguard`, never by the text
-  classifier, and only a capture tool may return them.** `tools.Result.Images`
-  is honoured for `KindScreenshot` alone and dropped for every other kind. An
+  classifier, and only a capture tool or the user may supply them.**
+  `tools.Result.Images` is honoured for `KindScreenshot` alone and dropped for
+  every other kind; a user attaches an image with `@path` (confined to the
+  session roots after symlinks, never read through `tools.Read`, at most eight
+  a prompt). An
   image must decode as PNG or JPEG inside the pixel and byte budget, is
   bounded to a long edge, flattened and re-encoded as a new PNG; any failure
   refuses it, and a withheld text result carries no image. Only the newest
-  tool image is sent, and a model that `models.Vision` does not name gets a
-  harness note instead. The classifier payload never carries an image. Do not
+  image is sent, whichever role holds it, and a model that neither a provider
+  profile's `images` declaration nor `models.Vision` accepts gets a harness
+  note instead. Bytes never enter the session record, sync or telemetry: a
+  user prompt records only a marker (name, type, size, dimensions). The classifier payload never carries an image. Do not
   add a second admission path or an image-carrying kind without this gate.
 - **Screenshot runs harness-fixed programs, on loopback pages or after an ask.**
   A `url` capture must pass `netguard.CheckURL` and name a loopback host, runs a
