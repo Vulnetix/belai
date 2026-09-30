@@ -301,17 +301,6 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </article>
     ))}
   </div>
-  <p class="mt-4 max-w-[72ch] text-xs text-vx-ink/60">
-    Product names and logos belong to their owners and appear here only to name the editor. Any other ACP
-    client takes the same command, and <a class="underline" href={`${docBase}acp.md`}>docs/acp.md</a> covers
-    the protocol methods, security model and limits.
-  </p>
-
-  <p class="mt-10 max-w-[72ch] text-sm text-vx-ink/75">
-    For a single run, <code class="mono">belai -prompt "…" -usage-json usage.json</code> writes the tokens each
-    role spent, cache reads and writes included, and how big each part of the requests was: sizes, never
-    content.
-  </p>
 
   <Limits items={limits} class="mt-16" />
 </SealedSection>
