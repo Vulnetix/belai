@@ -508,36 +508,16 @@ func (a *App) securityLabel() string {
 // the least important first, so the ones that matter most (movement, edit,
 // back, and the keys a test result offers) always stay on screen.
 func (a *App) modelHelpLine(w int) string {
-	type key struct {
-		key, label string
-		prio       int // lower is kept longer
-	}
-	keys := []key{
+	keys := []glKey{
 		{"↑↓", "field", 1}, {"←→", "role", 1}, {"⏎", "edit", 1},
 		{"tab", "mode", 6}, {"s", "save to", 3}, {"c", "clear", 5}, {"p", "providers", 4},
 	}
 	if a.modelTest != nil {
-		keys = append(keys, key{"d", "test log", 2})
+		keys = append(keys, glKey{"d", "test log", 2})
 	}
 	if extra := a.modelTestHelp(); len(extra) >= 2 {
-		keys = append(keys, key{extra[0], extra[1], 2})
+		keys = append(keys, glKey{extra[0], extra[1], 2})
 	}
-	keys = append(keys, key{"esc", "back", 1})
-	render := func(ks []key) string {
-		var pairs []string
-		for _, k := range ks {
-			pairs = append(pairs, k.key, k.label)
-		}
-		return components.HelpBar(pairs...)
-	}
-	for ansi.StringWidth(render(keys)) > w && len(keys) > 1 {
-		drop, worst := -1, 0
-		for i, k := range keys {
-			if k.prio >= worst {
-				drop, worst = i, k.prio
-			}
-		}
-		keys = append(keys[:drop], keys[drop+1:]...)
-	}
-	return render(keys)
+	keys = append(keys, glKey{"esc", "back", 1})
+	return glHelpLine(keys, w)
 }
