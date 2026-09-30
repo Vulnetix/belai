@@ -15,6 +15,7 @@ var tips = []string{
 	"ctrl+x copies the session id",
 	"shift+tab cycles mode: agent, plan, goal",
 	"/resume returns to an earlier session",
+	"/tree shows the session as branches; jump back to any reply and continue from there",
 	"f3 toggles guardrails",
 	"f9 opens the runs panel; tab cycles activity, subagents, processes, kanban, crew and git",
 	"f9 then tab to kanban: move, assign and hand items to a crew without leaving chat",

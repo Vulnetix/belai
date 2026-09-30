@@ -440,6 +440,7 @@ type App struct {
 	agentState             agentViewState
 	planReview             planReviewState
 	resumeState            resumeViewState
+	treeState              treeViewState
 	vulnetixConfigState    vulnetixConfigState
 	vulnetixListState      vulnetixListState
 	vulnetixArtifactsState vulnetixArtifactsState

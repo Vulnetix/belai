@@ -379,6 +379,9 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.push(viewResume)
 	})
+	r.Register("tree", "browse the session as a tree, continue from an earlier point or fork a branch", nil, func(a *App, arg string) tea.Cmd {
+		return a.treeCommand(arg)
+	})
 	r.Register("plugin", "list, enable, disable or remove plugins (install with belai plugin install)", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(pluginCommand(arg))
 		return nil
