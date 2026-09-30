@@ -239,6 +239,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.security.reconcile` | bool | Before each claim, compare the cards with the artefacts on disk: a finding that left the report becomes a gone card for the verifier. Never scans. |
 | `kanban.security.verdicts` | string[] | The verdicts `KanbanVerdict` may record: `fixed`, `false_positive`, `no_fix`, `needs_human`, `rejected`. Empty: the worker has no such tool. |
 | `kanban.security.vex` | bool | The harness writes a VEX for each verdict the worker records, and the worker may reject a claim. Needs `verdicts`. |
+| `kanban.security.rounds` | int | Turns one item may take, 0 to 5 (0 or 1: one turn). After each turn the harness scans the worktree and, while the scanner still reports the card's finding, runs another turn with the result attached. Needs `workspace.isolation: worktree`. See [the security crew](fleet.md#the-security-crew). |
 | `kanban.quality.sweep` | bool | On each HEAD with no quality record, the harness runs the detected suites (or `tests.command`), records the result for that commit and files seed cards for the worker. Needs `handoff_to` or `handoff_labels`. See [the delivery crew](fleet.md#the-delivery-crew). |
 | `kanban.quality.list` | string | Where the handoffs from a seeded `quality` card go, whatever the model asks: `review` (default) or `backlog`. |
 | `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
@@ -259,7 +260,7 @@ Validation fails closed:
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
 - a `survey` block needs a `title`, a `list` of `review` or `backlog`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
 - a `quality` block needs a `list` of `review` or `backlog`, and `sweep` needs `handoff_to` or `handoff_labels`;
-- a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, and only a worker with `vex` may list `rejected`.
+- a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, only a worker with `vex` may list `rejected`, and `rounds` runs 0 to 5 and needs `isolation: worktree`.
 
 A definition can also be written as Markdown with YAML front-matter, the
 shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,

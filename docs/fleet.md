@@ -341,7 +341,8 @@ the repository's findings from scan to verified fix. Two checks stop double
 work, and there is no other gate: no cache and no daily limit.
 
 1. **One crew per repository.** A second start is refused while a worker of
-   the crew is live in the same repository.
+   the crew is live in the same repository. The check and the spawns run
+   under one lock, so two starts fired together cannot both get in.
 2. **One review per commit.** The scout reads `.vulnetix/` (`memory.yaml`, the
    CycloneDX files and the SARIF files) for the full commit id of HEAD. When
    an artefact records it, no scan runs. When none does, the harness runs the
@@ -361,9 +362,26 @@ card: it moves to `review` labelled `gone` and `needs-verify`, with the verdict
 claim and never scan themselves. A kind whose scanner produced nothing for HEAD
 is not compared, so a missing report never closes a card.
 
-A patcher fixes one card on its branch. After each attempt it re-runs the
-scanner and reads the result before choosing what to try next. It can also
-record a verdict with `KanbanVerdict` instead of a fix. The verifier checks
+After a sweep that files new cards, the harness files one more item for that
+commit, labelled `sweep`, and the scout works it as a model turn: it runs the
+Vulnetix fix dry run for the manifests the new cards name and adds a note to
+each card with the fixed version, the exact edit and the lockfile command, so a
+patcher starts with the answer. The claim lists which cards it may annotate. The
+harness derives them from fields it set (the commit the card was filed at, its
+list, its labels, whether it is claimed), never from the item's text, and those
+cards take notes but no edit or move.
+
+A patcher fixes one card on its branch in up to `rounds` turns (three for the
+built-in patcher). After each turn the harness scans the worktree itself, with
+the fixed `sca` argv, and while the scanner still reports the card's finding it
+runs another turn with the result attached: the package, version, file, severity
+and how many findings remain, never scanner text. If the scanner still reports
+it after the last round, the attempt fails whatever the model said, and the
+usual attempt limit applies. A scan that gives no answer (no Vulnetix CLI, a
+failed scan) leaves a single turn. The scan's `.vulnetix` directory is removed
+from the worktree, so scan output is never committed, and the rounds share the
+item's token and wall budgets. The patcher can also
+record a verdict with `KanbanVerdict` instead of a fix, which ends the rounds. The verifier checks
 every claim itself: it re-runs the scanner, repeats a false positive's
 evidence, looks again for a fix, and for a gone card works out why the finding
 left the report. It then records its own verdict, and the harness moves the

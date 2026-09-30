@@ -284,6 +284,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   verification surface, the completion verification pass and the no-write
   escalation. It never changes the mode, a permission or a gate, the goal
   evaluator still ends the goal, and any unknown answer runs the ordinary goal.
+  Goal judge (`goal_judge`, `agent/goaljudge.go`) sees the goal, the todo list and
+  the pass ledger's facts only, never the evidence, the reply or file contents. It
+  settles a pass only when one option is at or above `goal_complete_at` (default
+  0.90, never below 0.5) or `goal_not_started_at` and both rivals are at or below
+  `goal_rival_max` (never above 0.5); those keys are read from the user's layers
+  only. Anything else, an error or a timeout goes to the model judge with the
+  scores as a harness line and an instruction to accept completion only when
+  tools showed a check. A complete verdict still meets the verification gate.
 - **Every role-manager decision is written to the session record.**
   `Activity.Record` builds a `rolemanager` entry for every event, shown or
   hidden, and `rolemanager.AddSink` delivers activities losslessly and in
@@ -536,7 +544,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   with a verdict. The VEX is composed by `internal/vex` from an enum verdict, an
   OpenVEX justification enum and cleaned one-line statements, written to the
   trusted repository root (never a worktree) under a plain-identifier file name
-  with a symlink check and an atomic rename.
+  with a symlink check and an atomic rename. A crew start (the
+  one-per-repository check, the worker cap and the spawns) runs under
+  `Registry.WithCrewStart`, one lock, so concurrent starts cannot both pass.
+  The enrichment item that has the scout plan fixes is filed by the harness
+  (`Once`, `sweep:<commit>`); the cards its claim may annotate
+  (`WorkerClaim.Notable`, note-only, no edit or move) come from harness-set
+  fields (`Finding`, `SeenRef`, list, labels, claim), never from item text.
+  Feedback rounds (`kanban.security.rounds`) scan the worktree with the fixed
+  `sca` argv, read only identifiers, versions and counts from the artefacts, put
+  a harness-composed account on the next turn, delete the `.vulnetix` directory
+  the scan created (never following a link) so scan output is never committed,
+  and fail the attempt when the scanner still reports the finding after the last
+  round, whatever the model said. No scanner text reaches a model.
 - **Fleet workers claim by harness, work in isolation, and hand back facts.**
   `internal/fleet` workers (`belai agent run|start`, `/fleet`) take work
   only from the kanban board. The rules:
