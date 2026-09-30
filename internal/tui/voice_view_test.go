@@ -383,25 +383,37 @@ func TestVoiceArtIsThreeRowsOfNineCells(t *testing.T) {
 	}
 }
 
+// dots counts the lit Braille dots in s.
+func dots(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= 0x2800 && r <= 0x28FF {
+			for b := r - 0x2800; b != 0; b >>= 1 {
+				n += int(b & 1)
+			}
+		}
+	}
+	return n
+}
+
+func hasBraille(s string) bool { return dots(s) > 0 }
+
 func TestVoiceArtIsAMicrophone(t *testing.T) {
-	plain := func(l voiceLook, f int) []string {
-		art := voiceArtFor(l, f)
-		out := make([]string, len(art))
-		for i, r := range art {
-			out[i] = ansi.Strip(r)
-		}
-		return out
-	}
-	mic := plain(lookListening, 0)
-	// A capsule on top, a holder around a pole in the middle, a base below.
-	want := []string{"   ███   ", "  █ █ █  ", "   ▀█▀   "}
-	for i := range want {
-		if mic[i] != want[i] {
-			t.Fatalf("row %d of the microphone = %q, want %q", i, mic[i], want[i])
+	art := voiceArtFor(lookListening, 0)
+	var rows [voiceArtRows]string
+	for i, r := range art {
+		rows[i] = ansi.Strip(r)
+		if w := lipgloss.Width(rows[i]); w != voiceArtCols {
+			t.Fatalf("row %d is %d cells, want %d", i, w, voiceArtCols)
 		}
 	}
-	if !strings.Contains(mic[0], "███") || !strings.Contains(mic[2], "▀█▀") {
-		t.Fatal("no capsule and base")
+	// The capsule is on top and the base at the bottom, so the top row is
+	// dense and the mark is narrower than its box (room for the arcs).
+	if dots(rows[0]) < 4 || dots(rows[2]) < 2 {
+		t.Fatalf("no capsule and base:\n%s", strings.Join(rows[:], "\n"))
+	}
+	if strings.TrimSpace(rows[0]) == rows[0] {
+		t.Fatalf("the mark has no room for arcs: %q", rows[0])
 	}
 }
 
@@ -410,25 +422,26 @@ func TestVoiceArtStatesAreDistinctWithoutColour(t *testing.T) {
 		art := voiceArtFor(l, f)
 		return ansi.Strip(strings.Join(art[:], "\n"))
 	}
-	// Armed and paused are the same still, light mic.
+	// Armed and paused are the same still, outlined mic.
 	if plain(lookIdle, 0) != plain(lookPaused, 3) || plain(lookIdle, 0) != plain(lookIdle, 9) {
 		t.Fatal("armed and paused are not one still mark")
 	}
-	// Muted is that mic with a slash through it.
-	if plain(lookMuted, 0) == plain(lookIdle, 0) || !strings.Contains(plain(lookMuted, 0), "╲") {
+	// Muted is that mic with a slash through it: strictly more dots.
+	if plain(lookMuted, 0) == plain(lookIdle, 0) || dots(plain(lookMuted, 0)) <= dots(plain(lookIdle, 0)) {
 		t.Fatalf("muted has no slash:\n%s", plain(lookMuted, 0))
 	}
 	// Listening beats between a solid and a soft mic, and holds inside a beat.
 	if plain(lookListening, 0) != plain(lookListening, 3) || plain(lookListening, 0) == plain(lookListening, 4) {
 		t.Fatal("listening does not beat every four frames")
 	}
-	// Hearing grows one and then two arcs to each side.
-	h0, h1 := plain(lookHearing, 0), plain(lookHearing, 1)
-	if h0 == h1 || strings.Count(h0, "│") != 2 || strings.Count(h1, "│") != 4 {
-		t.Fatalf("hearing arcs:\n%s\n--\n%s", h0, h1)
+	if dots(plain(lookListening, 0)) <= dots(plain(lookListening, 4)) {
+		t.Fatal("the solid beat is not denser than the soft beat")
 	}
-	if plain(lookListening, 0) == plain(lookHearing, 0) || strings.Contains(plain(lookListening, 0), "│") {
-		t.Fatal("listening shows sound arcs before there is any sound")
+	// Hearing grows one and then two arcs to each side of the solid mic.
+	h0, h1 := plain(lookHearing, 0), plain(lookHearing, 1)
+	base := dots(plain(lookListening, 0))
+	if h0 == h1 || dots(h0) <= base || dots(h1) <= dots(h0) {
+		t.Fatalf("hearing arcs:\n%s\n--\n%s", h0, h1)
 	}
 	// Working alternates and is not any other state.
 	if plain(lookWorking, 0) == plain(lookWorking, 2) {
@@ -449,21 +462,20 @@ func TestVoiceArtStatesAreDistinctWithoutColour(t *testing.T) {
 	}
 }
 
-func TestOverlayVoiceArtCentresAndPreservesWidth(t *testing.T) {
+func TestOverlayVoiceArtIsFlushRightAndPreservesWidth(t *testing.T) {
 	body := strings.Join([]string{"hi", "", "", "row four"}, "\n")
-	out, ok := overlayVoiceArt(body, 40, voiceArtFor(lookListening, 0))
+	art := voiceArtFor(lookHearing, 1)
+	out, ok := overlayVoiceArt(body, 40, art)
 	if !ok {
 		t.Fatal("the mark did not fit in an empty-ish composer")
 	}
 	lines := strings.Split(ansi.Strip(out), "\n")
-	left := (40 - voiceArtCols) / 2
 	for r := 0; r < voiceArtRows; r++ {
 		if w := lipgloss.Width(lines[r]); w != 40 {
 			t.Fatalf("row %d is %d cells, want the body width 40", r, w)
 		}
-		cut := string([]rune(lines[r])[left : left+voiceArtCols])
-		if strings.TrimSpace(cut) == "" {
-			t.Fatalf("row %d has no mark at the centre: %q", r, lines[r])
+		if !strings.HasSuffix(lines[r], ansi.Strip(art[r])) {
+			t.Fatalf("row %d does not end with the mark: %q", r, lines[r])
 		}
 	}
 	if !strings.HasPrefix(lines[0], "hi") {
@@ -475,7 +487,7 @@ func TestOverlayVoiceArtCentresAndPreservesWidth(t *testing.T) {
 }
 
 func TestOverlayVoiceArtNeverCoversTypedText(t *testing.T) {
-	long := strings.Repeat("x", 30)
+	long := strings.Repeat("x", 35)
 	if out, ok := overlayVoiceArt(long+"\n\n", 40, voiceArtFor(lookListening, 0)); ok || out != long+"\n\n" {
 		t.Fatal("the mark was drawn over text that reaches its columns")
 	}
@@ -494,18 +506,26 @@ func TestOverlayVoiceArtNeverCoversTypedText(t *testing.T) {
 	}
 }
 
-func TestComposerShowsTheCentredMarkAndFallsBackToTheEdgeIcon(t *testing.T) {
+func TestComposerShowsTheRightMarkAndFallsBackToTheEdgeIcon(t *testing.T) {
 	a, _ := started(t, config.VoiceSettings{Enabled: on(), Mode: config.VoiceModeListen})
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	waitFor(t, "listening", func() bool { return a.voice.eng.State() == voice.StateListening })
 	view := ansi.Strip(a.renderComposer())
-	if !strings.ContainsAny(view, "█▒░▀") {
-		t.Fatalf("no round mark in the composer:\n%s", view)
+	if !hasBraille(view) {
+		t.Fatalf("no mark in the composer:\n%s", view)
+	}
+	// The mark sits in the right half of the composer, not the middle.
+	for _, l := range strings.Split(view, "\n") {
+		for i, r := range []rune(l) {
+			if r >= 0x2800 && r <= 0x28FF && i < len([]rune(l))/2 {
+				t.Fatalf("the mark is left of centre:\n%s", view)
+			}
+		}
 	}
 	// Long typed text on the first row: the mark gives way to the small icon.
-	a.editor.SetValue(strings.Repeat("word ", 20))
+	a.editor.SetValue(strings.Repeat("x", 110))
 	view = ansi.Strip(a.renderComposer())
-	if strings.ContainsAny(view, "█▒░▀") {
+	if hasBraille(view) {
 		t.Fatalf("the mark was drawn over typed text:\n%s", view)
 	}
 	if !strings.ContainsAny(view, "◉◎") {

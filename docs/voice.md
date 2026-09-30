@@ -261,9 +261,9 @@ result that was already being recognised cannot land late.
 
 Three things show the state. The `voice:` switch in the footer says it in
 words. A microphone sits in the composer: a capsule on a U-shaped holder with
-a pole and a base, three rows by nine cells, drawn with block and box glyphs
+a pole and a base, three rows by nine cells, drawn as a Braille dot bitmap
 (the design system allows no emoji). It starts on the first text row and is
-centred horizontally. The composer's frame reacts to the voice.
+flush right. The composer's frame reacts to the voice.
 Nothing is drawn while voice is off, and none of it appears on another
 screen's text field. The footer keeps its three-line height.
 
@@ -271,17 +271,17 @@ Where the text you typed reaches the mark's columns, the mark gives way and a
 small one-cell icon (`◉` `◎` `⊘` `◌`) is drawn at the right end of the first
 row instead, so nothing you wrote is ever covered. The empty composer's
 placeholder is shorter while voice runs (`Type, or hold f11 and speak…`) so the
-centred mark has room on an empty composer, and the text keeps two columns
+right-hand mark has room on an empty composer, and the text keeps two columns
 clear at the right for the small icon.
 
 | State | Footer | Composer mark | Meaning |
 | --- | --- | --- | --- |
 | downloading | `○ voice: downloading` | none | the model is being fetched |
-| loading | `○ voice: loading` | still, light-shaded microphone | the model is being read into memory |
-| paused | `○ voice: paused` | still, light-shaded microphone | the composer is unavailable and the microphone is closed |
-| push to talk | `○ voice: push to talk · f11` | still, light-shaded microphone | armed; the microphone is closed until you press the key |
-| muted | `○ voice: muted` | light-shaded microphone with a slash through it | listen mode, silenced with the key |
-| listening | `● voice: listening` | solid microphone pulsing to a soft-shaded one | the microphone is open and waiting for speech |
+| loading | `○ voice: loading` | still, outlined microphone | the model is being read into memory |
+| paused | `○ voice: paused` | still, outlined microphone | the composer is unavailable and the microphone is closed |
+| push to talk | `○ voice: push to talk · f11` | still, outlined microphone | armed; the microphone is closed until you press the key |
+| muted | `○ voice: muted` | outlined microphone with a slash through it | listen mode, silenced with the key |
+| listening | `● voice: listening` | solid microphone pulsing to a dithered one | the microphone is open and waiting for speech |
 | hearing | `● voice: hearing` | solid microphone with one, then two sound arcs each side, quickly | speech is being heard |
 | transcribing | `● voice: transcribing` | purple microphone alternating solid and soft | recognition or the fast model is working |
 
