@@ -19,12 +19,27 @@ func Text(s string) string {
 	if s == "" {
 		return s
 	}
+	if plainText(s) {
+		return Sanitize(s)
+	}
 	s = strings.ToValidUTF8(s, "")
 	if strings.ContainsRune(s, 0x1b) || strings.ContainsRune(s, 0x9b) {
 		s = ansi.Strip(s)
 	}
 	s = strings.Map(textRune, s)
 	return Sanitize(s)
+}
+
+// plainText reports whether s is printable ASCII plus newline and tab: text
+// that every rule of [Text] except the delimiter scrub leaves as it is.
+func plainText(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x80 || c == 0x7f || c < ' ' && c != '\n' && c != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // textRune is the per-rune rule of Text: -1 drops the rune.
