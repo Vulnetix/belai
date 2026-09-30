@@ -1,0 +1,222 @@
+package fleet
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/headless"
+	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tools"
+)
+
+func patcherProfile() agentprofile.AgentProfile {
+	p := scoutProfile()
+	p.Name = "t-patcher"
+	p.Kanban.Survey = nil
+	p.Kanban.Labels = []string{"vuln"}
+	p.Kanban.OnSuccess = agentprofile.Route{List: "review", Labels: []string{"needs-verify"}, DropLabels: []string{"vuln"}}
+	p.Kanban.Security = &agentprofile.SecuritySpec{Reconcile: true, Verdicts: []string{"fixed", "false_positive", "no_fix", "needs_human"}}
+	return p
+}
+
+func verifierProfile() agentprofile.AgentProfile {
+	p := scoutProfile()
+	p.Name = "t-verifier"
+	p.Kanban.Survey = nil
+	p.Kanban.Lists = []string{"review"}
+	p.Kanban.Labels = []string{"needs-verify"}
+	p.Kanban.OnSuccess = agentprofile.Route{List: "done", DropLabels: []string{"needs-verify"}}
+	p.Kanban.OnFailure = agentprofile.Route{List: "backlog", Labels: []string{"vuln"}, DropLabels: []string{"needs-verify"}}
+	p.Kanban.Security = &agentprofile.SecuritySpec{Verdicts: []string{"fixed", "false_positive", "no_fix", "needs_human", "rejected"}, VEX: true}
+	return p
+}
+
+// verdictRunner records a verdict through the real tool, then completes the
+// goal (or not).
+func verdictRunner(store *kanban.Store, args map[string]any, finish bool) TurnRunner {
+	return func(ctx context.Context, tt Turn) (run.Result, error) {
+		if args != nil {
+			tool := tools.KanbanVerdict{KanbanBase: tools.KanbanBase{Store: store, Claim: tt.Claim}}
+			if _, err := tool.Execute(ctx, args); err != nil {
+				return run.Result{}, err
+			}
+		}
+		if !finish {
+			return run.Result{StopReason: run.StopIncomplete, Passes: 2}, nil
+		}
+		return complete(ctx, tt)
+	}
+}
+
+// findingCardOn files a sweep card for w's repository, in the list and with
+// the labels a worker of that profile claims.
+func findingCardOn(t *testing.T, store *kanban.Store, w *Worker, list kanban.List, labels ...string) kanban.Item {
+	t.Helper()
+	in := findingCard(scanartifacts.ReviewFinding{ID: "GHSA-aaaa-bbbb-cccc", Kind: scanartifacts.KindSCA, Package: "lodash", Ecosystem: "npm", Version: "4.17.0", File: "package.json", Severity: "high"}, secHeadOld)
+	in.Labels = labels
+	it, _, err := store.UpsertFinding(in, kanban.ProvenanceFor(w.Repo, w.Record.ID, headless.HostID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list != kanban.Backlog {
+		if it, err = store.Move(it.ID, list, "", "s"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return it
+}
+
+func vexDoc(t *testing.T, repo, rel string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d map[string]any
+	if err := json.Unmarshal(data, &d); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func vexStatus(t *testing.T, repo, rel string) string {
+	t.Helper()
+	st := vexDoc(t, repo, rel)["statements"].([]any)[0].(map[string]any)
+	return st["status"].(string)
+}
+
+func TestPatcherFalsePositiveGoesToTheVerifierWithoutABranch(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, patcherProfile(), nil)
+	w.Runner = verdictRunner(store, map[string]any{
+		"verdict": "false_positive", "justification": "the vulnerable function is never imported",
+		"evidence": []any{"grep -rn 'lodash.template' . prints nothing"},
+	}, false) // a false positive does not need the fix goal to complete
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Review || got.Verdict != kanban.VerdictFalsePositive || got.ClaimedBy != "" ||
+		!slices.Contains(got.Labels, kanban.LabelNeedsVerify) || slices.Contains(got.Labels, kanban.LabelVuln) {
+		t.Fatalf("card %+v", got)
+	}
+	if got.Attempts != 0 {
+		t.Fatalf("a verdict is not a failed attempt: %d", got.Attempts)
+	}
+}
+
+func TestPatcherWithoutAVerdictIsTheOrdinaryFixRoute(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, patcherProfile(), verdictRunner(store, nil, true))
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Review || got.Verdict != kanban.VerdictFixed || !slices.Contains(got.Labels, kanban.LabelNeedsVerify) {
+		t.Fatalf("card %+v", got)
+	}
+}
+
+func TestPatcherThatDoesNotCompleteAndRecordsNothingFails(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, patcherProfile(), verdictRunner(store, nil, false))
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Backlog || got.Attempts != 1 || got.Verdict != "" {
+		t.Fatalf("card %+v", got)
+	}
+}
+
+func TestVerifierRoutesEachVerdictAndWritesTheVEX(t *testing.T) {
+	for name, c := range map[string]struct {
+		args   map[string]any
+		list   kanban.List
+		status string
+	}{
+		"fixed": {map[string]any{"verdict": "fixed", "justification": "the scan is clean on this checkout"}, kanban.Done, "fixed"},
+		"false positive": {map[string]any{"verdict": "false_positive", "justification": "never imported", "vex_reason": "vulnerable_code_not_in_execute_path",
+			"evidence": []any{"grep prints nothing"}}, kanban.Done, "not_affected"},
+		"no fix":      {map[string]any{"verdict": "no_fix", "justification": "upstream has no patched release", "tried": []any{"bumped to latest"}}, kanban.Blocked, "affected"},
+		"needs human": {map[string]any{"verdict": "needs_human", "justification": "a licence decision is needed"}, kanban.Blocked, "under_investigation"},
+	} {
+		store, reg := testEnv(t)
+		w := newWorker(t, store, reg, verifierProfile(), verdictRunner(store, c.args, true))
+		it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+		if err := w.Run(context.Background()); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got, _ := store.Get(it.ID)
+		if got.List != c.list || string(got.Verdict) != fmtVerdict(c.args) || got.Attempts != 0 || slices.Contains(got.Labels, kanban.LabelNeedsVerify) {
+			t.Fatalf("%s: card %+v", name, got)
+		}
+		if got.VEX != ".vulnetix/vex/GHSA-aaaa-bbbb-cccc.openvex.json" {
+			t.Fatalf("%s: VEX path %q", name, got.VEX)
+		}
+		if s := vexStatus(t, w.Repo, got.VEX); s != c.status {
+			t.Fatalf("%s: VEX status %s, want %s", name, s, c.status)
+		}
+		if doc := vexDoc(t, w.Repo, got.VEX); !strings.Contains(doc["statements"].([]any)[0].(map[string]any)["products"].([]any)[0].(map[string]any)["@id"].(string), "pkg:npm/lodash@4.17.0") {
+			t.Fatalf("%s: product not taken from the card: %v", name, doc)
+		}
+	}
+}
+
+func fmtVerdict(args map[string]any) string { return args["verdict"].(string) }
+
+func TestVerifierRejectionSendsTheCardBackAsAFailedAttempt(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, verifierProfile(), verdictRunner(store, map[string]any{"verdict": "rejected", "justification": "the branch still pins 4.17.0"}, true))
+	it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Backlog || got.Attempts != 1 || !slices.Contains(got.Labels, kanban.LabelVuln) || slices.Contains(got.Labels, kanban.LabelNeedsVerify) {
+		t.Fatalf("card %+v", got)
+	}
+	if got.VEX != "" {
+		t.Fatal("a rejection wrote a VEX")
+	}
+	if _, err := os.Stat(filepath.Join(w.Repo, ".vulnetix", "vex")); !os.IsNotExist(err) {
+		t.Fatalf("a VEX directory exists after a rejection: %v", err)
+	}
+}
+
+func TestVerifierMustRecordAVerdictToCloseACard(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, verifierProfile(), verdictRunner(store, nil, true))
+	it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List == kanban.Done || got.Attempts != 1 || !strings.Contains(got.LastNote(), "without recording a verdict") {
+		t.Fatalf("a verifier closed a card with no verdict: %+v (%q)", got, got.LastNote())
+	}
+}
+
+func TestVerifierCannotWriteAVEXForACardWithNoFindingID(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, verifierProfile(), verdictRunner(store, map[string]any{"verdict": "fixed", "justification": "clean"}, true))
+	it, _, _ := store.Add(kanban.ItemInput{Title: "hand-filed", List: kanban.Review, Labels: []string{"needs-verify"}}, kanban.ProvenanceFor(w.Repo, w.Record.ID, headless.HostID()))
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List == kanban.Done || !strings.Contains(got.LastNote(), "VEX could not be written") {
+		t.Fatalf("card %+v (%q)", got, got.LastNote())
+	}
+}

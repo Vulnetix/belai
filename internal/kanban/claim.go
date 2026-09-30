@@ -405,6 +405,10 @@ type Outcome struct {
 	// Branch and PR, when set, record where the work is.
 	Branch string
 	PR     string
+	// Verdict and VEX, when set, record a security verdict and the relative
+	// path of the VEX written for it.
+	Verdict Verdict
+	VEX     string
 }
 
 // Release ends the worker's claim and moves the item. ErrLeaseLost means the
@@ -433,6 +437,12 @@ func (s *Store) Release(ref, worker string, o Outcome) (Item, error) {
 		}
 		if o.PR != "" {
 			it.PR = CleanTitle(o.PR)
+		}
+		if o.Verdict.Valid() {
+			it.Verdict = o.Verdict
+		}
+		if o.VEX != "" {
+			it.VEX = CleanTitle(o.VEX)
 		}
 		out = cloneItem(*it)
 		return nil

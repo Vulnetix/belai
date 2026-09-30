@@ -82,9 +82,15 @@ type WorkerClaim struct {
 	// HandoffList, when set, is the list every handoff goes to whatever the
 	// model asks: a survey's self-found work waits in review for a human.
 	HandoffList kanban.List
+	// Verdicts are the verdicts KanbanVerdict may record; empty means the
+	// worker has no such tool. VEX is true for the worker whose verdict the
+	// harness writes a VEX for (and which may reject a claim).
+	Verdicts []string
+	VEX      bool
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
+	verdict *VerdictRecord
 }
 
 // owns reports whether the worker may write to item id: the claimed item or
@@ -653,6 +659,9 @@ func (r *Registry) WithKanbanWorker(store *kanban.Store, src *kanban.Source, cla
 		return r
 	}
 	base := KanbanBase{Store: store, Source: src, Claim: claim}
+	if len(claim.Verdicts) > 0 {
+		return r.With(KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base}, KanbanVerdict{base})
+	}
 	return r.With(KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base})
 }
 

@@ -225,3 +225,31 @@ func (s *Store) Reconcile(prov Provenance, present map[string]bool, ref string, 
 	}
 	return out, err
 }
+
+// SetVerdict records a security verdict on the item holder has claimed,
+// appending note (the worker's cleaned justification) to its history. It never
+// changes the list: routing is the harness's, from the verdict, at release.
+func (s *Store) SetVerdict(ref, holder string, v Verdict, note, sessionID string) (Item, error) {
+	if !v.Valid() {
+		return Item{}, fmt.Errorf("kanban: %q is not a verdict", v)
+	}
+	var out Item
+	err := s.mutate(true, func(b *Board) error {
+		i, err := find(b, ref)
+		if err != nil {
+			return err
+		}
+		it := &b.Items[i]
+		if holder == "" || it.ClaimedBy != holder {
+			return ErrLeaseLost
+		}
+		now := s.nowMs()
+		it.Verdict, it.Updated, it.Dirty = v, now, true
+		if n := CleanBody(note, MaxNoteBytes); n != "" {
+			appendHistory(it, Move{ID: session.MustID(), From: it.List, To: it.List, At: now, SessionID: sessionID, Note: n})
+		}
+		out = cloneItem(*it)
+		return nil
+	})
+	return out, err
+}
