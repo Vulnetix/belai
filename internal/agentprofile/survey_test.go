@@ -84,22 +84,44 @@ func TestReadOnlyWorkspaceValidation(t *testing.T) {
 
 // The built-in scout surveys on its own into review, and runs checks in a
 // read-only worktree: Bash, but nothing it leaves is committed.
-func TestBuiltinScoutSurveys(t *testing.T) {
+func TestBuiltinScoutSeedsFromTheHarness(t *testing.T) {
 	p, err := Load("belai:scout")
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := p.Kanban.Survey
-	if s == nil || s.HandoffList() != kanban.Review || s.EveryOr() != 24*time.Hour || !strings.Contains(s.Title, "{project}") {
-		t.Fatalf("survey %+v", s)
+	if p.Kanban.Survey != nil {
+		t.Fatal("the delivery scout has no daily survey: its work is seeded per HEAD by the harness")
 	}
-	for _, want := range []string{"tests", "docs", "site", "PRD"} {
-		if !strings.Contains(s.Body, want) {
-			t.Errorf("survey body does not mention %q", want)
-		}
+	q := p.Kanban.Quality
+	if q == nil || !q.Sweep || q.HandoffList() != kanban.Review {
+		t.Fatalf("quality %+v", q)
 	}
 	if !p.HasTool("Bash") || !p.ReadOnlyWorkspace() || p.IsolationMode() != IsolationWorktree || p.PublishMode() != PublishNone {
 		t.Fatalf("scout workspace %+v tools %v", p.Workspace, p.Tools)
+	}
+}
+
+func TestQualitySpecValidation(t *testing.T) {
+	ok := worker()
+	ok.Kanban.HandoffLabels = []string{"build"}
+	ok.Kanban.Quality = &QualitySpec{Sweep: true, List: "backlog"}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if (QualitySpec{}).HandoffList() != kanban.Review {
+		t.Fatal("the default handoff list is review")
+	}
+	bad := ok
+	bad.Kanban = new(KanbanSpec)
+	*bad.Kanban = *ok.Kanban
+	bad.Kanban.Quality = &QualitySpec{Sweep: true, List: "done"}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "quality.list") {
+		t.Fatalf("err = %v", err)
+	}
+	bad.Kanban.Quality = &QualitySpec{Sweep: true}
+	bad.Kanban.HandoffLabels, bad.Kanban.HandoffTo = nil, nil
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "handoff") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

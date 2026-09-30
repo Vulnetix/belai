@@ -1,6 +1,7 @@
 {
   "name": "belai:delivery",
-  "description": "Scout, builders and a reviewer: turn a request into reviewed branches",
+  "description": "Scout, builders and a reviewer: turn a request, or the quality gaps a test run shows, into reviewed branches",
+  "one_per_repo": true,
   "members": [
     {"profile": "belai:scout", "replicas": 1},
     {"profile": "belai:builder", "replicas": 2},

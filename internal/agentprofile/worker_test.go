@@ -127,8 +127,8 @@ func TestSecurityCrewRunsOncePerRepo(t *testing.T) {
 	if !c.OnePerRepo {
 		t.Fatal("belai:security must refuse a second run in the same repository")
 	}
-	if d, err := LoadCrew("belai:delivery"); err != nil || d.OnePerRepo {
-		t.Fatalf("delivery must stay unrestricted (err %v)", err)
+	if d, err := LoadCrew("belai:delivery"); err != nil || !d.OnePerRepo {
+		t.Fatalf("delivery runs once per repository too (err %v)", err)
 	}
 }
 
