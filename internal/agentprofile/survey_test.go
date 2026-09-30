@@ -102,3 +102,38 @@ func TestBuiltinScoutSurveys(t *testing.T) {
 		t.Fatalf("scout workspace %+v tools %v", p.Workspace, p.Tools)
 	}
 }
+
+func TestSecuritySpecValidation(t *testing.T) {
+	ok := func(mutate func(*AgentProfile)) AgentProfile {
+		p := worker()
+		p.Tools = []string{"Read", "Vulnetix"}
+		mutate(&p)
+		return p
+	}
+	if err := ok(func(p *AgentProfile) { p.Kanban.Security = &SecuritySpec{Sweep: true, Reconcile: true} }).Validate(); err != nil {
+		t.Fatalf("sweep and reconcile: %v", err)
+	}
+	if err := ok(func(p *AgentProfile) {
+		p.Kanban.Security = &SecuritySpec{Verdicts: []string{"fixed", "false_positive", "no_fix", "needs_human", "rejected"}, VEX: true}
+	}).Validate(); err != nil {
+		t.Fatalf("verifier block: %v", err)
+	}
+	for name, c := range map[string]struct {
+		mutate func(*AgentProfile)
+		want   string
+	}{
+		"sweep without the tool": {func(p *AgentProfile) {
+			p.Tools = []string{"Read"}
+			p.Kanban.Security = &SecuritySpec{Sweep: true}
+		}, "Vulnetix tool"},
+		"vex without verdicts": {func(p *AgentProfile) { p.Kanban.Security = &SecuritySpec{VEX: true} }, "needs verdicts"},
+		"unknown verdict":      {func(p *AgentProfile) { p.Kanban.Security = &SecuritySpec{Verdicts: []string{"wontfix"}} }, "not a verdict"},
+		"reject without vex":   {func(p *AgentProfile) { p.Kanban.Security = &SecuritySpec{Verdicts: []string{"rejected"}} }, "only a worker that writes the VEX"},
+		"duplicate verdict":    {func(p *AgentProfile) { p.Kanban.Security = &SecuritySpec{Verdicts: []string{"fixed", "fixed"}} }, "twice"},
+	} {
+		p := ok(c.mutate)
+		if err := p.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want one naming %q", name, err, c.want)
+		}
+	}
+}

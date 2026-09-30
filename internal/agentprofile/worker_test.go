@@ -131,3 +131,23 @@ func TestSecurityCrewRunsOncePerRepo(t *testing.T) {
 		t.Fatalf("delivery must stay unrestricted (err %v)", err)
 	}
 }
+
+func TestSecurityCrewProfilesCarryTheirHarnessDuties(t *testing.T) {
+	scout, err := Load("belai:vuln-scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := scout.Kanban.Security; s == nil || !s.Sweep {
+		t.Fatalf("vuln-scout must sweep: %+v", s)
+	}
+	if scout.Kanban.Survey != nil {
+		t.Fatal("the security scout has no daily survey: its only gates are the crew and the HEAD evidence")
+	}
+	patcher, err := Load("belai:patcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := patcher.Kanban.Security; s == nil || !s.Reconcile {
+		t.Fatalf("patcher must reconcile: %+v", s)
+	}
+}

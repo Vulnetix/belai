@@ -70,7 +70,7 @@ func TestReconcileMarksAbsentFindingsGone(t *testing.T) {
 	blocked, _, _ := s.UpsertFinding(findingIn("CVE-4", refOld), prov)
 	_, _ = s.Move(blocked.ID, Blocked, "", "s")
 
-	changed, err := s.Reconcile(prov, map[string]bool{"CVE-2": true}, refNew)
+	changed, err := s.Reconcile(prov, map[string]bool{"CVE-2": true}, refNew, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestReconcileMarksAbsentFindingsGone(t *testing.T) {
 		}
 	}
 	// A second pass finds nothing left to do.
-	if again, err := s.Reconcile(prov, map[string]bool{"CVE-2": true}, refNew); err != nil || len(again) != 0 {
+	if again, err := s.Reconcile(prov, map[string]bool{"CVE-2": true}, refNew, nil); err != nil || len(again) != 0 {
 		t.Fatalf("second reconcile changed %d: %v", len(again), err)
 	}
 }
@@ -100,7 +100,7 @@ func TestReconcileLeavesClaimedCards(t *testing.T) {
 	if _, err := s.Claim(ClaimRequest{Worker: "w1", Profile: "patcher", Project: prov.Project, Host: "h", Lease: 5 * time.Minute}); err != nil {
 		t.Fatal(err)
 	}
-	if changed, _ := s.Reconcile(prov, map[string]bool{}, refNew); len(changed) != 0 {
+	if changed, _ := s.Reconcile(prov, map[string]bool{}, refNew, nil); len(changed) != 0 {
 		t.Fatalf("a claimed card was reconciled: %+v", changed)
 	}
 	it, _ := s.Get(a.ID)
@@ -112,7 +112,7 @@ func TestReconcileLeavesClaimedCards(t *testing.T) {
 func TestUpsertFindingPullsAGoneCardBack(t *testing.T) {
 	s := testStore(t)
 	a, _, _ := s.UpsertFinding(findingIn("CVE-5", refOld), prov)
-	_, _ = s.Reconcile(prov, map[string]bool{}, refNew)
+	_, _ = s.Reconcile(prov, map[string]bool{}, refNew, nil)
 	b, ch, err := s.UpsertFinding(findingIn("CVE-5", refNew), prov)
 	if err != nil || ch != FindingReopened || b.ID != a.ID || b.List != Backlog || b.Verdict != "" ||
 		slices.Contains(b.Labels, LabelGone) || !slices.Contains(b.Labels, LabelVuln) {
@@ -145,5 +145,19 @@ func TestUpsertFindingConcurrentWritersMakeOneCard(t *testing.T) {
 	items, _ := s.Search(Query{})
 	if len(items) != 1 {
 		t.Fatalf("%d cards after concurrent upserts", len(items))
+	}
+}
+
+func TestReconcileSkipsUncoveredKinds(t *testing.T) {
+	s := testStore(t)
+	sast, _, _ := s.UpsertFinding(findingIn("sast:rule:abcd1234", refOld), prov)
+	sca, _, _ := s.UpsertFinding(findingIn("CVE-8", refOld), prov)
+	onlySCA := func(id string) bool { return !strings.HasPrefix(id, "sast:") }
+	changed, err := s.Reconcile(prov, map[string]bool{}, refNew, onlySCA)
+	if err != nil || len(changed) != 1 || changed[0].ID != sca.ID {
+		t.Fatalf("changed = %+v, err %v", changed, err)
+	}
+	if it, _ := s.Get(sast.ID); it.Verdict != "" {
+		t.Fatal("a finding of a kind the scan did not cover was marked gone")
 	}
 }
