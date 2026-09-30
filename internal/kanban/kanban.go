@@ -137,6 +137,17 @@ type Item struct {
 	Branch string
 	PR     string
 
+	// Finding, SeenRef, Verdict and VEX belong to a security card. The
+	// harness alone sets them (UpsertFinding, Reconcile, SetVerdict): no
+	// model argument reaches them, and a pulled copy never overwrites them.
+	// Finding is the advisory id, SeenRef the commit of the latest scan that
+	// still showed it, Verdict a worker's recorded verdict and VEX the
+	// relative path of the VEX written for it.
+	Finding string
+	SeenRef string
+	Verdict Verdict
+	VEX     string
+
 	// remoteAgent is set by FromWire when the pulled item carried the routing
 	// and claim fields. A backend that does not know them yet omits them, and
 	// Merge must then keep the local values rather than clear them. It is
