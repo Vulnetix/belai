@@ -1,6 +1,6 @@
 module github.com/vulnetix/belai
 
-go 1.25.10
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -18,7 +18,7 @@ require (
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/net v0.47.0
-	golang.org/x/text v0.31.0
+	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
 )
