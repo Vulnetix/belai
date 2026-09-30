@@ -43,7 +43,9 @@ func entityAt(s string) (int, string) {
 	if len(s) < 4 || s[0] != '&' {
 		return 0, ""
 	}
-	end := strings.IndexByte(s, ';')
+	// A reference is at most ten bytes long, so only that window is searched;
+	// scanning the whole remainder made text full of bare '&' quadratic.
+	end := strings.IndexByte(s[:min(len(s), 12)], ';')
 	if end < 0 || end > 10 {
 		return 0, ""
 	}
@@ -91,13 +93,23 @@ func foldRune(r rune) string {
 		if r < ' ' && r != '\n' && r != '\t' && r != '\r' || r == 0x7f {
 			return ""
 		}
-		return string(r)
+		return asciiFold[r : r+1]
 	}
 	if r == utf8.RuneError || invisible(r) {
 		return ""
 	}
 	return strings.ToLower(norm.NFKC.String(string(r)))
 }
+
+// asciiFold holds every ASCII byte once so a one-byte fold is a slice of it,
+// not an allocation.
+var asciiFold = func() string {
+	b := make([]byte, utf8.RuneSelf)
+	for i := range b {
+		b[i] = byte(i)
+	}
+	return string(b)
+}()
 
 // invisible reports runes that render as nothing or reorder text, and so can
 // hide inside a tag name: format characters, controls, the tag block,
@@ -136,7 +148,31 @@ func unitsOf(s string) []unit {
 // scanMarkup reports whether s holds anything the delimiter scrubber could
 // act on. It is the fast path in front of every tool result.
 func scanMarkup(s string) bool {
-	return strings.ContainsAny(s, "<&"+markupRunes)
+	if strings.IndexByte(s, '<') >= 0 || strings.IndexByte(s, '&') >= 0 {
+		return true
+	}
+	for _, r := range markupRunes {
+		if strings.ContainsRune(s, r) {
+			return true
+		}
+	}
+	return false
+}
+
+// mentionsDelimiter reports whether the folded text f contains any word a cut
+// depends on: a managed kind name, or the nonce and integrity attributes. A
+// tag is cut only when its name is a managed kind or it carries one of those
+// attributes, so without any of them no match can change anything.
+func mentionsDelimiter(f string) bool {
+	if strings.Contains(f, "nonce") || strings.Contains(f, "integrity") {
+		return true
+	}
+	for kind := range delimiters.KnownKinds {
+		if strings.Contains(f, kind) {
+			return true
+		}
+	}
+	return false
 }
 
 // stripDelimiters removes harness delimiter tags from s. Tags are found on the
@@ -166,7 +202,71 @@ func stripDelimiters(s string) string {
 	return s
 }
 
+// plainScan reports whether s folds one byte to one byte: printable ASCII plus
+// newline, tab and carriage return, and no character reference. For such text
+// the folded form is the lower-cased text itself, so the per-rune unit table
+// is not needed. Code is almost always this shape.
+func plainScan(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '&':
+			if n, _ := entityAt(s[i:]); n > 0 {
+				return false
+			}
+		case c >= 0x80, c < ' ' && c != '\n' && c != '\t' && c != '\r', c == 0x7f:
+			return false
+		}
+	}
+	return true
+}
+
+// stripPlain is stripPass for text that satisfies plainScan: the same matches
+// on the same folded text, cut by byte range.
+func stripPlain(s string) (string, bool) {
+	f := strings.ToLower(s)
+	if !mentionsDelimiter(f) {
+		return s, false
+	}
+	var cuts [][2]int
+	for _, m := range foldTagRe.FindAllStringSubmatchIndex(f, -1) {
+		name := f[m[4]:m[5]]
+		if delimiters.KnownKinds[name] {
+			cuts = append(cuts, [2]int{m[0], m[1]})
+			continue
+		}
+		if f[m[2]:m[3]] == "" {
+			for _, a := range foldAttrRe.FindAllStringIndex(f[m[6]:m[7]], -1) {
+				cuts = append(cuts, [2]int{m[6] + a[0], m[6] + a[1]})
+			}
+		}
+	}
+	if len(cuts) == 0 {
+		return s, false
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	pos := 0
+	for _, c := range cuts {
+		if c[0] > pos {
+			b.WriteString(s[pos:c[0]])
+		}
+		pos = max(pos, c[1])
+	}
+	b.WriteString(s[pos:])
+	return b.String(), true
+}
+
 func stripPass(s string) (string, bool) {
+	if plainScan(s) {
+		return stripPlain(s)
+	}
+	return stripUnits(s)
+}
+
+// stripUnits is the general pass: it folds rune by rune, so it handles any
+// text, and stripPlain must agree with it wherever plainScan holds.
+func stripUnits(s string) (string, bool) {
 	us := unitsOf(s)
 	var fold strings.Builder
 	owner := make([]int32, 0, len(s))
