@@ -5,6 +5,9 @@
 capture the page, read the result, change the code, capture again. It can also
 capture the desktop, after asking you.
 
+Images you attach yourself (`@shot.png`, the clipboard, a dropped file or an ACP
+image block) take the same path; see [Images](image-attachments.md).
+
 The image path (why no classifier reads it, how it is checked and how it
 reaches each provider) is in [Images](image-attachments.md). This page is the
 tool.

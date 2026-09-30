@@ -54,7 +54,7 @@ const core = [
   ['Git', 'status, log, diff, show, rev-parse, ls-files, grep and describe, nothing that writes'],
   ['Bash · BashOutput · KillShell', '`run_in_background` starts a server and returns a handle, BashOutput reads what it printed since the last read, KillShell stops it. It asks and runs in the sandbox like any Bash call, and is never restarted by the recovery agent'],
   ['Screenshot', 'a page served from this machine, rendered in headless Chrome or Chromium with every request to anywhere else blocked, or the desktop, which asks every time. Only loopback addresses are accepted, and Belai checks that a server is listening first. The PNG is kept under `~/.vulnetix/belai/screenshots` (newest 20) and the path is in the result'],
-  ['Screenshot images', 'a text classifier cannot read pixels, so Belai decodes the image, limits its size, scales it to 1568 pixels on the long edge and re-encodes it. Only the newest image is sent, a model without image input is told it was not, and `screenshot.enabled` and `screenshot.desktop` can be turned off by a project file and never on. It is in the interactive session only'],
+  ['Images', 'a text classifier cannot read pixels, so Belai decodes an image from Screenshot, an `@file.png`, the clipboard or an editor, limits its size, scales it to 1568 pixels on the long edge and re-encodes it. Only the newest image is sent, and a model without image input is told it was not. A custom provider can declare it per model with `"images": true` or `false`, and `ui.clipboard_images`, `screenshot.enabled` and `screenshot.desktop` can be turned off by a project file and never on. Screenshot is in the interactive session only'],
 ];
 
 const locateFacts: [string, string][] = [
