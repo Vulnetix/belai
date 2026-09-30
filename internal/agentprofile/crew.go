@@ -23,6 +23,9 @@ type Crew struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Members     []Member `json:"members"`
+	// OnePerRepo refuses a start while a live worker of this crew already
+	// works the same repository, so one run never doubles another's work.
+	OnePerRepo bool `json:"one_per_repo,omitempty"`
 	// Builtin is true for embedded crews; never persisted.
 	Builtin bool `json:"-"`
 }

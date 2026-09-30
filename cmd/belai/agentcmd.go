@@ -493,6 +493,11 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if err != nil {
 		return 1, err
 	}
+	if c, err := agentprofile.LoadCrew(*crewName); err == nil && c.OnePerRepo {
+		if err := reg.CheckCrewFree(c.Name, repo); err != nil {
+			return 1, err
+		}
+	}
 	live, _ := reg.Live()
 	max := workerCap(settings, *maxWorkers)
 	if len(live)+len(launches) > max {

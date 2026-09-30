@@ -272,6 +272,34 @@ func (r *Registry) Live() ([]Record, error) {
 	return out, err
 }
 
+// ErrCrewRunning is returned when a crew that runs once per repository
+// already has live workers in that repository.
+var ErrCrewRunning = errors.New("fleet: this crew is already working on this repository")
+
+// CrewLive returns the live workers of a crew in a repository.
+func (r *Registry) CrewLive(crew, repo string) []Record {
+	if crew == "" {
+		return nil
+	}
+	live, _ := r.Live()
+	var out []Record
+	for _, rec := range live {
+		if rec.Crew == crew && rec.Repo == repo {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// CheckCrewFree refuses a start of a crew while one of its workers is live
+// in the repository. Callers use it for crews marked one per repository.
+func (r *Registry) CheckCrewFree(crew, repo string) error {
+	if live := r.CrewLive(crew, repo); len(live) > 0 {
+		return fmt.Errorf("%w (%s, worker %s)", ErrCrewRunning, crew, live[0].ID)
+	}
+	return nil
+}
+
 // ErrFull is returned when the machine already runs agents.max_workers.
 var ErrFull = errors.New("fleet: the maximum number of workers is already running (agents.max_workers)")
 

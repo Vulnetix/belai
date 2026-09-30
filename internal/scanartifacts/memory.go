@@ -19,6 +19,7 @@ const (
 // MemorySummary is the top-level count block from memory.yaml.
 type MemorySummary struct {
 	Timestamp string `yaml:"timestamp"`
+	GitCommit string `yaml:"git_commit"`
 	Packages  int    `yaml:"packages"`
 	Vulns     int    `yaml:"vulns"`
 	Critical  int    `yaml:"critical"`
