@@ -11,6 +11,7 @@
     "lists": ["backlog"],
     "labels": ["vuln"],
     "on_success": {"list": "review", "labels": ["needs-verify"], "drop_labels": ["vuln"]},
+    "security": {"reconcile": true},
     "max_attempts": 3,
     "lease": "30m"
   },

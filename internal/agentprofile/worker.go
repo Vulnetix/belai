@@ -45,6 +45,29 @@ type KanbanSpec struct {
 	// Survey lets the worker find its own work when the board has none for
 	// it. Nil: the worker only takes items someone filed.
 	Survey *SurveySpec `json:"survey,omitempty"`
+	// Security turns on the harness's vulnerability duties for the worker:
+	// the review sweep, card reconciliation, verdicts and VEX. Nil: none.
+	Security *SecuritySpec `json:"security,omitempty"`
+}
+
+// SecuritySpec is a security worker's harness-run duties. None of them is a
+// model's decision: the harness runs the review, reads the artefacts and
+// files, reconciles and routes the cards.
+type SecuritySpec struct {
+	// Sweep makes sure a review ran on the repository's HEAD (running it when
+	// no artefact records that commit) and that every finding it reports has
+	// a card. It needs the Vulnetix tool.
+	Sweep bool `json:"sweep,omitempty"`
+	// Reconcile compares the cards with the latest artefacts before each
+	// claim: a finding that left the report becomes a gone card for the
+	// verifier. It never runs a scan.
+	Reconcile bool `json:"reconcile,omitempty"`
+	// Verdicts are the verdicts the worker may record with KanbanVerdict.
+	// Empty: the worker has no such tool.
+	Verdicts []string `json:"verdicts,omitempty"`
+	// VEX has the harness write a VEX document for each verdict the worker
+	// records, and lets the worker reject a claim.
+	VEX bool `json:"vex,omitempty"`
 }
 
 // SurveyLabel marks an item a worker filed for itself under kanban.survey.
@@ -329,6 +352,11 @@ func (p AgentProfile) validateWorker() error {
 			return errors.New("kanban.survey needs handoff_to or handoff_labels: a survey files what it finds as handoffs")
 		}
 	}
+	if s := k.Security; s != nil {
+		if err := s.validate(p.Tools); err != nil {
+			return err
+		}
+	}
 	if k.MaxAttempts < 0 || k.MaxItems < 0 {
 		return errors.New("kanban.max_attempts and kanban.max_items must not be negative")
 	}
@@ -390,4 +418,28 @@ func (p AgentProfile) PublishMode() string {
 		return PublishNone
 	}
 	return p.Workspace.Publish
+}
+
+// validate checks the security block against the profile's tool list.
+func (s SecuritySpec) validate(tools []string) error {
+	if s.Sweep && !slices.Contains(tools, "Vulnetix") {
+		return errors.New("kanban.security.sweep needs the Vulnetix tool in tools")
+	}
+	if s.VEX && len(s.Verdicts) == 0 {
+		return errors.New("kanban.security.vex needs verdicts: a VEX documents a verdict")
+	}
+	seen := map[string]bool{}
+	for _, v := range s.Verdicts {
+		if !kanban.Verdict(v).Valid() {
+			return fmt.Errorf("kanban.security.verdicts: %q is not a verdict", v)
+		}
+		if v == string(kanban.VerdictRejected) && !s.VEX {
+			return errors.New("kanban.security.verdicts: only a worker that writes the VEX may reject")
+		}
+		if seen[v] {
+			return fmt.Errorf("kanban.security.verdicts: %q is listed twice", v)
+		}
+		seen[v] = true
+	}
+	return nil
 }

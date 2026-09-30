@@ -181,8 +181,9 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 // one becomes a "gone" card: verdict fixed, in review for the verifier, and
 // no longer offered to a patcher. Cards that are claimed, blocked or done are
 // left alone, and so is one already marked gone. It returns the cards it
-// changed.
-func (s *Store) Reconcile(prov Provenance, present map[string]bool, ref string) ([]Item, error) {
+// changed. covered says whether the scan looked for a finding at all (a kind
+// whose scanner did not run proves nothing); nil covers every finding.
+func (s *Store) Reconcile(prov Provenance, present map[string]bool, ref string, covered func(finding string) bool) ([]Item, error) {
 	ref = CleanRef(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("kanban: not a commit id")
@@ -193,6 +194,9 @@ func (s *Store) Reconcile(prov Provenance, present map[string]bool, ref string) 
 		for i := range b.Items {
 			it := &b.Items[i]
 			if it.Deleted || it.Finding == "" || !sameProject(*it, prov) {
+				continue
+			}
+			if covered != nil && !covered(it.Finding) {
 				continue
 			}
 			if it.List == Done || it.List == Blocked || it.ClaimedBy != "" || present[it.Finding] || it.SeenRef == ref {

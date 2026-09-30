@@ -109,13 +109,20 @@ type Worker struct {
 	Notify func(event string)
 	// Runner works one item; nil uses the real agent session.
 	Runner TurnRunner
+	// Review runs the review scanners over the repository for a sweep; nil
+	// runs the Vulnetix CLI. Head reads the repository's HEAD commit; nil asks
+	// git. Both exist so a test can stand in for the CLI and git.
+	Review func(ctx context.Context) error
+	Head   func(ctx context.Context) (string, error)
 	// Reflect distils lessons from a finished item; nil uses the model.
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
 
-	now      func() time.Time
-	surveyed bool // kanban.survey already considered this start
-	mu       sync.Mutex
-	failures map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
+	now        func() time.Time
+	surveyed   bool   // kanban.survey already considered this start
+	swept      bool   // kanban.security sweep already ran this start
+	reconciled string // artefact signature the cards were last reconciled against
+	mu         sync.Mutex
+	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 }
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
@@ -291,6 +298,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			headless.PullKanban(ctx, w.Store, w.Settings, w.Repo)
 			lastPull = now
 		}
+		w.securityStep(ctx, project)
 		it, err := w.claim(project)
 		if errors.Is(err, kanban.ErrNoWork) {
 			if sv, ok := w.survey(project); ok {
