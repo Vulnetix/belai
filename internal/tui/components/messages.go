@@ -906,7 +906,7 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 	// Composer @file / @directory attachments render as metadata cards rather
 	// than raw tool output. The full body is still preserved in Content for
 	// copying and transcript reconstruction.
-	if (msg.ToolName == "Read" || msg.ToolName == "Ls") && msg.IsAttachment && msg.AttachMeta != nil {
+	if (msg.ToolName == "Read" || msg.ToolName == "Ls" || msg.ToolName == "Image") && msg.IsAttachment && msg.AttachMeta != nil {
 		return FileCard(*msg.AttachMeta, width)
 	}
 

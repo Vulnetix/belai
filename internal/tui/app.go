@@ -380,6 +380,10 @@ type App struct {
 	attachSpin   spinner.Model
 	workSpin     spinner.Model
 	pendingInput string // prompt held while attachments validate
+	// imageMarkers describe the images the next echoed prompt carries. They go
+	// on that prompt's session entry as a marker (name, size, dimensions) and
+	// never as bytes.
+	imageMarkers []map[string]any
 
 	// view state
 	view                viewState
@@ -1483,7 +1487,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		in.Attachments = turns[n-1].Attachments
 		in.Directive = turns[n-1].Directive
-		in.HasReferences = len(in.Attachments) > 0
+		in.HasReferences = hasReferenceAttachments(in.Attachments)
 		for _, att := range turns[n-1].Attachments {
 			if att.Kind == "shell" {
 				in.ForceAgent = profiles.DebugProfile
@@ -1540,13 +1544,8 @@ func (a *App) submitInput(input string) tea.Cmd {
 	directive = a.consumeDirective(directive)
 	a.messages = append(a.messages, previews...)
 
-	var safe []run.Attachment
-	for _, id := range a.attachOrder {
-		att := a.attachments[id]
-		if att.state == attachSafe && att.body != "" {
-			safe = append(safe, run.Attachment{Kind: "file", Label: att.text, Body: att.body})
-		}
-	}
+	safe := a.safeAttachments()
+	a.imageMarkers = a.imageMarkersFor()
 	a.attachments = map[int]*attachment{}
 	a.attachOrder = nil
 	a.pendingInput = ""
@@ -1591,6 +1590,10 @@ func (a *App) dispatchPrompt(input string, safe []run.Attachment, directive stri
 // user entry.
 func (a *App) echoUser(input string) {
 	m := components.Message{Role: "user", Content: input}
+	if len(a.imageMarkers) > 0 {
+		m.Meta = map[string]any{"images": a.imageMarkers}
+		a.imageMarkers = nil
+	}
 	// A prompt that still holds dictated text is a voice turn: its title is
 	// coloured for it and ctrl+o shows what was recognised.
 	a.tagDictated(&m)
@@ -1669,7 +1672,7 @@ func (a *App) classifyAndSend(input string, atts []run.Attachment, directive str
 		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{
 			Prompt:        input,
 			GoalLimit:     rolemanager.DefaultGoalPromptLengthLimit,
-			HasReferences: len(atts) > 0,
+			HasReferences: hasReferenceAttachments(atts),
 		})
 		return modeClassifiedMsg{input: input, atts: atts, directive: directive, firstUser: firstUser, decision: d, err: err}
 	}
@@ -2904,6 +2907,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if a.working() {
+			// Steering is text only: an image cannot join a running turn. The
+			// composer is left as it is, so the image is not lost when it clears.
+			if a.refuseImageSteer() {
+				return nil
+			}
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
 			if a.agent == nil || !a.agent.Steer(input) {
 				a.addSystem("steering queue full — message dropped")
@@ -3232,6 +3240,11 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 			return a.steerReview(input)
 		}
 		if a.working() {
+			// Steering is text only: an image cannot join a running turn. The
+			// composer is left as it is, so the image is not lost when it clears.
+			if a.refuseImageSteer() {
+				return nil
+			}
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
 			if a.agent == nil || !a.agent.Steer(input) {
 				a.addSystem("steering queue full — message dropped")

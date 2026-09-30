@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/imageguard"
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -47,6 +48,9 @@ type attachment struct {
 	isDir    bool   // the target is a directory: listed, not read
 	rootDir  string // attachNeedsRoot: the directory proposed as a new root
 	meta     attachMeta
+	// img is set for an admitted image attachment. Its bytes never enter body,
+	// the classifier, the transcript or the session file.
+	img *attachedImage
 }
 
 // token is one candidate attachment parsed from editor text.
@@ -66,6 +70,7 @@ type attachValidatedMsg struct {
 	diff     filediff.Change
 	isDir    bool
 	meta     attachMeta
+	img      *attachedImage
 }
 
 // reservedAttachSchemes lists prefixes that look like schemes but must not be
@@ -411,6 +416,16 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 			body = sanitize.Sanitize(body)
 			return attachValidatedMsg{id: id, body: body, meta: dirAttachmentMeta(abs, body), sentinel: rolemanager.SentinelSafe, isDir: true}
 		}
+		// An image is admitted by imageguard, not read as text and not sent to
+		// the classifier. That check is a decode-safety bound, not a posture
+		// gate, so it runs whatever the guardrails switch says.
+		if looksLikeImage(abs) {
+			img, meta, err := admitImageFile(root, rel)
+			if err != nil {
+				return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}
+			}
+			return attachValidatedMsg{id: id, img: &img, meta: meta, sentinel: rolemanager.SentinelSafe}
+		}
 		// Verbatim: the body is diffed against the index and handed over as the
 		// file itself, so it must not carry the model-facing gutter or trailer.
 		read := &tools.Read{Root: root, MaxBytes: 64 * 1024, Verbatim: true}
@@ -498,6 +513,14 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 	if m.err != nil {
 		att.state = attachRejected
 		att.reason = m.err.Error()
+	} else if m.img != nil {
+		if a.safeImageCount() >= maxAttachedImages {
+			att.state = attachRejected
+			att.reason = fmt.Sprintf("at most %d images per prompt", maxAttachedImages)
+		} else {
+			att.img = m.img
+			att.state = attachSafe
+		}
 	} else if m.sentinel.IsSafe() || a.effectivePosture().Level(posture.ToolResultUnsafe) == posture.Ignore {
 		att.body = m.body
 		att.state = attachSafe
@@ -526,10 +549,29 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	a.pendingInput = ""
 	previews, directive := a.attachmentPreviews()
 	a.messages = append(a.messages, previews...)
+	atts := a.safeAttachments()
+	a.imageMarkers = a.imageMarkersFor()
+	a.attachments = map[int]*attachment{}
+	a.attachOrder = nil
+	a.editor.Reset()
+	a.clearAutocomplete()
+	return a.sendWithAttachments(input, atts, directive)
+}
+
+// safeAttachments converts every admitted attachment into the run form the
+// turn carries: a file or directory as sealed text, an image as pixels. It is
+// the one place the two submit paths build them, so a kind cannot drift.
+func (a *App) safeAttachments() []run.Attachment {
 	var atts []run.Attachment
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
-		if att.state == attachSafe && att.body != "" {
+		if att.state != attachSafe {
+			continue
+		}
+		switch {
+		case att.img != nil:
+			atts = append(atts, run.Attachment{Kind: run.AttachmentImage, Label: att.text, MediaType: imageguard.MediaType, Data: att.img.data})
+		case att.body != "":
 			kind := "file"
 			if att.isDir {
 				kind = "directory"
@@ -537,11 +579,18 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 			atts = append(atts, run.Attachment{Kind: kind, Label: att.text, Body: att.body})
 		}
 	}
-	a.attachments = map[int]*attachment{}
-	a.attachOrder = nil
-	a.editor.Reset()
-	a.clearAutocomplete()
-	return a.sendWithAttachments(input, atts, directive)
+	return atts
+}
+
+// safeImageCount is how many admitted images the composer holds.
+func (a *App) safeImageCount() int {
+	n := 0
+	for _, att := range a.attachments {
+		if att.state == attachSafe && att.img != nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (a *App) sendWithAttachments(input string, atts []run.Attachment, directive string) tea.Cmd {
@@ -569,6 +618,23 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 		}
 		switch att.state {
 		case attachSafe:
+			if att.img != nil {
+				// An image is previewed by its card alone: no pixels are drawn
+				// and no bytes are kept in the row, so nothing binary can reach
+				// the transcript file.
+				fm := fileMetaFor(att)
+				fm.ImageNote = imageNote(a.cfg)
+				previews = append(previews, components.Message{
+					Role:         "tool",
+					ToolName:     "Image",
+					ToolArgs:     `{"path":"` + att.raw + `"}`,
+					Content:      fmt.Sprintf("image %s %dx%d, %s, %s", att.raw, att.img.width, att.img.height, formatBytesShort(att.meta.FileSize), fm.ImageNote),
+					Status:       "✓",
+					AttachMeta:   fm,
+					IsAttachment: true,
+				})
+				continue
+			}
 			meta := map[string]any{"path": att.raw}
 			if !att.isDir {
 				meta["start_line"] = 1
@@ -625,6 +691,20 @@ func fileMetaFor(att *attachment) *components.FileMeta {
 		Tokens:    att.meta.Tokens,
 		Trust:     att.meta.Trust,
 		FileCount: att.meta.FileCount,
+		Width:     att.meta.Width,
+		Height:    att.meta.Height,
+	}
+}
+
+// formatBytesShort renders a byte count for a one-line row.
+func formatBytesShort(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f kB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
 	}
 }
 
@@ -712,6 +792,9 @@ func (a *App) renderAttachmentPaneRow(att *attachment) string {
 	meta := fileMetaFor(att)
 	if meta == nil {
 		return components.FileCardCompact(components.FileMeta{Path: att.raw, IsDir: att.isDir}, a.contentWidth())
+	}
+	if att.img != nil {
+		meta.ImageNote = imageNote(a.cfg)
 	}
 	return components.FileCardCompact(*meta, a.contentWidth())
 }

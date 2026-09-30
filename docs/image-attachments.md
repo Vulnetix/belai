@@ -1,7 +1,8 @@
 # Images
 
-Two things share this page: images a **tool returns** (built), and images the
-user **attaches** with `@` (deferred).
+Three things share this page: images a **tool returns** (built), images the
+user **attaches** with `@` (built), and drawing a picture in the terminal
+(deferred).
 
 ## Tool-returned images (built)
 
@@ -76,16 +77,55 @@ judge an image, so pixels take a separate, deterministic path.
   [screenshots](screenshots.md)), and an image is never a reason to act
   without the permission rules applying to what the model does next.
 
-## Attached images (deferred)
+## Attached images (built)
 
-Images are intentionally **out of scope** for the first `@` file chooser. The
-chooser lists only text-bearing files; image extensions are filtered out in
-`internal/tui/filepick.go`.
+`@shot.png` in the composer attaches an image. The same rules apply to every
+way an image can be attached.
 
-This part records the design work so a later round can pick it up without
-re-discovering the constraints.
+- **The chooser offers PNG and JPEG.** Other image formats (GIF, WebP, BMP,
+  ICO, TIFF, AVIF) are left out of the list, and typing one by hand is refused
+  with "only PNG and JPEG images can be attached". An extensionless file is
+  recognised by its first bytes.
+- **Same path rules as any file.** The path is resolved against the session
+  roots and asks for the confirm-root prompt outside them. It is then confined
+  again after following symlinks, so a link inside the workspace cannot lead
+  the read outside it. Only a regular file is read, and at most 32 MiB.
+- **Admitted by `internal/imageguard`, not `Read`, not the classifier.** The
+  bytes never go through `tools.Read` (which rejects NUL bytes and is text) and
+  never to a classifier round trip, with guardrails on or off: the check is a
+  decode-safety bound, not a posture gate. A refused image is shown as a
+  rejected attachment with a cleaned, capped reason, its bytes are never
+  echoed, and the model is told the attachment was not admitted, as for a
+  withheld file.
+- **At most eight images per prompt.** Further ones are rejected with that
+  reason. Each image costs tokens on every round of the turn.
+- **A card, not pixels.** The composer chip and the transcript row show the
+  name, media type, pixel size, file size, estimated tokens and whether the
+  model gets it: `sent`, or `not sent: this model has no image input`. No
+  pixels are drawn, so the styled-line sanitiser is untouched.
+- **Images are not references.** A prompt with only an image does not count as
+  "the user pointed at something" for mode selection, so it does not by itself
+  move the prompt into goal mode. Detection, prefetch and the Jev jobs never
+  see the bytes.
+- **While a turn is running.** Steering carries text only. With an image in the
+  composer, Enter tells you images cannot join a running turn and leaves the
+  composer as it is, so nothing is lost.
+- **Two prompts merged into one turn keep both prompts' images.**
+- **The sending turn only.** The image rides the turn it was sent on and that
+  turn's tool loop, like an `@file`, and is not replayed on later turns.
+- **The session record holds a marker, never bytes.** The user entry records
+  `images: [{name, media_type, width, height, bytes, tokens}]`. Synced lines,
+  transcripts and telemetry carry that and nothing binary. On resume the
+  marker comes back as a card that says `not sent again on resume`; the file is
+  never re-read.
 
-## Why images are not this round
+## Pixel preview (deferred)
+
+Images are attached as a card only (see above); no pixels are drawn in the
+terminal. This part records the design work for drawing a preview, so a later
+round can pick it up without re-discovering the constraints.
+
+## Why pixels are not drawn yet
 
 1. **Cell content is sanitised.** `components.NewSeg`/`sanitiseCells`
    (`internal/tui/components/styledline.go`) strips every ESC/C0/C1 byte from
@@ -107,9 +147,9 @@ re-discovering the constraints.
 4. **`run.Attachment` has an `image` kind** (`MediaType`, `Data`) that egress
    keeps out of the text body. The wire shapes now encode it for tool results
    (see above), and the Kiro encoder sends it (see
-   [Kiro](kiro.md#models-effort-and-images)). Nothing creates a user-attached
-   one yet. When that feature lands it reuses `internal/imageguard` for
-   admission, because image bytes cannot be text-classified.
+   [Kiro](kiro.md#models-effort-and-images)). A user-attached image reuses
+   `internal/imageguard` for admission, because image bytes cannot be
+   text-classified.
 
 ## Candidate designs
 
