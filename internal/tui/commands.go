@@ -323,6 +323,13 @@ func NewRegistry(workdir string) *Registry {
 			return nil
 		}
 	})
+	r.Register("paste-image", "attach the image on the clipboard", nil, func(a *App, arg string) tea.Cmd {
+		if !a.settings.ClipboardImagesEnabled() {
+			a.addSystem("paste-image: clipboard images are turned off (ui.clipboard_images)")
+			return nil
+		}
+		return readClipboardImageCmd(tea.KeyMsg{}, false)
+	})
 	r.Register("add-dir", "add a directory to the current workspace", nil, func(a *App, arg string) tea.Cmd {
 		arg = strings.TrimSpace(arg)
 		if arg == "" {

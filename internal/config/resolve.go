@@ -356,7 +356,11 @@ func (e *Effective) apply(s Settings, src Source) {
 		if e.Settings.UI == nil {
 			e.Settings.UI = &UISettings{}
 		}
-		e.Settings.UI.merge(s.UI)
+		if src == SourceProject {
+			e.Settings.UI.mergeProject(s.UI)
+		} else {
+			e.Settings.UI.merge(s.UI)
+		}
 		e.Origin["ui"] = src
 	}
 	if s.ContextWindows != nil {
