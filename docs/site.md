@@ -19,7 +19,7 @@ memory · processes · budgets · session intelligence · providers · routing �
 integrations · cli · qol · start · faq
 
 The agents section (`site/src/components/sections/Agents.astro`, rendered
-from `Features.astro`) is one ladder: subagents, background agents, crews.
+from `Features.astro`) is one ladder: helpers, background agents, workers and crews.
 Three step cards open it, a table (cards below `lg`) says what changes on
 each step, then come a crew's recorded run on a board (`#crews`, which the
 kanban section links to), the crew fences, the built-in crews and a worker
