@@ -103,6 +103,9 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	}
 
 	// 8. Rehydrate the transcript and its state.
+	// A session that was navigated with /tree rebuilds only the branch it is on;
+	// the file keeps the abandoned ones.
+	entries = session.ActivePath(entries)
 	r := rehydrateSession(entries)
 	a.messages = r.Messages
 	a.sessionName = r.Name

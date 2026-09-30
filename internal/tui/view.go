@@ -22,6 +22,7 @@ const (
 	viewPlanReview
 	viewResume
 	viewResumeCompact
+	viewTree
 	viewVulnetixConfig
 	viewVulnetixList
 	viewVulnetixArtifacts
@@ -65,7 +66,8 @@ func init() {
 	viewHandlers[viewPlanReview] = viewHandler{name: "plan-review", enter: (*App).enterPlanReview, key: (*App).handlePlanReviewKey, render: (*App).planReviewView}
 	viewHandlers[viewResume] = viewHandler{name: "resume", enter: (*App).enterResume, key: (*App).handleResumeKey, render: (*App).resumeView}
 	viewHandlers[viewResumeCompact] = viewHandler{name: "resume-compact", key: (*App).handleResumeCompactKey, render: (*App).resumeCompactView}
-	viewHandlers[viewVulnetixConfig] = viewHandler{name: "vulnetix-config", enter: (*App).enterVulnetixConfig, key: (*App).handleVulnetixConfigKey, render: (*App).vulnetixConfigView}
+	viewHandlers[viewTree] = viewHandler{name: "tree", enter: (*App).enterTree, key: (*App).handleTreeKey, render: (*App).treeView}
+	viewHandlers[viewVulnetixConfig] =viewHandler{name: "vulnetix-config", enter: (*App).enterVulnetixConfig, key: (*App).handleVulnetixConfigKey, render: (*App).vulnetixConfigView}
 	viewHandlers[viewVulnetixList] = viewHandler{name: "vulnetix-list", enter: (*App).enterVulnetixList, key: (*App).handleVulnetixListKey, render: (*App).vulnetixListView}
 	viewHandlers[viewVulnetixArtifacts] = viewHandler{name: "vulnetix-artifacts", enter: (*App).enterVulnetixArtifacts, key: (*App).handleVulnetixArtifactsKey, render: (*App).vulnetixArtifactsView}
 	viewHandlers[viewRunsOutput] = viewHandler{name: "runs-output", enter: (*App).enterRunsOutput, key: (*App).handleRunsOutputKey, render: (*App).runsOutputView}
