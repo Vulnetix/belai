@@ -131,7 +131,7 @@ func (a *App) permissionsView() string {
 	a.permState.selected = glSnap(groups, a.permState.selected)
 	bodyH := 0
 	if a.height > 0 {
-		bodyH = max(a.height-permChromeRows-len(tail), 9)
+		bodyH = max(a.height-permChromeRows-len(tail), glMinBody)
 	}
 	empty := "no rules — every tool call is allowed; add a deny rule to restrict"
 	b.WriteString(glBody(glSpec{groups: groups, cursor: a.permState.selected, empty: empty}, &a.permState.gl, w, bodyH))

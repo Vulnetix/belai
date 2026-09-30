@@ -182,3 +182,66 @@ func TestSettingsDetailNamesWhereItSaves(t *testing.T) {
 		t.Fatalf("max agents follows the scope: %s", d)
 	}
 }
+
+// TestGlobalOnlyRowsWriteGlobalWhateverTheScope pins settingsWritesGlobalOnly
+// to what the handlers do: a row it names never lands in the project file.
+func TestGlobalOnlyRowsWriteGlobalWhateverTheScope(t *testing.T) {
+	for _, key := range []string{"voice.commands", "tts.read_reports", "tests.report", "auto_commit_per_task"} {
+		if !settingsWritesGlobalOnly(key) {
+			t.Fatalf("%s should be global only", key)
+		}
+		a := settingsGroupedApp(t, 120, 40)
+		a.settingsState.scope = config.ScopeProject
+		if err := a.cycleToggle(key); err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
+		proj, err := config.LoadProject(a.workdir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if proj.Voice != nil || proj.TTS != nil || proj.Tests != nil || proj.AutoCommitPerTask != nil {
+			t.Fatalf("%s reached the project file: %+v", key, proj)
+		}
+		glob, _ := config.LoadGlobal()
+		if glob.Voice == nil && glob.TTS == nil && glob.Tests == nil && glob.AutoCommitPerTask == nil {
+			t.Fatalf("%s was not written to the global file", key)
+		}
+	}
+	for _, key := range []string{"max_agents", "caveman", "show_edits"} {
+		if settingsWritesGlobalOnly(key) {
+			t.Fatalf("%s follows the scope", key)
+		}
+	}
+}
+
+func TestGroupStepSkipsAnEmptyGroupAndWraps(t *testing.T) {
+	groups := []glGroup{
+		{key: "a", rows: []glRow{{idx: 0, label: "a0"}}},
+		{key: "b"},
+		{key: "c", rows: []glRow{{idx: 1, label: "c0"}}},
+	}
+	if got := glStepGroup(groups, 0, 1); got != 1 {
+		t.Fatalf("next non-empty group first row = %d, want 1", got)
+	}
+	if got := glStepGroup(groups, 1, 1); got != 0 {
+		t.Fatalf("wrap = %d, want 0", got)
+	}
+	if got := glStepGroup(nil, 5, 1); got != 5 {
+		t.Fatalf("no groups keeps the cursor, got %d", got)
+	}
+}
+
+func TestChangedOnlyOnTheRailMarksGroupsAndDefaultsAreQuiet(t *testing.T) {
+	g := glGroup{rows: []glRow{{idx: 0, src: "default"}, {idx: 1, src: ""}}}
+	if g.changed() {
+		t.Fatal("default and empty sources are not a change")
+	}
+	g.rows = append(g.rows, glRow{idx: 2, src: "global"})
+	if !g.changed() {
+		t.Fatal("a global value is a change")
+	}
+	g = glGroup{rows: []glRow{{idx: -1, header: true, src: "global"}}}
+	if g.changed() {
+		t.Fatal("a heading never counts")
+	}
+}

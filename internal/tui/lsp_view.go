@@ -50,7 +50,7 @@ func (a *App) lspView() string {
 	}
 	bodyH := 0
 	if a.height > 0 {
-		bodyH = max(a.height-lspChromeRows-len(tail), 9)
+		bodyH = max(a.height-lspChromeRows-len(tail), glMinBody)
 	}
 	b.WriteString(glBody(glSpec{groups: groups, cursor: a.lspState.selected}, &a.lspState.gl, w, bodyH))
 	for _, l := range tail {
