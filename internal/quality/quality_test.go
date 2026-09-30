@@ -167,7 +167,7 @@ func TestWriteRecordRefusesSymlinksAndKeepsTheLastFew(t *testing.T) {
 	}
 	root = t.TempDir()
 	base := time.Now().Add(-time.Hour)
-	for i := 0; i < keepRecords+5; i++ {
+	for i := 0; i < KeepRecords+5; i++ {
 		c := strings.Repeat("a", 30) + strings.Repeat(string(rune('0'+i%10)), 5) + strings.Repeat("b", 5)
 		c = c[:40]
 		c = c[:35] + strings.Repeat("0", 3) + string(rune('a'+i%6)) + string(rune('a'+i/6))
@@ -176,7 +176,7 @@ func TestWriteRecordRefusesSymlinksAndKeepsTheLastFew(t *testing.T) {
 		}
 		_ = os.Chtimes(filepath.Join(root, filepath.FromSlash(Dir), c+".json"), base.Add(time.Duration(i)*time.Second), base.Add(time.Duration(i)*time.Second))
 	}
-	if e, _ := os.ReadDir(filepath.Join(root, filepath.FromSlash(Dir))); len(e) > keepRecords {
+	if e, _ := os.ReadDir(filepath.Join(root, filepath.FromSlash(Dir))); len(e) > KeepRecords {
 		t.Fatalf("%d records kept", len(e))
 	}
 }
