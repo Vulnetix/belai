@@ -37,7 +37,7 @@ const (
 	maxTests     = 40
 	maxPackages  = 60
 	maxIdentLen  = 100
-	keepRecords  = 20
+	KeepRecords  = 20
 	maxRecordLen = 1 << 20
 )
 
@@ -327,11 +327,11 @@ func prune(dir string) {
 			recs = append(recs, rec{e.Name(), fi.ModTime()})
 		}
 	}
-	if len(recs) <= keepRecords {
+	if len(recs) <= KeepRecords {
 		return
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].mod.After(recs[j].mod) })
-	for _, r := range recs[keepRecords:] {
+	for _, r := range recs[KeepRecords:] {
 		_ = os.Remove(filepath.Join(dir, r.name))
 	}
 }
@@ -364,8 +364,8 @@ func hash8(parts ...string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
-// lowCoverage is the percentage under which a package is worth a card.
-const lowCoverage = 60.0
+// LowCoverage is the percentage under which a package is worth a card.
+const LowCoverage = 60.0
 
 // Seeds composes the cards a record calls for, most urgent first. Every line
 // of every body is a harness fact or a harness constant.
@@ -395,7 +395,7 @@ func Seeds(rec Record) []Seed {
 	if rec.CoverageMeasured {
 		var low []Cover
 		for _, c := range rec.Coverage {
-			if c.Percent < lowCoverage {
+			if c.Percent < LowCoverage {
 				low = append(low, c)
 			}
 		}
@@ -407,7 +407,7 @@ func Seeds(rec Record) []Seed {
 		})
 		if len(low) > 0 {
 			var b strings.Builder
-			fmt.Fprintf(&b, "focus: packages under %.0f%% statement coverage, measured at %s\n", lowCoverage, short)
+			fmt.Fprintf(&b, "focus: packages under %.0f%% statement coverage, measured at %s\n", LowCoverage, short)
 			var names []string
 			for _, c := range head2(low, 10) {
 				fmt.Fprintf(&b, "%s: %.1f%%\n", c.Package, c.Percent)

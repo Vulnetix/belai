@@ -136,3 +136,40 @@ func TestKanbanVerdictIsOnlyOnTheSurfaceOfAWorkerWithVerdicts(t *testing.T) {
 		t.Fatal("KanbanVerdict must be advertised in full")
 	}
 }
+
+func TestKanbanUpdateNotableItemsTakeNotesOnly(t *testing.T) {
+	store := kanban.Open(filepath.Join(t.TempDir(), "kanban"))
+	mine, _, _ := store.Add(kanban.ItemInput{Title: "the sweep item", Labels: []string{"vuln-scan"}}, kanban.Provenance{Project: "p", ProjectKey: "p-1"})
+	card, _, _ := store.Add(kanban.ItemInput{Title: "a finding card"}, kanban.Provenance{Project: "p", ProjectKey: "p-1"})
+	other, _, _ := store.Add(kanban.ItemInput{Title: "somebody else's"}, kanban.Provenance{Project: "p", ProjectKey: "p-1"})
+	if _, err := store.ClaimID(mine.ID, kanban.ClaimRequest{Worker: "w1", Profile: "scout", Host: "h", Lease: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	claim := &WorkerClaim{Worker: "w1", Item: mine.ID, Notable: []string{card.ID}}
+	up := KanbanUpdate{KanbanBase{Store: store, Claim: claim}}
+	ctx := context.Background()
+
+	if _, err := up.Execute(ctx, map[string]any{"id": card.ID, "note": "bump to 4.17.21"}); err != nil {
+		t.Fatalf("a note on a notable card: %v", err)
+	}
+	for name, args := range map[string]map[string]any{
+		"title": {"id": card.ID, "title": "renamed"},
+		"body":  {"id": card.ID, "body": "rewritten"},
+		"note on an item the claim does not name": {"id": other.ID, "note": "x"},
+	} {
+		if _, err := up.Execute(ctx, args); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	// The claimed item itself stays fully editable by its holder.
+	if _, err := up.Execute(ctx, map[string]any{"id": mine.ID, "note": "progress"}); err != nil {
+		t.Fatalf("a note on the claimed item: %v", err)
+	}
+	// A card a patcher claimed since is refused a note.
+	if _, err := store.ClaimID(card.ID, kanban.ClaimRequest{Worker: "p1", Profile: "patcher", Host: "h", Lease: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := up.Execute(ctx, map[string]any{"id": card.ID, "note": "too late"}); err == nil {
+		t.Fatal("a note on a card another worker holds was accepted")
+	}
+}

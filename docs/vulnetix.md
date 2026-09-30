@@ -567,5 +567,16 @@ raises the document version.
 | `no_fix` | `affected`, with an action statement listing what was tried |
 | `needs_human` | `under_investigation` |
 
+The `not_affected` justification is one of `component_not_present`,
+`vulnerable_code_not_present`, `vulnerable_code_not_in_execute_path`,
+`vulnerable_code_cannot_be_controlled_by_adversary` or
+`inline_mitigations_already_exist`, and a `false_positive` without one is
+refused. An `affected` statement needs an action statement. Statements are
+cleaned to one line of at most 500 characters. The product is a package URL
+built from the card (`pkg:npm/%40scope/name@1.2.3`, an unknown ecosystem is
+`pkg:generic/...`), or the repository at the verified commit for a finding that
+names no package. A finding id such as `sast:rule:abcd1234` is written as
+`sast_rule_abcd1234.openvex.json`, and an id starting with a dot is refused.
+
 A `rejected` verdict writes nothing. The Vulnetix views above read the file like
 any other VEX.

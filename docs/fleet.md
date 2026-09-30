@@ -319,9 +319,13 @@ The seed cards, labelled `scout` and `quality`, focus the scout on:
 | a failing suite, with its failing tests and packages | a suite failed or timed out | 3 |
 | the least covered packages | coverage was measured and a package is under 60% | 2 |
 | packages with no test files | coverage was measured | 1 |
-| property-based tests, mocks and fixtures, contract tests, mutation testing, docs and site against the code | once for each shape of the test setup (ecosystems, frameworks, suites, mutation tool files) | 0 |
-| measure coverage | the harness could not measure it | 1 |
-| set up a test suite | none was detected (then only this and the docs card) | 0 |
+| `properties`: where property-based tests fit | once for each shape of the test setup (ecosystems, frameworks, suites, mutation tool files) | 0 |
+| `fixtures`: better mocks, stubs and fixtures | the same | 0 |
+| `contracts`: contract tests at the seams (flags, wire and file formats, plugin interfaces) | the same | 0 |
+| `mutation`: check the tests with mutation testing (uses a configured tool, else proposes one) | the same | 0 |
+| `docs`: docs, specs and site prose against the code | the same | 0 |
+| `coverage`: measure test coverage | the harness could not measure it | 1 |
+| `suite`: set up a test suite | none was detected (then only this and `docs`) | 0 |
 
 A failing, coverage or untested card closes itself when a later run no longer
 reports its subject. A category card is never reopened after it is done or
@@ -369,7 +373,7 @@ each card with the fixed version, the exact edit and the lockfile command, so a
 patcher starts with the answer. The claim lists which cards it may annotate. The
 harness derives them from fields it set (the commit the card was filed at, its
 list, its labels, whether it is claimed), never from the item's text, and those
-cards take notes but no edit or move.
+cards take notes but no edit or move. At most 20 cards are listed, highest priority first, and a card a patcher has claimed since is refused a note.
 
 A patcher fixes one card on its branch in up to `rounds` turns (three for the
 built-in patcher). After each turn the harness scans the worktree itself, with
@@ -406,6 +410,13 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 ```json
 {"name": "docs", "description": "Docs writers", "members": [{"profile": "writer", "replicas": 2}]}
 ```
+
+A crew runs 1 to 8 members, each 1 to 8 replicas, and every member must be a
+worker profile. Set `"one_per_repo": true` on a crew (both built-in crews have
+it) to refuse a start while one of its workers is live in the same repository.
+The check, the worker cap and the spawns are one step under a lock, so two
+starts fired together cannot both get in. A crew without it can be started
+alongside itself.
 
 ## Command line
 
