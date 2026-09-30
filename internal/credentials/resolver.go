@@ -125,10 +125,17 @@ func (r *Resolver) Profile(name string) (provider.Profile, bool) {
 		auth = provider.Auth(p.Auth)
 	}
 	models := make([]string, 0, len(p.Models))
+	var vision map[string]bool
 	for _, m := range p.Models {
 		models = append(models, m.ID)
+		if m.Images != nil {
+			if vision == nil {
+				vision = map[string]bool{}
+			}
+			vision[m.ID] = *m.Images
+		}
 	}
-	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models, Kind: p.Kind, DecisionPath: p.DecisionPath}, true
+	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models, Kind: p.Kind, DecisionPath: p.DecisionPath, Vision: vision}, true
 }
 
 // CanonicalProvider implements run.AliasSource: it resolves a user-facing

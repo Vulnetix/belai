@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func ptr(b bool) *bool { return &b }
 
@@ -52,5 +56,19 @@ func TestUserLayerMayTurnScreenshotBackOn(t *testing.T) {
 	out := mergeScreenshot(&ScreenshotSettings{Enabled: ptr(false)}, &ScreenshotSettings{Enabled: ptr(true)}, false)
 	if out.Enabled == nil || !*out.Enabled {
 		t.Fatal("a user layer must be able to turn the tool on")
+	}
+}
+
+func TestProviderModelImagesRoundTrips(t *testing.T) {
+	var p ProviderProfile
+	if err := json.Unmarshal([]byte(`{"base_url":"http://x","api":"openai-chat","models":[{"id":"a","images":true},{"id":"b","images":false},{"id":"c"}]}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Models[0].Images == nil || !*p.Models[0].Images || p.Models[1].Images == nil || *p.Models[1].Images || p.Models[2].Images != nil {
+		t.Fatalf("models = %+v", p.Models)
+	}
+	out, _ := json.Marshal(p.Models[2])
+	if strings.Contains(string(out), "images") {
+		t.Fatalf("an undeclared model must not write the key: %s", out)
 	}
 }

@@ -1908,6 +1908,11 @@ explicit confirmation.
 `base_url`, `api` (one of `openai-chat`, `openai-responses`,
 `anthropic-messages`), optional `auth` (`bearer`, `x-api-key`, `cf-aig`),
 optional `api_key_env`, and a `models` catalogue. Secrets never live there.
+Each model may carry `"images": true` or `false` to declare whether it accepts
+image input. A declaration wins over the model-id rules (`models.Vision`), so a
+local vision model with an unfamiliar name can receive images and a model that
+looks like a vision one but is not can be kept off them; a model without the
+key is decided from its id, and an unknown id is text-only.
 Profiles merge key-by-key across layers, and a project-layer `providers` block
 is ignored unless the global settings opt in with
 `allow_project_providers: true`.

@@ -900,6 +900,10 @@ type ProviderModel struct {
 	Name          string `json:"name,omitempty"`
 	ContextWindow int    `json:"context_window,omitempty"`
 	MaxTokens     int    `json:"max_tokens,omitempty"`
+	// Images declares whether the model accepts image input. nil means "decide
+	// from the model id" (models.Vision); true sends attached and captured
+	// images to it, false keeps them off it and tells the model so.
+	Images *bool `json:"images,omitempty"`
 }
 
 // UISettings holds TUI presentation toggles.

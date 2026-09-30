@@ -38,13 +38,37 @@ judge an image, so pixels take a separate, deterministic path.
   few others; an id it does not name is text-only). A text-only model gets a
   harness note instead of the image. Kiro decides from its live catalogue
   (`kiromodels.Info.Images`) as for an attached image.
+- **User images use the same path.** An image on a user turn is shaped by the
+  same rules as a tool image: only the newest image in the conversation is
+  sent, whichever role it is on (a screenshot taken after an attached image
+  replaces it, and the reverse), and a model without image input gets a
+  harness note on that turn instead. The model accepts images when the custom
+  provider profile declares `"images": true` for it, or, without a
+  declaration, when `models.Vision` names its id. Text attachments on the
+  same turn are kept when the images are dropped.
+- **Token estimate.** An image counts as its area divided by 750 pixels,
+  at least 85 and at most 1600 tokens, in the request-shape and per-call
+  estimates. Provider-reported usage replaces the estimate when it arrives.
 - **Encoding per surface.** Anthropic: the `tool_result` content becomes a
   block list, the text first and then a base64 `image` block. OpenAI-style chat
   completions: a tool message has no image seat, so the image rides on a user
   message of `image_url` parts (a data URI) that follows the whole run of tool
   results answering one assistant turn; a user message in the middle of that
   run would break the tool-call pairing. Kiro: the image joins the current
-  user message like an attached one, with the history's images cleared.
+  user message like an attached one, with the history's images cleared. An
+  image the service would refuse (over 3.75 MB, or a format it does not list)
+  is named in the message or tool result instead of dropped silently.
+  A **user** image needs no follow-up message: on chat completions it is
+  `image_url` parts on the user message after its text (or alone, with no
+  empty text part), and on Anthropic it is `image` blocks ahead of the text.
+  That covers OpenAI, OpenRouter, Gemini's OpenAI-compatible endpoint, Ollama,
+  llama-server, Groq, DeepSeek, Mistral, Together, xAI, Moonshot, MiniMax,
+  Alibaba, Hugging Face, Cloudflare Workers AI and the AI Gateway (Claude
+  models take the Anthropic shape), and custom `openai-chat` and
+  `anthropic-messages` profiles. GitHub Copilot additionally gets
+  `Copilot-Vision-Request: true` on a request that carries an image, and
+  only then. The `openai-responses` surface has no request path in Belai, so
+  it has no image path either.
 - **What is not covered.** Pixels can still show text. A page or window the
   model is shown may contain words written to look like instructions. The
   result text says the image is data, the `Screenshot` tool asks before a

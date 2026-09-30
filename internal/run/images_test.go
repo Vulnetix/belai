@@ -25,7 +25,7 @@ func assistantCall(ids ...string) Turn {
 
 func TestPrepareToolImagesKeepsOnlyTheNewest(t *testing.T) {
 	turns := []Turn{{Role: "user", Content: "go"}, assistantCall("a"), imgTurn("a", "one"), assistantCall("b"), imgTurn("b", "two")}
-	got := prepareToolImages(turns, true)
+	got := prepareImages(turns, true)
 	if len(got[2].Attachments) != 0 || !strings.Contains(got[2].Content, "earlier image is not sent again") {
 		t.Fatalf("older image kept: %+v", got[2])
 	}
@@ -38,7 +38,7 @@ func TestPrepareToolImagesKeepsOnlyTheNewest(t *testing.T) {
 }
 
 func TestPrepareToolImagesTextOnlyModel(t *testing.T) {
-	got := prepareToolImages([]Turn{assistantCall("a"), imgTurn("a", "shot")}, false)
+	got := prepareImages([]Turn{assistantCall("a"), imgTurn("a", "shot")}, false)
 	if len(got[1].Attachments) != 0 || !strings.Contains(got[1].Content, "does not accept image input") {
 		t.Fatalf("text-only model kept the image: %+v", got[1])
 	}
@@ -46,7 +46,7 @@ func TestPrepareToolImagesTextOnlyModel(t *testing.T) {
 
 func TestPrepareToolImagesNoImagesIsIdentity(t *testing.T) {
 	in := []Turn{{Role: "user", Content: "x"}, {Role: "tool", Content: "y"}}
-	out := prepareToolImages(in, false)
+	out := prepareImages(in, false)
 	if &in[0] != &out[0] {
 		t.Fatal("turns without images should be returned as they were")
 	}
