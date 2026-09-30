@@ -363,3 +363,32 @@ func TestStoreEnvRefRejectsNonFileBackends(t *testing.T) {
 		t.Fatal("StoreEnvRef with invalid name should fail")
 	}
 }
+
+func TestProfileCarriesEachModelsImageDeclaration(t *testing.T) {
+	yes, no := true, false
+	r := &Resolver{settings: config.Settings{Providers: map[string]config.ProviderProfile{
+		"mine": {BaseURL: "http://127.0.0.1:1/v1", API: "openai-chat", Models: []config.ProviderModel{
+			{ID: "vlm", Images: &yes}, {ID: "text", Images: &no}, {ID: "undeclared"},
+		}},
+		"plain": {BaseURL: "http://127.0.0.1:2/v1", API: "openai-chat", Models: []config.ProviderModel{{ID: "a"}}},
+	}}}
+	p, ok := r.Profile("mine")
+	if !ok {
+		t.Fatal("profile not found")
+	}
+	if v, ok := p.Vision["vlm"]; !ok || !v {
+		t.Fatalf("vlm = %v %v", v, ok)
+	}
+	if v, ok := p.Vision["text"]; !ok || v {
+		t.Fatalf("text = %v %v", v, ok)
+	}
+	if _, ok := p.Vision["undeclared"]; ok {
+		t.Fatal("an undeclared model must be left to the id rules")
+	}
+	if len(p.Models) != 3 {
+		t.Fatalf("models = %v", p.Models)
+	}
+	if plain, _ := r.Profile("plain"); plain.Vision != nil {
+		t.Fatalf("no declarations should leave Vision nil, got %v", plain.Vision)
+	}
+}

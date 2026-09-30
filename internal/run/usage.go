@@ -155,6 +155,7 @@ func requestShape(system string, turns []Turn, toolDefs int) RequestShape {
 	}
 	for _, t := range turns {
 		n := transcript.EstimateTokens(transcript.Message{Role: t.Role, Content: t.Content})
+		n += turnImageTokens(t)
 		for _, c := range t.ToolCalls {
 			n += toolCallTokens(c.Name, c.Args)
 		}
@@ -206,6 +207,7 @@ func callTokens(system string, turns []Turn, a Assistant) (int, bool) {
 	n := transcript.EstimateTokens(transcript.Message{Role: "system", Content: system})
 	for _, t := range turns {
 		n += transcript.EstimateTokens(transcript.Message{Role: t.Role, Content: t.Content})
+		n += turnImageTokens(t)
 		for _, c := range t.ToolCalls {
 			n += toolCallTokens(c.Name, c.Args)
 		}

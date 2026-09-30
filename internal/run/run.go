@@ -54,6 +54,9 @@ type Config struct {
 	// Downstream consumers (modelfetch, availability) dispatch on it without
 	// re-reading settings.
 	Kind string
+	// Vision is the provider profile's declaration that this model does or
+	// does not accept image input. nil means decide from the model id.
+	Vision *bool
 	// ToolMethod is the session-stored tool calling method; ToolMethodNone
 	// (zero) means detect. It is resolved once per session and carried on
 	// every request so the model's method is not re-checked per turn.
@@ -1351,6 +1354,9 @@ func resolveCustom(cfg *Config, status *Status, name string, prof provider.Profi
 	if cfg.Model == "" && len(prof.Models) > 0 {
 		cfg.Model = prof.Models[0]
 	}
+	if v, ok := prof.Vision[cfg.Model]; ok {
+		cfg.Vision = &v
+	}
 	if key, origin, ok := src.Lookup(name, "api_key"); ok {
 		cfg.APIKey = key
 		status.Origins["api_key"] = origin
@@ -2037,7 +2043,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		// Kiro decides from its live catalogue below; every other surface
 		// decides from the model id.
 		if d.kind != kindKiro {
-			turns = prepareToolImages(turns, models.Vision(cfg.Provider, cfg.Model))
+			turns = prepareImages(turns, cfg.acceptsImages())
 		}
 
 		switch d.kind {
@@ -2098,7 +2104,13 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			if d.maxCompletion {
 				req.MaxCompletionTokens, req.MaxTokens = req.MaxTokens, 0
 			}
-			return d.chatRequest(p, req)
+			httpReq, err := d.chatRequest(p, req)
+			if err == nil && p.Auth() == provider.AuthCopilot && requestHasImages(req.Messages) {
+				// Copilot's chat endpoint refuses image parts unless the
+				// request says it is a vision request.
+				httpReq.Header.Set("Copilot-Vision-Request", "true")
+			}
+			return httpReq, err
 		}
 	}
 	if cfg.Firewall != nil {
@@ -2366,6 +2378,8 @@ func (t *Turn) ClearToolResult() bool {
 		return false
 	}
 	t.Content = ClearedToolResult
+	// A cleared result also lets go of the image it carried.
+	t.Attachments = imageless(t.Attachments)
 	t.egrossed = ""
 	return true
 }
@@ -2415,7 +2429,7 @@ func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []
 			msgs = append(msgs, msg)
 		case "tool":
 			msgs = append(msgs, wire.OpenAIChatMessage{Role: "tool", Content: t.Content, ToolCallID: t.ToolCallID, Name: t.ToolName})
-			if imgs := toolImages(t); len(imgs) > 0 {
+			if imgs := turnImages(t); len(imgs) > 0 {
 				pendingImages = append(pendingImages, wire.OpenAIChatMessage{
 					Role:    "user",
 					Content: "[harness: the image below is the result of the " + t.ToolName + " call above]",
@@ -2423,7 +2437,9 @@ func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []
 				})
 			}
 		default:
-			msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content})
+			// A user's attached image rides on the message itself, as
+			// image_url parts after the text.
+			msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content, Images: turnImages(t)})
 		}
 	}
 	msgs = append(msgs, pendingImages...)
@@ -2475,6 +2491,19 @@ func buildAnthropicMessages(turns []Turn, replayFor string) []wire.AnthropicMess
 			}
 			msgs = append(msgs, wire.NewAnthropicBlockMessage("user", []wire.AnthropicRequestBlock{result}))
 		default:
+			if imgs := imageAttachments(t.Attachments); len(imgs) > 0 {
+				// A user's attached image is a block beside the text: the
+				// images first, as the API recommends, then the words.
+				blocks := make([]wire.AnthropicRequestBlock, 0, 1+len(imgs))
+				for _, a := range imgs {
+					blocks = append(blocks, wire.NewAnthropicImageBlock(a.MediaType, a.Data))
+				}
+				if t.Content != "" {
+					blocks = append(blocks, wire.AnthropicRequestBlock{Type: "text", Text: t.Content})
+				}
+				msgs = append(msgs, wire.NewAnthropicBlockMessage(t.Role, blocks))
+				continue
+			}
 			msgs = append(msgs, wire.NewAnthropicTextMessage(t.Role, t.Content))
 		}
 	}

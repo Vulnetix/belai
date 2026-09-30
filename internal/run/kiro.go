@@ -114,24 +114,32 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 			if user.UserInputMessageContext == nil {
 				user.UserInputMessageContext = &wire.KiroUserInputMessageCtx{}
 			}
-			user.UserInputMessageContext.ToolResults = append(user.UserInputMessageContext.ToolResults, wire.KiroToolResult{
-				ToolUseID: t.ToolCallID,
-				Content:   []wire.KiroTextContent{{Text: t.Content}},
-				Status:    "success",
-			})
 			// An image a tool returned (a screenshot) rides on the same user
 			// message; history images are cleared below and a text-only model
-			// gets the omitted note, exactly like an attached image.
-			user.Images = append(user.Images, kiroImages(imageAttachments(t.Attachments))...)
+			// gets the omitted note, exactly like an attached image. One the
+			// service would refuse is named in the result, not dropped silently.
+			want := imageAttachments(t.Attachments)
+			got := kiroImages(want)
+			user.Images = append(user.Images, got...)
+			result := t.Content
+			if len(got) < len(want) {
+				result += "\n" + kiroImageRefused
+			}
+			user.UserInputMessageContext.ToolResults = append(user.UserInputMessageContext.ToolResults, wire.KiroToolResult{
+				ToolUseID: t.ToolCallID,
+				Content:   []wire.KiroTextContent{{Text: result}},
+				Status:    "success",
+			})
 		default:
 			openUser()
 			if t.Content != "" {
 				text = append(text, t.Content)
 			}
-			for _, att := range t.Attachments {
-				if att.Kind == AttachmentImage {
-					user.Images = append(user.Images, kiroImages([]Attachment{att})...)
-				}
+			want := imageAttachments(t.Attachments)
+			got := kiroImages(want)
+			user.Images = append(user.Images, got...)
+			if len(got) < len(want) {
+				text = append(text, kiroImageRefused)
 			}
 		}
 	}
@@ -179,6 +187,10 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 // kiroImageOmitted replaces images a text-only model cannot take. It is
 // harness text.
 const kiroImageOmitted = "[an attached image was not sent: this model does not accept images]"
+
+// kiroImageRefused names an image the service would not take (a format it does
+// not list, or over its size ceiling). It is harness text.
+const kiroImageRefused = "[harness: an image was not sent: it is over the service's 3.75 MB limit or in a format it does not take]"
 
 // kiroMaxImageBytes is the service's per-image ceiling before base64.
 const kiroMaxImageBytes = 3_750_000
