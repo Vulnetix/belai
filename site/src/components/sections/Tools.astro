@@ -53,7 +53,8 @@ const core = [
   ['Edit · Write', 'refuse a file the model has not read in this session, or one that changed on disk since'],
   ['Git', 'status, log, diff, show, rev-parse, ls-files, grep and describe, nothing that writes'],
   ['Bash · BashOutput · KillShell', '`run_in_background` starts a server and returns a handle, BashOutput reads what it printed since the last read, KillShell stops it. It asks and runs in the sandbox like any Bash call, and is never restarted by the recovery agent'],
-  ['Screenshot', 'the desktop, which asks every time, or a page served from this machine, which only loopback addresses can be. The image is checked, reduced and re-encoded by Belai, because a text classifier cannot read pixels. Only the newest image is sent, and a model without image input is told it was not'],
+  ['Screenshot', 'a page served from this machine, rendered in headless Chrome or Chromium with every request to anywhere else blocked, or the desktop, which asks every time. Only loopback addresses are accepted, and Belai checks that a server is listening first. The PNG is kept under `~/.vulnetix/belai/screenshots` (newest 20) and the path is in the result'],
+  ['Screenshot images', 'a text classifier cannot read pixels, so Belai decodes the image, limits its size, scales it to 1568 pixels on the long edge and re-encodes it. Only the newest image is sent, a model without image input is told it was not, and `screenshot.enabled` and `screenshot.desktop` can be turned off by a project file and never on. It is in the interactive session only'],
 ];
 
 const locateFacts: [string, string][] = [
