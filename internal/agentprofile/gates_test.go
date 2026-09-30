@@ -1,6 +1,9 @@
 package agentprofile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGatesSpecValidation(t *testing.T) {
 	ok := worker()
@@ -115,5 +118,27 @@ func TestBuiltinScoutRoutesHandoffsByClarity(t *testing.T) {
 	}
 	if !p.Kanban.Quality.Auto() {
 		t.Fatal("the delivery scout sends clear tasks to backlog and the rest to review")
+	}
+}
+
+func TestGatesCoverageValidation(t *testing.T) {
+	p := worker()
+	p.Kanban.Gates = &GatesSpec{Coverage: true}
+	if err := p.Validate(); err == nil {
+		t.Fatal("coverage needs a handoff: a request is covered by the tasks handed on")
+	}
+	p.Kanban.HandoffLabels = []string{"build"}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuiltinScoutPlansRequestsForCoverage(t *testing.T) {
+	p, err := Load("belai:scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Kanban.Gates.Coverage || !strings.Contains(p.SystemPrompt, "KanbanContract") || !strings.Contains(p.SystemPrompt, "covers") {
+		t.Fatalf("the scout records clauses and covers them: %+v", p.Kanban.Gates)
 	}
 }

@@ -45,3 +45,17 @@ func TestBuiltinBuilderAndReviewerEnforceGates(t *testing.T) {
 		t.Error("docs/agent-profiles.md does not say the builder's hand-on waits for verification")
 	}
 }
+
+func TestCoverageLabelAndSettingAreDocumented(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/fleet.md")), " ")
+	if !strings.Contains(doc, "`"+CoverageLabel+"` label") {
+		t.Errorf("docs/fleet.md does not name the %q label", CoverageLabel)
+	}
+	if !strings.Contains(doc, "`kanban.gates.coverage`") {
+		t.Error("docs/fleet.md does not name kanban.gates.coverage")
+	}
+	agents := docparity.Read(t, "docs/agent-profiles.md")
+	if !strings.Contains(agents, "`kanban.gates.coverage`") {
+		t.Error("docs/agent-profiles.md does not name kanban.gates.coverage")
+	}
+}

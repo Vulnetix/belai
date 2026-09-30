@@ -29,7 +29,7 @@ const ToolSearchName = "ToolSearch"
 var CoreTools = []string{
 	"Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "WebSearch",
 	"update_plan", "ExitPlanMode", "AskUserQuestion", "Task", "Skill",
-	KanbanSearchName, KanbanUpdateName, KanbanMoveName, KanbanAddName, KanbanHandoffName, KanbanVerdictName, KanbanGateName,
+	KanbanSearchName, KanbanUpdateName, KanbanMoveName, KanbanAddName, KanbanHandoffName, KanbanVerdictName, KanbanGateName, KanbanContractName,
 	"SubAgentLog", "ProcessRestart", BashOutputName, KillShellName, ScreenshotName, ToolSearchName, ReadResultName,
 }
 

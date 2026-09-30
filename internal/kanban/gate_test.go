@@ -181,13 +181,13 @@ func TestCloneItemCopiesGates(t *testing.T) {
 	}
 }
 
-func TestBoardVersionThreeRefusedByAnOlderReader(t *testing.T) {
+func TestBoardVersionCoversGatesAndClauses(t *testing.T) {
 	enc, err := Encode(Board{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if formatVersion != 3 {
-		t.Fatalf("gates need board version 3, have %d", formatVersion)
+	if formatVersion < 4 {
+		t.Fatalf("gates need board version 3 and request clauses 4, have %d", formatVersion)
 	}
 	if _, err := Decode(enc); err != nil {
 		t.Fatal(err)

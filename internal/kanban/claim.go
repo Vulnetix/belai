@@ -164,6 +164,8 @@ func cloneItem(it Item) Item {
 	it.Labels = slices.Clone(it.Labels)
 	it.DependsOn = slices.Clone(it.DependsOn)
 	it.Gates = cloneGates(it.Gates)
+	it.Clauses = slices.Clone(it.Clauses)
+	it.Covers = slices.Clone(it.Covers)
 	return it
 }
 

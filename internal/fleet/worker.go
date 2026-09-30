@@ -596,7 +596,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			claim.HandoffList = list
 		}
 	}
-	w.applyGates(itemCtx, claim)
+	w.applyGates(itemCtx, claim, it)
 	w.resetManualGates(it)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
@@ -696,6 +696,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 		o = w.applyManualGates(o, it)
 	}
+	o = w.reconcileCoverage(ctx, o, it)
 	stopRenew()
 	released := w.release(ctx, it, o)
 	// An empty branch has nothing to push; PublishBranch would only refuse

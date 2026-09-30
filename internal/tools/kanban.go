@@ -105,6 +105,9 @@ type WorkerClaim struct {
 	// GateReview is true for a reviewer that may record manual gates with
 	// KanbanGate.
 	GateReview bool
+	// Coverage is true for a worker that plans a request card: it records the
+	// request's clauses with KanbanContract and every handoff covers some.
+	Coverage bool
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -486,6 +489,9 @@ func (t KanbanHandoff) Definition() Definition {
 		"depends_on": {Type: "array", Items: &Property{Type: "string"}, Description: "Ids (K-xxxxxx) of items that must be done first, e.g. an earlier handoff."},
 		"list":       {Type: "string", Enum: []string{string(kanban.Backlog), string(kanban.Review)}, Description: "backlog (default) or review."},
 	}
+	if t.Claim != nil && t.Claim.Coverage {
+		props["covers"] = Property{Type: "array", Items: &Property{Type: "string"}, Description: "The clause ids (C1, C2, ...) of the request this task covers. Required: every task must cover at least one."}
+	}
 	if t.Claim != nil && t.Claim.HandoffAuto {
 		props["clarity"] = Property{Type: "string", Enum: []string{ClarityClear, ClarityUnclear, ClaritySplit}, Description: "Your own view of the task. needs_clarification: a person should confirm what is meant. needs_split: it hides several independent changes. Either sends it to review. A clear, concise task with a runnable gate goes to the backlog for a builder."}
 	}
@@ -563,6 +569,9 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 		return Result{}, err
 	}
 	if in.Gates, err = c.parseGates(args); err != nil {
+		return Result{}, err
+	}
+	if in.Covers, err = c.parseCovers(t.Store, args); err != nil {
 		return Result{}, err
 	}
 	if auto {
@@ -743,6 +752,9 @@ func (r *Registry) WithKanbanWorker(store *kanban.Store, src *kanban.Source, cla
 	}
 	if claim.GateReview {
 		ts = append(ts, KanbanGate{base})
+	}
+	if claim.Coverage {
+		ts = append(ts, KanbanContract{base})
 	}
 	return r.With(ts...)
 }
