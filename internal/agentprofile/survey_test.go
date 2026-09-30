@@ -159,3 +159,25 @@ func TestSecuritySpecValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSecurityRoundsValidation(t *testing.T) {
+	p := worker()
+	p.Workspace = &WorkspaceSpec{Isolation: IsolationWorktree}
+	p.Kanban.Security = &SecuritySpec{Rounds: 3}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	p.Kanban.Security = &SecuritySpec{Rounds: MaxRounds + 1}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "rounds") {
+		t.Fatalf("err = %v", err)
+	}
+	q := worker()
+	q.Kanban.Security = &SecuritySpec{Rounds: 2}
+	if err := q.Validate(); err == nil || !strings.Contains(err.Error(), "worktree") {
+		t.Fatalf("rounds without a worktree: %v", err)
+	}
+	patcher, err := Load("belai:patcher")
+	if err != nil || patcher.Kanban.Security.Rounds != 3 {
+		t.Fatalf("patcher rounds: %v", err)
+	}
+}
