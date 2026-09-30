@@ -26,6 +26,7 @@ var allRolemanagerEvents = []rolemanager.Event{
 	rolemanager.EventBashSwap, rolemanager.EventBashReplan, rolemanager.EventOptionOrder,
 	rolemanager.EventPruneCompaction, rolemanager.EventToolSearch, rolemanager.EventToolSelect,
 	rolemanager.EventLSPTriage, rolemanager.EventExploreLocate, rolemanager.EventRequestScale, rolemanager.EventGoalJudge,
+	rolemanager.EventHandoffClarity, rolemanager.EventGateAlignment, rolemanager.EventRequestCoverage,
 }
 
 // Every decision reaches the session record the moment the render loop takes

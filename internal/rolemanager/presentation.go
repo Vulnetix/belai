@@ -75,6 +75,9 @@ var harnessEvents = map[Event]bool{
 	EventVoiceCommand:              true,
 	EventRequestScale:              true,
 	EventGoalJudge:                 true,
+	EventHandoffClarity:            true,
+	EventGateAlignment:             true,
+	EventRequestCoverage:           true,
 }
 
 // IsJevIdentity reports whether a provider/model identity names a decision
@@ -169,6 +172,9 @@ var presentations = map[Event]presentation{
 	EventVoiceCommand:              {CategoryAsk, "voicecmd"},
 	EventRequestScale:              {CategoryMode, "scale"},
 	EventGoalJudge:                 {CategoryMode, "goaljudge"},
+	EventHandoffClarity:            {CategoryCode, "clarity"},
+	EventGateAlignment:             {CategoryCode, "align"},
+	EventRequestCoverage:           {CategoryCode, "cover"},
 	EventClarify:                   {CategoryAsk, "clarify"},
 	EventOptionOrder:               {CategoryAsk, "options"},
 	EventRouteFallback:             {CategoryRouting, "route"},

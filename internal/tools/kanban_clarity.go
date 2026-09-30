@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -69,4 +70,16 @@ func routeByClarity(in kanban.ItemInput, declared string) (kanban.List, []string
 		return kanban.Review, why
 	}
 	return kanban.Backlog, nil
+}
+
+// HandoffRelevance rates an auto-routed handoff with a decision backend. Each
+// method reports ok=false when the backend gave no usable answer, and the
+// counted rule then stands alone. Neither can move a handoff toward backlog:
+// the caller uses them only to send one to review.
+type HandoffRelevance interface {
+	// Clarity reports whether the task rates as unclear.
+	Clarity(ctx context.Context, title, body string) (unclear, ok bool)
+	// Alignment returns the ids (G1, G2, by position) of runnable gates whose
+	// suite and test do not seem to show the outcome their title states.
+	Alignment(ctx context.Context, gates []kanban.Gate) (flagged []string, ok bool)
 }

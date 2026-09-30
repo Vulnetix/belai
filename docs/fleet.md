@@ -529,7 +529,7 @@ built-in profile claims, so it waits in the Backlog for a person to plan it,
 file it as a task or drop it. It is filed once for each clause: never reopened
 after it is done, never doubled by a retry or a relaunch, and never recreated
 after a person deletes it. The scout's own card then completes, with a note such
-as `coverage: 1 of 2 clauses covered, 1 gap card(s) filed`. A deleted handoff
+as `coverage: 1 of 2 clauses covered, gaps C2, 1 gap card(s) filed`. A deleted handoff
 covers nothing.
 
 ### The security crew

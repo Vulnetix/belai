@@ -45,7 +45,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
-| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev goal judge` |
+| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge` |
 | Jev thresholds | one slider per cut-off, in the sections below |
 
 **The two Jev groups exist only while a decision backend is configured**
@@ -66,6 +66,7 @@ Every cut-off is in exactly one section, in this order:
 | locate | `jev hit at`, `jev lead at` |
 | option order | `jev option hit`, `jev option margin`, `jev option lead` |
 | mode choice | `jev mode sure`, `jev mode margin`, `jev mode headless` |
+| delivery crew | `jev clear at`, `jev align at`, `jev cover at` |
 
 A section heading labels its rows and never takes the cursor.
 

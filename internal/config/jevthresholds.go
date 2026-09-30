@@ -41,6 +41,11 @@ type JevThresholds struct {
 	// ModeConfident with a lead of ModeMargin over the runner-up. ModeHeadless is
 	// the score a non-interactive run needs to accept it.
 	ModeConfident, ModeMargin, ModeHeadless float64
+	// ClearAt, AlignAt and CoverAt are the delivery relevance jobs' cut-offs:
+	// a handoff rated below ClearAt goes to review, a gate rated below AlignAt is
+	// flagged, and a request clause whose covering tasks all rate below CoverAt
+	// gets a gap card. Each only narrows, so a higher value means more review.
+	ClearAt, AlignAt, CoverAt float64
 }
 
 // DefaultJevThresholds are the values used when nothing is configured.
@@ -52,6 +57,7 @@ func DefaultJevThresholds() JevThresholds {
 		TriageAt: 0.30, HitAt: 0.50, LeadAt: 0.25,
 		OptionHit: 0.50, OptionMargin: 0.10, OptionLead: 0.25,
 		ModeConfident: 0.80, ModeMargin: 0.25, ModeHeadless: 0.50,
+		ClearAt: 0.50, AlignAt: 0.40, CoverAt: 0.40,
 	}
 }
 
@@ -79,6 +85,9 @@ type JevThresholdSettings struct {
 	ModeConfident    *float64 `json:"mode_confident,omitempty"`
 	ModeMargin       *float64 `json:"mode_margin,omitempty"`
 	ModeHeadless     *float64 `json:"mode_headless,omitempty"`
+	ClearAt          *float64 `json:"clear_at,omitempty"`
+	AlignAt          *float64 `json:"align_at,omitempty"`
+	CoverAt          *float64 `json:"cover_at,omitempty"`
 }
 
 // thresholdSlot pairs a setting key with its slot in the settings form and in
@@ -101,6 +110,7 @@ func (t *JevThresholdSettings) slots(r *JevThresholds) []thresholdSlot {
 		{"option_hit", &t.OptionHit, &r.OptionHit}, {"option_margin", &t.OptionMargin, &r.OptionMargin},
 		{"option_lead", &t.OptionLead, &r.OptionLead}, {"mode_confident", &t.ModeConfident, &r.ModeConfident},
 		{"mode_margin", &t.ModeMargin, &r.ModeMargin}, {"mode_headless", &t.ModeHeadless, &r.ModeHeadless},
+		{"clear_at", &t.ClearAt, &r.ClearAt}, {"align_at", &t.AlignAt, &r.AlignAt}, {"cover_at", &t.CoverAt, &r.CoverAt},
 	}
 }
 

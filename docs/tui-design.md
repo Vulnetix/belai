@@ -179,6 +179,9 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊗` | language server down | `code` |
 | `▣` | LSP triage | `code` |
 | `⌖` | files located for a question | `code` |
+| `◔` | delivery handoff rated for clarity | `code` |
+| `⊜` | delivery gates rated against their titles | `code` |
+| `⊚` | request clauses rated against the tasks covering them | `code` |
 | `?` | question asked | `ask` |
 | `≣` | options ordered | `ask` |
 | `⇢` | route fallback | `routing` |

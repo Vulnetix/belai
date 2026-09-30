@@ -1,8 +1,10 @@
 package fleet
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/docparity"
@@ -57,5 +59,13 @@ func TestCoverageLabelAndSettingAreDocumented(t *testing.T) {
 	agents := docparity.Read(t, "docs/agent-profiles.md")
 	if !strings.Contains(agents, "`kanban.gates.coverage`") {
 		t.Error("docs/agent-profiles.md does not name kanban.gates.coverage")
+	}
+}
+
+func TestRelevanceTimeoutIsDocumented(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/jev-jobs.md")), " ")
+	want := fmt.Sprintf("a timeout (%d seconds)", int(relevanceTimeout/time.Second))
+	if !strings.Contains(doc, want) {
+		t.Errorf("docs/jev-jobs.md lacks %q", want)
 	}
 }
