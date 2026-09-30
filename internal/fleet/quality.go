@@ -93,15 +93,21 @@ func (w *Worker) runQuality(ctx context.Context, head string) quality.Record {
 // testResults runs the plan under the user's permission rules, the OS sandbox
 // and the scrubbed environment, exactly as the post-end test pass does.
 func (w *Worker) testResults(ctx context.Context, plan testrun.Plan) []testrun.Result {
+	return w.testResultsAt(ctx, w.Repo, plan)
+}
+
+// testResultsAt is testResults in another trusted directory, such as an item's
+// worktree, which is also the one writable root of the sandbox policy.
+func (w *Worker) testResultsAt(ctx context.Context, dir string, plan testrun.Plan) []testrun.Result {
 	if w.RunTests != nil {
 		return w.RunTests(ctx, plan)
 	}
 	opts := testrun.Options{
-		Dir:     w.Repo,
+		Dir:     dir,
 		Timeout: time.Duration(w.Settings.TestsTimeoutSeconds()) * time.Second,
 		Perms:   permissions.From(w.Settings.Permissions.Allow, w.Settings.Permissions.Ask, w.Settings.Permissions.Deny),
 	}
-	pol := sandbox.FromSettings(w.Settings.Sandbox, []string{w.Repo}, w.Posture)
+	pol := sandbox.FromSettings(w.Settings.Sandbox, []string{dir}, w.Posture)
 	return testrun.RunPlan(sandbox.WithPolicy(ctx, pol), opts, plan)
 }
 

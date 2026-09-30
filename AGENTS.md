@@ -524,6 +524,29 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   to the profile's `kanban.quality.list` (review by default) whatever the model
   asks, as a survey does. The delivery scout has no daily survey and no
   `every` stamp.
+- **Acceptance gates are references, and the harness decides them.**
+  A gate on a card (`kanban.Gate`) names a test suite the harness detected
+  (`internal/testdetect`) and, for a Go suite, a package directory and a test
+  name, each a plain identifier. It never holds a command, and there is no
+  custom oracle command now or later: the argv is built by
+  `quality.GateArgv` from the suite table, `dir` anchored with `./`, run without
+  a shell. `KanbanHandoff` refuses the whole handoff for an undetected suite, an
+  unsafe identifier, a missing directory or a symlink out of the repository, and
+  never drops a gate. The harness assigns ids and the `unmet` state; no model
+  argument reaches a gate's id, state, ref or note, and a pulled copy of a card
+  never carries or replaces them. With `kanban.gates.verify` the harness runs
+  the gates on the branch after the turn is committed, with the claim still
+  held and renewed, under the permission rules, the OS sandbox and the scrubbed
+  environment, and decides each by exit code (`quality.JudgeGate`). A run that
+  tested nothing is never a pass. `enforce` makes the result decide the route,
+  so a model's completion claim cannot close a card; a gate that could not run
+  (deny or ask rule, no binary, no sandbox) blocks the card for a person and is
+  not a failed attempt. Only harness facts reach a card, a note or a model: gate
+  ids, suite names, cleaned test identifiers, exit codes and commits, never test
+  output text. The verification record under `.vulnetix/belai/quality/verify`
+  is written by the harness alone with the quality record's symlink refusal,
+  and an abandoned gate is never success. A project layer cannot add a profile,
+  so it cannot turn verification on.
 - **The security crew's review, cards, verdicts and VEX are harness work.**
   `belai:security` is marked `one_per_repo`: a start is refused while a worker
   of it is live in the repository (`Registry.CheckCrewFree`). Whether a review
