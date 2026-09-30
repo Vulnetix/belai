@@ -59,6 +59,8 @@ const (
 	EventVoiceCommand              Event = "voice_command"
 	EventRequestScale              Event = "request_scale"
 	EventGoalJudge                 Event = "goal_judge"
+	EventGateDraft                 Event = "gate_draft"
+	EventDeliveryReport            Event = "delivery_report"
 	EventHandoffClarity            Event = "handoff_clarity"
 	EventGateAlignment             Event = "gate_alignment"
 	EventRequestCoverage           Event = "request_coverage"
@@ -375,6 +377,10 @@ func Describe(a Activity) (Description, bool) {
 		return goalJudgeDescription(a), true
 	case EventRequestScale:
 		return requestScaleDescription(a), true
+	case EventGateDraft:
+		return gateDraftDescription(a), true
+	case EventDeliveryReport:
+		return deliveryReportDescription(a), true
 	case EventHandoffClarity:
 		return handoffClarityDescription(a), true
 	case EventGateAlignment:

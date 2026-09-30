@@ -9,6 +9,9 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/quality"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/testdetect"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -135,3 +138,70 @@ func (w *Worker) reconcileCoverage(ctx context.Context, o outcome, it kanban.Ite
 // CoverageLabel marks a gap card the harness filed for an uncovered clause. No
 // worker profile claims it, so the card waits for a person.
 const CoverageLabel = "coverage"
+
+// fast returns the fast-tier classifier for the delivery roles, or nil when the
+// worker has no client (the harness-composed results are used then).
+func (w *Worker) fast() rolemanager.Classifier {
+	w.fastOnce.Do(func() {
+		if w.Fast == nil && w.Client != nil {
+			w.Fast = run.NewRoleClassifier(w.Cfg, w.Client, nil)
+		}
+	})
+	return w.Fast
+}
+
+// draftGates gives a card with no gates the manual gates the fast model
+// drafts from its title and body, so a reviewer has criteria to check it
+// against. It runs when the worker claims the card, only for a profile with
+// kanban.gates.draft. The card text is gated like any item text before the
+// role sees it, a withheld or failed draft leaves the card as it was, and every
+// drafted gate is manual: no line the model wrote can name a suite or a command.
+func (w *Worker) draftGates(ctx context.Context, it kanban.Item) {
+	k := w.Profile.Kanban
+	if k == nil || k.Gates == nil || !k.Gates.Draft || len(it.Gates) > 0 {
+		return
+	}
+	text := w.gateKind(ctx, tools.KindKanban, it.Title+"\n\n"+it.Body)
+	if text == "" {
+		return
+	}
+	title, body, _ := strings.Cut(text, "\n\n")
+	drafted, ok := rolemanager.DecideGateDraft(ctx, w.fast(), title, body)
+	if !ok {
+		return
+	}
+	if _, err := w.Store.SetGatesIfNone(it.ID, w.Record.ID, drafted); err != nil {
+		w.logf("%s: drafted gates: %v", it.Short(), err)
+		return
+	}
+	w.logf("%s: drafted %d manual gate(s) for review", it.Short(), len(drafted))
+}
+
+// deliveryReport composes the note on how a card's gates were checked, for the
+// pull request description. It reads only harness facts: the gates' states, the
+// file count and the verification record.
+func (w *Worker) deliveryReport(ctx context.Context, ws *Workspace, it kanban.Item, files int) string {
+	cur, err := w.Store.Get(it.ID)
+	if err != nil {
+		return ""
+	}
+	in := rolemanager.DeliveryReportInput{FilesChanged: files, Clauses: len(cur.Clauses)}
+	verified := len(cur.Gates) > 0
+	for _, g := range cur.Gates {
+		in.Gates = append(in.Gates, rolemanager.DeliveryReportGate{ID: g.ID, Kind: string(g.Kind), State: string(g.State)})
+		if g.Kind == kanban.GateRunnable && g.State != kanban.GateMet {
+			verified = false
+		}
+	}
+	in.Verified = verified && w.gatesMode() != agentprofile.VerifyOff
+	if head, err := ws.Head(ctx); err == nil {
+		if v, ok := quality.ReadVerification(w.Repo, cur.Short(), head); ok {
+			in.Compared, in.Regressions = v.Compared, len(v.Regressed)
+		}
+	}
+	if children, err := w.Store.Children(cur.ID); err == nil && len(cur.Clauses) > 0 {
+		in.Covered = len(cur.Clauses) - len(cur.CoverageGaps(children))
+	}
+	text, _ := rolemanager.DecideDeliveryReport(ctx, w.fast(), in)
+	return text
+}

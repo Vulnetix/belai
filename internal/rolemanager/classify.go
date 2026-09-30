@@ -73,6 +73,11 @@ const (
 	// UseCaseVoiceCleanup tidies a dictated transcript before it reaches the
 	// composer.
 	UseCaseVoiceCleanup = "voice_cleanup"
+	// UseCaseGateDraft drafts the outcomes a reviewer checks a gate-less card
+	// against.
+	UseCaseGateDraft = "gate_draft"
+	// UseCaseDeliveryReport writes the note on how a card's gates were checked.
+	UseCaseDeliveryReport = "delivery_report"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

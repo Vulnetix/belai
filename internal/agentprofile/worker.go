@@ -548,6 +548,10 @@ type GatesSpec struct {
 	// harness file a gap card for a clause no handoff covers. It applies to a
 	// request card only, not to one the harness seeded or the worker surveyed.
 	Coverage bool `json:"coverage,omitempty"`
+	// Draft has the fast model draft manual gates for a card that has none when
+	// the worker claims it, so a reviewer has criteria to check it against. The
+	// drafted gates are always manual; the harness never drafts a runnable one.
+	Draft bool `json:"draft,omitempty"`
 }
 
 // VerifyMode returns the effective verification mode.

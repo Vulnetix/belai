@@ -566,6 +566,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   deterministic (`tools.ClearTitleRunes`, `ClearBodyMin`, `ClearBodyMax`,
   `ClearMaxGates`) and can only send a handoff to review: a model's own doubt
   narrows, and no declaration or score moves a card out of the human gate.
+  The delivery crew's two fast roles are tool-less turns with a harness
+  fallback. `gate_draft` sees only a card's text after the same gate as item
+  text, and everything it writes becomes a manual gate (a line that looks like a
+  command or a path is dropped), so a drafted gate can never reference a suite.
+  `delivery_report` sees harness facts only (ids, kinds, states, counts), never
+  a card's words, a note or test output, and its text rides only on the pull
+  request description.
   Request coverage is deterministic and the harness's, not a model's:
   `KanbanContract` records at most 12 clauses on the claimed request card
   (`kanban.MaxClauses`), a handoff must cover at least one of them, and a clause

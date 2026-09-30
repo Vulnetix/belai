@@ -199,3 +199,32 @@ func TestBoardVersionCoversGatesAndClauses(t *testing.T) {
 		t.Fatalf("version 2 stays readable: %v", err)
 	}
 }
+
+func TestSetGatesIfNone(t *testing.T) {
+	s := testStore(t)
+	it := claimed(t, s, ItemInput{Title: "human card"})
+	if _, err := s.SetGatesIfNone(it.ID, "w2", []string{"an outcome to check"}); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("another worker cannot: %v", err)
+	}
+	got, err := s.SetGatesIfNone(it.ID, "w1", []string{"first outcome to check", "second outcome to check"})
+	if err != nil || len(got.Gates) != 2 {
+		t.Fatalf("%v %v", got.Gates, err)
+	}
+	for i, g := range got.Gates {
+		if g.Kind != GateManual || g.State != GateUnmet || g.ID != []string{"G1", "G2"}[i] || g.Suite != "" {
+			t.Errorf("a drafted gate is manual and unmet: %+v", g)
+		}
+	}
+	// A card that has gates keeps them.
+	again, err := s.SetGatesIfNone(it.ID, "w1", []string{"a third outcome to check"})
+	if err != nil || len(again.Gates) != 2 || again.Gates[0].Title != "first outcome to check" {
+		t.Fatalf("a card with gates is left alone: %+v %v", again.Gates, err)
+	}
+	if _, err := s.SetGatesIfNone(it.ID, "w1", nil); !errors.Is(err, ErrGate) {
+		t.Fatalf("nothing to set is refused: %v", err)
+	}
+	other := claimed(t, s, ItemInput{Title: "another card"})
+	if _, err := s.SetGatesIfNone(other.ID, "w1", []string{"same", "Same"}); !errors.Is(err, ErrGate) {
+		t.Fatalf("a repeat is refused like any filed gate: %v", err)
+	}
+}
