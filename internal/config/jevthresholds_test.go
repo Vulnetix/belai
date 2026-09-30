@@ -93,3 +93,40 @@ func TestGoalJudgeThresholdDefaultsAndLimits(t *testing.T) {
 		t.Fatalf("the limits themselves are allowed: %v", err)
 	}
 }
+
+func TestDeliveryCutoffsDefaultsAndValidation(t *testing.T) {
+	d := DefaultJevThresholds()
+	if d.ClearAt != 0.50 || d.AlignAt != 0.40 || d.CoverAt != 0.40 {
+		t.Fatalf("delivery cut-off defaults %v %v %v", d.ClearAt, d.AlignAt, d.CoverAt)
+	}
+	keys := JevThresholdKeys()
+	for _, k := range []string{"clear_at", "align_at", "cover_at"} {
+		found := false
+		for _, have := range keys {
+			found = found || have == k
+		}
+		if !found {
+			t.Errorf("%s is not a threshold key", k)
+		}
+	}
+	for _, v := range []float64{-0.1, 1.1} {
+		x := v
+		for _, set := range []*JevThresholdSettings{{ClearAt: &x}, {AlignAt: &x}, {CoverAt: &x}} {
+			if err := set.Validate(); err == nil {
+				t.Errorf("%v must be refused", v)
+			}
+		}
+	}
+	for _, v := range []float64{0, 0.5, 1} {
+		x := v
+		if err := (&JevThresholdSettings{ClearAt: &x, AlignAt: &x, CoverAt: &x}).Validate(); err != nil {
+			t.Errorf("%v is a fair cut-off: %v", v, err)
+		}
+	}
+	// The user's own value takes effect and the others keep their defaults.
+	c := 0.7
+	r := (&JevThresholdSettings{ClearAt: &c}).Resolved()
+	if r.ClearAt != 0.7 || r.AlignAt != 0.40 {
+		t.Fatalf("resolved %+v", r)
+	}
+}

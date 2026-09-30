@@ -86,6 +86,9 @@ type WorkerClaim struct {
 	// HandoffList alone: clear and concise tasks go to backlog, the rest wait in
 	// review (HandoffList is then the floor).
 	HandoffAuto bool
+	// Relevance rates a handoff with a decision backend, or is nil. It can only
+	// narrow an auto-routed handoff (send it to review), never widen it.
+	Relevance HandoffRelevance
 	// Verdicts are the verdicts KanbanVerdict may record; empty means the
 	// worker has no such tool. VEX is true for the worker whose verdict the
 	// harness writes a VEX for (and which may reject a claim).
@@ -582,6 +585,14 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 			return Result{}, fmt.Errorf("clarity must be %s, %s or %s", ClarityClear, ClarityUnclear, ClaritySplit)
 		}
 		list, why := routeByClarity(in, declared)
+		if list == kanban.Backlog && c.Relevance != nil {
+			if unclear, ok := c.Relevance.Clarity(ctx, in.Title, in.Body); ok && unclear {
+				list, why = kanban.Review, append(why, "the decision model rated it unclear")
+			}
+			if flagged, ok := c.Relevance.Alignment(ctx, in.Gates); ok && len(flagged) > 0 {
+				list, why = kanban.Review, append(why, "gate "+strings.Join(flagged, ", ")+" may not measure its title")
+			}
+		}
 		in.List = list
 		if len(why) > 0 {
 			in.Body = strings.TrimSpace(in.Body + "\n\nreview: " + strings.Join(why, "; "))

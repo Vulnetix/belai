@@ -443,6 +443,9 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevVoiceCommand:    "jev voice command",
 	config.JevRequestScale:    "jev request scale",
 	config.JevGoalJudge:       "jev goal judge",
+	config.JevHandoffClarity:  "jev handoff clarity",
+	config.JevGateAlignment:   "jev gate alignment",
+	config.JevRequestCoverage: "jev request coverage",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -456,6 +459,9 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevVoiceCommand:    "run a skill, crew, process, prompt, agent profile or mode you ask for by voice, only when exactly one is a very close match",
 	config.JevRequestScale:    "size a request, so a simple one starts at once without a goal contract, file prefetch or test run",
 	config.JevGoalJudge:       "rate a goal pass, ending it or restarting it only when clear, and otherwise ask the model judge with the scores as a hint",
+	config.JevHandoffClarity:  "send a delivery handoff to review when it rates as unclear, instead of straight to backlog",
+	config.JevGateAlignment:   "flag a runnable gate whose suite and test may not show its stated outcome, and send its card to review",
+	config.JevRequestCoverage: "file a gap card for a request clause whose covering tasks do not seem to do it",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

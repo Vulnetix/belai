@@ -61,7 +61,7 @@ func TestUncoveredClauseGetsAGapCardFiledByTheHarness(t *testing.T) {
 		c.Execute(ctx, map[string]any{"clauses": []any{"export to CSV", "SECRET-TEXT import from CSV"}})
 		h.Execute(ctx, map[string]any{"title": "build export", "labels": []any{"build"}, "covers": []any{"C1"}})
 	})
-	if got.List != kanban.Done || !strings.Contains(got.LastNote(), "coverage: 1 of 2 clauses covered, 1 gap card(s) filed") {
+	if got.List != kanban.Done || !strings.Contains(got.LastNote(), "coverage: 1 of 2 clauses covered, gaps C2, 1 gap card(s) filed") {
 		t.Fatalf("the scout's card completes with the gap filed: %s %q", got.List, got.LastNote())
 	}
 	gaps := gapCards(t, store)

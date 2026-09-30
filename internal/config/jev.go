@@ -58,6 +58,20 @@ const JevRequestScale JevJob = "request_scale"
 // scores as a hint.
 const JevGoalJudge JevJob = "goal_judge"
 
+// JevHandoffClarity rates a delivery handoff as clear enough to start, and sends
+// one it rates unclear to review. It only ever narrows: it never moves a card
+// out of review.
+const JevHandoffClarity JevJob = "handoff_clarity"
+
+// JevGateAlignment rates whether a runnable gate's suite, package and test
+// would show the outcome its title states, and flags a poor match for review.
+const JevGateAlignment JevJob = "gate_alignment"
+
+// JevRequestCoverage rates whether the tasks that cover a request clause do
+// what the clause says, and files a gap card for one they do not. It never
+// marks a clause covered.
+const JevRequestCoverage JevJob = "request_coverage"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -72,6 +86,9 @@ var JevJobs = []JevJob{
 	JevVoiceCommand,
 	JevRequestScale,
 	JevGoalJudge,
+	JevHandoffClarity,
+	JevGateAlignment,
+	JevRequestCoverage,
 }
 
 // LocatePreview values for jev.locate_previews.

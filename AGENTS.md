@@ -277,6 +277,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   line in an explore task's prompt) is paths, line numbers and percentages, so
   it is sanitise-only like `Glob`, and a path enters a prompt only if it is made
   of letters, digits and `. _ - / @ +`.
+  The delivery crew's three jobs (`handoff_clarity`, `gate_alignment`,
+  `request_coverage`, `internal/rolemanager/jev/delivery.go`, called from
+  `internal/fleet/relevance.go`) only narrow. They can send an auto-routed
+  handoff to review, flag a gate or file a gap card, and cannot move a card out
+  of review, mark a gate met or a clause covered, or skip a harness check. A
+  handoff the counted rule already sent to review makes no backend call, and the
+  cut-offs `clear_at`, `align_at` and `cover_at` follow the same user-layer-only
+  rule as every threshold. Only titles, clauses and gate identifiers reach a
+  backend, and a card the harness files from a rating holds ids only.
   Request scale (`request_scale`, `agent/scale.go`) sees only the sanitized prompt.
   A simple verdict (at or above `simple_at`, default 0.80, never below 0.5, and
   staged below `keep_at`) only drops goal-turn ceremony: the contract draft, the

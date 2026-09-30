@@ -67,6 +67,9 @@ prompt runs with it.
 | `voice_command` | Matches a short spoken instruction to one skill, crew, process, prompt, agent profile, the security review or a mode, and runs it only on a very close match | Shipped |
 | `request_scale` | Rates a request as simple or staged, and starts a simple one at once without a goal contract, file prefetch or test run | Shipped |
 | `goal_judge` | Rates each goal pass as complete, partial or not started, settles a clear verdict without the model judge, and otherwise hands the scores to the model judge as a hint | Shipped |
+| `handoff_clarity` | Sends a delivery handoff to review when it rates as unclear, instead of straight to backlog | Shipped |
+| `gate_alignment` | Flags a runnable gate whose suite and test may not show its stated outcome, and sends its card to review | Shipped |
+| `request_coverage` | Files a gap card for a request clause whose covering tasks do not seem to do it | Shipped |
 
 ## Scores and thresholds
 
@@ -84,6 +87,7 @@ with the default shown; a job reads the value from your settings:
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
 | | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
 | | `goal_complete_at`, `goal_rival_max`, `goal_not_started_at` | 0.90, 0.20, 0.85 | A goal pass is clearly complete at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly not started at `goal_not_started_at` with the same limit; `goal_complete_at` cannot be set below 0.5 and `goal_rival_max` cannot exceed 0.5 |
+| | `clear_at`, `align_at`, `cover_at` | 0.50, 0.40, 0.40 | A delivery handoff rated below `clear_at` goes to review, a gate below `align_at` is flagged, and a clause whose tasks all rate below `cover_at` gets a gap card. They only narrow, so raising one means more review |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
 | `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
 | `LeadAt` | `lead_at` | 0.25 | A located file from here to `hit_at` is a lead, and below it is dropped |
@@ -549,3 +553,72 @@ against one criterion, so a clear case needs no chat-model call.
 
 Recorded as a `goal_judge` event: `complete`, `not_started` or `unclear`, and
 the three scores in percent. Never the goal, the list or any evidence.
+
+## Delivery crew jobs
+
+Three jobs work inside the [delivery crew](fleet.md#the-delivery-crew). All three
+only narrow. Each can send a handoff to review, flag a gate or file a gap card;
+none can move a card out of review, mark a gate met or a request clause covered,
+or skip a check the harness runs. The rules they sit on (the counted clarity
+rule, the harness-run gates, the recorded clause coverage) decide alone when the
+backend is off, slow or unsure, and only titles and identifiers ever reach a
+backend, never file contents, test output or attachments.
+
+### Handoff clarity
+
+With `kanban.quality.list` or `kanban.survey.list` set to `auto`, the harness
+routes a scout's handoff by counted facts. When those facts say backlog, the
+backend rates the task once more.
+
+- **What the backend sees.** The handoff's title and body as `DecisionText`. It
+  rates one item: a clear task an agent can start at once, against the criterion
+  that the task says what to change, where, and how to tell it is done.
+- **The decision.** A task rated below `clear_at` (0.50) goes to review, with the
+  line `review: the decision model rated it unclear` on its body. A rating at or
+  above it changes nothing: it is only the absence of an objection.
+- **Edge cases.** A handoff the counted rule already sent to review makes no call.
+  A worker whose list is fixed makes no call. An unanswered item, a timeout (8
+  seconds), a missing backend or a switch that is off is unknown, and the counted
+  rule stands. The job can never move a handoff toward backlog.
+
+Recorded as a `handoff_clarity` event: `clear`, `unclear` or `unknown` and the
+score in percent. Never the task.
+
+### Gate alignment
+
+A gate is a test reference, so a title can promise more than the test shows, for
+example `docs are updated` against a whole Go suite.
+
+- **What the backend sees.** For each runnable gate, its own title and the
+  identifiers of its test (suite, package directory, test name), as `DecisionText`.
+  It rates each against one criterion: the outcome named is something that test
+  would show to be true or false.
+- **The decision.** A gate rated below `align_at` (0.40) is flagged, and the
+  handoff goes to review with `review: gate G1 may not measure its title`. Only a
+  handoff the counted rule would have sent to backlog is rated.
+- **Edge cases.** A manual gate is never rated. A gate the backend did not answer
+  is not flagged: unknown is not a low score. The gate itself is unchanged and the
+  harness still runs it.
+
+Recorded as a `gate_alignment` event: `aligned`, `flagged` or `unknown`, and
+counts.
+
+### Request coverage
+
+The harness files a gap card for a clause no handoff covers. This job doubts the
+other case, a clause a handoff claims to cover but does not do.
+
+- **What the backend sees.** Each clause and the title of each task that covers
+  it, as `DecisionText`, rated against one criterion: the task would accomplish
+  the request part.
+- **The decision.** A clause whose covering tasks all rate below `cover_at` (0.40)
+  gets a gap card titled `Part C2 of request K-xxxxxx may not be done by its
+  tasks`, filed once. The card names ids only. The scout's card note lists the
+  doubted clauses.
+- **Edge cases.** One unanswered pair leaves the clause alone, and so does one
+  well-rated task among several. A clause is never marked covered or uncovered by
+  the model: the recorded coverage stands either way. The gap card of the same
+  clause is never doubled.
+
+Recorded as a `request_coverage` event: `sound`, `suspect` or `unknown`, and
+counts.

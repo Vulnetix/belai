@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/belai/internal/otel"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -124,7 +125,10 @@ type Worker struct {
 	// sweep; nil detects from the repository and runs the real suites.
 	// Scan scans a worktree for one finding after a patcher's round; nil runs
 	// the Vulnetix CLI.
-	Scan     func(ctx context.Context, dir, finding string, round, max int) (scanFeedback, bool)
+	Scan func(ctx context.Context, dir, finding string, round, max int) (scanFeedback, bool)
+	// Jev runs the delivery relevance jobs; nil builds it from Cfg on first use,
+	// and with no decision backend configured no job runs.
+	Jev      *jev.Jobs
 	Suites   func(ctx context.Context) []testdetect.Suite
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
@@ -135,6 +139,7 @@ type Worker struct {
 	sweptRef   string // HEAD the kanban.security sweep last ran for
 	qualityRef string // HEAD the kanban.quality sweep last ran for
 	reconciled string // artefact signature the cards were last reconciled against
+	jevOnce    sync.Once
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 }
@@ -597,6 +602,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 	}
 	w.applyGates(itemCtx, claim, it)
+	if jobs := w.jevJobs(); jobs != nil {
+		claim.Relevance = jevRelevance{jobs}
+	}
 	w.resetManualGates(it)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
