@@ -73,6 +73,49 @@ func ClampPriority(p int) int { return min(max(p, MinPriority), MaxPriority) }
 
 var assigneeShape = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 
+// AssigneeKind says what an assignee names. A bare value is a profile, as it
+// always was; the prefixes "worker:" and "crew:" name a profile or a crew
+// explicitly, and "person:" names someone on the website, who is not a worker.
+type AssigneeKind string
+
+const (
+	AssigneeNone    AssigneeKind = ""
+	AssigneeProfile AssigneeKind = "profile"
+	AssigneeCrew    AssigneeKind = "crew"
+	AssigneePerson  AssigneeKind = "person"
+)
+
+// ParseAssignee splits an assignee into its kind and name. A profile whose own
+// name starts with one of the prefixes must be written with "worker:".
+func ParseAssignee(s string) (AssigneeKind, string) {
+	switch {
+	case s == "":
+		return AssigneeNone, ""
+	case strings.HasPrefix(s, "crew:"):
+		return AssigneeCrew, strings.TrimPrefix(s, "crew:")
+	case strings.HasPrefix(s, "person:"):
+		return AssigneePerson, strings.TrimPrefix(s, "person:")
+	case strings.HasPrefix(s, "worker:"):
+		return AssigneeProfile, strings.TrimPrefix(s, "worker:")
+	}
+	return AssigneeProfile, s
+}
+
+// assigneeTakes reports whether a worker of the given profile and crew may
+// take an item assigned to a. A person is not a worker, so it never matches.
+func assigneeTakes(assignee, profile, crew string) bool {
+	kind, name := ParseAssignee(assignee)
+	switch kind {
+	case AssigneeNone:
+		return true
+	case AssigneeProfile:
+		return name == profile
+	case AssigneeCrew:
+		return crew != "" && name == crew
+	}
+	return false
+}
+
 // CleanAssignee trims an assignee and checks it has a profile name's shape.
 // Empty is allowed: the item is routed to any matching worker.
 func CleanAssignee(s string) (string, error) {
@@ -141,6 +184,9 @@ type ClaimRequest struct {
 	// items.
 	Profile      string
 	AssignedOnly bool
+	// Crew is the crew this worker was started in, empty for a lone worker.
+	// An item assigned to "crew:NAME" is claimable by that crew's workers.
+	Crew string
 	// Project limits the claim to one project (name or key); empty is any.
 	Project string
 	// Worker is the worker instance id; Host its sync host id.
@@ -229,7 +275,7 @@ func (r ClaimRequest) matches(b *Board, it Item, now int64) bool {
 		return false
 	case !hasLabels(it, NormLabels(r.Labels)):
 		return false
-	case it.Assignee != "" && it.Assignee != r.Profile:
+	case !assigneeTakes(it.Assignee, r.Profile, r.Crew):
 		return false
 	case it.Assignee == "" && r.AssignedOnly:
 		return false

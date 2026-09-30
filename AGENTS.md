@@ -480,7 +480,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   - **Claims.** The harness claims (`kanban.Store.Claim`, one locked
     read-modify-write). There is no model-facing claim tool, and the claim
     fields (`ClaimedBy`, `LeaseUntil`, …) are never taken from a model
-    argument. The website may clear a claim, never set one.
+    argument. The website may clear a claim, never set one. An assignee
+    naming a person (`person:`) matches no worker, and `crew:NAME` matches
+    only workers started in that crew.
   - **Item text.** The claimed item's text reaches the model only as a
     `kanban` attachment gated exactly like a `KanbanSearch` result
     (`agent.TurnInput.KanbanItem`): sanitised, and classified unless the

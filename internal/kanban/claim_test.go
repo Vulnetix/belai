@@ -484,3 +484,53 @@ func TestWireCarriesPinHost(t *testing.T) {
 		t.Fatal("local pin dropped by an agent-less pull")
 	}
 }
+
+func TestParseAssigneeKinds(t *testing.T) {
+	for in, want := range map[string][2]string{
+		"":               {"", ""},
+		"builder":        {"profile", "builder"},
+		"belai:builder":  {"profile", "belai:builder"},
+		"worker:builder": {"profile", "builder"},
+		"crew:delivery":  {"crew", "delivery"},
+		"person:m-1f2a":  {"person", "m-1f2a"},
+	} {
+		k, n := ParseAssignee(in)
+		if string(k) != want[0] || n != want[1] {
+			t.Errorf("ParseAssignee(%q) = %q %q, want %v", in, k, n, want)
+		}
+	}
+}
+
+func TestClaimMatchesTypedAssignees(t *testing.T) {
+	s := testStore(t)
+	addItem(t, s, ItemInput{Title: "for a person", Assignee: "person:m-1f2a"})
+	crew := addItem(t, s, ItemInput{Title: "for a crew", Assignee: "crew:delivery"})
+	explicit := addItem(t, s, ItemInput{Title: "explicit worker", Assignee: "worker:reviewer"})
+
+	r := claimReq("w1")
+	r.Profile = "reviewer"
+	got, err := s.Claim(r)
+	if err != nil || got.ID != explicit.ID {
+		t.Fatalf("worker: prefix not matched: %v %v", got.Title, err)
+	}
+	// A lone worker never takes a crew's item, and nobody takes a person's.
+	r = claimReq("w2")
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("lone worker took an item: %v", err)
+	}
+	r.Crew = "docs"
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("other crew took a crew item: %v", err)
+	}
+	r.Crew = "delivery"
+	got, err = s.Claim(r)
+	if err != nil || got.ID != crew.ID {
+		t.Fatalf("crew member did not take the crew item: %v %v", got.Title, err)
+	}
+	r = claimReq("w3")
+	r.Profile = "person:m-1f2a"
+	r.Crew = "delivery"
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("a person item was claimed: %v", err)
+	}
+}

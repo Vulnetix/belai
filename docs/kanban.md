@@ -208,7 +208,7 @@ it:
 - **labels** (lower-case `[a-z0-9:_-]`, up to eight): a worker claims only
   items carrying all of its profile's labels;
 - **priority**, -2 to 3: claims take the highest first, then the oldest;
-- **assignee**: a profile name; only that profile may claim it;
+- **assignee**: who takes it. `NAME` or `worker:NAME` is a worker profile, `crew:NAME` is any worker started in that crew, and `person:HANDLE` is someone on the website, which no worker ever claims. Only the named worker or crew may claim it;
 - **depends on**: items that must be `done` first.
 
 A claim moves the item to `in_progress` under a lease the worker renews while
@@ -229,7 +229,7 @@ belai kanban import items.jsonl      # one {"title", "labels", …} per line
 ```
 
 In `/kanban`, `a` assigns, `L` edits labels, `+` and `-` change priority, and
-`u` releases a claim. Rows show `#labels`, `▲priority`, `@assignee` and
+`u` releases a claim. Rows show `#labels`, `▲priority`, `@assignee`, `on HOST` for a pinned host and
 `⚙ worker lease` (`⚠` when the lease has lapsed).
 
 ## Storage

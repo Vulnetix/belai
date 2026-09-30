@@ -184,7 +184,7 @@ func (a *App) kanbanView() string {
 	case "note":
 		b.WriteString("\n" + a.renderFieldEditor("add a note", w) + "\n")
 	case "assign":
-		b.WriteString("\n" + a.renderFieldEditor("assign to agent profile (empty: any matching agent)", w) + "\n")
+		b.WriteString("\n" + a.renderFieldEditor("assign to a worker or crew: NAME, worker:NAME or crew:NAME (empty: any matching worker)", w) + "\n")
 	case "labels":
 		b.WriteString("\n" + a.renderFieldEditor("labels, comma-separated (they route the item to agents)", w) + "\n")
 	case "move":
@@ -513,6 +513,28 @@ func (a *App) kanbanStatus() string {
 // kanbanRouting renders an item's labels, priority, assignee and claim:
 // "#build ▲2 @belai:builder ⚙ belai-builder-3f9a2c 12m". A lapsed claim
 // shows ⚠ instead of the lease.
+// kanbanAssigneeLabel writes an assignee as who takes the card: a worker as
+// @name, a crew as @crew name, a person as a person. The person's handle is
+// opaque, so it is not shown.
+func kanbanAssigneeLabel(assignee string) string {
+	kind, name := kanban.ParseAssignee(assignee)
+	switch kind {
+	case kanban.AssigneeCrew:
+		return "@crew " + name
+	case kanban.AssigneePerson:
+		return "@person"
+	}
+	return "@" + name
+}
+
+// shortHost trims a host id to the length the board has room for.
+func shortHost(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
 func kanbanRouting(it kanban.Item, now int64) string {
 	var parts []string
 	for _, l := range it.Labels {
@@ -525,7 +547,10 @@ func kanbanRouting(it kanban.Item, now int64) string {
 		parts = append(parts, components.MutedStyle.Render(fmt.Sprintf("▼%d", -it.Priority)))
 	}
 	if it.Assignee != "" {
-		parts = append(parts, components.AccentStyle.Render("@"+it.Assignee))
+		parts = append(parts, components.AccentStyle.Render(kanbanAssigneeLabel(it.Assignee)))
+	}
+	if it.PinHost != "" {
+		parts = append(parts, components.MutedStyle.Render("on "+shortHost(it.PinHost)))
 	}
 	if it.ClaimedBy != "" {
 		if it.LeaseUntil > now {

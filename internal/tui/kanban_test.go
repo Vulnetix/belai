@@ -298,3 +298,17 @@ func TestKanbanCommandFocusesAnItem(t *testing.T) {
 		t.Fatalf("/kanban %s selected %+v (view %v)", it.Short(), got, a.view)
 	}
 }
+
+func TestKanbanAssigneeLabelNamesWhoTakesTheCard(t *testing.T) {
+	for in, want := range map[string]string{
+		"builder":       "@builder",
+		"belai:builder": "@belai:builder",
+		"worker:scout":  "@scout",
+		"crew:delivery": "@crew delivery",
+		"person:m-1f2a": "@person",
+	} {
+		if got := kanbanAssigneeLabel(in); got != want {
+			t.Errorf("kanbanAssigneeLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
