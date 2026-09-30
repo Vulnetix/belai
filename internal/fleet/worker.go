@@ -591,6 +591,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			claim.HandoffList = list
 		}
 	}
+	w.applyGates(itemCtx, claim)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
 	emit := func(e agent.Event) {

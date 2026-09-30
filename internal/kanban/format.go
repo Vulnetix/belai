@@ -22,12 +22,14 @@ import (
 // the tools render items as text.
 const (
 	magic         = "BKAN"
-	formatVersion = 2
+	formatVersion = 3
 	// minVersion is the oldest version Decode still reads. Version 1 boards
 	// predate the routing and claim fields; gob decodes them with those
 	// fields zero, which means "unrouted, unclaimed". Version 2 exists so a
 	// Belai that predates the fields refuses the board instead of rewriting it
-	// without them.
+	// without them. Version 3 adds the acceptance gates on a card for the
+	// same reason: an older Belai must refuse the board, not rewrite it
+	// without the gates.
 	minVersion = 1
 	headerLen  = len(magic) + 2
 )

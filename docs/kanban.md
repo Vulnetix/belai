@@ -47,6 +47,9 @@ Belai offers the model different kanban tools at different points in a turn:
   another agent, linked to the claimed item and routed by the labels and
   profiles the worker's profile allows. A worker may file at most five per
   item, and a chain of handoffs stops after six hops.
+  A worker whose profile has a `kanban.gates` block also gives each handoff
+  acceptance gates, references to test suites the harness detected; see
+  [acceptance gates](fleet.md#acceptance-gates).
 
 In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
 worker has claimed. `KanbanMove` is also a compare-and-set: it refuses the
@@ -262,6 +265,7 @@ Limits:
 - details are at most 4 KiB
 - a note is at most 1 KiB
 - an item keeps its last 50 history entries
+- a card carries at most 8 acceptance gates, each title at most 120 characters
 - the board holds at most 5000 items
 
 ## Sync with the Vulnetix website

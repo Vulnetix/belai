@@ -91,6 +91,13 @@ type WorkerClaim struct {
 	// or move: the harness sets it from board facts (an enrichment item
 	// names the cards its sweep filed), never from a model argument.
 	Notable []string
+	// GateSuites are the test suites the harness detected in the repository,
+	// GateRoot the repository root a gate's dir is checked against, and
+	// GatesRequired whether a handoff must carry at least one gate. All three
+	// are set by the harness from its own facts and the profile.
+	GateSuites    []GateSuite
+	GateRoot      string
+	GatesRequired bool
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -466,6 +473,11 @@ func (t KanbanHandoff) Definition() Definition {
 		"depends_on": {Type: "array", Items: &Property{Type: "string"}, Description: "Ids (K-xxxxxx) of items that must be done first, e.g. an earlier handoff."},
 		"list":       {Type: "string", Enum: []string{string(kanban.Backlog), string(kanban.Review)}, Description: "backlog (default) or review."},
 	}
+	if t.Claim != nil && (t.Claim.GatesRequired || len(t.Claim.GateSuites) > 0) {
+		gate := gateProperty(t.Claim.GateSuites)
+		props["gates"] = Property{Type: "array", Items: &gate, Description: gatesHelp}
+		desc += "Give acceptance gates so the harness can prove the task done. "
+	}
 	if t.Claim != nil && len(t.Claim.HandoffTo) > 0 {
 		props["assignee"] = Property{Type: "string", Enum: slices.Clone(t.Claim.HandoffTo), Description: "The agent that should take it; omit for any agent matching its labels."}
 	}
@@ -531,6 +543,9 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 		in.Priority = kanban.ClampPriority(int(p))
 	}
 	if in.DependsOn, err = argStrings(args, "depends_on"); err != nil {
+		return Result{}, err
+	}
+	if in.Gates, err = c.parseGates(args); err != nil {
 		return Result{}, err
 	}
 	it, dup, err := t.Store.Add(in, t.prov())

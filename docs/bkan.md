@@ -23,7 +23,7 @@ A board file is four sections, back to back, with no padding:
 ```
 offset  size  field
 0       4     magic      the ASCII bytes "BKAN" (42 4b 41 4e)
-4       2     version    uint16, big endian (currently 00 02; 00 01 is still read)
+4       2     version    uint16, big endian (currently 00 03; 00 01 and 00 02 are still read)
 6       n     payload    encoding/gob stream of one kanban.Board
 6+n     32    checksum   SHA-256 of the payload bytes only
 ```
@@ -49,7 +49,7 @@ const (
 | Section | Question it answers | What happens on a mismatch |
 |---|---|---|
 | magic | Is this a kanban board at all? | `not a kanban board (bad magic)` |
-| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 2)` |
+| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 3)` |
 | payload | What is on the board? | a gob decode error |
 | checksum | Is the payload exactly what was written? | `checksum mismatch` |
 
@@ -238,6 +238,9 @@ type Item struct {
 	Verdict Verdict
 	VEX     string
 
+	// Acceptance gates (version 3), set only by the harness and never pushed.
+	Gates []Gate
+
 	remoteAgent bool // in memory only; gob never stores it
 
 	// Sync state. ServerVersion is the backend's version of the item (0 when
@@ -301,6 +304,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `SeenRef` | The full commit id of the latest scan that still showed the finding. | the harness (`UpsertFinding`) |
 | `Verdict` | A security worker's recorded verdict: `fixed`, `false_positive`, `no_fix`, `needs_human` or `rejected`. | the harness (`Reconcile`, `SetVerdict`, `Release`) |
 | `VEX` | The repository-relative path of the VEX written for the verdict. | the harness (`Release`) |
+| `Gates` | The card's acceptance gates, at most 8: each has an id (`G1`, `G2`, by position), a title, a kind (`runnable` or `manual`), for a runnable gate the detected suite it references (plus, for a Go suite, a package directory and a test name), a state (`unmet`, `met` or `abandoned`), the commit the state was decided at, and a one-line note. See [acceptance gates](fleet.md#acceptance-gates). A pulled copy never carries or replaces them. | the harness (`Add`, `SetGate`) |
 | `remoteAgent` | Not stored (unexported). Set on a pulled item that carried the `agent` block, so a backend that predates it cannot clear the local routing and claim. | sync |
 | `ServerVersion` | The backend's version of the item, or 0 if it has never been pushed. | sync |
 | `Dirty` | A local change not yet pushed. | local writes; cleared by sync |
@@ -369,7 +373,7 @@ using `sessionsync.KanbanItem`; see [Sync mapping](#sync-mapping).
 2. **Otherwise reload.** Read the whole file and `Decode` it:
    1. The length must be at least 38 bytes.
    2. The magic must be `BKAN`.
-   3. The version must be 1 or 2 (`minVersion` to `formatVersion`).
+   3. The version must be 1, 2 or 3 (`minVersion` to `formatVersion`).
    4. The SHA-256 of the payload must equal the last 32 bytes.
    5. The payload must gob-decode into a `Board`.
 3. **On success,** replace the copy in memory and remember the file's
@@ -453,6 +457,11 @@ claim. Raising the version makes that older Belai refuse the board instead.
 Version 1 files still decode, with every new field at its zero value:
 unrouted and unclaimed.
 
+Version 3 added the acceptance gates for the same reason: a Belai that
+predates `Gates` would decode a version 3 board, drop every gate and write it
+back, so an older Belai must refuse it. Version 2 files still decode, with no
+gates.
+
 The zero-value rule shapes new fields. A new field's zero value must mean
 "not set" or "the old behaviour", because a file written before the field
 existed will decode it as zero. For example, `ServerVersion == 0` means
@@ -463,7 +472,7 @@ rename, a type change, or a change of meaning for an existing field. The steps:
 
 1. Raise `formatVersion`.
 2. Teach `Decode` to accept the previous version and convert it. Today it
-   accepts versions 1 and 2 and rejects every other.
+   accepts versions 1, 2 and 3 and rejects every other.
 3. Keep writing only the new version.
 4. Add a test that decodes a file written in the previous version.
 

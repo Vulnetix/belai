@@ -130,6 +130,8 @@ func keepAgent(r *Item, local Item) {
 	// The finding fields are host-local: the site does not carry them, so a
 	// pulled copy never clears or replaces them.
 	r.Finding, r.SeenRef, r.Verdict, r.VEX = local.Finding, local.SeenRef, local.Verdict, local.VEX
+	// The acceptance gates are host-local for the same reason.
+	r.Gates = cloneGates(local.Gates)
 	if !r.remoteAgent {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
