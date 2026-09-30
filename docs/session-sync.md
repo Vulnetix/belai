@@ -3,8 +3,10 @@
 While Belai is logged in with the Vulnetix CLI, each session is mirrored to
 the Vulnetix website. Two console pages show it:
 
-- **Belai → History** (`/resolve/belai-history`) lists every synced session
-  that is no longer attached to a running host.
+- **Belai → History** (`/resolve/belai-history`) has three tabs. Sessions lists
+  every synced session that is no longer attached to a running host. Hosts and
+  Agents show the [audit log](audit.md), a separate facts-only record of what
+  hosts and agents did that travels with sync but is not the session mirror.
 - **Belai → Sessions** (`/resolve/belai-sessions`) lists the sessions running
   now. Opening one follows it live and accepts prompts, which run on the host
   exactly as if they had been typed there. When the host stops to ask
