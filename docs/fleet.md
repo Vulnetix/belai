@@ -241,9 +241,41 @@ every member can claim what the crew hands on. `-start` then runs
 `-host` pins the item (`this`, a sync host id, or `none` to unpin). A pinned
 item is claimable only by a worker whose host id matches, including through
 `agent run -item`. Handoffs filed from it are not pinned. The pin syncs as
-`agent.pinHost`, and the website's Agent Coordination page sets it when you
+`agent.pinHost`, and the website's Board page sets it when you
 assign a card to a host there; with [remote control](remote-control.md#fleet-workers)
-running, the page can also start the worker on that host.
+running, the page can also start the worker on that host. With no pin, any
+host may claim the card: hosts pull, so the first matching worker wins, and
+nothing chooses a host for it.
+
+### Who an assignee names
+
+An assignee is a bare profile name (`belai:builder`), or one of three prefixed
+forms:
+
+| Value | Names | Who may claim it |
+|---|---|---|
+| `NAME` or `worker:NAME` | a worker profile | workers of that profile |
+| `crew:NAME` | a crew | any worker started in that crew (`Record.Crew`) |
+| `person:HANDLE` | someone on the Vulnetix website | no worker, ever |
+
+Rules and edge cases:
+
+- **A bare name is a profile.** Boards written before the prefixes existed keep
+  working. A profile whose own name starts with `crew:` or `person:` must be
+  written `worker:crew:…`.
+- **A crew assignee needs a crew member.** A worker started alone (no crew)
+  never takes a `crew:` card, and a worker of another crew does not either.
+  `belai kanban assign -crew` still routes by labels with no assignee; set
+  `crew:NAME` with `kanban assign` or `-assignee` when the card must stay in
+  the crew.
+- **A person is not a worker.** The card waits for that person. The HANDLE is
+  opaque: the website writes `person:<member id>` for someone in the
+  organization, or `person:invite-<id>` while an invitation is pending, and the
+  board shows both as `@person`. The address never reaches the board or a host.
+- **`assigned_only` still applies.** A profile with `kanban.assigned_only`
+  takes only cards assigned to it or to its crew, never an unassigned card.
+- **The shape is checked on both sides.** Letters, digits and `. _ : -`, at
+  most 64 characters. Anything else is refused by the CLI, the TUI and the API.
 
 ## Crews
 
@@ -309,9 +341,17 @@ override the profile's model for that run.
 
 ## In the TUI
 
+The `/agents` hub has four tabs, `1` to `4` or `tab` to move: **live** (agents
+running now in this session, including helpers), **profiles**, **audit** and
+**workers**. `/agents` opens the first useful one, and `/agents live`,
+`profiles`, `audit` and `workers` open a tab directly. `/agents running` and
+`/agents fleet` are the tabs' earlier names and still work. A helper (a
+subagent a session starts for one job) appears only under its session in the
+live tab; it is never a worker and cannot be assigned or paused.
+
 `/fleet` opens the workers tab of `/agents` (also `4` there):
 workers with their state, the item each holds, items done and failed, and a
-heartbeat; `l` shows the selected worker's log, `x` stops it and `X` stops
+heartbeat; `l` shows the selected worker's log, `p` pauses or resumes it, `x` stops it and `X` stops
 them all. `/fleet start NAME`, `/fleet crew NAME` and `/fleet stop ID|all`
 do the same as the CLI, and `s` on a worker profile in the profiles tab
 starts one.
@@ -416,7 +456,7 @@ next item reads it, and `SearchMemory` can find it.
 ## Registry
 
 Each worker writes `~/.vulnetix/belai/agents/run/<id>.json`: its profile,
-pid, directory, state (`starting`, `idle`, `working`, `stopping`, `stopped`,
+pid, directory, state (`starting`, `idle`, `working`, `paused`, `stopping`, `stopped`,
 `failed`), the item it holds, heartbeat time and counts. `belai agent ps`, the
 TUI's `/agents` screen and the other workers read it. A record whose process
 has died is marked `failed` and its claim is released. Logs are

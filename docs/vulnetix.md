@@ -133,7 +133,7 @@ does not open again. `/vulnetix setup` reopens it.
    `vulnetix.firewall_enabled: true` in the **global** settings, adds the
    Vulnetix MCP server, and pushes the configured provider keys to the
    firewall. A login here also starts [session sync](session-sync.md), which
-   mirrors sessions to the website's Belai History and Sessions pages
+   mirrors sessions to the website's Belai History and Hosts pages
    (`/sync off` turns it off).
 
 ## Vulnetix MCP server (`/vulnetix mcp`)

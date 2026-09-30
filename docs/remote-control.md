@@ -33,7 +33,7 @@ each failure with the one thing to do about it:
 is, shows the checklist, and offers a step for each gap (install the CLI, log
 in through the browser, turn sync on, offer this directory). Once everything
 passes it starts the daemon in the background and shows its status. `o` or
-`ctrl+y` opens the Sessions page, `s` stops remote control.
+`ctrl+y` opens the Hosts page, `s` stops remote control.
 
 ## Where sessions run
 
@@ -96,7 +96,7 @@ advertises N instead of `agents.max_workers` and starts workers with
 ## Fleet workers
 
 Remote control also tells the website about this host's
-[fleet](fleet.md), so the Agent Coordination page can assign cards and
+[fleet](fleet.md), so the Board page can assign cards and
 predict what will happen to them:
 
 - **Catalogue.** The host upsert's `rc` block carries `agents.max_workers`
@@ -124,8 +124,8 @@ predict what will happen to them:
   this host's own fleet registry. Otherwise it sets or clears the worker's
   pause marker and acknowledges. The worker finishes the card it holds, then
   reports `paused` until resumed (see [fleet.md](fleet.md#pausing-a-worker)).
-- **On the Sessions page.** Each machine running remote control lists its
-  fleet workers above its sessions: a state indicator (working, starting,
+- **On the Hosts page.** Each host running remote control lists its
+  fleet workers above its sessions: a state indicator (working, starting, paused,
   idle and looking for work, stopped, failed), the profile and crew, done and
   failed counts, and when it started or ended. Opening one shows the exit
   reason, the branch, a link to its last session and the log tail. A crew
