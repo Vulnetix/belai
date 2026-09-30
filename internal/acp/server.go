@@ -109,6 +109,8 @@ type acpSession struct {
 	lastSent atomic.Int64
 	// updated is when the session was opened or last finished a prompt.
 	updated time.Time
+	// mode is the editor's chosen mode id (modeAuto until it picks one).
+	mode string
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
@@ -151,7 +153,7 @@ func ServeWith(ctx context.Context, r io.Reader, w io.Writer, build Builder, opt
 }
 
 // Methods lists every ACP method the server answers.
-var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel", "session/list", "session/close"}
+var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel", "session/list", "session/close", "session/set_mode"}
 
 func (s *Server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	<-s.ready
@@ -171,6 +173,8 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 		return s.listSessions(params)
 	case "session/close":
 		return s.closeSession(params)
+	case "session/set_mode":
+		return s.setMode(params)
 	}
 	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "belai does not support %s", method)
 }
@@ -208,7 +212,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
-	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now()}
+	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now(), mode: modeAuto}
 	if s.opts.Transcript != nil {
 		if l := s.opts.Transcript(filepath.Clean(p.Cwd), id); l != nil {
 			ss.log = l
@@ -229,7 +233,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 			s.opts.Mirror.Opened(id, ss.cwd, name)
 		}
 	}
-	return map[string]any{"sessionId": id}, nil
+	return map[string]any{"sessionId": id, "modes": modeState(modeAuto)}, nil
 }
 
 func (s *Server) lookup(id string) *acpSession {
@@ -341,7 +345,10 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 	ss.prog = newProgress()
 	started := time.Now()
 	ss.lastSent.Store(started.UnixNano())
-	events := ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes)})
+	ss.mu.Lock()
+	force := forcedMode(ss.mode)
+	ss.mu.Unlock()
+	events := ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes), ForceMode: force})
 	beat := time.NewTicker(heartbeatEvery / 2)
 	defer beat.Stop()
 run:
