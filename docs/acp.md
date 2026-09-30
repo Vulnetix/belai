@@ -46,6 +46,7 @@ from your normal Belai settings for the project directory.
 | `session/prompt` | runs one turn; text, file links and embedded file text become the prompt, and `image` blocks are attached as images |
 | `session/cancel` | stops the turn; the prompt returns `cancelled` |
 | `session/list` | the sessions open on this connection, newest first, optionally for one absolute `cwd`; no paging, and nothing from the session store |
+| `session/set_config_option` | the editor's model picker and mode picker, both offered in `configOptions` on `session/new`. The `model` option lists the models of every provider you have credentials for, plus the one the session runs on; a pick must be one of the listed values, lasts for the session and is never saved to your settings. The session is rebuilt through the same builder as at start (trust check, permission rules, sandbox and classifier all apply again) and keeps its conversation. A change during a running turn is refused. Classifier and routing settings are not exposed |
 | `session/set_mode` | the editor's mode picker: `auto` (Belai chooses per prompt, the default), `agent`, `plan` (read only, no shell) or `goal`. A chosen mode engages that mode's own tool surface and gates, and the change is echoed as `current_mode_update` |
 | `session/close` | stops a running turn, flushes the transcript and forgets the session |
 | `available_commands_update` | sent once `session/new` has answered: the `/tree` command (see [Session tree](#session-tree)) |

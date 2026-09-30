@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
@@ -67,7 +68,11 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {
 		return buildACPSession(ctx, cwd, sessionID, *providerName, *model)
 	}
-	opts := acp.Options{PostEnd: acpPostEnd(*providerName, *model)}
+	opts := acp.Options{
+		PostEnd: acpPostEnd(*providerName, *model),
+		Models:  acpModelChoices,
+		Switch:  buildACPSession,
+	}
 	if !*noTranscript {
 		// The transcript is the same private JSONL a TUI session keeps; it
 		// writes to the state directory, never to stdout.
@@ -152,4 +157,32 @@ func acpPostEnd(providerName, model string) func(context.Context, string, *agent
 			Session: sess, Trigger: testpass.TriggerGoal, Fix: fix, Notify: notify,
 		}), true
 	}
+}
+
+// acpModelChoices lists the provider and model pairs an editor may pick for a
+// session: the catalogue of every provider the user has credentials for, plus
+// the pair the session already runs on. Nothing here comes from the editor,
+// and a pick is only ever matched against this list.
+func acpModelChoices(cwd, curProvider, curModel string) []acp.ModelChoice {
+	seen := map[string]bool{}
+	var out []acp.ModelChoice
+	add := func(provider, model, label string) {
+		if provider == "" || model == "" || seen[provider+"/"+model] {
+			return
+		}
+		seen[provider+"/"+model] = true
+		if label == "" {
+			label = model
+		}
+		out = append(out, acp.ModelChoice{Provider: provider, Model: model, Label: provider + " · " + label})
+	}
+	add(curProvider, curModel, curModel)
+	if resolver, err := newResolver(cwd); err == nil {
+		for _, name := range resolver.ConfiguredProviders() {
+			for _, m := range models.Catalog(name) {
+				add(name, m.ID, m.Label)
+			}
+		}
+	}
+	return out
 }
