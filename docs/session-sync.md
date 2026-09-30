@@ -304,12 +304,33 @@ and the inbox run on the syncer's own goroutines.
   - Browser endpoints: list (sessions run in `/tmp`, `/private/tmp` or
     `/var/tmp` are hidden unless `tmp=1`; the live list also carries
     `openAsks`, `openAskAt` and `openAskKind`, which count ask lines with no
-    `answer-<ask id>` line, so the Sessions page can show who is waiting on
+    `answer-<ask id>` line, so the Hosts page can show who is waiting on
     the user), detail, paged entries, an SSE
     stream, prompt create/cancel, answer create/cancel, and agent-draft
     create/read/cancel (`belai_drafts.go`).
   - Wake-ups: `belai_notify.go` listens on `belai_s` (session) and `belai_h`
     (host).
+  - **Timeline** (`belai_timeline.go`, `GET /v1/belai/sessions/{id}/timeline`):
+    the website's "why it did this" list, oldest first. It joins how the
+    session started (from the website when it has a dispatch), each
+    `turn_state` start and end, the role-manager decisions the host wrote with
+    `hidden` false (their `summary` and `outcome`), `ask` and `ask_answer`
+    lines (the kind, and whether the answer came from the host or the web) and
+    the board cards whose history names the session. It selects no message
+    `content`: only timestamps, entry types and `meta`. Every string is
+    cleaned (control and bidi runes) and capped at 160 characters, a `meta`
+    that is not JSON is skipped, and at most the newest 400 entry rows and 20
+    cards are read. It exists on the website only; the TUI has no equivalent.
+  - **Worker control** (`pause`, `resume` dispatches): the same dispatch queue
+    that starts sessions and workers carries a request naming a worker id. The
+    API accepts it only for a worker the host reported as live, the host
+    checks the id again against its own registry, and a `paused` worker still
+    counts as live (it keeps its `agents.max_workers` slot).
+  - **Assignees** (`belai_assignees.go`, `POST /v1/belai/assignees`): turns an
+    email into `person:<member id>` for an organization member, or
+    `person:invite-<id>` for an address that is not yet a member, through the
+    Members page's invitation (owners and admins only). Nothing is emailed by
+    this call.
 - **Schema:** it lives in `saas` (`prisma/models/belai.prisma`, migrations
   `20260926000001_add_belai_session_sync` and
   `20260928000001_add_belai_remote_answers`, which adds `BelaiRemoteAnswer`,
