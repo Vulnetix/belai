@@ -118,6 +118,12 @@ predict what will happen to them:
   tails together stay under 48 KiB. The log holds harness lines and the
   worker process's stderr, never a transcript: model output goes to the
   item's session. The server cleans it again and applies the same caps.
+- **Pause and resume.** The website can ask a live worker to pause or resume
+  with a `pause` or `resume` request that names the worker's id. The daemon
+  refuses an id that does not look like one, and a worker that is not live in
+  this host's own fleet registry. Otherwise it sets or clears the worker's
+  pause marker and acknowledges. The worker finishes the card it holds, then
+  reports `paused` until resumed (see [fleet.md](fleet.md#pausing-a-worker)).
 - **On the Sessions page.** Each machine running remote control lists its
   fleet workers above its sessions: a state indicator (working, starting,
   idle and looking for work, stopped, failed), the profile and crew, done and

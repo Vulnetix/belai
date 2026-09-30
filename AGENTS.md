@@ -256,7 +256,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   backend, an unanswered item or an answer outside 0 to 1 is *unknown*, and the
   job falls back to the ordinary behaviour, never to a chat model. Each job is a
   `jev.jobs.<job>` switch that defaults on, runs only with a decision backend
-  configured, and that a project layer may turn off but never on. A `Bash` call
+  configured, and that a project layer may turn off but never on. The score
+  cut-offs (`jev.thresholds`, defaults in `config.DefaultJevThresholds`) are
+  read from the user's own settings layers only: `mergeJev` drops the project
+  layer's `thresholds`, an invalid set fails validation and is never used, and
+  the allow and deny cut-offs stay on opposite sides of 0.5 at least 0.05
+  apart. A `Bash` call
   is replaced by a builtin only when the command is one plain command, no
   deny rule matches it, exactly one shortlisted builtin rates at or above 0.95,
   the fast model's arguments pass the tool's schema and appear in the command,
@@ -674,7 +679,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   fleet log directory (never a path from a record), cleaned with
   `sessionsync.CleanLogLine` and capped per line, per worker and in total.
   That log holds harness lines and the worker process's stderr only; nothing
-  may write model output or item text to it.
+  may write model output or item text to it. A website `pause` or `resume`
+  request names a worker id only: the daemon accepts it when it has the shape
+  of an id (`fleet.ValidID`) and the worker is live in the host's own
+  registry, and otherwise refuses it with a reason. It sets or clears the
+  worker's empty pause marker and does nothing else.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line
