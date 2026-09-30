@@ -58,6 +58,7 @@ const (
 	EventExploreLocate             Event = "explore_locate"
 	EventVoiceCommand              Event = "voice_command"
 	EventRequestScale              Event = "request_scale"
+	EventGoalJudge                 Event = "goal_judge"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -367,6 +368,8 @@ func Describe(a Activity) (Description, bool) {
 		return optionOrderDescription(a), true
 	case EventVoiceCommand:
 		return voiceCommandDescription(a), true
+	case EventGoalJudge:
+		return goalJudgeDescription(a), true
 	case EventRequestScale:
 		return requestScaleDescription(a), true
 	case EventPruneCompaction:

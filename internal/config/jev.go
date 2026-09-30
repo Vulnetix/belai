@@ -53,6 +53,11 @@ const JevVoiceCommand JevJob = "voice_command"
 // the goal contract, prefetch and verification ceremony and is worked at once.
 const JevRequestScale JevJob = "request_scale"
 
+// JevGoalJudge rates a goal pass as complete, partial or not started. A clear
+// answer settles the pass; anything else goes to the model judge with the
+// scores as a hint.
+const JevGoalJudge JevJob = "goal_judge"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -66,6 +71,7 @@ var JevJobs = []JevJob{
 	JevExploreLocate,
 	JevVoiceCommand,
 	JevRequestScale,
+	JevGoalJudge,
 }
 
 // LocatePreview values for jev.locate_previews.
