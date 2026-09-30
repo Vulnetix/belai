@@ -82,6 +82,29 @@ func CommitPaths(ctx context.Context, r Runner, root string, paths []string, msg
 	return sha, nil
 }
 
+// HeadCommit returns the full commit id HEAD names in root, or "" when git
+// cannot say (no commit yet, not a repository). Only a 40 or 64 digit hex id is
+// returned, so the result is safe to record as an identifier.
+func HeadCommit(ctx context.Context, r Runner, root string) string {
+	if r == nil {
+		r = ExecRunner
+	}
+	out, err := run(ctx, r, ReadTimeout, root, "git", "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return ""
+	}
+	id := strings.ToLower(strings.TrimSpace(out))
+	if len(id) != 40 && len(id) != 64 {
+		return ""
+	}
+	for _, c := range id {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return ""
+		}
+	}
+	return id
+}
+
 // commitPathsInside normalises a path list to deduplicated, slash-separated
 // paths relative to root, dropping absolute paths and any path containing
 // "..". A path that still escapes root after joining is dropped too.

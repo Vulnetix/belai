@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/vex"
@@ -325,7 +326,14 @@ func (w *Worker) writeVEX(ctx context.Context, it kanban.Item, rec tools.Verdict
 			in.Action += " Tried: " + strings.Join(rec.Tried, "; ")
 		}
 	}
-	return vex.Write(w.Repo, in)
+	rel, err := vex.Write(w.Repo, in)
+	if err == nil {
+		// The VEX is the harness's own document; the event names only its
+		// enum verdict and justification and its relative path.
+		w.auditItem(audit.VEXWritten, it, audit.Fact{SessionID: w.Record.Session, Commit: commit, Verdict: string(rec.Verdict),
+			Outcome: "written", Data: map[string]string{"justification": string(rec.VEXReason), "path": rel}})
+	}
+	return rel, err
 }
 
 // bodyFacts reads "key: value" lines from a sweep card's body, keeping only

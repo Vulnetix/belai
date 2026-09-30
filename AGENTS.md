@@ -818,6 +818,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   command runs, never a spoken command line; it falls back to dictation on any
   miss, failure or timeout. `voice.wake_word` and `voice.commands` are
   per-user keys, dropped from the project layer.
+- **The audit log is harness facts, hash-chained, and never composed from the
+  transcript.** `internal/audit` records what a host and its agents did (a
+  claim, a commit, a gate decided by exit code, a VEX written, a request the
+  website made of the host) and `sessionsync.AuditSyncer` uploads it. It is not
+  the session mirror: it never reads or writes the session JSONL, and it has
+  its own endpoint, because the mirror is content and this is not. Every string
+  on an event is reduced to `[A-Za-z0-9._:/@+-]` and capped (`audit.Clean`), a
+  commit id is kept only as full lowercase hex, an advisory id only in its
+  identifier shape, and a verdict and an actor kind only from their enums.
+  The event's keys and the `data` map's keys are closed sets
+  (`TestEventKeysClosed`, `TestDataKeysAllowlist`); never add a key that can
+  hold a prompt, reply, argument, output, command, file content, commit message
+  or model-written note. The recorder stamps seq, time, hostname, scope and the
+  chain hash, so an emitter cannot set them and no model argument reaches an
+  event. Each process run appends to its own stream file under the state
+  directory, each event's hash covers it and the previous hash
+  (`audit.Canonical`, pinned to the server's by a golden vector), and the server
+  stores a chain break flagged, never dropped. A card links to a vulnerability
+  only when it is a security card (`kanban.Item.VulnID`). With no recorder
+  installed (sync off) `audit.Emit` does nothing, the audit is best effort and
+  never fails or slows what it records, and the project layer may turn sync
+  off, never on. See [docs/audit.md](docs/audit.md).
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

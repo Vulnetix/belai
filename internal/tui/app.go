@@ -512,6 +512,7 @@ type App struct {
 	// session sync (session_sync.go): the website mirror of the session file
 	// and the prompts it sends back. nil when sync is off or not logged in.
 	syncer      *sessionsync.Syncer
+	audit       *sessionsync.AuditSyncer   // the audit log's upload, started with syncer
 	syncedID    string                     // the session the syncer was last pointed at
 	syncNote    string                     // why sync is off, for /sync status
 	remoteQueue []sessionsync.RemotePrompt // web prompts waiting for the host to be idle
