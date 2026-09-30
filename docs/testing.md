@@ -266,3 +266,22 @@ agentic loop, bounded by `tests.max_fix_passes`.
   pass leaves it alone.
 - A dirty tree from before the session widens `affected` scoping, since scoping
   reads the working tree's changes.
+
+## The delivery crew's quality sweep
+
+`belai:delivery` reuses this machinery without the `tests.post_end` setting:
+launching the crew is the opt-in. Its scout runs the same detected suites (or
+`tests.command`) once for each commit, full tree and not scoped to changes,
+under the same permission rules, sandbox and scrubbed environment, and a
+suite's failure is never fed to a model. A Go suite runs as `go test -cover
+./...`, and a Go module whose suites are all recipes gets that run as well.
+
+What the run showed is written to `.vulnetix/belai/quality/<commit>.json` (the
+last twenty are kept): each suite's status, exit code and duration, the failing
+test and package names, per-package coverage, packages with no test files, and
+which mutation tool marker files exist. Test names, package paths and numbers
+are the only parts of the output kept. A record for HEAD means the suites do
+not run again on that commit. A run in which no suite started (denied, no
+binary) writes nothing and is tried again at the next launch. The seed cards
+made from a record are described in
+[the delivery crew](fleet.md#the-delivery-crew).
