@@ -69,6 +69,11 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
 | Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
+| ACP setup in Zed | [Zed](acp-zed.md) | alpha-20260926 |
+| ACP setup in JetBrains IDEs | [JetBrains IDEs](acp-jetbrains.md) | alpha-20260926 |
+| ACP setup in Neovim | [Neovim](acp-neovim.md) | alpha-20260926 |
+| ACP setup in Emacs | [Emacs](acp-emacs.md) | alpha-20260926 |
+| ACP setup in VS Code | [VS Code](acp-vscode.md) | alpha-20260926 |
 | OpenTelemetry export | [Telemetry](telemetry.md) | alpha-20260926 |
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |

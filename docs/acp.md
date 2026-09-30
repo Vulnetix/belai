@@ -5,9 +5,9 @@ may still change.
 
 `belai acp` runs Belai as an [Agent Client
 Protocol](https://agentclientprotocol.com) agent on stdin and stdout. Editors
-that speak ACP (Zed, JetBrains IDEs, Neovim through a plugin) can then use
-Belai as their agent, with the same classifier, permission rules, guardrails
-and budgets as the TUI.
+that speak ACP (Zed, JetBrains IDEs, Neovim, Emacs and VS Code through a
+plugin or extension) can then use Belai as their agent, with the same
+classifier, permission rules, guardrails and budgets as the TUI.
 
 - [Editor setup](#editor-setup)
 - [What is supported](#what-is-supported)
@@ -30,7 +30,9 @@ Zed, in `settings.json`:
 }
 ```
 
-Other editors take the same command. `belai acp -provider <name> -model <id>`
+Step-by-step tutorials: [Zed](acp-zed.md), [JetBrains IDEs](acp-jetbrains.md),
+[Neovim](acp-neovim.md), [Emacs](acp-emacs.md) and [VS Code](acp-vscode.md).
+Any other ACP client takes the same command. `belai acp -provider <name> -model <id>`
 picks a provider and model; otherwise they resolve as they do for the TUI
 (settings, `BELAI_PROVIDER`, available credentials). Everything else comes
 from your normal Belai settings for the project directory.

@@ -94,6 +94,17 @@ beak, feet and layer order stay byte-identical. Every animated id is listed in
 the SVG's `prefers-reduced-motion` block with a static fallback for anything
 that starts at `opacity: 0`.
 
+## Editor logos
+
+`site/src/assets/editors/` holds the marks shown in the "Belai in your editor"
+block of `Extend.astro`. They are the vendors' own SVGs and appear only to name
+the editor they belong to (the one exception to naming things by what they do).
+Sources: Zed, `assets/images/zed_logo.svg` in the Zed repository; JetBrains,
+`resources.jetbrains.com` brand logos; Neovim, the Neovim mark on Wikimedia
+Commons; Emacs, `EmacsIcon.svg` on Wikimedia Commons; VS Code, the Visual Studio
+Code icon on Wikimedia Commons. Check each project's brand guidelines before
+recolouring or resizing beyond the CSS on the page.
+
 ## TUI shot captures
 
 `tools/shot` renders real TUI surfaces headlessly to TrueColor ANSI files in

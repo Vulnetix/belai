@@ -34,6 +34,11 @@ import (
 // start many times an hour, so the answer is cached on disk.
 const releaseCacheTTL = 6 * time.Hour
 
+// releaseCurrentTTL is how long a cached answer stays valid when it says the
+// running binary is up to date. Releases land hourly, so a "nothing newer"
+// answer goes stale much sooner than one that already names an upgrade.
+const releaseCurrentTTL = 30 * time.Minute
+
 // repo is the releases repository this binary is built from.
 const (
 	repoOwner = "Vulnetix"
@@ -130,7 +135,7 @@ func Check(ctx context.Context, opts Options) Status {
 	st := Status{Checked: true, Current: current}
 	st.Method, _ = detectMethod(opts, getenv)
 
-	tag, url, err := latestRelease(ctx, opts, getenv)
+	tag, url, err := latestRelease(ctx, opts, getenv, current)
 	if err != nil {
 		st.Error = err.Error()
 		return st
@@ -223,7 +228,7 @@ func AssetURL(tag, goos, goarch string) string {
 
 // latestRelease returns the newest release tag and page URL, from the disk
 // cache when it is fresh.
-func latestRelease(ctx context.Context, opts Options, getenv func(string) string) (string, string, error) {
+func latestRelease(ctx context.Context, opts Options, getenv func(string) string, current vulnetixcli.Version) (string, string, error) {
 	path := opts.CachePath
 	if path == "" {
 		p, err := cachePath()
@@ -232,7 +237,7 @@ func latestRelease(ctx context.Context, opts Options, getenv func(string) string
 		}
 	}
 	if !opts.SkipCache && path != "" {
-		if c, err := loadCache(path); err == nil && c != nil && c.Tag != "" && time.Since(c.FetchedAt) < releaseCacheTTL {
+		if c, err := loadCache(path); err == nil && c != nil && c.Tag != "" && cacheFresh(c, current) {
 			return c.Tag, c.URL, nil
 		}
 	}
@@ -280,6 +285,21 @@ func latestRelease(ctx context.Context, opts Options, getenv func(string) string
 		_ = saveCache(path, releaseCache{Tag: payload.TagName, URL: payload.HTMLURL, FetchedAt: time.Now()})
 	}
 	return payload.TagName, payload.HTMLURL, nil
+}
+
+// cacheFresh reports whether a cached release answer may be reused. An answer
+// that names an upgrade lives for releaseCacheTTL; one that is not newer than
+// the running version lives for releaseCurrentTTL only, since a newer release
+// may have shipped since.
+func cacheFresh(c *releaseCache, current vulnetixcli.Version) bool {
+	age := time.Since(c.FetchedAt)
+	if age >= releaseCacheTTL {
+		return false
+	}
+	if latest, ok := vulnetixcli.ParseVersion(c.Tag); ok && latest.Compare(current) > 0 {
+		return true
+	}
+	return age < releaseCurrentTTL
 }
 
 // cachePath returns the default release cache file.
