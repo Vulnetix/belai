@@ -46,6 +46,7 @@ from your normal Belai settings for the project directory.
 | `session/prompt` | runs one turn; text, file links and embedded file text become the prompt, and `image` blocks are attached as images |
 | `session/cancel` | stops the turn; the prompt returns `cancelled` |
 | `session/list` | the sessions open on this connection, newest first, optionally for one absolute `cwd`; no paging, and nothing from the session store |
+| `session/set_mode` | the editor's mode picker: `auto` (Belai chooses per prompt, the default), `agent`, `plan` (read only, no shell) or `goal`. A chosen mode engages that mode's own tool surface and gates, and the change is echoed as `current_mode_update` |
 | `session/close` | stops a running turn, flushes the transcript and forgets the session |
 | `session_info_update` | after each turn: a harness title (editor, folder, turn count) and the time |
 | `agent_message_chunk` | streamed reply text |
@@ -106,7 +107,7 @@ classifier refuses it.
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.
 - Audio in prompts is not accepted. Images are: see below.
-- Slash commands, modes and the TUI panels are not exposed.
+- Slash commands and the TUI panels are not exposed.
 
 ## Edge cases
 
