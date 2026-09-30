@@ -135,7 +135,13 @@ func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, histo
 	for _, f := range m.AgentsFiles {
 		raw = append(raw, f.Name)
 	}
-	for _, c := range m.Changed {
+	changed := m.Changed
+	if s.turnSimple {
+		// A simple request names its own targets; the instruction files stay,
+		// the changed files are not read up front.
+		changed = nil
+	}
+	for _, c := range changed {
 		if strings.Contains(c.Status, "D") {
 			continue
 		}

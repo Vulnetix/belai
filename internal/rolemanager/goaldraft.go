@@ -37,7 +37,7 @@ Rules:
 - Do not repeat the objective line; it is already present.
 - Do not output any other headings, Markdown fences, or commentary outside the sections.
 - The contract is read by the model doing the work, so be concrete and actionable, not generic.
-- Verification commands: when a harness-detected command list is given, use only those commands (plus read-only git). Never invent a build tool or target the list does not name — no make, npm, cargo or similar unless listed.
+- Verification commands: when a harness-detected command list is given, use only those commands (plus read-only git). A goal that changes no code and only runs commands, such as git operations, is verified by those commands and read-only git, not by the list. Never invent a build tool or target the list does not name — no make, npm, cargo or similar unless listed.
 - Name files only when the user's goal names them or they are certain; never guess paths.
 - Keep the whole reply under 600 words; the loop starts editing as soon as this contract exists, so brevity is speed.`
 
@@ -68,7 +68,7 @@ func goalDraftUser(in GoalDraftInput) string {
 	b.WriteString("User goal (carried verbatim as Objective, do not repeat it):\n")
 	b.WriteString(sanitize.Sanitize(in.Prompt))
 	if len(in.VerificationSurface) > 0 {
-		b.WriteString("\n\nDefault verification surface (harness-detected commands):\n")
+		b.WriteString("\n\nDefault verification surface (harness-detected commands; they verify code changes, so a goal that only runs commands needs none of them unless it asks):\n")
 		for _, cmd := range in.VerificationSurface {
 			b.WriteString("- " + sanitize.Sanitize(cmd) + "\n")
 		}

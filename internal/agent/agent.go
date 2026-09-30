@@ -259,6 +259,10 @@ type Session struct {
 	// turnExecutePlan is set for the turn that executes an approved plan, so
 	// the first-pass directive can point at the plan rather than a goal.
 	turnExecutePlan bool
+	// turnSimple is set when the request scale job rated this turn's request
+	// simple: the goal contract draft, changed-file prefetch, planning list,
+	// verification gate and test-suite verification surface are dropped.
+	turnSimple bool
 	// turnFanOut is set for fan-out profile turns. It advertises the Task
 	// tool and allows several read-only subagents to run concurrently.
 	turnFanOut bool
@@ -1109,6 +1113,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.turnPriorGoal = nil
 	s.turnDraft = nil
 	s.turnExecutePlan = in.ExecutePlan
+	s.turnSimple = false
 	var draft *pendingDraft
 	// A turn that ends before the join must not leave the draft running.
 	defer func() {
@@ -1144,6 +1149,13 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		// with exploration and is joined below. A harness-constant prompt
 		// (NoGoalDraft) is the goal as it stands.
 		if in.NoGoalDraft {
+			loopGoal = clean
+			break
+		}
+		// A simple request is worked as it was written: rating it costs one
+		// fast call and saves the draft, the prefetch and the test run.
+		if s.rateScale(ctx, clean) {
+			s.turnSimple = true
 			loopGoal = clean
 			break
 		}

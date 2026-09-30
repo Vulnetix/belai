@@ -26,7 +26,7 @@ const (
 var jevThresholdLabels = map[string]string{
 	"allow_at": "jev allow at", "deny_at": "jev deny at", "route_at": "jev route at",
 	"drop_at": "jev drop at", "keep_at": "jev keep at", "strong_at": "jev strong at",
-	"swap_at": "jev swap at", "voice_at": "jev voice at", "triage_at": "jev triage at",
+	"swap_at": "jev swap at", "voice_at": "jev voice at", "simple_at": "jev simple at", "triage_at": "jev triage at",
 	"hit_at": "jev hit at", "lead_at": "jev lead at",
 	"option_hit": "jev option hit", "option_margin": "jev option margin", "option_lead": "jev option lead",
 	"mode_confident": "jev mode sure", "mode_margin": "jev mode margin", "mode_headless": "jev mode headless",
@@ -41,6 +41,7 @@ var jevThresholdHelp = map[string]string{
 	"strong_at":      "an item scoring at or above this is added even when nothing else picked it",
 	"swap_at":        "a single candidate at or above this replaces the Bash call it rates",
 	"voice_at":       "a spoken instruction runs a skill, crew, process, prompt, profile or mode only when exactly one target scores at or above this",
+	"simple_at":      "a request scoring at or above this is worked as a simple one: no goal contract, prefetch or test run (min 0.50)",
 	"triage_at":      "below this another edit pass is judged unlikely to clear language server errors",
 	"hit_at":         "a located file at or above this is a hit",
 	"lead_at":        "a located file from here up to the hit level is a lead; below it is dropped",

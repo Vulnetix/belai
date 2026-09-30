@@ -45,6 +45,7 @@ var allEvents = []Event{
 	EventToolSearch,
 	EventExploreLocate,
 	EventVoiceCommand,
+	EventRequestScale,
 	EventToolSelect,
 	EventLSPTriage,
 }

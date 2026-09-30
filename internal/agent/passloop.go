@@ -127,6 +127,7 @@ const (
 	// approved plan, which may legitimately change no file.
 	planReadStreakDirective = "You have spent several rounds reading. Carry out the approved plan's next unfinished step in your next response from the bytes you already have: if it changes a file, make the change; if the remaining steps only read or report and are done, say the plan is complete and give the result. Do not re-read files you have already read in full."
 	readStreakDirective     = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
+	goalSimpleDirective     = "This is a simple request: start on it now, in this response, with the actions it names. Run the commands the request asks for and read only what they need. Do not write a plan list, do not run the project test suite or build unless the request asks for it or you changed code, and do not survey the repository. The goal is done when the requested actions have succeeded; report their result in one short reply."
 	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with a [DONE:n] marker in the text of the response that carries your next tool calls — that updates the list without a round of its own; call update_plan again only when the steps themselves change. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
@@ -135,6 +136,9 @@ const (
 // them. Test commands from added workspace directories are unioned in so the
 // verification surface covers every root.
 func (s *Session) goalAckDirective() string {
+	if s.turnSimple && !s.turnExecutePlan {
+		return goalSimpleDirective
+	}
 	directive := goalAckDirective
 	if s.turnExecutePlan {
 		directive = planExecuteDirective + " " + directive
@@ -143,7 +147,7 @@ func (s *Session) goalAckDirective() string {
 	if len(cmds) == 0 {
 		return directive
 	}
-	return directive + " The default verification surface is: " + strings.Join(cmds, "; ") + "."
+	return directive + " The default verification surface is: " + strings.Join(cmds, "; ") + ". It applies when you change code; a request that only runs commands (git, a build, a listing) needs no test run unless it asks for one."
 }
 
 // allTestCommands returns the union of Commands.Test across the primary repo
@@ -181,6 +185,10 @@ type passLedger struct {
 	// no file at all, so the no-write escalations name the next plan step
 	// instead of demanding an edit.
 	executePlan bool
+	// simple: the request scale job rated the request simple, so no
+	// verification pass gates completion and a run without a file write is
+	// not a stall.
+	simple bool
 
 	// todo list shared by goal mode, plan pursual and the TUI panel.
 	list          todos.List
@@ -388,6 +396,9 @@ func passPrint(passTurns []run.Turn, reply string) string {
 // file change to stop asking politely. It is deliberately independent of the
 // todo list: a model can keep a checklist moving with prose alone.
 func (l *passLedger) stalledOnWrites() bool {
+	if l.simple {
+		return false // a simple request may change no file at all
+	}
 	return l.passesSinceWrite >= goalNoWritePasses
 }
 
@@ -583,7 +594,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	// for anyone who wants a hard bound on spend.
 	maxPasses := s.settings.Resilience.MaxPassesOr()
 
-	l := passLedger{goalText: goalText, executePlan: s.turnExecutePlan}
+	l := passLedger{goalText: goalText, executePlan: s.turnExecutePlan, simple: s.turnSimple}
 	verdictBase := s.verdictWithheld.Load()
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
@@ -745,7 +756,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 			}
 			if sentinel == rolemanager.GoalComplete {
-				if l.verificationPasses == 0 {
+				if l.verificationPasses == 0 && !l.simple {
 					l.verificationArmed = true
 					turns = append(turns, l.directive(l.gateDirective())...)
 					continue
@@ -873,7 +884,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			turns = append(turns, l.directive(body)...)
 
 		case rolemanager.GoalComplete:
-			if l.verificationPasses == 0 {
+			if l.verificationPasses == 0 && !l.simple {
 				// Verification gate: GOAL_COMPLETE is only accepted after at
 				// least one verification pass ran in this prompt. This is
 				// harness logic, not model logic — the model cannot talk its

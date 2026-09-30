@@ -65,6 +65,7 @@ prompt runs with it.
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 | `explore_locate` | Ranks the files a question is about, seeds the explore subagents with them, and offers a `Locate` tool | Shipped |
 | `voice_command` | Matches a short spoken instruction to one skill, crew, process, prompt, agent profile, the security review or a mode, and runs it only on a very close match | Shipped |
+| `request_scale` | Rates a request as simple or staged, and starts a simple one at once without a goal contract, file prefetch or test run | Shipped |
 
 ## Scores and thresholds
 
@@ -80,6 +81,7 @@ with the default shown; a job reads the value from your settings:
 | `StrongAt` | `strong_at` | 0.80 | An item scoring at or above this is added to a list |
 | `SwapAt` | `swap_at` | 0.95 | A single candidate at or above this replaces the call it rates |
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
+| | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
 | `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
 | `LeadAt` | `lead_at` | 0.25 | A located file from here to `hit_at` is a lead, and below it is dropped |
@@ -477,3 +479,36 @@ matched to something you could have asked for by name, and that thing runs.
 
 Recorded as a `voice_command` event: `matched` or `none`, the kind of target
 and the score in percent. Never the speech or a name.
+
+## Request scale
+
+Goal mode wraps a turn in ceremony that pays for itself on a large request and
+only delays a small one: a contract drafted by the fast model, a prefetch of
+every changed file, a planning list, a verification pass before the goal may
+end, and the repository's test suite as the verification surface. With a
+decision backend the harness rates the request once at the start of a goal
+turn, so a request such as "commit and push" starts at once.
+
+- **What the backend sees.** The cleaned prompt as `DecisionText`, nothing
+  else. It rates two items against one criterion: a simple request (a few
+  direct actions, no investigation or design) and a staged request (dependent
+  stages, investigation, design or many files).
+- **The decision.** A request is simple only when it rates at or above
+  `simple_at` (0.80) as simple and below `keep_at` (0.50) as staged. An
+  unanswered item, a timeout (8 seconds), a missing backend or a switch that is
+  off is unknown, and the goal runs exactly as before.
+- **What a simple verdict drops.** The goal contract draft (the prompt is the
+  objective as written), the prefetch of changed files (the agent instruction
+  files still ride along), the planning list and test-suite verification
+  surface in the first-pass directive, the verification pass that gates
+  completion, and the no-write escalation. The goal loop and its evaluator still
+  run, so the harness still ends the goal.
+- **What it never changes.** The mode you chose stays. Permissions, hooks, the
+  ask gate, the classifier and the sandbox apply to every call as usual. The job
+  never approves anything and never asks a chat model.
+- **Without a backend.** The first-pass directive and the contract prompt say
+  the test commands verify code changes, and that a request which only runs
+  commands needs no test run unless it asks for one.
+
+Recorded as a `request_scale` event: `simple`, `staged` or `unknown` and the
+score in percent. Never the request.
