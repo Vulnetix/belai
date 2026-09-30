@@ -17,8 +17,8 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/net v0.47.0
-	golang.org/x/text v0.31.0
+	golang.org/x/net v0.55.1-0.20260608170621-8a348850ed68
+	golang.org/x/text v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
 )
@@ -49,5 +49,5 @@ require (
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 )
