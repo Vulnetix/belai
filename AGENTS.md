@@ -281,6 +281,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   summary and outcome for a described event, and never `Detail`, a prompt, a
   command, a path or classified text. Headless and ACP runs keep a private
   transcript unless `-no-transcript` is set; it is never synced.
+- **ACP resolves its model like a worker.** With no `-provider`/`-model`,
+  `acpConfig` takes the settings file, then the saved TUI selection
+  (`workerModel`), never the built-in OpenAI fallback.
 - **Tool-call mismatch defaults to abort.** Stripping or ignoring mismatches
   requires explicit user opt-in.
 - **Recovery subagent authority is bounded.** The recovery subagent sees the

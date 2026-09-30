@@ -117,7 +117,11 @@ func acpConfig(cwd, providerName, model string) (run.Config, config.Settings, po
 	if err != nil {
 		return run.Config{}, settings, pol, err
 	}
-	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
+	// No flag: the settings file, then the model the user last chose in the
+	// TUI, exactly as a fleet worker resolves. Without this the provider
+	// falls back to OpenAI whatever the user configured.
+	wantProvider, wantModel := workerModel(providerName, model, settings, config.LoadState)
+	cfg, err := run.ResolveWithSource(wantModel, wantProvider, os.Getenv, resolver)
 	if err != nil {
 		return run.Config{}, settings, pol, err
 	}
