@@ -559,6 +559,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
 	if k := p.Kanban; k != nil {
 		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
+		if s := k.Security; s != nil {
+			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
+		}
 		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
 			list := kanban.Review
 			if k.Survey != nil {
@@ -628,6 +631,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	cause := context.Cause(itemCtx)
 
 	o := w.judge(it, res, runErr, cause)
+	o = w.applyVerdict(ctx, o, it, claim, runErr == nil && cause == nil)
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
 	}
@@ -744,6 +748,13 @@ type outcome struct {
 	files   int
 	stop    run.StopReason
 	passes  int
+	// The security verdict routes the item and names its VEX. to, when set,
+	// replaces the profile's route with these label edits.
+	verdict    kanban.Verdict
+	vex        string
+	to         kanban.List
+	addLabels  []string
+	dropLabels []string
 }
 
 // judge turns the goal loop's result into an outcome. Notes are harness
@@ -794,6 +805,8 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	}
 	var route agentprofile.Route
 	switch {
+	case o.to != "" && !o.failed:
+		out.To, out.AddLabels, out.DropLabels = o.to, o.addLabels, o.dropLabels
 	case o.blocked:
 		out.To = kanban.Blocked
 	case !o.failed:
@@ -814,6 +827,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		out.To, _ = kanban.ParseList(route.List)
 		out.AddLabels, out.DropLabels = route.Labels, route.DropLabels
 	}
+	out.Verdict, out.VEX = o.verdict, o.vex
 	if o.failed {
 		w.Record.Failed++
 	} else {
