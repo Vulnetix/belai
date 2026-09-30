@@ -111,6 +111,8 @@ type acpSession struct {
 	updated time.Time
 	// mode is the editor's chosen mode id (modeAuto until it picks one).
 	mode string
+	// headed is set once the session's header has gone to the editor.
+	headed bool
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
@@ -342,6 +344,7 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 	s.touch(ss)
 	var res run.Result
 	var runErr error
+	s.sendHeader(ss)
 	ss.prog = newProgress()
 	started := time.Now()
 	ss.lastSent.Store(started.UnixNano())
@@ -414,6 +417,23 @@ run:
 		return map[string]any{"stopReason": "cancelled"}, nil
 	}
 	return map[string]any{"stopReason": "end_turn"}, nil
+}
+
+// sendHeader writes the TUI's header into the chat once per session, at the
+// start of its first turn (an update can only follow session/new's answer).
+func (s *Server) sendHeader(ss *acpSession) {
+	ss.mu.Lock()
+	first := !ss.headed
+	ss.headed = true
+	ss.mu.Unlock()
+	if !first {
+		return
+	}
+	var provider, model string
+	if ss.agent != nil {
+		provider, model = ss.agent.ModelInfo()
+	}
+	s.update(ss, map[string]any{"sessionUpdate": "agent_message_chunk", "content": textContent(headerText(provider, model))})
 }
 
 // nameFromPrompt renames a session after its first prompt: the editor's name,
