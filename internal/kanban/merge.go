@@ -132,6 +132,7 @@ func keepAgent(r *Item, local Item) {
 	r.Finding, r.SeenRef, r.Verdict, r.VEX = local.Finding, local.SeenRef, local.Verdict, local.VEX
 	// The acceptance gates are host-local for the same reason.
 	r.Gates = cloneGates(local.Gates)
+	r.Clauses, r.Covers = slices.Clone(local.Clauses), slices.Clone(local.Covers)
 	if !r.remoteAgent {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops

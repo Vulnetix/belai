@@ -55,6 +55,10 @@ Belai offers the model different kanban tools at different points in a turn:
   manual gate of the item it holds. It takes no item id, writes only the claimed
   item, and refuses a runnable gate: the harness decides those. See
   [manual gates](fleet.md#manual-gates-and-the-reviewer).
+- **`KanbanContract`** (a fleet worker that plans a request, the scout) records the
+  clauses of the request card it holds, before its first handoff. Each handoff then
+  names the clauses it covers, and the harness files a gap card for one nothing
+  covers. See [request coverage](fleet.md#request-coverage).
 
 In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
 worker has claimed. `KanbanMove` is also a compare-and-set: it refuses the

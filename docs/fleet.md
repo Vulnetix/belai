@@ -497,6 +497,41 @@ Rules and edge cases:
 - **A builder decides no manual gate.** It has no `KanbanGate`, and its own route
   never waits on manual gates.
 
+#### Request coverage
+
+A request can have several parts, and a plan that quietly leaves one out is
+easy to miss. With `kanban.gates.coverage` (the built-in scout sets it) the
+harness makes an omitted part visible.
+
+For a request card, meaning one that is neither seeded from a test run (`quality`)
+nor one the worker surveyed for itself (`survey`), whose facts the harness
+already measured, the scout:
+
+1. records the request's clauses with `KanbanContract`: the independently
+   omittable parts of what was asked, at most 12, each one line of at most 160
+   characters, numbered `C1`, `C2` and so on by the harness;
+2. gives every handoff `covers`, the clause ids the task covers.
+
+The harness holds the rest to that, and it is deterministic:
+
+| Rule | What happens |
+| --- | --- |
+| A handoff before the clauses are recorded | refused, saying to record them first |
+| A handoff that covers no clause, or an unknown one | refused; a task that covers no clause is not part of the request |
+| Recording clauses after a handoff exists | refused, since re-planning would orphan the covers |
+| A request the scout completed with no clauses recorded | a failed attempt: it was never planned |
+| A clause no handoff covers when the scout finishes | a gap card, filed by the harness |
+
+A gap card is titled `Part C2 of request K-xxxxxx is not covered by any task`.
+It names ids only, never the clause text (the text is the scout's words and
+stays on the request card), and it carries the `coverage` label, which no
+built-in profile claims, so it waits in the Backlog for a person to plan it,
+file it as a task or drop it. It is filed once for each clause: never reopened
+after it is done, never doubled by a retry or a relaunch, and never recreated
+after a person deletes it. The scout's own card then completes, with a note such
+as `coverage: 1 of 2 clauses covered, 1 gap card(s) filed`. A deleted handoff
+covers nothing.
+
 ### The security crew
 
 Start it with `belai agent start -crew belai:security` or `/fleet`. It works

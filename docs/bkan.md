@@ -23,7 +23,7 @@ A board file is four sections, back to back, with no padding:
 ```
 offset  size  field
 0       4     magic      the ASCII bytes "BKAN" (42 4b 41 4e)
-4       2     version    uint16, big endian (currently 00 03; 00 01 and 00 02 are still read)
+4       2     version    uint16, big endian (currently 00 04; 00 01, 00 02 and 00 03 are still read)
 6       n     payload    encoding/gob stream of one kanban.Board
 6+n     32    checksum   SHA-256 of the payload bytes only
 ```
@@ -49,7 +49,7 @@ const (
 | Section | Question it answers | What happens on a mismatch |
 |---|---|---|
 | magic | Is this a kanban board at all? | `not a kanban board (bad magic)` |
-| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 3)` |
+| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 4)` |
 | payload | What is on the board? | a gob decode error |
 | checksum | Is the payload exactly what was written? | `checksum mismatch` |
 
@@ -241,6 +241,10 @@ type Item struct {
 	// Acceptance gates (version 3), set only by the harness and never pushed.
 	Gates []Gate
 
+	// Request coverage (version 4), set only by the harness and never pushed.
+	Clauses []Clause
+	Covers  []string
+
 	remoteAgent bool // in memory only; gob never stores it
 
 	// Sync state. ServerVersion is the backend's version of the item (0 when
@@ -305,6 +309,8 @@ type List string // backlog | review | in_progress | blocked | done
 | `Verdict` | A security worker's recorded verdict: `fixed`, `false_positive`, `no_fix`, `needs_human` or `rejected`. | the harness (`Reconcile`, `SetVerdict`, `Release`) |
 | `VEX` | The repository-relative path of the VEX written for the verdict. | the harness (`Release`) |
 | `Gates` | The card's acceptance gates, at most 8: each has an id (`G1`, `G2`, by position), a title, a kind (`runnable` or `manual`), for a runnable gate the detected suite it references (plus, for a Go suite, a package directory and a test name), a state (`unmet`, `met` or `abandoned`), the commit the state was decided at, and a one-line note. See [acceptance gates](fleet.md#acceptance-gates). A pulled copy never carries or replaces them. | the harness (`Add`, `SetGate`) |
+| `Clauses` | The independently omittable parts of a request card, at most 12, each with an id (`C1`, `C2`, by position) and a one-line text of at most 160 characters. See [request coverage](fleet.md#request-coverage). A pulled copy never carries or replaces them. | the harness (`SetClauses`) |
+| `Covers` | On a handed-off card, the clause ids of its parent it covers. Each must be one of the parent's clauses. | the harness (`Add`) |
 | `remoteAgent` | Not stored (unexported). Set on a pulled item that carried the `agent` block, so a backend that predates it cannot clear the local routing and claim. | sync |
 | `ServerVersion` | The backend's version of the item, or 0 if it has never been pushed. | sync |
 | `Dirty` | A local change not yet pushed. | local writes; cleared by sync |
@@ -373,7 +379,7 @@ using `sessionsync.KanbanItem`; see [Sync mapping](#sync-mapping).
 2. **Otherwise reload.** Read the whole file and `Decode` it:
    1. The length must be at least 38 bytes.
    2. The magic must be `BKAN`.
-   3. The version must be 1, 2 or 3 (`minVersion` to `formatVersion`).
+   3. The version must be 1, 2, 3 or 4 (`minVersion` to `formatVersion`).
    4. The SHA-256 of the payload must equal the last 32 bytes.
    5. The payload must gob-decode into a `Board`.
 3. **On success,** replace the copy in memory and remember the file's
@@ -462,6 +468,10 @@ predates `Gates` would decode a version 3 board, drop every gate and write it
 back, so an older Belai must refuse it. Version 2 files still decode, with no
 gates.
 
+Version 4 added the request clauses and the clauses a handoff covers, again so an
+older Belai refuses the board instead of dropping them. Older files still decode,
+with none.
+
 The zero-value rule shapes new fields. A new field's zero value must mean
 "not set" or "the old behaviour", because a file written before the field
 existed will decode it as zero. For example, `ServerVersion == 0` means
@@ -472,7 +482,7 @@ rename, a type change, or a change of meaning for an existing field. The steps:
 
 1. Raise `formatVersion`.
 2. Teach `Decode` to accept the previous version and convert it. Today it
-   accepts versions 1, 2 and 3 and rejects every other.
+   accepts versions 1 to 4 and rejects every other.
 3. Keep writing only the new version.
 4. Add a test that decodes a file written in the previous version.
 

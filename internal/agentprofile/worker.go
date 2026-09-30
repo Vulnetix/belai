@@ -543,6 +543,11 @@ type GatesSpec struct {
 	// every manual gate is met. It needs verify enforce. The worker that closes
 	// cards (the reviewer) sets it.
 	Review bool `json:"review,omitempty"`
+	// Coverage has the worker record the clauses of a request card it plans
+	// (KanbanContract), gives every handoff the clauses it covers, and has the
+	// harness file a gap card for a clause no handoff covers. It applies to a
+	// request card only, not to one the harness seeded or the worker surveyed.
+	Coverage bool `json:"coverage,omitempty"`
 }
 
 // VerifyMode returns the effective verification mode.
@@ -558,6 +563,9 @@ func (g *GatesSpec) validate(k *KanbanSpec) error {
 	case "", VerifyOff, VerifyRecord, VerifyEnforce:
 	default:
 		return fmt.Errorf("kanban.gates.verify must be off, record or enforce, not %q", g.Verify)
+	}
+	if g.Coverage && len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+		return errors.New("kanban.gates.coverage needs handoff_to or handoff_labels: a request is covered by the tasks a worker hands on")
 	}
 	if g.Review && g.Verify != VerifyEnforce {
 		return errors.New("kanban.gates.review needs kanban.gates.verify enforce: manual gates are held to only when the harness enforces the card's gates")

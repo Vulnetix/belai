@@ -153,6 +153,12 @@ type Item struct {
 	// replaces them.
 	Gates []Gate
 
+	// Clauses are the independently omittable parts of a request card, and
+	// Covers the clause ids of its parent a handed-off card covers (see Clause).
+	// The harness stores them; a pulled copy never carries or replaces them.
+	Clauses []Clause
+	Covers  []string
+
 	// remoteAgent is set by FromWire when the pulled item carried the routing
 	// and claim fields. A backend that does not know them yet omits them, and
 	// Merge must then keep the local values rather than clear them. It is
@@ -223,6 +229,9 @@ type ItemInput struct {
 	// Gates are the acceptance gates the card is filed with. NormGates
 	// validates them and assigns their ids; an invalid gate is an error.
 	Gates []Gate
+	// Covers are the clause ids of the parent card this one covers, checked
+	// against the parent's clauses; an unknown id is an error.
+	Covers []string
 }
 
 // Patch edits an item. Nil fields are left alone; a non-empty Note is
@@ -622,6 +631,7 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 		if err != nil {
 			return err
 		}
+		var covers []string
 		parent := ""
 		if strings.TrimSpace(in.Parent) != "" {
 			i, err := find(b, in.Parent)
@@ -629,6 +639,11 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 				return fmt.Errorf("parent %s: %w", in.Parent, err)
 			}
 			parent = b.Items[i].ID
+			if len(in.Covers) > 0 {
+				if covers, err = NormCovers(in.Covers, b.Items[i].Clauses); err != nil {
+					return err
+				}
+			}
 		}
 		live := 0
 		want := normTitle(title)
@@ -658,7 +673,7 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 			HostID: prov.HostID, SessionID: prov.SessionID,
 			Created: now, Updated: now, Dirty: true,
 			Labels: NormLabels(in.Labels), Priority: ClampPriority(in.Priority), Assignee: assignee,
-			Parent: parent, DependsOn: deps, Hops: max(in.Hops, 0), Gates: gates,
+			Parent: parent, DependsOn: deps, Hops: max(in.Hops, 0), Gates: gates, Covers: covers,
 		}
 		appendHistory(&out, Move{ID: session.MustID(), To: list, At: now, SessionID: prov.SessionID})
 		b.Items = append(b.Items, out)

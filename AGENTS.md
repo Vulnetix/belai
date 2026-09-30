@@ -557,6 +557,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   deterministic (`tools.ClearTitleRunes`, `ClearBodyMin`, `ClearBodyMax`,
   `ClearMaxGates`) and can only send a handoff to review: a model's own doubt
   narrows, and no declaration or score moves a card out of the human gate.
+  Request coverage is deterministic and the harness's, not a model's:
+  `KanbanContract` records at most 12 clauses on the claimed request card
+  (`kanban.MaxClauses`), a handoff must cover at least one of them, and a clause
+  no handoff covers gets a gap card composed by the harness from ids only
+  (`FindingInput.Once`, label `coverage`, no clause text), so a model's words
+  never reach a card the harness files and no clause can go quietly missing.
 - **The security crew's review, cards, verdicts and VEX are harness work.**
   `belai:security` is marked `one_per_repo`: a start is refused while a worker
   of it is live in the repository (`Registry.CheckCrewFree`). Whether a review
