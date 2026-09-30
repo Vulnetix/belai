@@ -16,6 +16,7 @@ func TestGatesAreDocumented(t *testing.T) {
 		"### Acceptance gates",
 		"A gate is a reference, never a command",
 		"A bad gate refuses the whole handoff",
+		"A worker sees its card's gates",
 		"`kanban.gates.require`",
 		"starts every gate `unmet`",
 		fmt.Sprintf("at most %d characters", MaxGateTitleRunes),

@@ -26,6 +26,7 @@ func (w *Worker) applyGates(ctx context.Context, claim *tools.WorkerClaim) {
 		return
 	}
 	claim.GatesRequired = k.Gates.Require
+	claim.GateReview = k.Gates.Review
 	claim.GateRoot = w.Repo
 	for _, s := range w.detectedSuites(ctx) {
 		claim.GateSuites = append(claim.GateSuites, tools.GateSuite{Name: s.Name, Ecosystem: s.Ecosystem})

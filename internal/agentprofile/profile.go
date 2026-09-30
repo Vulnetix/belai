@@ -122,6 +122,7 @@ var extraToolNames = map[string]bool{
 	"KanbanAdd":      true,
 	"KanbanHandoff":  true,
 	"KanbanVerdict":  true,
+	"KanbanGate":     true,
 	"Vulnetix":       true,
 	"ToolSearch":     true,
 	"SubAgentLog":    true,

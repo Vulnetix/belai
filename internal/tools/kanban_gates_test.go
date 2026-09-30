@@ -170,3 +170,31 @@ func TestGateTitlesAreCleanedOnTheCard(t *testing.T) {
 		t.Fatalf("gate title is not clean: %q", it.Gates[0].Title)
 	}
 }
+
+func TestASingleCardShowsItsGatesToTheWorker(t *testing.T) {
+	it := kanban.Item{ID: "5f9a2c00-0000-4000-8000-000000000000", Title: "t", Project: "p", List: kanban.Backlog, Body: "body text", Gates: []kanban.Gate{
+		{ID: "G1", Title: "parser keeps the last record", Kind: kanban.GateRunnable, Suite: "go", Dir: "internal/parse", Test: "TestLast", State: kanban.GateUnmet, Note: "exit 1: TestLast"},
+		{ID: "G2", Title: "wording reviewed", Kind: kanban.GateManual, State: kanban.GateMet},
+	}}
+	out := RenderKanbanItems([]kanban.Item{it}, "p")
+	for _, want := range []string{
+		"acceptance gates:",
+		"- G1 [runnable go internal/parse TestLast] unmet: parser keeps the last record (exit 1: TestLast)",
+		"- G2 [manual, decided by a reviewer] met: wording reviewed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("render lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "body:") > strings.Index(out, "acceptance gates:") {
+		t.Error("gates follow the body")
+	}
+	// A list of several cards stays one line each: gates show for one card only.
+	if out := RenderKanbanItems([]kanban.Item{it, it}, "p"); strings.Contains(out, "acceptance gates") {
+		t.Error("a listing does not print gates")
+	}
+	it.Gates = nil
+	if out := RenderKanbanItems([]kanban.Item{it}, "p"); strings.Contains(out, "acceptance gates") {
+		t.Error("a card with no gates prints none")
+	}
+}

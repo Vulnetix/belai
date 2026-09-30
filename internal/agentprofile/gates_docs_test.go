@@ -20,3 +20,20 @@ func TestGatesSettingsAreDocumented(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewAndAutoAreDocumented(t *testing.T) {
+	doc := docparity.Read(t, "docs/agent-profiles.md")
+	for _, want := range []string{
+		"`kanban.gates.review`",
+		"`review` needs `verify` to be `enforce`",
+		"`review`, `backlog` or `auto`",
+		"`auto`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/agent-profiles.md lacks %q", want)
+		}
+	}
+	if ListAuto != "auto" {
+		t.Errorf("ListAuto is %q but the docs say auto", ListAuto)
+	}
+}

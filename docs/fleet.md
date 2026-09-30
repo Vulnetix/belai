@@ -330,9 +330,27 @@ The seed cards, labelled `scout` and `quality`, focus the scout on:
 A failing, coverage or untested card closes itself when a later run no longer
 reports its subject. A category card is never reopened after it is done or
 deleted, and changes only when the shape of the test setup changes. The
-scout's handoffs from a `quality` card go to Review, whatever the model asks,
-for you to confirm; set `kanban.quality.list` to `backlog` in a profile to skip
-that.
+scout's handoffs from a `quality` card are routed by how clear they are
+(`kanban.quality.list` is `auto` in the built-in scout). A clear, concise task
+goes straight to Backlog for a builder; one that needs a person to confirm what
+is meant, or to split it, waits in Review, and the model cannot ask it past that
+gate. The harness decides from counts alone. A handoff is clear only when all of
+these hold:
+
+- the title is at most 100 characters;
+- the body is 80 to 2000 characters, enough for a fresh agent to act on and not a
+  sprawling brief;
+- it has at least one runnable gate, so the harness can check it;
+- it has at most 5 gates, since more says the task hides several outcomes.
+
+The scout can also declare `clarity` as `needs_clarification` or `needs_split`,
+which sends the card to Review whatever the counts say. Nothing moves a card the
+other way: declaring a task clear never moves it out of Review. A card sent to
+Review has a `review:` line appended to its body naming each reason in harness
+words, for example `review: body under 80 characters; no runnable gate the harness
+can check`. Set `kanban.quality.list` to `review` for every handoff to wait for
+you, or to `backlog` to skip the gate for every handoff. `kanban.survey.list`
+takes the same three values.
 
 Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
@@ -370,6 +388,10 @@ Rules and edge cases:
 - **`kanban.gates.require`** makes a handoff with no gate an error. The
   built-in `belai:scout` sets it. A worker without a `gates` block keeps the
   handoff tool exactly as it was, and the repository is not scanned for suites.
+- **A worker sees its card's gates.** The card a worker is given lists each gate
+  with its id, what decides it, its state and its note (`- G1 [runnable go
+  internal/parse TestLast] unmet: title (exit 1: TestLast)`), so a builder knows
+  what done means and reads why the last attempt failed.
 - **A worker never edits gates.** Gates are set when the card is filed, and a pulled copy of a card from the Vulnetix
   website never carries or replaces them (they stay on the host that decided
   them, like a finding's fields).
@@ -438,6 +460,42 @@ Edge cases:
   states, exit codes and suite statuses, never output. The last 50 are kept, a
   symlinked directory is refused, and a name that is not a card id plus a commit
   id is refused.
+
+#### Manual gates and the reviewer
+
+A manual gate is for what no test can observe: wording, a product decision, a
+behaviour only a person can judge. The harness never runs one. A worker whose
+profile sets `kanban.gates.review` (the built-in reviewer does, and it needs
+`verify` to be `enforce`) gets `KanbanGate`, bound to its claim like
+`KanbanVerdict`: it takes a gate id, a state (`met`, `unmet` or `abandoned`) and
+one line of evidence, writes only the card it holds, and refuses a runnable gate
+with a message saying the harness decides those. The evidence is cleaned to one
+line and at most 200 characters, and stays on the gate.
+
+Under `enforce` with `review` on, the card is held to its manual gates when the
+reviewer's turn ends:
+
+| What the reviewer left | Where the card goes |
+| --- | --- |
+| every manual gate `met` and every runnable gate verified | `done` (and, per the profile, a draft pull request) |
+| a manual gate not decided, or `unmet` | back to the builders as a failed attempt; the note names the gate ids |
+| a manual gate `abandoned` | `blocked`, with `HANDOFF REQUIRED` and the gate ids in the note |
+
+Rules and edge cases:
+
+- **Each review decides afresh.** Before a reviewer works a card, the harness sets
+  every manual gate that was `met` or `unmet` back to `unmet`, so a gate met for
+  an earlier version of the branch never carries over. An `abandoned` gate stays
+  abandoned: that is a person's decision to reverse.
+- **Abandonment is never success.** A gate is abandoned only when the outcome is
+  genuinely impossible within the task. The card stops in `blocked` as a handoff
+  to a person, the note names gate ids and never the reviewer's words, and the
+  reviewer's evidence stays on the gate for the person to read.
+- **A reviewer cannot overrule the harness.** A reviewer that approves a card
+  whose runnable gate fails is overruled: the card goes back with the harness's
+  facts, whatever the model said.
+- **A builder decides no manual gate.** It has no `KanbanGate`, and its own route
+  never waits on manual gates.
 
 ### The security crew
 

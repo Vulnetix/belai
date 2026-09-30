@@ -73,6 +73,15 @@ type QualitySpec struct {
 	List string `json:"list,omitempty"`
 }
 
+// ListAuto is the list value that has the harness route each handoff by whether
+// it is clear and concise (backlog) or needs a person to confirm or split it
+// (review), instead of sending every handoff to one list.
+const ListAuto = "auto"
+
+// Auto reports whether each handoff is routed by its clarity. The list a
+// handoff falls back to, and the one HandoffList reports, is review.
+func (q QualitySpec) Auto() bool { return q.List == ListAuto }
+
 // HandoffList is where a seeded card's handoffs go.
 func (q QualitySpec) HandoffList() kanban.List {
 	if l, ok := kanban.ParseList(q.List); ok {
@@ -132,6 +141,9 @@ type SurveySpec struct {
 	// Every is a Go duration of at least 1h (default 24h).
 	Every string `json:"every,omitempty"`
 }
+
+// Auto reports whether each handoff is routed by its clarity (see ListAuto).
+func (s SurveySpec) Auto() bool { return s.List == ListAuto }
 
 // HandoffList is where the survey's handoffs go.
 func (s SurveySpec) HandoffList() kanban.List {
@@ -378,8 +390,8 @@ func (p AgentProfile) validateWorker() error {
 			return errors.New("kanban.survey.title is required")
 		}
 		if s.List != "" {
-			if l, ok := kanban.ParseList(s.List); !ok || (l != kanban.Review && l != kanban.Backlog) {
-				return fmt.Errorf("kanban.survey.list must be review or backlog, not %q", s.List)
+			if l, ok := kanban.ParseList(s.List); s.List != ListAuto && (!ok || (l != kanban.Review && l != kanban.Backlog)) {
+				return fmt.Errorf("kanban.survey.list must be review, backlog or auto, not %q", s.List)
 			}
 		}
 		if s.Every != "" {
@@ -401,8 +413,8 @@ func (p AgentProfile) validateWorker() error {
 	}
 	if q := k.Quality; q != nil {
 		if q.List != "" {
-			if l, ok := kanban.ParseList(q.List); !ok || (l != kanban.Review && l != kanban.Backlog) {
-				return fmt.Errorf("kanban.quality.list must be review or backlog, not %q", q.List)
+			if l, ok := kanban.ParseList(q.List); q.List != ListAuto && (!ok || (l != kanban.Review && l != kanban.Backlog)) {
+				return fmt.Errorf("kanban.quality.list must be review, backlog or auto, not %q", q.List)
 			}
 		}
 		if q.Sweep && len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
@@ -526,6 +538,11 @@ type GatesSpec struct {
 	Require bool `json:"require,omitempty"`
 	// Verify is off (default), record or enforce; see the Verify constants.
 	Verify string `json:"verify,omitempty"`
+	// Review gives the worker KanbanGate to decide a card's manual gates, and
+	// has the harness hold it to them: under enforce, a card is done only when
+	// every manual gate is met. It needs verify enforce. The worker that closes
+	// cards (the reviewer) sets it.
+	Review bool `json:"review,omitempty"`
 }
 
 // VerifyMode returns the effective verification mode.
@@ -541,6 +558,9 @@ func (g *GatesSpec) validate(k *KanbanSpec) error {
 	case "", VerifyOff, VerifyRecord, VerifyEnforce:
 	default:
 		return fmt.Errorf("kanban.gates.verify must be off, record or enforce, not %q", g.Verify)
+	}
+	if g.Review && g.Verify != VerifyEnforce {
+		return errors.New("kanban.gates.review needs kanban.gates.verify enforce: manual gates are held to only when the harness enforces the card's gates")
 	}
 	if g.Require && len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
 		return errors.New("kanban.gates.require needs handoff_to or handoff_labels: gates are required on the tasks a worker hands on")

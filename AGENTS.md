@@ -547,6 +547,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   is written by the harness alone with the quality record's symlink refusal,
   and an abandoned gate is never success. A project layer cannot add a profile,
   so it cannot turn verification on.
+  `KanbanGate` is a reviewer's tool for manual gates, bound to the claim like
+  `KanbanVerdict` (no item id, the claimed item only) and refusing a runnable
+  gate, and its evidence is cleaned to one capped line. A card is held to its
+  manual gates only under `enforce` with `review`: an undecided or unmet one is
+  a failed attempt, and an abandoned one is `blocked` with `HANDOFF REQUIRED`
+  and gate ids in the note, never model text. A reviewer's manual gates are set
+  back to `unmet` before each review. Handoff routing by clarity (`auto`) is
+  deterministic (`tools.ClearTitleRunes`, `ClearBodyMin`, `ClearBodyMax`,
+  `ClearMaxGates`) and can only send a handoff to review: a model's own doubt
+  narrows, and no declaration or score moves a card out of the human gate.
 - **The security crew's review, cards, verdicts and VEX are harness work.**
   `belai:security` is marked `one_per_repo`: a start is refused while a worker
   of it is live in the repository (`Registry.CheckCrewFree`). Whether a review

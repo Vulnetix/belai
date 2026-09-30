@@ -82,6 +82,10 @@ type WorkerClaim struct {
 	// HandoffList, when set, is the list every handoff goes to whatever the
 	// model asks: a survey's self-found work waits in review for a human.
 	HandoffList kanban.List
+	// HandoffAuto has each handoff routed by its clarity instead of by
+	// HandoffList alone: clear and concise tasks go to backlog, the rest wait in
+	// review (HandoffList is then the floor).
+	HandoffAuto bool
 	// Verdicts are the verdicts KanbanVerdict may record; empty means the
 	// worker has no such tool. VEX is true for the worker whose verdict the
 	// harness writes a VEX for (and which may reject a claim).
@@ -98,6 +102,9 @@ type WorkerClaim struct {
 	GateSuites    []GateSuite
 	GateRoot      string
 	GatesRequired bool
+	// GateReview is true for a reviewer that may record manual gates with
+	// KanbanGate.
+	GateReview bool
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -265,6 +272,12 @@ func RenderKanbanItems(items []kanban.Item, scope string) string {
 		}
 		if it.Body != "" {
 			fmt.Fprintf(&b, "body:\n%s\n", it.Body)
+		}
+		if len(it.Gates) > 0 {
+			b.WriteString("acceptance gates:\n")
+			for _, g := range it.Gates {
+				b.WriteString(renderGate(g))
+			}
 		}
 		hist := it.History
 		if len(hist) > 8 {
@@ -473,6 +486,9 @@ func (t KanbanHandoff) Definition() Definition {
 		"depends_on": {Type: "array", Items: &Property{Type: "string"}, Description: "Ids (K-xxxxxx) of items that must be done first, e.g. an earlier handoff."},
 		"list":       {Type: "string", Enum: []string{string(kanban.Backlog), string(kanban.Review)}, Description: "backlog (default) or review."},
 	}
+	if t.Claim != nil && t.Claim.HandoffAuto {
+		props["clarity"] = Property{Type: "string", Enum: []string{ClarityClear, ClarityUnclear, ClaritySplit}, Description: "Your own view of the task. needs_clarification: a person should confirm what is meant. needs_split: it hides several independent changes. Either sends it to review. A clear, concise task with a runnable gate goes to the backlog for a builder."}
+	}
 	if t.Claim != nil && (t.Claim.GatesRequired || len(t.Claim.GateSuites) > 0) {
 		gate := gateProperty(t.Claim.GateSuites)
 		props["gates"] = Property{Type: "array", Items: &gate, Description: gatesHelp}
@@ -519,6 +535,7 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 	if c.HandoffList != "" {
 		in.List = c.HandoffList
 	}
+	auto := c.HandoffAuto && c.HandoffList != ""
 	if a, ok := argString(args, "assignee"); ok && strings.TrimSpace(a) != "" {
 		a = strings.TrimSpace(a)
 		if !slices.Contains(c.HandoffTo, a) {
@@ -547,6 +564,19 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 	}
 	if in.Gates, err = c.parseGates(args); err != nil {
 		return Result{}, err
+	}
+	if auto {
+		declared, _ := argString(args, "clarity")
+		switch declared = strings.TrimSpace(declared); declared {
+		case "", ClarityClear, ClarityUnclear, ClaritySplit:
+		default:
+			return Result{}, fmt.Errorf("clarity must be %s, %s or %s", ClarityClear, ClarityUnclear, ClaritySplit)
+		}
+		list, why := routeByClarity(in, declared)
+		in.List = list
+		if len(why) > 0 {
+			in.Body = strings.TrimSpace(in.Body + "\n\nreview: " + strings.Join(why, "; "))
+		}
 	}
 	it, dup, err := t.Store.Add(in, t.prov())
 	if err != nil {
@@ -707,10 +737,14 @@ func (r *Registry) WithKanbanWorker(store *kanban.Store, src *kanban.Source, cla
 		return r
 	}
 	base := KanbanBase{Store: store, Source: src, Claim: claim}
+	ts := []Tool{KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base}}
 	if len(claim.Verdicts) > 0 {
-		return r.With(KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base}, KanbanVerdict{base})
+		ts = append(ts, KanbanVerdict{base})
 	}
-	return r.With(KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base})
+	if claim.GateReview {
+		ts = append(ts, KanbanGate{base})
+	}
+	return r.With(ts...)
 }
 
 // KanbanOf returns the board the registry's KanbanSearch reads, so the agent
