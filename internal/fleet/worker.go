@@ -427,7 +427,7 @@ func sleep(ctx context.Context, d time.Duration) bool {
 func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	k := w.Profile.Kanban
 	r := kanban.ClaimRequest{
-		Profile: w.Profile.Name, Project: project, Worker: w.Record.ID,
+		Profile: w.Profile.Name, Crew: w.Record.Crew, Project: project, Worker: w.Record.ID,
 		Host: headless.HostID(), SessionID: w.Record.ID, Lease: w.Profile.LeaseDuration(),
 	}
 	if k != nil {

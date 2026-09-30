@@ -48,8 +48,8 @@ One pass of the worker loop:
    priority first, then oldest. The claim is one locked read-modify-write of
    the board file, so two workers never hold the same item. An item is
    claimable only from `backlog` or `review`, only when every item it
-   `depends_on` is `done`, and only when its `assignee` is empty or names this
-   profile. The item moves to `in_progress` with a lease.
+   `depends_on` is `done`, and only when its `assignee` is empty, names this worker's
+   profile or crew. The item moves to `in_progress` with a lease.
 2. **Workspace.** A `worktree` worker gets a fresh git worktree on the branch
    `belai/K-xxxxxx/a<attempt>`, outside the repository
    (`~/.vulnetix/worktrees/<project>/…`, or `$BELAI_WORKTREES_DIR`). A worker
