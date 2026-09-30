@@ -1750,7 +1750,12 @@ func TestToolResultStoresContentAndSetsSuccessStatus(t *testing.T) {
 }
 
 func TestEnterWhileWorkingSteers(t *testing.T) {
+	// Isolated state and an explicit mode: with the default mode and no agent
+	// engaged Enter opens the agent picker before it ever considers steering, so
+	// the test must not depend on what an earlier test left in the shared home.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{})
+	a.mode = "plan"
 	a.cancel = func() {}
 	a.agent = &agent.Session{}
 	a.editor.SetValue("keep going")
