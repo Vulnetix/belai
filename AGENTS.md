@@ -493,6 +493,29 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `sync.enabled` switch). The project layer may turn `kanban` off, never on.
   A prefilled composer prompt from the pane is text in the editor and takes
   the typed-prompt path like anything the user types.
+- **The delivery crew's test run and seed cards are harness work.**
+  `belai:delivery` is `one_per_repo` too. A worker with `kanban.quality.sweep`
+  (the scout) runs the detected suites or `tests.command` itself
+  (`Worker.qualitySweep`, over `internal/testrun`: an argv from the table, no
+  shell, the user's permission rules, the OS sandbox and the scrubbed
+  environment; a Go suite gains `-cover` from a fixed rewrite, never a model's
+  argument). Launching the crew is the opt-in; `tests.post_end` is not read. No
+  model runs a suite or judges whether one ran, and suite output never reaches
+  a card, a record or a model: `internal/quality` keeps only test and package
+  identifiers (cleaned, capped), coverage percentages, exit codes and marker-file
+  presence. The record `.vulnetix/belai/quality/<commit>.json` is written by
+  the harness alone, refuses a symlinked directory, is read back only for the
+  commit it names, and is written only when a suite actually ran, so a denied
+  or unstartable run is retried at the next launch. Its existence for HEAD is
+  the gate that stops the suites running twice on a commit. Seed cards are
+  filed with `FindingInput.Once`: never reopened after done, never doubled over
+  an open card with the same title (including a person's), and never
+  recreated after a person deletes one. `Store.CloseAbsent` closes only
+  unclaimed failure, coverage and untested cards whose subject is gone from a
+  run that looked for it. A card labelled `quality` forces the scout's handoffs
+  to the profile's `kanban.quality.list` (review by default) whatever the model
+  asks, as a survey does. The delivery scout has no daily survey and no
+  `every` stamp.
 - **The security crew's review, cards, verdicts and VEX are harness work.**
   `belai:security` is marked `one_per_repo`: a start is refused while a worker
   of it is live in the repository (`Registry.CheckCrewFree`). Whether a review

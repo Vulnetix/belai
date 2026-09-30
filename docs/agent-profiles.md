@@ -239,6 +239,8 @@ items and works each as a goal. It adds these fields:
 | `kanban.security.reconcile` | bool | Before each claim, compare the cards with the artefacts on disk: a finding that left the report becomes a gone card for the verifier. Never scans. |
 | `kanban.security.verdicts` | string[] | The verdicts `KanbanVerdict` may record: `fixed`, `false_positive`, `no_fix`, `needs_human`, `rejected`. Empty: the worker has no such tool. |
 | `kanban.security.vex` | bool | The harness writes a VEX for each verdict the worker records, and the worker may reject a claim. Needs `verdicts`. |
+| `kanban.quality.sweep` | bool | On each HEAD with no quality record, the harness runs the detected suites (or `tests.command`), records the result for that commit and files seed cards for the worker. Needs `handoff_to` or `handoff_labels`. See [the delivery crew](fleet.md#the-delivery-crew). |
+| `kanban.quality.list` | string | Where the handoffs from a seeded `quality` card go, whatever the model asks: `review` (default) or `backlog`. |
 | `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
 | `workspace.read_only` | bool | The worker runs checks in its worktree but changes nothing: leftovers are not committed, and the worktree and branch are deleted after each item. See [Read-only workspaces](fleet.md#read-only-workspaces). |
 | `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `publish` is `none`, `agent` (the agent may push its branch and open a draft pull request with `PublishBranch`) or `draft_pr` (the harness does so when the item reaches `done`); see [Publishing](fleet.md#publishing). |
@@ -256,6 +258,7 @@ Validation fails closed:
 - `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
 - a `survey` block needs a `title`, a `list` of `review` or `backlog`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
+- a `quality` block needs a `list` of `review` or `backlog`, and `sweep` needs `handoff_to` or `handoff_labels`;
 - a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, and only a worker with `vex` may list `rejected`.
 
 A definition can also be written as Markdown with YAML front-matter, the
@@ -267,7 +270,7 @@ validates it and saves it as JSON.
 
 | Profile | Claims | Hands on to |
 | --- | --- | --- |
-| `belai:scout` | backlog items labelled `scout`; with none, a daily survey of its own (tests, docs, specs and site prose against the code) | `build` items for `belai:builder`: to backlog for a request, to review for a survey |
+| `belai:scout` | backlog items labelled `scout`, including the `quality` cards the harness seeds from a test run on HEAD (failing suites, coverage, untested packages, property tests, fixtures, contract tests, mutation testing, docs against code) | `build` items for `belai:builder`: to backlog for a request, to review for a seeded card |
 | `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review` |
 | `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR), or back to `build` with notes |
 | `belai:vuln-scout` | at start, a review sweep of HEAD (harness); backlog items labelled `vuln-scan` for a targeted look | a `vuln` card per finding (harness), and `vuln` items for `belai:patcher` |

@@ -286,12 +286,50 @@ A crew is a named set of profiles started together:
 | `belai:delivery` | `belai:scout` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:security` | `belai:vuln-scout` ×1, `belai:patcher` ×2, `belai:verifier` ×1 |
 
-Delivery: file an item labelled `scout` ("survey internal/foo for missing
-tests"). The scout reads, runs the project's checks in a read-only worktree,
-and hands off one `build` item per concrete task to backlog. With no `scout`
-item on the board it [surveys the repository itself](#finding-work-kanbansurvey)
-at most once a day, and its handoffs from that survey go to Review for you to
-confirm.
+### The delivery crew
+
+Start it with `belai agent start -crew belai:delivery` or `/fleet`. It runs
+every time it is launched. You can file an item labelled `scout` ("survey
+internal/foo for missing tests") and the scout works it. The scout also gets
+its own work from the test suites: the harness runs the repository's detected
+suites (or `tests.command`), ties what they show to HEAD, and files seed cards
+for the scout to investigate. There is no daily limit and no cache. Two checks
+stop double work:
+
+1. **One crew per repository.** A second start is refused while a worker of
+   the crew is live in the same repository.
+2. **One run per commit, and the board.** A record of the run for HEAD is
+   written to `.vulnetix/belai/quality/<commit>.json`. When one exists for
+   HEAD, the suites do not run again. Every seed card is filed once per
+   subject, so relaunching the crew on the same commit, or on a later one,
+   never adds a card the board already has, whether the crew or a person filed
+   it. A run in which no suite actually ran (every suite denied, a missing
+   binary) is not recorded and is tried again at the next launch.
+
+The suites run under your permission rules, the OS sandbox and the scrubbed
+environment, exactly like the [post-end test pass](testing.md), and a Go suite
+runs with `-cover`. Only identifiers and numbers are kept from the output: test
+names, package paths, coverage percentages and exit codes. No output text
+reaches a card, so a hostile test cannot write an instruction onto the board.
+
+The seed cards, labelled `scout` and `quality`, focus the scout on:
+
+| Seed | When | Priority |
+| --- | --- | --- |
+| a failing suite, with its failing tests and packages | a suite failed or timed out | 3 |
+| the least covered packages | coverage was measured and a package is under 60% | 2 |
+| packages with no test files | coverage was measured | 1 |
+| property-based tests, mocks and fixtures, contract tests, mutation testing, docs and site against the code | once for each shape of the test setup (ecosystems, frameworks, suites, mutation tool files) | 0 |
+| measure coverage | the harness could not measure it | 1 |
+| set up a test suite | none was detected (then only this and the docs card) | 0 |
+
+A failing, coverage or untested card closes itself when a later run no longer
+reports its subject. A category card is never reopened after it is done or
+deleted, and changes only when the shape of the test setup changes. The
+scout's handoffs from a `quality` card go to Review, whatever the model asks,
+for you to confirm; set `kanban.quality.list` to `backlog` in a profile to skip
+that.
+
 Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
 `done`, or back to `backlog` with its notes.

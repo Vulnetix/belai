@@ -15,9 +15,10 @@ The board has five lists:
 | `blocked` | work that cannot continue; the last note says why |
 | `done` | finished and verified, or confirmed obsolete |
 
-A scout that [surveys on its own](fleet.md#finding-work-kanbansurvey) files
-what it finds into `review` with a `build` label. Moving such an item to
-`backlog` confirms it, and a builder takes it from there.
+A scout that works a seeded `quality` card, or [surveys on its own](fleet.md#finding-work-kanbansurvey),
+files what it finds into `review` with a `build` label. Moving such an item to
+`backlog` confirms it, and a builder takes it from there. The harness files the
+`quality` cards from a [test run on HEAD](fleet.md#the-delivery-crew).
 
 Each item records the session that added it, the project (the `origin`
 remote's repository name, or the repository directory's name), the directory
