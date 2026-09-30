@@ -151,6 +151,8 @@ func TestSettingsViewInternalWorkRowRenders(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.push(viewSettings)
+	// The row lives in the Display group, one screen of the rail.
+	_, a.settingsState.selected = settingsRowByKey(a, "show_internal_work")
 	if !strings.Contains(a.View(), "internal work") {
 		t.Fatalf("settings view missing internal work row:\n%s", a.View())
 	}

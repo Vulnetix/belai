@@ -128,6 +128,9 @@ func (t *JevThresholdSettings) overlay(src *JevThresholdSettings) *JevThresholdS
 // inconclusive band never closes.
 const minBand = 0.05
 
+// JevMinBand is minBand for /settings, which states it beside the two cut-offs.
+const JevMinBand = minBand
+
 // validate refuses a value outside [0,1] and any combination that would let a
 // score both allow and deny, or invert an ordered pair. Invalid settings are an
 // error, never silently reset.
