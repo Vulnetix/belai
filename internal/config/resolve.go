@@ -163,6 +163,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateVoice(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateTTS(eff.Settings); err != nil {
+		return eff, err
+	}
 	SetActiveJevThresholds(eff.Settings.JevThresholds())
 	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
@@ -273,6 +276,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Voice.merge(s.Voice)
 		e.Origin["voice"] = src
+	}
+	if s.TTS != nil && src != SourceProject {
+		// Text read aloud leaves the machine: only the user's own layers may
+		// turn it on, name a voice or set the cache.
+		if e.Settings.TTS == nil {
+			e.Settings.TTS = &TTSSettings{}
+		}
+		e.Settings.TTS.merge(s.TTS)
+		e.Origin["tts"] = src
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.

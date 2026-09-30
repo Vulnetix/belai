@@ -158,6 +158,10 @@ type Row struct {
 
 	// Chrome marks a row that is pure decoration and never selectable.
 	Chrome bool
+
+	// Hits are the row's clickable stretches, with columns from the row's
+	// left edge. They ride on the row's SourceLine.
+	Hits []Hit
 }
 
 // Plain returns the row's text with no styling and no padding.
@@ -222,6 +226,7 @@ func (r Row) Render(width int) (string, SourceLine) {
 	if r.MarkerWidth > 0 {
 		sl.MarkerCol, sl.MarkerWidth, sl.Hidden = r.MarkerCol, r.MarkerWidth, r.Hidden
 	}
+	sl.Hits = r.Hits
 	return b.String(), sl
 }
 

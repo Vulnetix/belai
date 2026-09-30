@@ -247,6 +247,7 @@ type App struct {
 	// mode classification (optional; nil skips auto-detection)
 	classifier rolemanager.Classifier
 	voice      voiceState      // speech input to the composer (docs/voice.md)
+	tts        ttsState        // reading replies aloud (docs/tts.md)
 	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
@@ -918,6 +919,7 @@ func New(opts Options) *App {
 	cache, _ := rolemanager.LoadCache(rolemanager.DefaultCachePath())
 
 	a := &App{
+		tts:               ttsState{cardIdx: -1},
 		registry:          NewRegistry(workdir),
 		editor:            components.NewEditor(),
 		footer:            components.Footer{Session: "new", Model: initial.Model},
@@ -2182,6 +2184,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := a.handleVoiceMsg(msg); ok {
 		return a, cmd
 	}
+	if cmd, ok := a.handleTTSMsg(msg); ok {
+		return a, cmd
+	}
 	if cmd, ok := a.handleGettingStartedMsg(msg); ok {
 		return a, cmd
 	}
@@ -2477,6 +2482,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.MouseEvent(m).IsWheel():
 				a.vp, vpCmd = a.vp.Update(m)
 				a.follow = a.vp.AtBottom()
+			case m.Action == tea.MouseActionRelease && a.tts.scrub:
+				a.tts.scrub = false
+			case m.Action == tea.MouseActionMotion && a.tts.scrub:
+				a.ttsSeekTo(m.X - a.lastFrame.left)
 			case m.Action == tea.MouseActionRelease && a.sel.dragging:
 				a.sel.dragging = false
 				if a.sel.empty() {
@@ -2492,6 +2501,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.sel.active = !a.sel.empty()
 			case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
 				if p, ok := contentPos(m.X, m.Y, a.lastFrame); ok {
+					if hit, hcmd := a.ttsMouse(p); hit {
+						vpCmd = hcmd
+						break
+					}
 					a.sel.anchor = p
 					a.sel.cursor = p
 					a.sel.dragging = true
@@ -2541,6 +2554,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.copyHoveredPanel(a.hover.msg)
 			}
 			return a, a.copyPrompt()
+		case "ctrl+b":
+			// Read aloud, the way ctrl+c copies: the hovered reply, else the last.
+			if a.view == viewChat {
+				return a, a.ttsKey()
+			}
 		case "ctrl+y":
 			// Over a link in the transcript, open it. Other screens with
 			// links (the runs output, /rc) handle ctrl+y themselves.
@@ -4062,7 +4080,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.GoalSentinel == "" {
 			notifyDone = a.notifyTurnDone(elapsed)
 		}
-		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone)
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply))
 	}
 	return nil
 }

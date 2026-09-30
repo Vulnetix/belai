@@ -26,6 +26,7 @@ func keySections() []keySection {
 	return []keySection{
 		{"anywhere", []keyBinding{
 			{"ctrl+c", "copy the prompt — or the hovered panel — to the clipboard"},
+			{"ctrl+b", "read aloud, once /tts on has agreed: the hovered reply, else the last one; on the reply being read it pauses or resumes"},
 			{"ctrl+y", "open the hovered link (a snapshot, the Sessions page) in your browser"},
 			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, shown, hidden"},

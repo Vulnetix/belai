@@ -79,6 +79,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
+| Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
 
 ## Build, test, and publish
 

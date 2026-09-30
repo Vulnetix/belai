@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/creack/pty v1.1.24
+	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/muesli/termenv v0.16.0
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8

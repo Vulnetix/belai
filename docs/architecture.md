@@ -2743,6 +2743,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | Key | Behaviour |
 | --- | --------- |
 | `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52); over a hovered panel, copies the panel's content instead |
+| `ctrl+b` | Read aloud, once `/tts on` has agreed ([read aloud](tts.md)): the hovered reply, else the last final reply; over the reply being read it pauses or resumes |
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
 | `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit or an in-flight pre-send |

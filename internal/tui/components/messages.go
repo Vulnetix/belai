@@ -153,6 +153,10 @@ type Message struct {
 	// the entry's meta for the website and never rendered from here.
 	Facts map[string]any
 
+	// Player is the read-aloud card's state, set on a PlayerRole row. It is
+	// render-only and never persisted.
+	Player *PlayerCard
+
 	// Ephemeral marks a row whose durable record is written separately (an
 	// ask or its answer, see the TUI's web_asks.go): it shows in the
 	// transcript but never produces a session entry of its own.
@@ -223,6 +227,7 @@ type renderKey struct {
 	// isAttachment / attachMeta key attachment card renders.
 	isAttachment bool
 	attachMeta   *FileMeta
+	player       string
 }
 
 // renderCache is the memoised render of one message (or of a system group, on
@@ -269,6 +274,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		// Attachment metadata changes the card shape and contents.
 		isAttachment: m.IsAttachment,
 		attachMeta:   m.AttachMeta,
+		player:       m.Player.Key(),
 	}
 }
 
@@ -497,6 +503,9 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
+		case PlayerRole:
+			// The card has no text: it is drawn from Message.Player.
+			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
 				continue
@@ -534,6 +543,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = shellPanel(*msg, width, m.ExpandAll)
 				case ReportRole:
 					s, sub = reportPanel(*msg, width, m.ExpandAll)
+				case PlayerRole:
+					s, sub = playerPanel(*msg, width)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}

@@ -260,6 +260,17 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
   the speech model or the fast model works the frame turns `Voice`, and
   returns to the mode colour when the text lands. `docs/voice.md` has the
   states and the timings.
+- **The read-aloud player card.** `ctrl+b` or `tts.read_reports` puts an open
+  `Voice` panel in the thread titled `read aloud`, with the first words of the
+  reply and `state · speed` on the rule. Three rows: a transport row (`◂◂ 10s`,
+  `❚❚ pause` or `▶ play` or `↻ replay` or a braille spinner, `■ stop`, `10s ▸▸`,
+  then the speed chips `0.75× 1× 1.25× 1.5× 2×` with the active one in `Cream`
+  and brackets); the scrub bar `1:12 ━━━●─── 3:40+` (`━` and the `●` knob in
+  `Voice`, `─` in `Low`, a `+` while audio is still arriving); and 24 level bars
+  `▁▂▃▄▅▆▇█` in `Teal` while playing and `Low` otherwise, then the status. The
+  buttons and the bar are clickable and the bar drags; on a terminal under 62
+  cells the button words drop. The panel turns `Danger` on failure. It is
+  render-only and ephemeral. `docs/tts.md` has the behaviour.
 
 ## Not yet
 
