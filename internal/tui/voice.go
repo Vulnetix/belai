@@ -714,6 +714,9 @@ func (a *App) voiceApplyMode() {
 
 // voiceAfterSetting applies a voice.* row edited in /settings.
 func (a *App) voiceAfterSetting(key string) tea.Cmd {
+	if strings.HasPrefix(key, "tts.") {
+		return a.ttsAfterSetting(key)
+	}
 	switch key {
 	case "voice.enabled":
 		return a.voiceApplyEnabled()

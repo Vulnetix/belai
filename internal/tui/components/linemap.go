@@ -61,6 +61,10 @@ type SourceLine struct {
 	// (it carries a "… N more lines" hint). Hovering such a panel offers
 	// ctrl+o to expand every truncated panel.
 	Collapsed bool
+
+	// Hits are the clickable stretches of this line: a transport button, a speed
+	// chip, a scrub bar. Cols are screen columns in the frame, like Col.
+	Hits []Hit
 }
 
 // LineMap is the per-line provenance of one rendered transcript frame.
@@ -229,4 +233,12 @@ func Highlight(rendered string, lm LineMap, from, to Pos, topLine, height int) s
 		lines[i] = left + mid + "\x1b[39m\x1b[49m" + sl.Reopen + right
 	}
 	return strings.Join(lines, "\n")
+}
+
+// Hit is a clickable stretch of one rendered line. Action names what a click
+// does (the player card's "toggle", "seek", "speed:1.5"); the TUI owns what
+// each action means.
+type Hit struct {
+	Col, Width int
+	Action     string
 }

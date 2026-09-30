@@ -83,6 +83,9 @@ func (a *App) hoverHint() string {
 		pairs = append(pairs, "ctrl+s", "save "+a.hoverSaveName())
 		pairs = append(pairs, "ctrl+c", "copy")
 	}
+	if a.hover.text && a.settings.TTS.TTSEnabled() {
+		pairs = append(pairs, "ctrl+b", "read aloud")
+	}
 	if a.hover.link != "" {
 		pairs = append(pairs, "ctrl+y", "open link")
 	}

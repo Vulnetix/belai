@@ -125,6 +125,14 @@ func (p Panel) Render() (string, LineMap) {
 			if sl.MarkerWidth > 0 {
 				sl.MarkerCol += barCol
 			}
+			if len(sl.Hits) > 0 {
+				shifted := make([]Hit, len(sl.Hits))
+				for i, h := range sl.Hits {
+					h.Col += barCol
+					shifted[i] = h
+				}
+				sl.Hits = shifted
+			}
 			lm = append(lm, sl)
 		}
 		return p.finish(&b, lm, width, edge)

@@ -529,6 +529,11 @@ func NewRegistry(workdir string) *Registry {
 	}, func(a *App, arg string) tea.Cmd {
 		return a.voiceCommand(arg)
 	})
+	r.Register("tts", "read replies aloud: on, off, stop, voice, speed, cache", func() []string {
+		return []string{"status", "on", "off", "stop", "reports", "voice", "speed", "cache"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.ttsCommand(arg)
+	})
 	r.Register("trusted", "manage trusted directories, the ones remote control offers", nil, func(a *App, arg string) tea.Cmd {
 		return a.openTrusted()
 	})

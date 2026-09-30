@@ -112,6 +112,10 @@ type Settings struct {
 	// per-user preference: the project layer cannot turn the microphone on,
 	// pick the capture device or make dictation send itself.
 	Voice *VoiceSettings `json:"voice,omitempty"`
+	// TTS configures reading replies aloud (docs/tts.md). A per-user
+	// preference: the text is sent to Microsoft's read-aloud service, so the
+	// project layer cannot turn it on or choose the voice or the cache.
+	TTS *TTSSettings `json:"tts,omitempty"`
 	// Sync mirrors session transcripts to the Vulnetix website while Belai is
 	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
 	// layer may turn it off, never on.

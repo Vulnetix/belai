@@ -12,14 +12,15 @@ const answerFromVoice = "voice"
 
 // voiceCommandReady reports whether the microphone should stay open for spoken
 // keywords although the composer cannot take text: a permission ask, a
-// clarification or a plan review is waiting for an answer. Needs listen mode,
-// because push to talk is not listening. What is heard here only ever reaches
-// voiceKeyword; nothing is written to the composer or sent to a model.
+// clarification or a plan review is waiting for an answer, or a reply is being
+// read aloud and "stop" should reach it. Needs listen mode, because push to
+// talk is not listening. What is heard here only ever reaches voiceKeyword;
+// nothing is written to the composer or sent to a model.
 func (a *App) voiceCommandReady() bool {
 	if !a.settings.Voice.VoiceCommandsEnabled() || a.voice.mode != config.VoiceModeListen {
 		return false
 	}
-	return a.permAskOpen() || a.clarifyOpen() || a.planReviewOpen()
+	return a.permAskOpen() || a.clarifyOpen() || a.planReviewOpen() || a.ttsActive()
 }
 
 func (a *App) permAskOpen() bool {
@@ -44,6 +45,10 @@ func (a *App) planReviewOpen() bool {
 // goes through the same functions the keys do, so every check they make holds.
 func (a *App) voiceKeyword(k voicecmd.Keyword, n int) (bool, tea.Cmd) {
 	switch {
+	case k == voicecmd.Stop && a.ttsVoiceStop():
+		// A reply is being read aloud: "stop" means the audio, not the turn.
+		a.voiceAck("stop reading")
+		return true, nil
 	case a.permAskOpen():
 		decision := ""
 		switch k {

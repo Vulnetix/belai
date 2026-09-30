@@ -27,6 +27,11 @@ func (a *App) voiceGate(raw string) (text string, cmd tea.Cmd, done bool) {
 	v := &a.voice
 	s := a.settings.Voice
 	commands := s.VoiceCommandsEnabled()
+	if a.ttsEcho(raw) {
+		// The speaker, not the user: a reply being read aloud reaches the
+		// microphone. Dropped unheard, so it is never dictated or matched.
+		return "", nil, true
+	}
 	if commands {
 		if k, n, ok := voicecmd.MatchKeyword(raw); ok {
 			if applied, cmd := a.voiceKeyword(k, n); applied {

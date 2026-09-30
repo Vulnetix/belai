@@ -292,6 +292,7 @@ speech and "stop" is not.
 
 | Say | When | Does |
 | --- | --- | --- |
+| stop | a reply is being read aloud ([read aloud](tts.md#saying-stop)) | stops the audio, and nothing else; it takes priority over the next row |
 | stop, cancel | a turn is running, no ask open | interrupts it, as Esc does |
 | approve, approved, allow, yes | a permission ask is open | allow once |
 | approve always, always allow | a permission ask is open | allow and save the rule; only these exact phrases |

@@ -205,6 +205,11 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "voice.cleanup", label: "voice cleanup", kind: "toggle", value: boolLabel(s.Voice.VoiceCleanupEnabled()), src: sourceLabel(origin["voice"]), help: "a fast-model pass that tidies the transcript before it is inserted"},
 		{key: "voice.wake_word", label: "wake word", kind: "toggle", value: boolLabel(s.Voice.VoiceWakeWordEnabled()), src: sourceLabel(origin["voice"]), help: "listen mode acts only on speech that starts with \"Hey, Belay\"; anything else is dropped unheard. Turning it on sets mode listen"},
 		{key: "voice.commands", label: "voice commands", kind: "toggle", value: boolLabel(s.Voice.VoiceCommandsEnabled()), src: sourceLabel(origin["voice"]), help: "spoken keywords (stop, option 2, submit, skip, approve, deny) while a matching ask or turn is open, and Jev's voice_command job"},
+		{key: "tts.enabled", label: "read aloud", kind: "toggle", value: boolLabel(s.TTS.TTSEnabled()), src: sourceLabel(origin["tts"]), help: "read replies aloud (ctrl+b, /tts). The text is sent to Microsoft's read-aloud service; turning it on is /tts on, which asks you to agree first"},
+		{key: "tts.read_reports", label: "read reports aloud", kind: "toggle", value: boolLabel(s.TTS.TTSReadReports()), src: sourceLabel(origin["tts"]), help: "read each turn's final reply aloud when the turn ends, with a player card in the thread"},
+		{key: "tts.voice", label: "read aloud voice", kind: "choose", opts: ttsVoiceOpts(s.TTS.TTSVoiceOr()), value: s.TTS.TTSVoiceOr(), src: sourceLabel(origin["tts"]), help: "the voice; /tts voice NAME sets any other, such as en-GB-RyanNeural"},
+		{key: "tts.speed", label: "read aloud speed", kind: "choose", opts: ttsSpeedChoices(), value: strconv.FormatFloat(s.TTS.TTSSpeedOr(), 'g', -1, 64), src: sourceLabel(origin["tts"]), help: "playback speed, pitch kept; the card's speed chips change it for one clip"},
+		{key: "tts.cache_mb", label: "read aloud cache", kind: "choose", opts: []string{"0", "64", "256", "1024"}, value: strconv.Itoa(s.TTS.TTSCacheMBOr()), src: sourceLabel(origin["tts"]), help: "megabytes of audio kept for replay, least recently used out first; 0 keeps none"},
 		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
 	// The Jev jobs exist only while a decision backend is configured; without
@@ -637,6 +642,9 @@ func (a *App) cycleToggle(key string) error {
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceToggle(key)
 	}
+	if strings.HasPrefix(key, "tts.") {
+		return a.ttsToggle(key)
+	}
 	if key == "plan_limits" {
 		// Global only: a repository must not change what a user learns about
 		// their own account limits.
@@ -725,6 +733,9 @@ func (a *App) cycleChoice(key string, opts []string) error {
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceChoose(key, opts)
 	}
+	if strings.HasPrefix(key, "tts.") {
+		return a.ttsChoose(key, opts)
+	}
 	// The tests block runs commands, so its rows always write the global
 	// scope; every other choice follows the scope the user selected.
 	mutate := a.mutateSetting
@@ -784,6 +795,9 @@ func (a *App) unsetSetting(key string) error {
 	}
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceUnset(key)
+	}
+	if strings.HasPrefix(key, "tts.") {
+		return a.ttsUnset(key)
 	}
 	if key == "plan_limits" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {

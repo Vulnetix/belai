@@ -614,6 +614,33 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   settings layers only (`resolve.go` drops the project layer's `intel` key), and
   `ui.intel` only switches the surface off. Do not add a string field to
   `PlanLimit` or `UsageEvent.Limits`.
+- **Read aloud sends text off the machine only with the user's agreement.**
+  `internal/tts` reads a message aloud through Microsoft's read-aloud service
+  (`speech.platform.bing.com`), so the text leaves the machine. It is off until
+  the user runs `/tts on`, which is also the consent (`tts.consented`); the
+  `/settings` row never turns it on for the first time. The `tts` key is read
+  from the user's own settings layers only (`resolve.go` drops the project
+  layer's), so a repository cannot turn it on, name a voice or size the cache.
+  The endpoint is `wss` to that one host under `netguard.Endpoint`, follows no
+  redirect and carries only a public client constant: no user credential, and
+  it is never firewall-routed. Only the sanitised, prepared text of one message
+  is sent (`tts.Prepare`: fenced code is not read, URLs become "link"); the
+  voice name is `[A-Za-z0-9-]{1,64}` and the text is escaped into the request.
+  The service answers with MP3, decoded in process by a pure-Go decoder as
+  untrusted-input code: a panic becomes an error, the decoded size is bounded
+  and non-audio is refused.
+  The text, the audio and the player card never enter telemetry, a notification,
+  the session record, sync or a model's transcript: the card is an `Ephemeral`
+  render-only message holding numbers, never audio. No model-facing tool starts
+  playback. The playback helper (`paplay`, `aplay`, `ffplay`, `play`) gets a
+  fixed argv, `proc.ScrubbedEnv` and its own process group, outside the OS
+  sandbox, and only audio on stdin. The audio cache is the one place audio
+  touches disk (the microphone's never does): under the user cache directory,
+  mode 0700, SHA-256 key names that hold no text, a size cap with least recently
+  used eviction, written whole through a `.part` name, and a key that is not a
+  SHA-256 hex string is refused. A spoken "stop" stops playback before it
+  touches a turn, and a transcript that mostly repeats the words being read is
+  dropped as echo (`ttsEcho`), never matched or dictated.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
