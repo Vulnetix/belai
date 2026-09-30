@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
@@ -101,6 +103,12 @@ type acpSession struct {
 	detach func()
 	// named is set once the first prompt has given the session its name.
 	named bool
+	// prog is the running prompt's progress state; lastSent is when an update
+	// last went to the editor (unix nanoseconds), for the heartbeat.
+	prog     *progress
+	lastSent atomic.Int64
+	// updated is when the session was opened or last finished a prompt.
+	updated time.Time
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
@@ -143,7 +151,7 @@ func ServeWith(ctx context.Context, r io.Reader, w io.Writer, build Builder, opt
 }
 
 // Methods lists every ACP method the server answers.
-var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel"}
+var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel", "session/list", "session/close"}
 
 func (s *Server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	<-s.ready
@@ -159,6 +167,10 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 	case "session/cancel":
 		s.cancelSession(params)
 		return nil, nil
+	case "session/list":
+		return s.listSessions(params)
+	case "session/close":
+		return s.closeSession(params)
 	}
 	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "belai does not support %s", method)
 }
@@ -171,9 +183,10 @@ func (s *Server) initialize(params json.RawMessage) (any, error) {
 	return map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"agentCapabilities": map[string]any{
-			"loadSession":        false,
-			"promptCapabilities": map[string]any{"image": true, "audio": false, "embeddedContext": true},
-			"mcpCapabilities":    map[string]any{"http": false, "sse": false},
+			"loadSession":         false,
+			"sessionCapabilities": map[string]any{"list": map[string]any{}, "close": map[string]any{}},
+			"promptCapabilities":  map[string]any{"image": true, "audio": false, "embeddedContext": true},
+			"mcpCapabilities":     map[string]any{"http": false, "sse": false},
 		},
 		"agentInfo":   map[string]any{"name": "belai", "title": "Vulnetix Belai", "version": version.Version},
 		"authMethods": []any{},
@@ -195,7 +208,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
-	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil)}
+	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now()}
 	if s.opts.Transcript != nil {
 		if l := s.opts.Transcript(filepath.Clean(p.Cwd), id); l != nil {
 			ss.log = l
@@ -325,18 +338,37 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 	s.touch(ss)
 	var res run.Result
 	var runErr error
-	for ev := range ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes)}) {
-		ss.log.Observe(ev)
-		if ev.Kind == agent.EventToolResultKind {
-			s.touch(ss)
-		}
-		switch ev.Kind {
-		case agent.EventDoneKind:
-			res = ev.Result
-		case agent.EventErrorKind:
-			runErr = ev.Err
-		default:
-			s.forward(turnCtx, ss, ev)
+	ss.prog = newProgress()
+	started := time.Now()
+	ss.lastSent.Store(started.UnixNano())
+	events := ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes)})
+	beat := time.NewTicker(heartbeatEvery / 2)
+	defer beat.Stop()
+run:
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				break run
+			}
+			ss.log.Observe(ev)
+			if ev.Kind == agent.EventToolResultKind {
+				s.touch(ss)
+			}
+			switch ev.Kind {
+			case agent.EventDoneKind:
+				res = ev.Result
+			case agent.EventErrorKind:
+				runErr = ev.Err
+			default:
+				s.forward(turnCtx, ss, ev)
+			}
+		case <-beat.C:
+			// A slow provider call or classifier pass sends nothing for a
+			// while; say so, so the panel never looks dead.
+			if time.Since(time.Unix(0, ss.lastSent.Load())) >= heartbeatEvery {
+				s.note(ss, "Still working (%s)", time.Since(started).Round(time.Second))
+			}
 		}
 	}
 	ss.log.Flush()
@@ -357,7 +389,17 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		prompt = text
 	}
 	ss.history = append(ss.history, run.Turn{Role: "user", Content: prompt}, run.Turn{Role: "assistant", Content: res.Reply})
+	ss.updated = time.Now()
+	turns := len(ss.history) / 2
 	ss.mu.Unlock()
+	s.mu.Lock()
+	client := s.client
+	s.mu.Unlock()
+	s.update(ss, map[string]any{
+		"sessionUpdate": "session_info_update",
+		"title":         sessionTitle(client, ss.cwd, turns),
+		"updatedAt":     ss.updated.UTC().Format(time.RFC3339),
+	})
 	if res.GoalSentinel == rolemanager.GoalComplete {
 		s.postEnd(turnCtx, ss)
 	}
@@ -429,6 +471,7 @@ func (s *Server) postEnd(ctx context.Context, ss *acpSession) {
 }
 
 func (s *Server) update(ss *acpSession, u map[string]any) {
+	ss.lastSent.Store(time.Now().UnixNano())
 	_ = s.conn.Notify("session/update", map[string]any{"sessionId": ss.id, "update": u})
 }
 
@@ -437,6 +480,9 @@ func textContent(t string) map[string]any { return map[string]any{"type": "text"
 // forward maps one agent event onto session/update notifications, and a
 // permission ask onto a session/request_permission request.
 func (s *Server) forward(ctx context.Context, ss *acpSession, ev agent.Event) {
+	if s.forwardProgress(ss, ev) {
+		return
+	}
 	switch ev.Kind {
 	case agent.EventTextKind:
 		if ev.Text != "" {
@@ -447,7 +493,15 @@ func (s *Server) forward(ctx context.Context, ss *acpSession, ev agent.Event) {
 			s.update(ss, map[string]any{"sessionUpdate": "agent_thought_chunk", "content": textContent(ev.Reasoning)})
 		}
 	case agent.EventToolStartKind:
-		if ev.Tool != nil {
+		if ev.Tool != nil && ss.prog != nil && ss.prog.wasPending(ev.Tool.ID) {
+			// Announced from its first fragment: fill in the arguments.
+			s.update(ss, map[string]any{
+				"sessionUpdate": "tool_call_update",
+				"toolCallId":    ev.Tool.ID,
+				"status":        "in_progress",
+				"rawInput":      ev.Tool.Args,
+			})
+		} else if ev.Tool != nil {
 			s.update(ss, map[string]any{
 				"sessionUpdate": "tool_call",
 				"toolCallId":    ev.Tool.ID,
