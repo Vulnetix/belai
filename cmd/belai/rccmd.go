@@ -65,9 +65,16 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	status := fs.Bool("status", false, "show whether remote control is running")
 	stop := fs.Bool("stop", false, "stop the running remote control and its sessions")
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
 		return 2
 	}
 	if fs.NArg() > 0 {
+		if fs.Arg(0) == "help" {
+			fs.Usage()
+			return 0
+		}
 		fmt.Fprintf(stderr, "belai rc: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}

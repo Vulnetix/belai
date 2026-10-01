@@ -53,6 +53,10 @@ func newResolver(workdir string) (*credentials.Resolver, error) {
 
 // runLoginCLI implements `belai login …` and returns the exit code.
 func runLoginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, isTTY bool) int {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help" || args[0] == "help") {
+		fmt.Fprint(stderr, loginUsage)
+		return 0
+	}
 	if len(args) == 0 || args[0] != "kiro" {
 		fmt.Fprint(stderr, loginUsage)
 		return 2
@@ -67,6 +71,9 @@ func runLoginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 	backend := fs.String("backend", "", "keychain or user-file")
 	importCache := fs.Bool("import", false, "import Kiro's own sign-in")
 	if err := fs.Parse(args[1:]); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
 		return 2
 	}
 	workdir, err := os.Getwd()

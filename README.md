@@ -156,7 +156,7 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 
 Belai starts the UI only when both stdin and stdout are a terminal, so it is safe in pipelines and CI.
 
-Two subcommands sit beside the flags: `belai acp` serves the Agent Client Protocol so an editor such as Zed can use Belai as its agent ([docs/acp.md](docs/acp.md)), `belai plugin` installs and manages plugins ([docs/plugins.md](docs/plugins.md)), and `belai rc` runs remote control so the Vulnetix website can start sessions here ([docs/remote-control.md](docs/remote-control.md)).
+Run `belai -help` for every command, a set of examples and the flags grouped by purpose. `belai help <command>` (or `belai <command> -h`) prints one command's own usage. Subcommands sit beside the flags: `belai acp` serves the Agent Client Protocol so an editor such as Zed can use Belai as its agent ([docs/acp.md](docs/acp.md)), `belai agent` lists, runs and manages background agents and fleet workers ([docs/fleet.md](docs/fleet.md)), `belai kanban` reads and edits the global board ([docs/kanban.md](docs/kanban.md)), `belai login kiro` signs in to Kiro ([docs/kiro.md](docs/kiro.md)), `belai plugin` installs and manages plugins ([docs/plugins.md](docs/plugins.md)), and `belai rc` runs remote control so the Vulnetix website can start sessions here ([docs/remote-control.md](docs/remote-control.md)).
 
 ## Configuration
 
