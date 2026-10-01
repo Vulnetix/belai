@@ -493,3 +493,34 @@ func TestNewClientRefusesRealOriginUnderTest(t *testing.T) {
 		}
 	}
 }
+
+// A session that is activated and closed straight away still reaches the
+// server: Close takes what was queued ahead of it, registers the session,
+// uploads its lines and ends it. The tick is an hour, so only that path can.
+func TestCloseFlushesASessionActivatedJustBefore(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		fake := newFake()
+		srv := httptest.NewServer(fake)
+		path := filepath.Join(t.TempDir(), testSess+".jsonl")
+		appendLines(t, path, line("a", "user", "hi"), line("b", "assistant", "done"))
+		c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := New(Options{Client: c, HostID: testHost, Host: Host{Hostname: "box"},
+			TickEvery: time.Hour, HeartbeatEvery: time.Hour, InboxWait: time.Second})
+		s.Start(context.Background())
+		s.Activate(SessionInfo{ID: testSess, Path: path})
+		s.Nudge()
+		s.Close(5 * time.Second)
+		fake.mu.Lock()
+		registered := len(fake.sessions)
+		ended := fake.ended[testSess]
+		fake.mu.Unlock()
+		if registered != 1 || fake.count(testSess) != 2 || !ended {
+			srv.Close()
+			t.Fatalf("round %d: registered %d, %d lines, ended %v; want 1, 2, true", i, registered, fake.count(testSess), ended)
+		}
+		srv.Close()
+	}
+}

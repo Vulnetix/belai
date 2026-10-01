@@ -309,11 +309,19 @@ func (s *Syncer) run(ctx context.Context) {
 			return
 		case timeout := <-s.closing:
 			fctx, cancel := context.WithTimeout(context.Background(), timeout)
-			if cur != nil && cur.registered {
-				if s.upload(fctx, cur) == nil {
+			// Whatever was queued ahead of Close is taken first. select picks
+			// among ready cases at random, so a session that was activated and
+			// nudged just before Close could otherwise still be unregistered
+			// here, and a short session would never reach the server.
+			cur = s.takeQueued(fctx, cur, &pendingAcks)
+			if cur != nil {
+				// step registers the session if it is not yet, then uploads.
+				if s.step(fctx, cur, &hostOK, false) == nil {
 					s.sendAcks(fctx, &pendingAcks)
 				}
-				_ = s.opts.Client.End(fctx, cur.info.ID)
+				if cur.registered {
+					_ = s.opts.Client.End(fctx, cur.info.ID)
+				}
 			}
 			cancel()
 			return
@@ -375,6 +383,37 @@ func (s *Syncer) run(ctx context.Context) {
 		// Everything the file held is on the server now, including the user
 		// line an accepted ack points at.
 		s.sendAcks(ctx, &pendingAcks)
+	}
+}
+
+// takeQueued applies the activations, metadata updates and acks already queued
+// when Close arrives, and returns the session to flush. A session it replaces
+// is uploaded and ended on the way, as a live switch would.
+func (s *Syncer) takeQueued(ctx context.Context, cur *tail, pending *[]ack) *tail {
+	for {
+		select {
+		case info := <-s.activate:
+			if cur != nil && cur.info.ID == info.ID {
+				cur.info = mergeInfo(cur.info, info)
+				cur.dirty = true
+				continue
+			}
+			if cur != nil && cur.registered {
+				_ = s.upload(ctx, cur)
+				_ = s.opts.Client.End(ctx, cur.info.ID)
+			}
+			cur = &tail{info: info, serverLast: -1}
+		case m := <-s.meta:
+			if cur != nil && cur.info.ID == m.id {
+				cur.info.Model, cur.info.Provider, cur.info.Mode = orStr(m.model, cur.info.Model),
+					orStr(m.provider, cur.info.Provider), orStr(m.mode, cur.info.Mode)
+				cur.dirty = true
+			}
+		case a := <-s.acks:
+			*pending = append(*pending, a)
+		default:
+			return cur
+		}
 	}
 }
 
