@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -266,5 +268,29 @@ func TestCloudToolKinds(t *testing.T) {
 		if got := nativeNamed(t, name, nil).Kind(); got != want {
 			t.Errorf("%s kind = %s, want %s", name, got, want)
 		}
+	}
+}
+
+// Date prints ISO 8601 and the Unix time, so a model building a --start-time
+// reads the epoch instead of computing it.
+func TestDatePrintsISOAndUnixSeconds(t *testing.T) {
+	res, err := nativeNamed(t, "Date", nil).Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) \(Unix (\d+)\)\s*$`).FindStringSubmatch(res.Content)
+	if m == nil {
+		t.Fatalf("Date output = %q", res.Content)
+	}
+	at, err := time.Parse(time.RFC3339, m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	unix, _ := strconv.ParseInt(m[2], 10, 64)
+	if at.Unix() != unix {
+		t.Errorf("ISO %s is Unix %d, but the output says %d", m[1], at.Unix(), unix)
+	}
+	if d := time.Since(at); d < -time.Minute || d > time.Minute {
+		t.Errorf("Date is %s from now", d)
 	}
 }
