@@ -223,8 +223,19 @@ Each item's turn is written as a session under the repository's project, so
 the session id on the item's notes lists, resumes and searches like any
 other. With `sync.enabled` on and a Vulnetix CLI credential, the worker
 mirrors that session to the website the same way the TUI does. The mirror
-uploads only the lines the transcript wrote, and it takes no prompts or
-answers back.
+uploads only the lines the transcript wrote, and it takes no answers back.
+
+With `sync.remote_prompts` on, a worker also takes text typed into its session
+on the website. That is how a crew message works: the Agents page sends the
+same text to each live worker of the crew as an ordinary web prompt. The text
+is cleaned like any web prompt and enters a running turn as steering, admitted
+by the role manager at the next pass boundary, as typed steering is. A message
+that arrives while the worker is between cards is held (at most eight) and
+steered into its next turn. A message is never a slash command, a shell command
+or an answer. Each user line the worker writes carries `profile_facts`: the
+profile name and hash, display name, palette, avatar, crew, model, provider,
+effort and tool count, never the system prompt or the tool list, so a shared
+thread can show which customisation produced each entry.
 
 ## Assigning and pinning
 

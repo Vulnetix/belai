@@ -137,6 +137,12 @@ predict what will happen to them:
   this host's own fleet registry. Otherwise it sets or clears the worker's
   pause marker and acknowledges. The worker finishes the card it holds, then
   reports `paused` until resumed (see [fleet.md](fleet.md#pausing-a-worker)).
+- **Crew messages.** A fleet worker's session takes web prompts when
+  `sync.remote_prompts` is on, the same switch as any session. The Agents page
+  sends a crew message as one prompt per live worker (no new request kind, so
+  an older server needs no change). The worker steers it into the running turn
+  or holds it for the next one (see [fleet.md](fleet.md#transcripts)). With the
+  switch off the worker takes nothing from the web and acks nothing.
 - **On the Hosts page.** Each host running remote control lists its
   fleet workers above its sessions: a state indicator (working, starting, paused,
   idle and looking for work, stopped, failed), the profile and crew, done and
