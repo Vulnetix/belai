@@ -454,7 +454,8 @@ cleanup failure never loses what you said. Route the role like any other with
   wrapped by the OS sandbox. It is reachable only from the voice engine; no
   tool call can start it, and a sandboxed `Bash` command cannot see the audio
   devices. `voice.device` must be a plain identifier (letters, digits and
-  `. _ : , @ = -`, not starting with `-`), so it cannot add an option. It is
+  `. _ : , @ = -`, at most 128, not starting with `-` or `=`), so it cannot add an
+  option. It is
   given no file to write (`parecord` reads a lone `-` as a file name, not as
   standard output, so it gets none), and it runs in a private temporary
   directory that is removed when it ends, so a mistake could never leave a

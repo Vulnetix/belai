@@ -173,7 +173,7 @@ func ValidateVoice(s Settings) error {
 		}
 	}
 	if v.Device != "" && !voiceDeviceRE.MatchString(v.Device) {
-		return fmt.Errorf("voice.device %q must be letters, digits and . _ : , @ = -, and must not start with -", v.Device)
+		return fmt.Errorf("voice.device %q must be 1 to 128 of letters, digits and . _ : , @ = -, and must not start with - or =", v.Device)
 	}
 	if v.VoiceWakeWordEnabled() && v.VoiceModeOr() != VoiceModeListen {
 		return fmt.Errorf("voice.wake_word needs voice.mode %q: push to talk is not listening, so it cannot hear the wake word", VoiceModeListen)

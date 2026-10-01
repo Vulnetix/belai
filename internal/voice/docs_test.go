@@ -64,3 +64,30 @@ func TestVoicePageStatesTheTimings(t *testing.T) {
 		t.Errorf("segmenter timings disagree: %d ms frame, onset %d, hangover %d", frameLen*1000/rate, onsetFrames, hangoverFrames)
 	}
 }
+
+// deviceCases is the boundary table both internal/voice and internal/config
+// must agree on: a device name is 1 to 128 plain characters that do not start
+// with - or =.
+var deviceCases = map[string]bool{
+	strings.Repeat("a", 128): true,
+	strings.Repeat("a", 129): false,
+	"hw:1,0":                 true,
+	"a=b-c":                  true,
+	"-f":                     false,
+	"=x":                     false,
+	"a b":                    false,
+	"a;b":                    false,
+}
+
+// TestDevicePatternMatchesThePage pins the device rule the page states.
+func TestDevicePatternMatchesThePage(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/voice.md")), " ")
+	if !strings.Contains(doc, "at most 128, not starting with `-` or `=`") {
+		t.Error("docs/voice.md does not state the device rule")
+	}
+	for d, want := range deviceCases {
+		if got := deviceRE.MatchString(d); got != want {
+			t.Errorf("deviceRE(%q) = %v, want %v", d, got, want)
+		}
+	}
+}
