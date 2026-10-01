@@ -1,9 +1,82 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+
+interface Props {
+  /** The home page numbers its sections; the standalone FAQ page does not. */
+  chapter?: boolean;
+}
+
+const { chapter = true } = Astro.props;
 
 const sealText =
-  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state.';
+  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced, what happens to a prompt injection in a file, what is free, which platforms and editors are supported, and how it runs unattended.';
+
+// Product questions. Each answer is a list of paragraphs, and text between
+// backticks renders as code.
+const product: { q: string; a: string[] }[] = [
+  {
+    q: 'Does Belai send my code to anyone?',
+    a: [
+      'Belai sends your prompts, the files its tools read and the tool results to the model provider you choose. With a local model on Ollama or llama-server, that traffic stays on your machine.',
+      'Belai sends no telemetry unless you set up OpenTelemetry export in your own settings, and that carries facts such as token counts, never content. Three more things leave the machine only when they are in use: session sync to the Vulnetix website, while the Vulnetix CLI is logged in (`/sync off` stops it), `WebFetch` and `WebSearch` when the model calls them, and a check for a newer release at startup (`update_check: false` turns it off).',
+    ],
+  },
+  {
+    q: 'Which models and providers can I use?',
+    a: [
+      'Twenty providers: OpenAI, Anthropic, Google Gemini, xAI, Mistral, DeepSeek, OpenRouter, Cloudflare Workers AI and AI Gateway, Hugging Face, Groq, Fireworks, Together, Moonshot, MiniMax, Alibaba, GitHub Copilot, Kiro, Ollama and llama-server. Any endpoint that speaks the OpenAI chat, OpenAI responses or Anthropic messages format works as a custom provider.',
+      'With nothing configured, Belai starts on OpenRouter\'s free router. The Providers section has the details.',
+    ],
+  },
+  {
+    q: 'Does it work without an API key, or offline?',
+    a: [
+      'The security classifier ships in the default binary, so guardrails run with no provider and no key. For the agent itself, a local model on Ollama or llama-server needs no key and no network, and a self-hosted endpoint that needs no key is offered while it answers.',
+    ],
+  },
+  {
+    q: 'What can a repository I clone change about Belai?',
+    a: [
+      'A repository\'s settings can tighten Belai and cannot loosen it. They cannot define a provider, an MCP server, a hook, a firewall, a worker profile or a crew, and they can turn off the features that reach outside the session without being able to turn any of them on. Those come from your own settings.',
+      'A directory Belai has not seen before asks for your trust before anything in it is read, and a path outside the session\'s folders is read only after you confirm its folder.',
+    ],
+  },
+  {
+    q: 'Can the model run any command it likes?',
+    a: [
+      'Commands go through `Bash`, which follows your permission rules and, where a backend exists, runs inside an operating-system sandbox. A deny rule is matched against every command on a line, including ones wrapped in `sudo`, `env`, `xargs` or `sh -c`. The common cloud and file tools run without a shell at all.',
+    ],
+  },
+  {
+    q: 'What happens if a file contains a prompt injection?',
+    a: [
+      'Anything the model did not write itself is untrusted text. Belai strips delimiter markup from it and, unless the tool\'s output has a shape Belai controls, the security classifier judges it before the model sees it. A flagged result is withheld, and Belai says so.',
+    ],
+  },
+  {
+    q: 'Is it free?',
+    a: [
+      'Belai is Apache-2.0. The Vulnetix scanners, the AI Firewall and the MCP server it works with are free for everyone.',
+    ],
+  },
+  {
+    q: 'Which platforms and editors does it support?',
+    a: [
+      'Linux, macOS and Windows, on amd64 and arm64. Zed, JetBrains IDEs, Neovim, Emacs and VS Code drive it over the Agent Client Protocol.',
+    ],
+  },
+  {
+    q: 'Can it run unattended?',
+    a: [
+      '`belai -prompt` answers one task and exits, which suits CI. For longer work, crews of worker agents take cards from the kanban board and open draft pull requests, each in its own worktree. Guardrails stay on for workers, an autonomous worker needs a pass budget, and the harness runs the acceptance gates itself.',
+    ],
+  },
+];
+
+const split = (t: string) => t.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
 
 const faqs = [
   {
@@ -89,18 +162,35 @@ const faqs = [
 ];
 ---
 
-<SealedSection label="faq" sealText={sealText} id="faq">
-  <h2 class="text-3xl font-bold text-vx-ink">FAQ</h2>
-  <p class="prose-measure mt-4 text-vx-ink/80">
-    Install, update and clean-up notes for Homebrew, Scoop, install.sh, GitHub
-    Releases and source builds. If something is left over from the previous{' '}
-    <code class="mono">signet</code> package name, or Homebrew has a stale bottle,
-    the recipes below walk through a clean recovery.
-  </p>
+<SealedSection label="faq" sealText={sealText} id="faq" chapter={chapter}>
+  <SectionHead title="Questions and answers">
+    Answers about data, providers and safety, then recipes for installing, updating and cleaning up.
+  </SectionHead>
 
-  <div class="mt-8 space-y-6">
-    {faqs.map((faq, idx) => (
-      <details class="group rounded-md border border-vx-ink/30" open={idx === 0}>
+  <div class="mt-head space-y-3">
+    {product.map((item) => (
+      <details class="group rounded-md border border-vx-ink/30">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-4 p-4 text-vx-ink hover:bg-vx-ink/[0.03]">
+          <span class="font-semibold">{item.q}</span>
+          <span class="mono text-vx-ink/70 transition-transform group-open:rotate-180">▼</span>
+        </summary>
+        <div class="space-y-3 border-t border-vx-ink/30 p-4 pt-3">
+          {item.a.map((para) => (
+            <p class="text-vx-ink/85">{split(para).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
+          ))}
+        </div>
+      </details>
+    ))}
+  </div>
+
+  <SubHead id="faq-install" title="Install, update and clean-up">
+    If something is left over from the previous <code class="mono">signet</code> package name, or Homebrew has
+    a stale bottle, the recipes below walk through a clean recovery.
+  </SubHead>
+
+  <div class="mt-head space-y-3">
+    {faqs.map((faq) => (
+      <details class="group rounded-md border border-vx-ink/30">
         <summary class="flex cursor-pointer list-none items-center justify-between p-4 text-vx-ink hover:bg-vx-ink/[0.03]">
           <span class="font-semibold">{faq.q}</span>
           <span class="mono text-vx-ink/60 transition-transform group-open:rotate-180">▼</span>

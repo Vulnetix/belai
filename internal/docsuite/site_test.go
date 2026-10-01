@@ -10,14 +10,14 @@ import (
 	"github.com/vulnetix/belai/internal/docparity"
 )
 
-// siteRail returns the section ids of the status rail in site/src/pages/index.astro,
-// in order. The rail is the one list of what the page contains.
+// siteRail returns the section ids of the status rail in site/src/lib/sections.ts,
+// in order. The rail, the jump menu and every chapter label read that one list.
 func siteRail(t *testing.T) []string {
 	t.Helper()
-	index := docparity.Read(t, "site/src/pages/index.astro")
-	block := regexp.MustCompile(`(?s)const rail = \[(.*?)\] as const`).FindStringSubmatch(index)
+	list := docparity.Read(t, "site/src/lib/sections.ts")
+	block := regexp.MustCompile(`(?s)export const sections = \[(.*?)\] as const`).FindStringSubmatch(list)
 	if block == nil {
-		t.Fatal("no rail array in index.astro")
+		t.Fatal("no sections array in sections.ts")
 	}
 	var ids []string
 	for _, m := range regexp.MustCompile(`\['([a-z-]+)',`).FindAllStringSubmatch(block[1], -1) {

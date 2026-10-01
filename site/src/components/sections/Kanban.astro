@@ -66,7 +66,7 @@ const limits = [
     <a href="#crews" class="text-vx-ink underline">agent crews</a> take their work from.
   </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-5" aria-label="The five lists">
+  <ol class="mt-10 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-5" aria-label="The five lists">
     {lists.map((l) => (
       <li class="flex flex-col overflow-hidden rounded-xl border border-vx-ink">
         <span class={`h-1.5 ${l.bar}`}></span>
@@ -84,7 +84,7 @@ const limits = [
     The wrap-up looks for more than the word "TODO". It gives the model eleven categories to look for in
     the report and the conversation, and it searches the board first so nothing is filed twice.
   </SubHead>
-  <dl class="mt-8 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-2 lg:grid-cols-4">
+  <dl class="mt-8 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @xl:grid-cols-2 @4xl:grid-cols-4">
     {triggers.map(([name, examples]) => (
       <div class="bg-vx-cream p-4">
         <dt class="mono text-sm font-semibold">{name}</dt>
@@ -102,12 +102,12 @@ const limits = [
     filter by list, and <kbd class="mono">enter</kbd> to fill the composer with a prompt written for that
     list. Edit the prompt before you send it.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="flex min-w-0 flex-col gap-6 lg:col-span-8">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <div class="flex min-w-0 flex-col gap-6 @4xl:col-span-8">
       <Shot src={paneShot.src} alt="The kanban pane above an empty composer, listing review, blocked and backlog items" caption="idle composer, kanban pane focused" />
       <Shot src={boardShot.src} alt="The /kanban board on the review list, with provenance and history" caption="/kanban, the review list" />
     </div>
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-4">
       <div class="rounded-xl border border-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-ink/60">THE PROMPT ENTER WRITES</p>
         <ul class="mt-3 list-none space-y-3 p-0 text-sm">
@@ -135,7 +135,7 @@ const limits = [
     While the Vulnetix CLI is logged in, the board syncs with the <strong>Belai → Kanban</strong> page on
     the Vulnetix website, where you can drag cards between the same colour-coded columns.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-2">
     <ol class="m-0 list-none p-0">
       <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/20 py-4"><span class="mono text-vx-ink/60">1</span><p>Every change is written to the local file first and pushed in the background, so no tool call waits on the network.</p></li>
       <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/20 py-4"><span class="mono text-vx-ink/60">2</span><p>The TUI pulls the web's changes every 15 seconds.</p></li>
@@ -159,5 +159,5 @@ const limits = [
     </div>
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

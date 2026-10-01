@@ -120,7 +120,10 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     <code class="mono">(Recommended)</code> mark when the choice is clear. The model cannot add that mark itself.
   </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+  <details class="deep deep--wide">
+    <summary>Compare tools, writes, asks and stopping rules across the modes</summary>
+    <div class="deep__body">
+  <table class="mt-4 hidden w-full border-collapse text-left @3xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="w-[17%] pb-4"><span class="sr-only">Property</span></th>
@@ -144,7 +147,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       ))}
     </tbody>
   </table>
-  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+  <div class="mt-8 grid gap-4 @3xl:hidden">
     {modes.map((m, i) => (
       <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <h4 class="text-xl font-bold">{m.name}</h4>
@@ -160,23 +163,26 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
+    </div>
+  </details>
+
   <SubHead title="A goal, pass by pass">
     A goal starts work at once. Its completion contract is drafted alongside and joins at the next pass
     when it is ready, and it is not held back by a read-only survey unless{' '}
     <code class="mono">resilience.goal_explore</code> is on.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 sm:grid-cols-2 lg:col-span-8 xl:grid-cols-4">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 @xl:grid-cols-2 @4xl:col-span-8 @5xl:grid-cols-4">
       {loop.map(([step, what], i) => (
         <li class="relative rounded-xl border border-vx-ink p-4">
           <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
           <p class="mono mt-2 font-semibold">{step}</p>
           <p class="mt-1 text-sm text-vx-ink/75">{what}</p>
-          {i < loop.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong xl:block" aria-hidden="true">▸</span>}
+          {i < loop.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @5xl:block" aria-hidden="true">▸</span>}
         </li>
       ))}
     </ol>
-    <aside class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-4">
+    <aside class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-4">
       <p class="mono text-xs tracking-wider text-vx-cream/70">SWITCH OR ASK</p>
       <p class="mt-3 flex items-baseline gap-3 text-vx-cream">
         <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">shift+tab</kbd>
@@ -195,5 +201,5 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   </SubHead>
   <Shot class="mt-8" src={planReviewShot.src} alt="The plan review pane with Approve, Refine and Cancel" caption="plan review pane" />
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

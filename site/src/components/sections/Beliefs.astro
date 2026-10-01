@@ -1,5 +1,6 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
 import pixYolo from '../../assets/pix/pix-yolo.svg?raw';
 import pixProfessor from '../../assets/pix/pix-professor.svg?raw';
 import pixConductor from '../../assets/pix/pix-conductor.svg?raw';
@@ -9,7 +10,7 @@ import pixHomestead from '../../assets/pix/pix-homestead.svg?raw';
 // no card borders, the same four statements as before.
 
 const sealText =
-  'Four beliefs: safety above all else and easy to YOLO. Roles for determinism: each judgement is a separate tool-less call with a one-token answer, so work and judgement are never confused, and modes are sticky. Tools first class: common CLIs such as AWS, GCloud, Kubectl, GH, JQ and YQ are structured tools, checked per call and run without a shell, so they cannot be used to pop one. Local first, open source, with Apache-2.0, zero telemetry, embedded classifier models that need no API key, and two local providers.';
+  'What Belai is built on. Four decisions sit under every other feature on this page. Four beliefs: safety above all else and easy to YOLO. Roles for determinism: each judgement is a separate tool-less call with a one-token answer, so work and judgement are never confused, and modes are sticky. Tools first class: common CLIs such as AWS, GCloud, Kubectl, GH, JQ and YQ are structured tools, checked per call and run without a shell, so they cannot be used to pop one. Local first, open source, with Apache-2.0, zero telemetry, embedded classifier models that need no API key, and two local providers.';
 
 const beliefs = [
   {
@@ -36,15 +37,17 @@ const beliefs = [
 ---
 
 <SealedSection label="beliefs" sealText={sealText} id="beliefs">
-  <h2 class="mono text-sm font-medium tracking-wider text-vx-ink/60">BELIEFS</h2>
-  <div class="mt-5 grid gap-x-8 gap-y-8 border-t border-vx-ink/20 pt-6 md:grid-cols-2 xl:grid-cols-4">
+  <SectionHead title="What Belai is built on">
+    Four decisions sit under every other feature on this page.
+  </SectionHead>
+  <div class="mt-head grid gap-x-12 gap-y-12 @2xl:grid-cols-2">
     {beliefs.map((b) => (
       <article class="flex min-w-0 flex-col gap-3">
         <div class="flex items-center gap-3">
           <div class="w-12 shrink-0 opacity-90" aria-hidden="true"><Fragment set:html={b.svg} /></div>
           <h3 class="text-lg font-semibold leading-snug text-vx-ink">{b.title}</h3>
         </div>
-        <p class="text-sm leading-relaxed text-vx-ink/75">{b.body}</p>
+        <p class="text-base leading-relaxed text-vx-ink/80">{b.body}</p>
       </article>
     ))}
   </div>

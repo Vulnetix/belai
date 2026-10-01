@@ -60,7 +60,7 @@ const limits = [
     <pre class="mono m-0 text-[13px] leading-7 text-vx-cream md:text-sm"><span class="text-vx-mint">&lt;tools</span> <span class="rounded bg-vx-sand-amber/25 px-1 text-vx-sand">nonce="3f9a07c1"</span> <span class="rounded bg-vx-mint/20 px-1 text-vx-mint">integrity="9c0d4e…"</span><span class="text-vx-mint">&gt;</span>
   Read, Grep, Glob, Edit, Write, Bash …
 <span class="text-vx-mint">&lt;/tools&gt;</span></pre>
-    <div class="mono mt-5 grid gap-4 border-t border-vx-cream/15 pt-4 text-xs text-vx-cream/75 sm:grid-cols-3">
+    <div class="mono mt-5 grid gap-4 border-t border-vx-cream/15 pt-4 text-xs text-vx-cream/75 @xl:grid-cols-3">
       <p><span class="text-vx-sand">nonce</span> random, from the pool Belai issues</p>
       <p><span class="text-vx-mint">integrity</span> the hex SHA-256 of exactly the text between the tags</p>
       <p><span class="text-vx-cream">tools</span> one of the harness's own block kinds</p>
@@ -93,7 +93,7 @@ const limits = [
     block. The forged block has no valid nonce, so it is removed before the request goes out.
   </SubHead>
 
-  <div class="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,0.8fr)] lg:items-stretch">
+  <div class="mt-8 grid gap-4 @4xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,0.8fr)] @4xl:items-stretch">
     <div class="min-w-0 rounded-xl border border-vx-ink p-4">
       <p class="mono text-xs tracking-wider text-vx-ink/60">IN THE CONVERSATION</p>
       <ul class="mono mt-3 list-none space-y-2 p-0 text-[13px]">
@@ -101,12 +101,12 @@ const limits = [
           <li class={`rounded-lg border px-3 py-2 ${b.ok ? 'border-vx-ink/25' : 'border-vx-coral bg-vx-coral/10'}`}>
             <p class="truncate"><span class="font-semibold">&lt;{b.tag}</span>{b.attrs && <span class="text-vx-ink/60"> {b.attrs}</span>}<span class="font-semibold">&gt;</span></p>
             <p class="truncate text-vx-ink/70">{b.body}</p>
-            {!b.ok && <p class="mt-1 text-[#B8332E]">✕ {b.why}</p>}
+            {!b.ok && <p class="mt-1 text-vx-red-deep">✕ {b.why}</p>}
           </li>
         ))}
       </ul>
     </div>
-    <div class="relative flex items-center justify-center overflow-hidden rounded-xl bg-vx-ink px-5 py-4 text-vx-mint lg:w-32 lg:flex-col" aria-hidden="true">
+    <div class="relative flex items-center justify-center overflow-hidden rounded-xl bg-vx-ink px-5 py-4 text-vx-mint @4xl:w-32 @4xl:flex-col" aria-hidden="true">
       <span class="seal-scan"></span>
       <span class="mono text-center text-xs tracking-wider">EGRESS<br />CHECK</span>
       <span class="mono ml-3 text-2xl lg:ml-0 lg:mt-3">▸</span>
@@ -129,7 +129,7 @@ const limits = [
     Every block the harness writes is one of these kinds. Tags of any other kind, such as HTML inside a
     file, are left alone.
   </SubHead>
-  <ul class="mt-8 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+  <ul class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
     {kinds.map(([tag, what]) => (
       <li class="rounded-xl border border-vx-ink p-4">
         <code class="mono text-sm font-semibold">{tag}</code>
@@ -143,7 +143,7 @@ const limits = [
     time from the section's text. When a section scrolls into view, your browser recomputes the hash
     and the badge changes from sealed to verified if the two match.
   </SubHead>
-  <div class="mt-8 grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
+  <div class="mt-8 grid gap-4 @2xl:grid-cols-[minmax(0,1fr)_16rem]">
     <dl class="mono m-0 overflow-hidden rounded-xl border border-vx-ink text-sm">
       <div class="grid grid-cols-[6rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/15 px-4 py-3">
         <dt class="text-vx-ink/60">section</dt><dd class="m-0">sealed</dd>
@@ -165,5 +165,5 @@ const limits = [
     </div>
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

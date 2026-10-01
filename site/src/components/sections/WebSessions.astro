@@ -7,7 +7,7 @@ import Limits from '../ui/Limits.astro';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken.';
+  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page.';
 
 const answers = [
   {
@@ -30,6 +30,15 @@ const answers = [
     choices: 'approve here · approve in a new session · refine · keep planning',
     detail: 'Read the plan on the page and approve it, or send notes back. Notes take the web-prompt path, so they are never a slash or shell command.',
   },
+];
+
+const remote: [string, string][] = [
+  ['Checked before it starts', '`belai rc` prints one line per check and the one thing to do about each failure: the Vulnetix CLI, a browser login, session sync, guardrails on, a directory to offer and a website that accepts the credential. `/rc` walks the same list as a setup screen.'],
+  ['Only directories you trusted', 'A session runs only in a directory the daemon offers: a project you already trusted, or a `--dir` you pass, which is trusted exactly as `-trust-dir` would. The daemon checks each request against its own list again, by exact match after resolving symlinks.'],
+  ['Each session is its own process', '`belai rc-session` runs in the chosen directory with the prompt on stdin and writes the same transcript as the terminal. It ends after thirty idle minutes, when you press Stop session, or when remote control stops. At most three run at once.'],
+  ['The host picks the rest', 'The website chooses the directory, the prompt and optionally the mode. Model, provider, guardrails and permissions are the host\'s own, and asks are off, so the rules decide as they do for `belai -prompt`.'],
+  ['Manage what is offered', '`/trusted` lists every trusted directory, marks the ones the running daemon offers and revokes stale or temporary ones. Revoking clears the trust flag, so the next launch there asks again.'],
+  ['The fleet too', 'The same daemon reports this host\'s worker catalogue and its live workers, so the Board page can assign cards and predict what will happen to them.'],
 ];
 
 const records = [
@@ -79,24 +88,24 @@ const limits = [
     the host as if you had typed it at the terminal.
   </SectionHead>
 
-  <div class="mt-10 grid gap-8 lg:grid-cols-12 lg:items-start">
-    <div class="mono min-w-0 rounded-xl border border-vx-ink p-5 text-xs leading-relaxed text-vx-ink/80 md:text-sm lg:col-span-7" aria-label="A permission ask as the Sessions page shows it" role="img">
-      <p><span class="text-[#B86E00]">── permission</span> <span class="text-vx-ink/50">Edit · waiting for an answer ──</span></p>
-      <p class="mt-3 pl-4"><span class="text-[#B86E00]">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
-      <p class="pl-4 text-vx-ink/55">allow always adds Edit(internal/server/handler.go)</p>
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="mono min-w-0 rounded-xl border border-vx-ink p-5 text-xs leading-relaxed text-vx-ink/80 md:text-sm @4xl:col-span-7" aria-label="A permission ask as the Sessions page shows it" role="img">
+      <p><span class="text-vx-amber-deep">── permission</span> <span class="text-vx-ink/70">Edit · waiting for an answer ──</span></p>
+      <p class="mt-3 pl-4"><span class="text-vx-amber-deep">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
+      <p class="pl-4 text-vx-ink/70">allow always adds Edit(internal/server/handler.go)</p>
       <div class="ml-4 mt-3 overflow-x-auto rounded-lg bg-vx-ink/5 py-1">
-        <p class="whitespace-pre px-3"><span class="text-vx-ink/50"> 41</span>   ctx := r.Context()</p>
-        <p class="whitespace-pre bg-vx-coral/15 px-3"><span class="text-[#B8332E]">−42</span>   user := r.URL.Query().Get("user")</p>
+        <p class="whitespace-pre px-3"><span class="text-vx-ink/70"> 41</span>   ctx := r.Context()</p>
+        <p class="whitespace-pre bg-vx-coral/15 px-3"><span class="text-vx-red-deep">−42</span>   user := r.URL.Query().Get("user")</p>
         <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+42</span>   name := r.URL.Query().Get("user")</p>
         <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+43</span>   if name == "" {'{'}</p>
       </div>
       <p class="mt-4 flex flex-wrap gap-2 pl-4">
         <span class="rounded-md border border-vx-mint-strong px-3 py-1 text-vx-mint-strong">Allow once</span>
         <span class="rounded-md border border-vx-ink/30 px-3 py-1">Allow always</span>
-        <span class="rounded-md border border-vx-ink/30 px-3 py-1 text-[#B8332E]">Deny</span>
+        <span class="rounded-md border border-vx-ink/30 px-3 py-1 text-vx-red-deep">Deny</span>
       </p>
     </div>
-    <div class="min-w-0 lg:col-span-5">
+    <div class="min-w-0 @4xl:col-span-5">
       <h3 class="text-2xl font-bold">Drawn like the TUI</h3>
       <p class="mt-3 text-vx-ink/80">
         The page draws with the TUI's own design system: thread blocks with a top rule, quiet tool rows that
@@ -113,11 +122,18 @@ const limits = [
     </div>
   </div>
 
+  <SubHead id="rc" title="Start a session from the website">
+    Run <code class="mono">belai rc</code>, or <code class="mono">/rc</code> inside Belai, and the machine
+    appears under <strong>Belai → Sessions</strong>. Pick a directory, write a prompt and start a session
+    there. The page follows it live.
+  </SubHead>
+  <Limits items={remote} class="mt-head" />
+
   <SubHead title="What you can answer from the web">
     When the host stops to ask you something, the page shows the question and you can answer it there.
     The host carries on as if you had pressed the key.
   </SubHead>
-  <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+  <div class="mt-8 grid gap-5 @2xl:grid-cols-2 @5xl:grid-cols-4">
     {answers.map((a, i) => (
       <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
@@ -131,21 +147,24 @@ const limits = [
   <SubHead title="From the terminal to the page">
     The terminal never blocks on sync. Your answer travels the same way back to the host.
   </SubHead>
-  <ol class="mt-8 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+  <ol class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
     {path.map(([who, what], i) => (
       <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 0 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <span class={`mono text-xs ${i === 0 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
         <p class={`mono mt-2 text-lg font-semibold ${i === 0 ? 'text-vx-mint' : ''}`}>{who}</p>
         <p class={`mt-1 text-sm ${i === 0 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
-        {i < path.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong lg:block" aria-hidden="true">▸</span>}
+        {i < path.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @4xl:block" aria-hidden="true">▸</span>}
       </li>
     ))}
   </ol>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-7">
+  <details class="deep deep--wide">
+    <summary>The session file, resuming a session and the Agent Builder</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-7">
       <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE SESSION FILE HOLDS</p>
-      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm @xl:grid-cols-[8rem_minmax(0,1fr)]">
         {records.map(([name, what]) => (
           <>
             <dt class="text-vx-mint">{name}</dt>
@@ -154,7 +173,7 @@ const limits = [
         ))}
       </dl>
     </div>
-    <div class="min-w-0 lg:col-span-5">
+    <div class="min-w-0 @4xl:col-span-5">
       <p class="text-vx-ink/80">
         A resumed session reads the same lines, so the page and the terminal show the same events. Resume
         a session with <code class="mono">belai -r</code> and its diffs and answered questions are back on
@@ -171,12 +190,14 @@ const limits = [
       </p>
     </div>
   </div>
+    </div>
+  </details>
 
   <SubHead title="An audit trail of hosts and agents" id="audit">
     Sync also carries a second record: what your hosts and agents did. <strong>Belai → History</strong> shows
     it in two tabs beside the session list.
   </SubHead>
-  <div class="mt-8 grid gap-5 md:grid-cols-2">
+  <div class="mt-head grid gap-5 @2xl:grid-cols-2">
     <article class="rounded-xl border border-vx-ink p-5">
       <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
       <h4 class="mt-3 text-xl font-bold">Hosts</h4>
@@ -197,10 +218,13 @@ const limits = [
     </article>
   </div>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-7">
+  <details class="deep deep--wide">
+    <summary>What the audit log holds and how the hash chain works</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-7">
       <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE AUDIT LOG HOLDS</p>
-      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[13rem_minmax(0,1fr)]">
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm @xl:grid-cols-[13rem_minmax(0,1fr)]">
         {audit.map(([name, what]) => (
           <>
             <dt class="text-vx-mint">{name}</dt>
@@ -209,7 +233,7 @@ const limits = [
         ))}
       </dl>
     </div>
-    <div class="min-w-0 lg:col-span-5">
+    <div class="min-w-0 @4xl:col-span-5">
       <p class="text-vx-ink/80">
         An event is a fixed set of identifiers: a worker profile, a card id, a branch, a commit id, an advisory
         id and an enum verdict. A prompt, a reply, a command, tool output or a file has no field to go in, and
@@ -229,6 +253,8 @@ const limits = [
       </p>
     </div>
   </div>
+    </div>
+  </details>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>
