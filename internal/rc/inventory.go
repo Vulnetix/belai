@@ -69,7 +69,7 @@ func LocalInventory() Inventory {
 		if len(inv.Crews) >= maxInvCrews {
 			break
 		}
-		rc := sessionsync.RCCrew{Name: c.Name, Builtin: c.Builtin, Members: []sessionsync.RCMember{}}
+		rc := sessionsync.RCCrew{ID: c.ID, Name: c.Name, Description: c.Description, Builtin: c.Builtin, Members: []sessionsync.RCMember{}}
 		for _, m := range c.Members {
 			rc.Members = append(rc.Members, sessionsync.RCMember{Profile: m.Profile, Replicas: m.Count()})
 		}

@@ -208,6 +208,12 @@ type SyncSettings struct {
 	// clarify questionnaire, the mode choice or a plan review. Default true;
 	// false keeps every ask on the host.
 	RemoteAnswers *bool `json:"remote_answers,omitempty"`
+	// Profiles lets `belai rc` keep the website's agent and crew library current
+	// by itself: it pushes the profile markdown and crew JSON that changed on this
+	// host, never file contents (those leave only for a backup request) and never
+	// over a version the website saved since this host last synced. Default true;
+	// false leaves backups to requests from the website.
+	Profiles *bool `json:"profiles,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -227,6 +233,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.RemoteAnswers != nil && !*proj.RemoteAnswers {
 		out.RemoteAnswers = &f
 	}
+	if proj.Profiles != nil && !*proj.Profiles {
+		out.Profiles = &f
+	}
 	return out
 }
 
@@ -240,6 +249,13 @@ func (s Settings) SyncEnabled() bool {
 // from the website. Default on, and never on while sync itself is off.
 func (s Settings) SyncRemotePromptsEnabled() bool {
 	return s.SyncEnabled() && (s.Sync == nil || s.Sync.RemotePrompts == nil || *s.Sync.RemotePrompts)
+}
+
+// SyncProfilesEnabled reports whether `belai rc` pushes changed profiles and
+// crews to the website's library by itself. Default on, and never on while sync
+// itself is off.
+func (s Settings) SyncProfilesEnabled() bool {
+	return s.SyncEnabled() && (s.Sync == nil || s.Sync.Profiles == nil || *s.Sync.Profiles)
 }
 
 // SyncRemoteAnswersEnabled reports whether a synced session accepts answers

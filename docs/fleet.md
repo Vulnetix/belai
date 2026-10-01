@@ -913,6 +913,11 @@ alongside itself.
 | `belai agent import [-force] FILE` | validate and save a profile |
 | `belai agent draft [-json] [-o FILE] PREMISE` | draft a profile from a premise (every offer taken) as markdown for `import`; `-json` prints each offer with its reason |
 | `belai agent crews` | crews and their members |
+| `belai agent crew import [-force] FILE \| export NAME \| delete NAME` | a crew as the JSON the library keeps: `import` validates (every member must be an installed worker profile) and saves, `export` prints it with its `id`, `delete` removes a user crew. Built-in crews are never replaced or deleted |
+| `belai agent files NAME` | the files an agent carries: each path its profile lists and where it is found (readable here, in the profile's own files, or missing) |
+| `belai agent files add NAME FILE [-as PATH]` | attach a file: it is kept in the agent's own files, listed in its `knowledge.paths` as PATH (default the file's name) and goes with the profile in a backup. A file that holds a key or token is refused |
+| `belai agent files rm NAME PATH` | detach a file and stop listing it |
+| `belai agent files adopt DIR [-dry-run]` | attach each `DIR/<agent>.md` to the stored agent of that name, listed as `<DIR name>/<agent>.md`, for the markdown sources an agent was written from |
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |

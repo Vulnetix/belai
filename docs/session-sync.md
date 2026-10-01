@@ -272,7 +272,7 @@ and the inbox run on the syncer's own goroutines.
 ## Settings
 
 ```json
-{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true } }
+{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true } }
 ```
 
 - **`sync.enabled`** — mirror sessions. Default on whenever a Vulnetix CLI
@@ -281,6 +281,13 @@ and the inbox run on the syncer's own goroutines.
   sessions view-only.
 - **`sync.remote_answers`** — accept web answers to open asks, including
   allow-always. Default on; `false` keeps every ask on the host.
+- **`sync.profiles`** — let `belai rc` keep the website's agent and crew
+  library current by itself: it pushes the profiles and crews that changed on
+  this host, the markdown and JSON only, never over a version the website saved
+  since this host last synced it (see
+  [Automatic sync](remote-control.md#automatic-sync-of-profiles-and-crews)).
+  Default on; `false` leaves backups to requests from the website. File
+  contents never travel this way.
 - **Project layer:** a project settings file may turn any of these off, never
   on.
   The guardrails switch does not change sync; it is a data-egress setting,

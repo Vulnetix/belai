@@ -166,11 +166,15 @@ type RCRoute struct {
 	DropLabels []string `json:"dropLabels"`
 }
 
-// RCCrew is one crew and its members.
+// RCCrew is one crew and its members. ID is the crew's own uuid (none for a
+// built-in or a crew not yet stamped) and Description its one line, so the
+// website can tell which library crew this host holds.
 type RCCrew struct {
-	Name    string     `json:"name"`
-	Builtin bool       `json:"builtin"`
-	Members []RCMember `json:"members"`
+	ID          string     `json:"id,omitempty"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Builtin     bool       `json:"builtin"`
+	Members     []RCMember `json:"members"`
 }
 
 // RCMember is one crew member and how many workers run it.
@@ -260,8 +264,21 @@ type Dispatch struct {
 	Version   string `json:"version,omitempty"`
 	Overwrite bool   `json:"overwrite,omitempty"`
 	// An "avatar" request names the agent creator whose avatar to draw.
-	Creator   string `json:"creator,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	Creator string `json:"creator,omitempty"`
+	// A "crew_install" request names a library crew and version in Library and
+	// Version, and Members the library profile versions its members resolve to,
+	// which the host installs first. A "crew_backup" request names the host's
+	// crew in Crew. Identifiers only.
+	Members   []CrewMemberRef `json:"members,omitempty"`
+	CreatedAt int64           `json:"createdAt"`
+}
+
+// CrewMemberRef is one member profile a crew_install request puts on the host:
+// the profile name the crew lists and the library version that provides it.
+type CrewMemberRef struct {
+	Profile string `json:"profile"`
+	Library string `json:"library"`
+	Version string `json:"version"`
 }
 
 // Dispatch outcomes the daemon reports back.

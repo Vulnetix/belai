@@ -20,6 +20,11 @@ import (
 
 // Crew is a named set of worker profiles.
 type Crew struct {
+	// ID is the crew's own lowercase UUID, which follows it through a library
+	// backup and install so a rename does not make it another crew. `belai rc`
+	// stamps one on a crew that has none (EnsureCrewIDs). It is the first field
+	// so CanonicalJSON matches the library's own encoding.
+	ID          string   `json:"id,omitempty"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Members     []Member `json:"members"`
@@ -189,10 +194,130 @@ func SaveCrew(c Crew) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	if c.ID != "" && !ValidID(c.ID) {
+		return "", fmt.Errorf("crew id %q is not a lowercase UUID", c.ID)
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, deriveFileName(c.Name))
-	return path, os.WriteFile(path, data, 0o600)
+	return path, writeAtomic(path, data)
+}
+
+// CanonicalJSON is the crew as the library stores it: the id, name,
+// description and members in a fixed order, two-space indented and newline
+// terminated. The daemon hashes this form for the automatic sync and the server
+// re-encodes what it receives the same way (vdb-site belaiCanonicalCrew), so
+// equal crews have equal bytes whatever the file on disk looks like.
+func (c Crew) CanonicalJSON() ([]byte, error) {
+	c.Builtin = false
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// userCrews reads every crew file in the user's directory leniently: a file
+// that does not parse is skipped. Unlike LoadCrew it does not validate, so a
+// crew whose members are not installed here is still listed.
+func userCrews() ([]Crew, []string, error) {
+	dir, err := CrewsDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	var crews []Crew
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var c Crew
+		if json.Unmarshal(data, &c) != nil || c.Name == "" || IsBuiltin(c.Name) {
+			continue
+		}
+		crews = append(crews, c)
+		files = append(files, e.Name())
+	}
+	return crews, files, nil
+}
+
+// EnsureCrewIDs gives every stored user crew that lacks an id one and rewrites
+// it in place, returning how many it stamped. Run when the rc daemon starts,
+// like EnsureIDs, so a crew has the same identity every time the website sees it.
+func EnsureCrewIDs() (int, error) {
+	crews, files, err := userCrews()
+	if err != nil {
+		return 0, err
+	}
+	dir, err := CrewsDir()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for i, c := range crews {
+		if ValidID(c.ID) {
+			continue
+		}
+		if c.ID, err = NewID(); err != nil {
+			return n, err
+		}
+		data, err := json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return n, err
+		}
+		if err := writeAtomic(filepath.Join(dir, files[i]), data); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// StoredCrews lists the user's crews as they are on disk, without checking
+// that their members exist here. Built-in crews are not included.
+func StoredCrews() []Crew {
+	crews, _, _ := userCrews()
+	return crews
+}
+
+// CrewByID finds a stored user crew by its id.
+func CrewByID(id string) (Crew, bool) {
+	if !ValidID(id) {
+		return Crew{}, false
+	}
+	for _, c := range StoredCrews() {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return Crew{}, false
+}
+
+// DeleteCrew removes a user crew. A built-in crew is never removed.
+func DeleteCrew(name string) error {
+	if IsBuiltin(name) {
+		return fmt.Errorf("crew %q is built in", name)
+	}
+	dir, err := CrewsDir()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(dir, deriveFileName(name)))
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("no crew named %q", name)
+	}
+	return err
 }

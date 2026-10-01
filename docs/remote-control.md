@@ -203,15 +203,19 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
 
 ## Agent library
 
-The website keeps a library of agent profiles so a profile survives the machine
-it came from. Two requests reach a profile on this host, both through the
-dispatch queue and both carrying identifiers only:
+The website keeps a library of agent profiles and crews so they survive the
+machine they came from. Four requests reach them on this host, all through the
+dispatch queue and all carrying identifiers only: `profile_backup` and
+`profile_install` for an agent, `crew_backup` and `crew_install` for a crew
+(see [Crews](#crews) below):
 
 - **`profile_backup`** names one of this host's profiles. The daemon exports it
   as markdown (the same form `belai agent import` reads, with its `id`, display
   name, palette and personality) and uploads it, and the website stores it as a
   new version. A backup writes nothing on this host. Built-in profiles ship with
-  Belai, so a request for one is refused.
+  Belai, so a request for one is refused. The files the profile names go
+  with it (see [Files an agent carries](#files-an-agent-carries)).
+
 - **`profile_install`** names a library profile and one of its versions, and
   whether it may replace a profile here. The daemon reads that version from the
   library, and the server serves that one version only while the request is
@@ -237,12 +241,94 @@ dispatch queue and both carrying identifiers only:
 
   A profile's `knowledge` and `workspace.sync` blocks are part of it: a backup
   carries them, an install keeps them, and a replace takes the library copy, or
-  keeps the entries already on this host when that copy lists none. The paths are
-  only paths. What they name is indexed, classified and copied on the host that
-  runs the agent, under a fixed floor that holds whoever wrote the profile (see
+  keeps the entries already on this host when that copy lists none. What the
+  paths name is indexed, classified and copied on the host that runs the agent,
+  under a fixed floor that holds whoever wrote the profile (see
   [knowledge.md](knowledge.md#profile-knowledge) and
-  [fleet.md](fleet.md#files-placed-in-a-worktree)), so retrieval works for an
-  installed profile as it does for one written here.
+  [fleet.md](fleet.md#files-placed-in-a-worktree)). The files themselves travel
+  too, so retrieval works for an installed profile as it does for one written
+  here: see below.
+
+### Files an agent carries
+
+A profile names files in two places: `knowledge.paths` (documents the agent may
+search) and `workspace.sync` (files a crew shares). They used to be only paths, so
+an agent restored on another host came back without the files it was written
+around. They now travel with the profile, under the same floor as the index
+(see [knowledge.md](knowledge.md#a-profiles-own-files)):
+
+- **A backup captures them.** The daemon reads each listed path where this host
+  has it: a relative path under each directory this daemon offers, then the home
+  and absolute forms, then the profile's own files (below). It leaves out
+  symlinks, anything under `.git`, credential files and key stores, files that
+  hold a private key or a known token, binary files and anything past the limits
+  (256 KiB a file, 32 files and 2 MiB a profile). Each file is uploaded under its
+  SHA-256, and the profile is saved as a version that lists them. The
+  acknowledgement counts what was left out and why, never a name or any text.
+  A host that has none of the files keeps the library's copy of them: a backup
+  never empties what another host saved.
+- **An install writes them, and indexes them.** The daemon reads the version's
+  files, checks that each one is bounded text that hashes to its listed hash, and
+  writes them into `~/.vulnetix/belai/profiles/files/<profile id>/`, never into a
+  repository, then saves the profile and indexes its documents through the same
+  classifier as `belai agent knowledge -index`, from a trusted directory this
+  daemon offers. A path that climbs out of that directory, a file that is not
+  text or does not match its hash refuses the install before anything is saved.
+  When no trusted directory is offered the documents are indexed the first time
+  the agent runs.
+- **The profile's paths resolve to them as a fallback.** A listed path that does
+  not exist on this host resolves to the owned copy, so a project's own file of
+  the same name always wins. A `workspace.sync` entry the repository does not
+  hold yet is seeded from it.
+
+You can attach files to an agent here too: `belai agent files add NAME FILE`,
+`rm`, `adopt` and the listing (see [fleet.md](fleet.md#command-line)).
+
+### Crews
+
+A crew is a name, a description and its members (see [fleet.md](fleet.md)). It has
+an `id` of its own, which `belai rc` stamps on a crew that has none, so a rename
+does not make it another crew.
+
+- **`crew_backup`** names one of this host's crews. The daemon exports it as JSON
+  and uploads it, and the website stores it as a new version. Built-in crews ship
+  with Belai and are refused.
+- **`crew_install`** names a library crew and one of its versions. The website
+  resolves each member to the library profile it names and refuses the request
+  when one is missing, naming it. The daemon installs the members this host lacks
+  first, each exactly as a `profile_install` (files and index included), leaves a
+  member it already has under the same `id` alone unless the request says replace,
+  and refuses the whole install when a member of that name here is a different
+  profile. The crew is written only after every member is a worker profile on this
+  host. A crew of the same name is replaced only with replace set and the same
+  `id`.
+
+A crew's definition is a few hundred bytes of JSON with no files, so the website
+can also build one in the crew editor and save it to the library; `belai agent crew
+import`, `export` and `delete` do the same by hand.
+
+### Automatic sync of profiles and crews
+
+With `sync.profiles` on (the default, and only while `sync.enabled` is) the daemon
+also keeps the library current without a request. Every 30 seconds it hashes each
+stored profile and crew and asks the server what to do with the ones it has not
+settled yet:
+
+| Answer | Meaning |
+|---|---|
+| `push` | the library has nothing newer, so the host pushes its copy as a new version |
+| `current` | the library already holds this copy |
+| `diverged` | the website saved a version this host has not installed, so the host's copy never overwrites it; back it up or install it from the website to settle it |
+| `skip` | deleted from the library, or not this account's |
+
+Only the profile markdown and the crew JSON travel this way, never file contents:
+those leave the host only for a `profile_backup` request, so a person always
+chooses to upload them. The server decides again when the host pushes, so a web
+edit saved in between is never lost, and a host with no record of an item that
+differs from the library is `diverged`, never overwritten. The Agents page shows
+which agents have no files in their library copy. A diverged item is logged once;
+the host asks again after ten minutes, in case it was resolved. Set
+`sync.profiles` to `false` to leave backups to requests from the website.
 
 Both are `host.dispatch` audit events with the request kind and outcome (see
 [audit.md](audit.md)).
@@ -291,6 +377,10 @@ avatar id, so the website can draw the agent. They are presentation only.
   footer shows `● rc N` while the daemon runs.
 - `~/.vulnetix/belai/rc/rc.log`: the daemon's log when detached.
 - `~/.vulnetix/belai/rc/sessions/<id>.log`: each session's stderr.
+- `~/.vulnetix/belai/profiles/files/<profile id>/`: the files a library install
+  wrote for an agent (`rel/`, `home/` and `abs/` hold the three forms of listed
+  path).
+- `~/.vulnetix/belai/profiles/crews/<name>.json`: a user crew.
 
 ## Server side
 
@@ -311,6 +401,22 @@ avatar id, so the website can draw the agent. They are presentation only.
     display name with `/library/names/check`. A version is one write-once S3
     object under `belai/{tenant}/agents/{profile}/{YYYYMMDDHHMM}.md`, indexed in
     Postgres; a rewind saves an old version as the new latest one.
+  - Files (`belai_library_files.go`): `PUT|GET /library/files/{sha256}` for the
+    page; a host uploads with `PUT /hosts/{id}/library/files/{sha256}` while a
+    `profile_backup` is delivered to it and reads with the same route while a
+    `profile_install` or `crew_install` names a version that carries the file.
+    A file is one write-once object under
+    `belai/{tenant}/agent-files/{sha256}`, shared by every version that holds the
+    same bytes; a version lists its files in `BelaiAgentProfileFile`.
+  - Crews (`belai_crews.go`): the same shape under `/library/crews`, a host
+    answers with `POST /hosts/{id}/library/crew-backups` and
+    `GET /hosts/{id}/library/crews/{crew}/versions/{version}?dispatch=`; a version
+    is `belai/{tenant}/crews/{crew}/{YYYYMMDDHHMM}.json`.
+  - Automatic sync (`belai_library_sync.go`): `POST /hosts/{id}/library/sync`
+    answers push, current, diverged or skip per item, and
+    `PUT /hosts/{id}/library/sync/profiles|crews/{id}` takes a push the server
+    decides on again. `BelaiHostLibrarySync` remembers the version each host last
+    held.
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
   `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,
@@ -318,7 +424,10 @@ avatar id, so the website can draw the agent. They are presentation only.
   `20261001000001_belai_fleet_coordination`); `BelaiSchedule` (saas migration
   `20261004000001_add_belai_schedules`); `BelaiAgentProfile` and
   `BelaiAgentProfileVersion` (saas migration
-  `20261004000002_add_belai_agent_library`).
+  `20261004000002_add_belai_agent_library`); `BelaiAgentFileBlob`,
+  `BelaiAgentProfileFile`, `BelaiCrew`, `BelaiCrewVersion` and
+  `BelaiHostLibrarySync` (saas migration
+  `20261005000001_add_belai_agent_files_and_crews`).
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.

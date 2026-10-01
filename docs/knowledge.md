@@ -116,6 +116,31 @@ skipped without error. Everything else is yours to list, including every
 ordinary directory under your home directory (a user running as root keeps
 theirs under the root account's home) and under etc.
 
+### A profile's own files
+
+The paths a profile lists name files on one host, so a profile restored on another
+host used to come back without the documents it was written around. Those files
+now travel with the profile (see
+[remote-control.md](remote-control.md#files-an-agent-carries)) and an install keeps
+them in a directory the daemon owns, `~/.vulnetix/belai/profiles/files/<profile
+id>/`, never in a repository. The listed paths keep their meaning: a path that does
+not exist on this host resolves to the owned copy, and the project's own file of
+the same name always wins. Inside the directory the three forms of path live apart
+(`rel/`, `home/` and `abs/`), so a relative path is never mistaken for another.
+
+The owned copy is held to the floor above. An install writes only bounded UTF-8
+text (256 KiB a file, 32 files and 2 MiB a profile) whose bytes hash to the hash
+the library listed, refuses a path that climbs out of the directory before it
+writes anything, and swaps the directory in as a whole, so a failed install leaves
+the old files. A backup leaves out symlinks, credential files and key stores,
+files that hold a private key or a known token, and anything past the limits. What
+an owned file holds is classified when it is indexed, like any other document.
+
+A remote request never chooses which of your files are indexed: the paths come from
+the profile you installed, and an owned file is read only for the profile that owns
+it. Attach a file from this host with `belai agent files add NAME FILE`; `belai
+agent files NAME` shows where each listed path is found.
+
 ### Copies in the worker's directory
 
 A fleet worker works in a git worktree, outside the project and outside the
