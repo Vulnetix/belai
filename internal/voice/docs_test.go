@@ -34,3 +34,33 @@ func TestVoicePageNamesEveryState(t *testing.T) {
 		}
 	}
 }
+
+// TestVoicePageStatesTheTimings pins the durations docs/voice.md gives for the
+// recorder, the segmenter and the running guess to the constants, converting
+// samples at 16 kHz.
+func TestVoicePageStatesTheTimings(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/voice.md")), " ")
+	for _, want := range []string{
+		"A recording is capped at 28 seconds",
+		"the microphone stays open for 300 ms",
+		"Every 1.2 seconds of speech the engine recognises everything heard so far again",
+		"A guess needs at least 0.6 seconds of speech",
+		"opens after 60 ms of speech and closes after one second of quiet",
+		"or after ten seconds with no speech at all",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/voice.md does not say %q", want)
+		}
+	}
+	const rate = 16000
+	if maxPTT != 28*rate || pttTail != 300*rate/1000 || partialEvery != 12*rate/10 || partialMin != 6*rate/10 {
+		t.Errorf("engine timings disagree: maxPTT %d, pttTail %d, partialEvery %d, partialMin %d", maxPTT, pttTail, partialEvery, partialMin)
+	}
+	if latchQuiet != rate || latchIdle != 10*rate {
+		t.Errorf("tap timings disagree: latchQuiet %d, latchIdle %d", latchQuiet, latchIdle)
+	}
+	// 20 ms frames: three open a segment (60 ms), fifty close it (one second).
+	if frameLen*1000/rate != 20 || onsetFrames*20 != 60 || hangoverFrames*20 != 1000 {
+		t.Errorf("segmenter timings disagree: %d ms frame, onset %d, hangover %d", frameLen*1000/rate, onsetFrames, hangoverFrames)
+	}
+}
