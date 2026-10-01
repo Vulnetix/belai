@@ -13,6 +13,10 @@ import (
 	"github.com/vulnetix/belai/internal/docparity"
 )
 
+// buildOutputs are directories the docs name that exist only after a build and
+// are git-ignored, so a clean checkout does not have them.
+var buildOutputs = map[string]bool{"site/dist": true, "bin": true}
+
 var pathRef = regexp.MustCompile("`((?:internal|cmd|docs|e2e|site|tools|bench)/[A-Za-z0-9_./*-]*[A-Za-z0-9_*])`")
 
 // declared lists every name a Go package declares at the top level, plus the
@@ -69,7 +73,7 @@ func TestDocsReferenceOnlyFilesAndSymbolsThatExist(t *testing.T) {
 	seen := map[string]bool{}
 	for _, m := range pathRef.FindAllStringSubmatch(text, -1) {
 		ref := m[1]
-		if seen[ref] || strings.HasSuffix(ref, "...") {
+		if seen[ref] || strings.HasSuffix(ref, "...") || buildOutputs[strings.TrimSuffix(ref, "/")] {
 			continue
 		}
 		seen[ref] = true
