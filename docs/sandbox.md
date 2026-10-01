@@ -34,7 +34,8 @@ Inside the sandbox:
   `~/.pnpm-store`, `~/.yarn`, `~/.bun`, `~/.deno`, `~/.cargo`, `~/.rustup`,
   `~/.m2`, `~/.gradle`, `~/.nuget`, `~/.gem`, `~/.dotnet`, `~/.pyenv` and a
   few more, plus the directories named by `GOCACHE`, `GOMODCACHE`, `GOPATH`,
-  `XDG_CACHE_HOME`, `CARGO_HOME` and `npm_config_cache`.
+  `XDG_CACHE_HOME`, `CARGO_HOME` and `npm_config_cache` (a variable that is unset
+  or holds a relative path adds nothing).
 - Everything else is read-only.
 - `~/.vulnetix/belai` (or `$BELAI_HOME`), which holds credentials and
   sessions, is hidden: the command sees an empty directory.
@@ -109,8 +110,10 @@ asks you rather than retrying blindly.
 - A cache directory that does not exist is skipped; bubblewrap binds only
   what is there.
 - A relative path in `extra_writable` is ignored.
-- An unknown `mode` means `auto`. A `network` value other than `allow`
-  means `deny`.
+- An unknown `mode` means `auto` when no layer sets a valid one. When layers
+  are merged an unknown `mode` is skipped, so the layer below it stands: a
+  project file saying `strict` over a global `required` leaves `required`. A
+  `network` value other than `allow` means `deny`.
 - Belai's state directory stays hidden even when it sits under a writable
   path.
 - bubblewrap is probed once per run. If it is installed but cannot start
