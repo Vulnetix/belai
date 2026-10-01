@@ -42,8 +42,12 @@ type Syncer struct {
 	busy   sync.Mutex // one push/pull at a time, Flush included
 }
 
-// SyncOptions configures a Syncer. Zero PullEvery is 15s. OnPull, when set,
-// runs on the syncer goroutine after a pull that changed the board.
+// DefaultPullEvery is how often the TUI pulls the website's changes when
+// SyncOptions names no interval.
+const DefaultPullEvery = 15 * time.Second
+
+// SyncOptions configures a Syncer. Zero PullEvery is DefaultPullEvery. OnPull,
+// when set, runs on the syncer goroutine after a pull that changed the board.
 type SyncOptions struct {
 	PullEvery time.Duration
 	OnPull    func(changed int)
@@ -52,7 +56,7 @@ type SyncOptions struct {
 // NewSyncer builds a syncer and subscribes it to local changes.
 func NewSyncer(store *Store, remote Remote, o SyncOptions) *Syncer {
 	if o.PullEvery <= 0 {
-		o.PullEvery = 15 * time.Second
+		o.PullEvery = DefaultPullEvery
 	}
 	s := &Syncer{
 		store: store, remote: remote, pullEvery: o.PullEvery, onPull: o.OnPull,
