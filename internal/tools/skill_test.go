@@ -92,3 +92,39 @@ func TestReadOnlyDropsSkillDraft(t *testing.T) {
 		t.Fatal("plan surface offers SkillDraft")
 	}
 }
+
+// A skill file of exactly 32 KiB is accepted; one byte more is refused before
+// any ask.
+func TestSkillDraftSizeBoundary(t *testing.T) {
+	d := SkillDraft{Dir: func() (string, error) { return t.TempDir(), nil }}
+	const header = "---\nname: x\ndescription: d\n---\n\n"
+	body := strings.Repeat("a", 32*1024-len(header)-1)
+	if _, doc, err := d.compose(map[string]any{"name": "x", "description": "d", "body": body}); err != nil || len(doc) != 32*1024 {
+		t.Fatalf("a 32 KiB skill: len %d, err %v", len(doc), err)
+	}
+	if _, _, err := d.compose(map[string]any{"name": "x", "description": "d", "body": body + "a"}); err == nil || !strings.Contains(err.Error(), "32 KiB") {
+		t.Fatalf("a skill one byte over: err %v", err)
+	}
+}
+
+// The description is cut off at 300 bytes: 300 passes, 301 is refused, and an
+// empty body is refused.
+func TestSkillDraftDescriptionAndBodyBoundaries(t *testing.T) {
+	d := SkillDraft{Dir: func() (string, error) { return t.TempDir(), nil }}
+	for n, ok := range map[int]bool{300: true, 301: false} {
+		_, _, err := d.compose(map[string]any{"name": "x", "description": strings.Repeat("a", n), "body": "b"})
+		if (err == nil) != ok {
+			t.Errorf("a %d byte description: err %v, want ok=%v", n, err, ok)
+		}
+	}
+	if _, _, err := d.compose(map[string]any{"name": "x", "description": "d", "body": "  \n"}); err == nil {
+		t.Error("an empty body was accepted")
+	}
+}
+
+// SkillDraft asks every time, whatever the rules say.
+func TestSkillDraftAlwaysAsks(t *testing.T) {
+	if !(SkillDraft{}).AlwaysAsks() {
+		t.Fatal("SkillDraft must always ask")
+	}
+}
