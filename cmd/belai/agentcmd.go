@@ -42,6 +42,13 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
   draft [-json] [-o FILE] PREMISE  draft a profile from a premise as markdown
                                  (every offer taken; -json: the offers and why)
   crews                          crews and their members
+  crew import [-force] FILE | export NAME | delete NAME
+                                 a crew as the JSON the library keeps
+  files NAME                     the files an agent carries, and where each is found
+  files add NAME FILE [-as PATH] attach a file to an agent (kept in the agent's
+                                 own files and listed in its knowledge.paths)
+  files rm NAME PATH             detach a file
+  files adopt DIR [-dry-run]     attach each DIR/<agent>.md to the agent of that name
   memory NAME [-clear]           a worker's lessons
   knowledge [-index] [-json] [NAME]  the retrieval indexes: this project's
                                  .vulnetix output and NAME's listed documents;
@@ -176,6 +183,12 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 
 	case "knowledge":
 		return agentKnowledge(ctx, fs, rest, stdout, stderr, asJSON)
+
+	case "files":
+		return agentFiles(ctx, fs, rest, stdout, asJSON)
+
+	case "crew":
+		return agentCrew(fs, rest, stdout)
 
 	case "memory":
 		clear := fs.Bool("clear", false, "delete the lessons")

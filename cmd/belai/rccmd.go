@@ -180,6 +180,11 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	} else if n > 0 {
 		fmt.Fprintf(stderr, "Gave %d agent profile(s) an id.\n", n)
 	}
+	if n, err := agentprofile.EnsureCrewIDs(); err != nil {
+		fmt.Fprintln(stderr, "belai rc: could not give every crew an id:", err)
+	} else if n > 0 {
+		fmt.Fprintf(stderr, "Gave %d crew(s) an id.\n", n)
+	}
 	schedules, err := schedule.Open()
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc: schedules:", err)

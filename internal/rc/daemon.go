@@ -88,6 +88,20 @@ type Options struct {
 	// "avatar" request. It returns the SVG, or the reason it could not (harness
 	// text). nil means this daemon has no model to draw with and refuses.
 	DrawAvatar func(ctx context.Context, r avatar.Request) ([]byte, string)
+	// Index indexes the documents of a freshly installed profile: it runs
+	// `belai agent knowledge -index NAME` from a trusted directory this daemon
+	// offers (runKnowledgeIndex unless a test replaces it). It returns a short
+	// clause for the acknowledgement, or the reason it could not.
+	Index func(ctx context.Context, exe, dir, profile string) (string, error)
+	// SyncProfiles reports whether the host keeps the website's agent and crew
+	// library current by itself: the user's own sync.profiles, read from the
+	// global settings each check and failing closed unless a test replaces it.
+	SyncProfiles func() bool
+	// LibraryRemote is the server half of that sync (the sync client unless a
+	// test replaces it).
+	LibraryRemote LibraryRemote
+	// LibrarySyncEvery is how often profiles and crews are checked (30s).
+	LibrarySyncEvery time.Duration
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -122,6 +136,8 @@ type Daemon struct {
 	wg       sync.WaitGroup
 	// avatarSlot holds one token while an avatar is being drawn.
 	avatarSlot chan struct{}
+	// libsync is the automatic sync's memory of what it has settled (autosync.go).
+	libsync *libSyncState
 }
 
 type child struct {
@@ -180,7 +196,20 @@ func New(o Options) (*Daemon, error) {
 	if o.RemotePrompts == nil {
 		o.RemotePrompts = remotePromptsOn
 	}
-	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1)}, nil
+	if o.Index == nil {
+		o.Index = runKnowledgeIndex
+	}
+	if o.SyncProfiles == nil {
+		o.SyncProfiles = syncProfilesOn
+	}
+	if o.LibraryRemote == nil {
+		o.LibraryRemote = o.Client
+	}
+	if o.LibrarySyncEvery <= 0 {
+		o.LibrarySyncEvery = DefaultLibrarySyncEvery
+	}
+	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
+		libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -216,6 +245,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		d.wg.Add(1)
 		go d.scheduler(ctx)
 	}
+	d.wg.Add(1)
+	go d.librarySync(ctx)
 	d.poll(ctx)
 
 	d.shutdown()
@@ -316,7 +347,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 	ack := func(ctx context.Context, id, status, sid, reason string) {
 		kind := "unknown"
 		switch r.Kind {
-		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "avatar":
+		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -372,6 +403,20 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		if why != "" {
 			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Profile), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "crew_backup", "crew_install":
+		var report, why string
+		if r.Kind == "crew_backup" {
+			report, why = d.backupCrew(ctx, r)
+		} else {
+			report, why = d.installCrew(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Crew), why)
 			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
 			return
 		}

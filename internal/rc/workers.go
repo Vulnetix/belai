@@ -3,7 +3,9 @@ package rc
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/fleet"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -124,4 +127,37 @@ func setWorkerPaused(id string, pause bool) error {
 		return errors.New("that worker is not running on this host")
 	}
 	return reg.SetPaused(id, pause)
+}
+
+// runKnowledgeIndex indexes a profile's documents by running
+// `belai agent knowledge -index -json NAME` in dir, a trusted directory this
+// daemon offers. That command does the trust check and runs each chunk through
+// the security classifier, so what an install indexes is held to the same rules as
+// what the agent indexes itself. The clause it returns carries a count only.
+func runKnowledgeIndex(ctx context.Context, exe, dir, profile string) (string, error) {
+	cmd := exec.CommandContext(ctx, exe, "agent", "knowledge", "-index", "-json", profile)
+	cmd.Dir = dir
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		text := strings.TrimSpace(errOut.String())
+		if text == "" {
+			text = err.Error()
+		}
+		return "", startError(clip(text))
+	}
+	var rep struct {
+		Indexes []struct {
+			Name      string            `json:"name"`
+			Documents []json.RawMessage `json:"documents"`
+		} `json:"indexes"`
+	}
+	if json.Unmarshal(out.Bytes(), &rep) == nil {
+		for _, ix := range rep.Indexes {
+			if ix.Name == sanitize.Line(profile, 64) {
+				return fmt.Sprintf(" (%d document%s)", len(ix.Documents), plural(len(ix.Documents), "", "s")), nil
+			}
+		}
+	}
+	return "", nil
 }
