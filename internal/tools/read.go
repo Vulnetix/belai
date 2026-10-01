@@ -52,9 +52,15 @@ func (r *Read) Definition() Definition {
 			"The path is confined to the working directory: a path escaping it, a directory, or a binary file (one containing a NUL byte) is an error rather than a partial answer. " +
 			"Read a file before editing it — Edit matches exact bytes and will fail on a guess.",
 		Properties: map[string]Property{
+<<<<<<< Updated upstream
 			"file_path": {Type: "string", Format: FormatPath, Description: "Path to the file: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root"},
 			"offset":    {Type: "integer", Description: "Optional 1-based line number to start reading from (a Grep line number works as-is); omit to start at line 1"},
 			"limit":     {Type: "integer", Description: "Optional number of lines to read (default 2000); the byte bound still applies"},
+=======
+			"file_path": {Type: "string", Description: "Path to the file: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root"},
+			"offset":    {Type: "integer", Description: "Optional byte (not line) offset to start reading from; omit to start at the beginning"},
+			"limit":     {Type: "integer", Description: "Optional maximum number of bytes to read; values above the tool's own cap are clamped to it"},
+>>>>>>> Stashed changes
 		},
 		Required: []string{"file_path"},
 	}

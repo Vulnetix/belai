@@ -1,6 +1,6 @@
 module github.com/vulnetix/belai
 
-go 1.25.10
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -49,5 +49,5 @@ require (
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.48.1-0.20260929171119-782b836d3ae6 // indirect
 )

@@ -219,7 +219,11 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task, kin
 				Index: t.Index, Total: len(tasks),
 			}})
 
+<<<<<<< Updated upstream
 			body := s.runSubagent(runCtx, t, grounding, bridge.subscribe(), id, forward, kind == "goal-survey")
+=======
+			body := s.runSubagent(runCtx, t, bridge.subscribe(), id, forward, kind == "goal-survey")
+>>>>>>> Stashed changes
 			results[t.Index] = body
 
 			state := agentpool.StateDone
@@ -339,7 +343,11 @@ func (s *Session) exploreConfig() run.Config {
 // EventSubagentActivityKind stamped with the subagent's ID. Every string on
 // that path is sanitized before it leaves the child, and the finding itself
 // still takes the existing sanitize + posture-gated classify route below.
+<<<<<<< Updated upstream
 func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, steerCh chan string, id string, forward func(Event), goalSurvey bool) string {
+=======
+func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string, id string, forward func(Event), goalSurvey bool) string {
+>>>>>>> Stashed changes
 	// The subagent runs in plan mode, so it gets the plan-mode surface:
 	// read-only native and base tools with Bash removed. Building it with
 	// .Plan() rather than relying on PlanMode alone keeps the advertised

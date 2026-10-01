@@ -1244,6 +1244,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	case opts.Carrier != "":
 		// A memorised goal or plan loaded by CarrierOptions.
 	case modeDec.Mode == modes.ModeGoal:
+<<<<<<< Updated upstream
 		goalText := loopGoal
 		if draft != nil {
 			var pending bool
@@ -1254,6 +1255,30 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 				// ends the draft with the turn.
 				s.turnDraft = draft
 			}
+=======
+		// CarrierOptions only knows how to load a *memorised* goal
+		// (state.ActiveGoal). A prompt the classifier routed to goal mode
+		// usually has no memorised goal, and CarrierOptions answers that with a
+		// bare Options{} — so without this the goal carrier is silently dropped
+		// and the goal evaluator has nothing to evaluate against. The prompt is
+		// harness-owned text already bound for the system prompt, so carrying
+		// it as the goal introduces no new trust question.
+		goalText := clean
+		if drafted, err := rolemanager.DraftGoalContract(ctx, pipe.Classifier, rolemanager.GoalDraftInput{
+			Prompt:              clean,
+			VerificationSurface: s.allTestCommands(),
+		}); err == nil {
+			drafted = sanitize.Sanitize(drafted)
+			if strings.TrimSpace(drafted) != "" && strings.Contains(drafted, clean) {
+				goalText = drafted
+			} else {
+				emit(Event{Kind: EventWarningKind, Warning: "goal contract draft was unusable; carrying the raw prompt"})
+			}
+		} else {
+			// Fail open to the raw prompt: a weak drafting model must never
+			// cost the turn.
+			emit(Event{Kind: EventWarningKind, Warning: "goal contract drafting failed; carrying the raw prompt"})
+>>>>>>> Stashed changes
 		}
 		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: goalText, Caveman: s.opts.Caveman}
 	default:

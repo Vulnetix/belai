@@ -34,7 +34,11 @@ func (w *Write) Definition() Definition {
 			"Content is bounded to 1 MiB. Prefer Edit for a change to an existing file; Write is for a new file or a full rewrite. Overwriting an existing file requires having Read it in this session, and is refused if it changed on disk since. " +
 			"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
+<<<<<<< Updated upstream
 			"file_path": {Type: "string", Format: FormatPath, Description: "Path to the file to write: an absolute filesystem path under one of the session roots, or relative to the working directory; it need not exist yet"},
+=======
+			"file_path": {Type: "string", Description: "Path to the file to write: an absolute filesystem path under one of the session roots, or relative to the working directory; it need not exist yet"},
+>>>>>>> Stashed changes
 			"content":   {Type: "string", Description: "The exact and complete bytes to write; this replaces the whole file"},
 		},
 		Required: []string{"file_path", "content"},

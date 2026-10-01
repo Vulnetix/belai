@@ -112,16 +112,27 @@ func TestCwdAbsolutePrimaryRootPathResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read(absolute primary path): %v", err)
 	}
+<<<<<<< Updated upstream
 	if readBody(got.Content) != "top" {
+=======
+	if got.Content != "top" {
+>>>>>>> Stashed changes
 		t.Fatalf("content = %q, want top", got.Content)
 	}
 }
 
 // A leading "~/" expands to the user's home before the root test, so
+<<<<<<< Updated upstream
 // ~/GitHub/belai/x resolves when it lands inside a root.
 func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
 	home := t.TempDir()
 	root := filepath.Join(home, "GitHub", "belai")
+=======
+// ~/GitHub/signet/x resolves when it lands inside a root.
+func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "GitHub", "signet")
+>>>>>>> Stashed changes
 	if err := os.MkdirAll(filepath.Join(root, "internal", "tools"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +142,11 @@ func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	c := NewCwd(root)
+<<<<<<< Updated upstream
 	res, err := resolvePath(root, c, "~/GitHub/belai/top.txt")
+=======
+	res, err := resolvePath(root, c, "~/GitHub/signet/top.txt")
+>>>>>>> Stashed changes
 	if err != nil {
 		t.Fatalf("resolvePath(~): %v", err)
 	}

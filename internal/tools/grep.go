@@ -70,6 +70,7 @@ func (g *Grep) Definition() Definition {
 			"Searches inside an added workspace directory return absolute paths; searches inside the session root return root-relative paths. " +
 			"Use Grep to find where something is written; use Glob to find files by name.",
 		Properties: map[string]Property{
+<<<<<<< Updated upstream
 			"pattern":     {Type: "string", Format: FormatRegex, Description: "The regular expression to search for; a literal string is also a valid pattern"},
 			"path":        {Type: "string", Format: FormatPath, Description: "Optional subdirectory or single file to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. Defaults to the working directory."},
 			"glob":        {Type: "string", Description: "Only search files matching this glob, e.g. \"*.go\" or \"**/*_test.go\""},
@@ -81,6 +82,10 @@ func (g *Grep) Definition() Definition {
 			"-C":          {Type: "integer", Description: "Lines of context before and after each match (content mode)"},
 			"output_mode": {Type: "string", Description: "content (default), files_with_matches, or count", Enum: []string{grepModeContent, grepModeFiles, grepModeCount}},
 			"head_limit":  {Type: "integer", Description: "Return at most this many lines or entries (default 200, max 1000)"},
+=======
+			"pattern": {Type: "string", Description: "The regular expression to search for; a literal string is also a valid pattern"},
+			"path":    {Type: "string", Description: "Optional subdirectory or single file to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. Defaults to the working directory."},
+>>>>>>> Stashed changes
 		},
 		Required: []string{"pattern"},
 	}
