@@ -57,9 +57,10 @@ Servers are declared in your global `settings.json`
 Server names are letters, digits, `_` and `-`, at most 32.
 
 Servers start in the background once the first-run trust gate has passed, so
-a slow server never delays startup. They stop when Belai exits. A server that
-fails to start is reported by `/mcp` and offers no tools; the session carries
-on without it. A one-shot `-prompt` run waits for every server to connect or
+a slow server never delays startup. They stop when Belai exits. Connecting
+(the handshake and the tool listing together) gets 30 seconds. A server that
+fails to start, or does not connect in time, is reported by `/mcp` and offers
+no tools; the session carries on without it. A one-shot `-prompt` run waits for every server to connect or
 fail before its turn.
 
 The `mcp` key is read from your global settings only. A repository's
@@ -130,5 +131,7 @@ reconnects one; the next turn uses its current tools.
 - An http server answering with a non-2xx status fails that call with the
   status. During connection, the status and a short excerpt of the body are
   the reason `/mcp` shows.
+- An http server's response is read up to 16 MiB; a larger one cannot be
+  decoded and fails the call.
 - A stdio server still running two seconds after Belai closes its input is
   killed with its process group.
