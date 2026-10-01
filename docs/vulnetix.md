@@ -99,6 +99,17 @@ for LLM traffic.
 | `/vulnetix setup` | Open the Getting started view again (see *Getting started*) |
 | `/vulnetix help` | Show the available subcommands |
 
+The capability screen and `/vulnetix status` report the CLI's version, whether
+a newer one exists, and whether the API is reachable at `$VULNETIX_API_URL`
+(default `https://api.vdb.vulnetix.com/v1`), and whether the credential is
+accepted when the CLI is logged in. Every call to the CLI runs with a filtered
+environment. Variables starting `OPENAI_`, `ANTHROPIC_`, `CLOUDFLARE_` or
+`BELAI_`, and any ending `_API_KEY`, `_TOKEN` or `_SECRET`, are removed, except
+the Vulnetix variables (`VULNETIX_API_TOKEN`, `VULNETIX_API_KEY`,
+`VULNETIX_ORG_ID`, `VULNETIX_API_URL`, `VULNETIX_WEB_URL`, `VVD_ORG` and
+`VVD_SECRET`), which are kept. Everything else passes through, and `NO_COLOR=1`,
+`TERM=dumb` and `HOMEBREW_NO_AUTO_UPDATE=1` are set.
+
 ## Review settings
 
 The review reads a `vulnetix` block in `settings.json`, and two top-level keys
