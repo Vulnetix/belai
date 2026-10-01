@@ -866,3 +866,45 @@ func TestAutoSyncAgainstAWebsiteThatPredatesItBacksOffAndSaysWhy(t *testing.T) {
 		t.Fatalf("pushed %v after the website learned the routes", h.remote.pushed)
 	}
 }
+
+// A replace keeps the files this host shares with its crew when the library copy
+// lists none. Sharing needs a worktree, so the carry must never turn a valid
+// library copy into a profile the host then refuses to save.
+func TestReplaceCarriesSharedFilesAndTheWorktreeTheyNeed(t *testing.T) {
+	h := newLibHarness(t)
+	if _, err := agentprofile.Save(withSync(installable("analyzer", libID))); err != nil {
+		t.Fatal(err)
+	}
+	// The library copy is a worker that changes nothing, with no workspace block at all.
+	lib := withSync(installable("analyzer", libID))
+	lib.Workspace = nil
+	lib.Tools = []string{"Read", "Grep"}
+	if status, why := h.install(lib, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("replace: %s %q", status, why)
+	}
+	got, err := agentprofile.Load("analyzer")
+	if err != nil || got.IsolationMode() != agentprofile.IsolationWorktree || len(got.SyncPaths()) != 1 {
+		t.Fatalf("installed = %+v %v", got.Workspace, err)
+	}
+}
+
+func TestReplaceLeavesTheLibraryCopyAloneWhenTheSharedFilesCannotGoWithIt(t *testing.T) {
+	h := newLibHarness(t)
+	if _, err := agentprofile.Save(withSync(installable("analyzer", libID))); err != nil {
+		t.Fatal(err)
+	}
+	// The library copy shares the repository itself, so there is no worktree to copy into.
+	lib := withSync(installable("analyzer", libID))
+	lib.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationShared}
+	status, why := h.install(lib, true)
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("a valid library copy must not be refused because of what the host shared: %s %q", status, why)
+	}
+	if !strings.Contains(why, "not carried over") {
+		t.Fatalf("the acknowledgement should say what was left behind: %q", why)
+	}
+	got, err := agentprofile.Load("analyzer")
+	if err != nil || got.IsolationMode() != agentprofile.IsolationShared || len(got.SyncPaths()) != 0 {
+		t.Fatalf("installed = %+v %v", got.Workspace, err)
+	}
+}
