@@ -308,6 +308,14 @@ and the inbox run on the syncer's own goroutines.
   History on its own.
 - **Moving to History.** Quitting the TUI, `/clear`, a resume of another
   session and `/sync off` all end the session, which moves it to History.
+- **A session that ends at once is still kept.** Closing the syncer takes the
+  activation that was queued ahead of it, registers the session if it is not yet,
+  uploads every line and ends it, in that order. A fast fleet-worker turn that
+  starts and quits inside one tick therefore reaches History with all of its
+  lines, not nothing (`TestCloseFlushesASessionActivatedJustBefore`). Closing
+  waits at most the timeout it is given and then gives up, so a quit is never held
+  by a host that is unreachable. An empty session file is registered, as the TUI's
+  own is before its first line.
 - **Compaction.** It starts a new session whose parent is the summarised one;
   the website links the two.
 - **Headless and ACP.** `belai -prompt` and each ACP session keep a private

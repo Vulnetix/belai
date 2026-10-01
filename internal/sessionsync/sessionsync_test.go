@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -668,5 +669,44 @@ func TestSessionSyncDocNamesEveryRecordTheTailReads(t *testing.T) {
 	tl.observe(Entry{Type: "session_name", Content: "   "})
 	if tl.info.Name != "second name" {
 		t.Errorf("name = %q, want the latest non-empty one, trimmed", tl.info.Name)
+	}
+}
+
+// TestSessionSyncDocNamesTheLifecycleRules holds the lifecycle bullets on
+// docs/session-sync.md to the numbers and tests behind them: the heartbeat and
+// liveness windows, and the tests that pin a session that ends at once and an
+// empty or missing file.
+func TestSessionSyncDocNamesTheLifecycleRules(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/session-sync.md")), " ")
+	// The page says a heartbeat every 15 s and live under 45 s; the syncer's default beat is the first.
+	src, err := os.ReadFile("syncer.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "15 * time.Second") || !strings.Contains(doc, "heartbeat every 15 s") || !strings.Contains(doc, "under 45 s old") {
+		t.Error("the heartbeat interval or the 45 s liveness window on the page no longer matches the syncer")
+	}
+	for _, want := range []string{
+		"TestCloseFlushesASessionActivatedJustBefore",
+		"registers the session if it is not yet, uploads every line and ends it",
+		"An empty session file is registered",
+		"A session whose file is never created",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/session-sync.md no longer says %q", want)
+		}
+	}
+	// Every test the page names exists.
+	for _, name := range regexp.MustCompile("`(Test[A-Za-z]+)`").FindAllStringSubmatch(doc, -1) {
+		found := false
+		for _, f := range []string{"sessionsync_test.go"} {
+			b, err := os.ReadFile(f)
+			if err == nil && strings.Contains(string(b), "func "+name[1]+"(") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("docs/session-sync.md names %s, which sessionsync_test.go does not define", name[1])
+		}
 	}
 }
