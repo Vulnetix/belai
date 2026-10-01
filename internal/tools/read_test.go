@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-<<<<<<< Updated upstream
 // readBody strips Read's `cat -n` gutter and any paging trailer, leaving the
 // file bytes the result carries. Tests about path resolution use it so they
 // assert on the file, not on the presentation.
@@ -38,8 +37,6 @@ func writeLines(t *testing.T, root, name string, n int) {
 	}
 }
 
-=======
->>>>>>> Stashed changes
 func TestReadDefinitionAdvertisesFilePath(t *testing.T) {
 	d := (&Read{}).Definition()
 	if _, ok := d.Properties["file_path"]; !ok {
@@ -50,7 +47,6 @@ func TestReadDefinitionAdvertisesFilePath(t *testing.T) {
 	}
 }
 
-<<<<<<< Updated upstream
 // The schema is the trained one, and so are its units: offset and limit are
 // lines. A description that still said "byte" would teach the model the
 // opposite of what the tool does.
@@ -68,24 +64,6 @@ func TestReadDefinitionSaysLines(t *testing.T) {
 }
 
 func TestReadAcceptsPathAlias(t *testing.T) {
-=======
-func TestReadAcceptsPathAlias(t *testing.T) {
-	root := t.TempDir()
-	f := filepath.Join(root, "hello.txt")
-	_ = os.WriteFile(f, []byte("world"), 0o600)
-
-	r := &Read{Root: root, MaxBytes: 1024}
-	res, err := r.Execute(context.Background(), map[string]any{"path": "hello.txt"})
-	if err != nil {
-		t.Fatalf("Read with path alias: %v", err)
-	}
-	if res.Content != "world" {
-		t.Fatalf("content = %q", res.Content)
-	}
-}
-
-func TestReadFile(t *testing.T) {
->>>>>>> Stashed changes
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "hello.txt"), []byte("world"), 0o600)
 

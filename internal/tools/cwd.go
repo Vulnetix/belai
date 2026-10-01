@@ -91,7 +91,6 @@ func (c *Cwd) AddRoot(dir string) error {
 	return nil
 }
 
-<<<<<<< Updated upstream
 // CheckRoot reports whether AddRoot(dir) would succeed, without widening the
 // root set. It returns the resolved absolute directory AddRoot would record.
 // Callers that must ask the user before adding a root use it to refuse an
@@ -183,10 +182,6 @@ func (c *Cwd) overlapLocked(abs string) error {
 
 // expandHome resolves a leading "~/" against the user's home directory so a
 // path like ~/src/belai/README.md is treated as the absolute filesystem path
-=======
-// expandHome resolves a leading "~/" against the user's home directory so a
-// path like ~/src/signet/README.md is treated as the absolute filesystem path
->>>>>>> Stashed changes
 // the model meant, rather than as a literal "~" path segment.
 func expandHome(raw string) string {
 	if raw != "~" && !strings.HasPrefix(raw, "~/") {

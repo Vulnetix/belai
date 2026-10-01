@@ -228,43 +228,6 @@ func newGoalPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, 
 func TestGoalPassLoopTerminatesOnAllWithheld(t *testing.T) {
 	srv, _, _ := goalPassServer(t, goalPassOpts{mode: "GOAL", main: "tool"})
 	defer srv.Close()
-<<<<<<< Updated upstream
-=======
-
-	root := t.TempDir()
-	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
-	cwd := tools.NewCwd(root)
-	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
-	sess, err := NewSession(Options{
-		Cfg:      cfg,
-		Client:   srv.Client(),
-		Workdir:  root,
-		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024, Cwd: cwd}, &tools.Write{Root: root, Cwd: cwd}),
-		Posture:  posture.Defaults(),
-		// No AskDisabled: the permission gate withholds the Write, which is
-		// exactly the all-withheld condition this test exercises.
-		AllowPassLoop: true,
-		MaxIterations: 1,
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-
-	_, err = sess.Run(context.Background(), "ship the thing")
-	if err == nil {
-		t.Fatal("expected the all-withheld tool-failure error")
-	}
-	if !strings.Contains(err.Error(), "all tool results withheld") {
-		t.Fatalf("error = %v, want the all-withheld tool failure", err)
-	}
-}
-
-func TestGoalPassLoopPartialPartialComplete(t *testing.T) {
-	// Skipped: the pass-loop rebuilds enough state across passes that the
-	// sealed system prompt is not byte-identical in this environment. The
-	// pass count and sentinel outcomes are still asserted by other tests.
-	t.Skip("system prompt variants in this environment")
->>>>>>> Stashed changes
 
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)

@@ -354,7 +354,6 @@ func (l *passLedger) everyPassWithheld() bool {
 	return l.passes > 0 && l.withheldPasses == l.passes
 }
 
-<<<<<<< Updated upstream
 // noteRepeat records whether the pass that just ended repeated the previous
 // pass's work exactly without changing a file, and reports whether the run of
 // repeats has reached maxRepeatPasses.
@@ -397,8 +396,6 @@ func passPrint(passTurns []run.Turn, reply string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-=======
->>>>>>> Stashed changes
 // stalledOnWrites reports whether the loop has gone long enough without a
 // file change to stop asking politely. It is deliberately independent of the
 // todo list: a model can keep a checklist moving with prose alone.
@@ -449,7 +446,6 @@ func (l *passLedger) noWriteDirective() string {
 	return b.String()
 }
 
-<<<<<<< Updated upstream
 // planNoWriteDirective is noWriteDirective for an approved plan. A plan may be
 // read-only — "read this file and report" — so "make the smallest edit now"
 // was wrong for it: the next plan step is the deliverable, and a finished
@@ -468,8 +464,6 @@ func (l *passLedger) planNoWriteDirective() string {
 	return b.String()
 }
 
-=======
->>>>>>> Stashed changes
 // noWriteOrRepairDirective picks the boundary escalation for a pass that
 // changed no file. When the pass also ended with every tool result withheld,
 // the failure is the tool surface itself, not a model that stopped editing —
@@ -536,12 +530,9 @@ func (l *passLedger) partialDirectiveTurn() (body string, arm bool) {
 func (l *passLedger) gateDirective() string {
 	if l.writes == 0 {
 		return l.noWriteOrRepairDirective()
-<<<<<<< Updated upstream
 	}
 	if l.jevUnsure {
 		return verificationDirective + goalJevVerifyNote
-=======
->>>>>>> Stashed changes
 	}
 	return verificationDirective
 }
@@ -602,11 +593,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 
 		// Budget exhaustion is a turn boundary, not an error: inject a wrap-up
 		// directive and grant continuation passes with fresh budgets.
-<<<<<<< Updated upstream
 		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out, modeDec.Mode, prompt)
-=======
-		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out, modeDec.Mode)
->>>>>>> Stashed changes
 	}
 
 	// maxPasses is an opt-in ceiling (0 = unbounded, the default). The loop's
@@ -695,7 +682,6 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// the write ledger is what the directives and the verification gate
 		// key off.
 		l.noteWrites(out)
-<<<<<<< Updated upstream
 		// A pass that ran its own passing check after its last change has
 		// verified it: the harness saw it, so GOAL_COMPLETE needs no
 		// separate verification pass to repeat the same checks.
@@ -727,19 +713,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
 		}
 
-=======
-		l.noteWithheld(out)
-
->>>>>>> Stashed changes
 		// A goal whose every pass ended with every tool result withheld has a
 		// broken tool surface, not a lazy model. Terminate with the tool
 		// failure named rather than granting unbounded passes against a
 		// resolver that cannot answer.
 		if l.writes == 0 && l.everyPassWithheld() {
-<<<<<<< Updated upstream
 			s.turnStop = run.StopWithheld
-=======
->>>>>>> Stashed changes
 			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: every pass ended with all tool results withheld; re-check the tool path resolver and provider")
 		}
 
@@ -815,11 +794,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				continue
 			}
 			if l.stalledOnWrites() {
-<<<<<<< Updated upstream
 				turns = append(turns, l.directive(l.noWriteOrRepairDirective())...)
-=======
-				turns = append(turns, directiveTurns(l.noWriteOrRepairDirective())...)
->>>>>>> Stashed changes
 				continue
 			}
 			turns = append(turns, l.directive(continuationDirective)...)
@@ -986,11 +961,7 @@ func (s *Session) exploreReport(ctx context.Context, pipe *rolemanager.Pipeline,
 // is the turn's normal answer. Capped by resilience.max_passes (0 falls back
 // to defaultAgentContinuations). Reaching the cap returns the last assistant
 // text, never an error.
-<<<<<<< Updated upstream
 func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome, mode modes.Mode, userPrompt string) (run.Result, error) {
-=======
-func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome, mode modes.Mode) (run.Result, error) {
->>>>>>> Stashed changes
 	maxCont := s.settings.Resilience.MaxPassesOr()
 	if maxCont <= 0 {
 		maxCont = defaultAgentContinuations

@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-<<<<<<< Updated upstream
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/modes"
@@ -19,15 +18,6 @@ import (
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/transcript"
-=======
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/transcript"
->>>>>>> Stashed changes
 )
 
 // minToolConcurrency and maxToolConcurrency bound how many read-only tool
@@ -140,7 +130,6 @@ const maxMutatedPaths = 20
 // surface, so a withheld streak means the model's calls are failing and must be
 // re-issued with corrected arguments. It never names ExitPlanMode, which is not
 // advertised outside plan mode.
-<<<<<<< Updated upstream
 const withheldRepairDirective = "Every tool result in the last two rounds was withheld. Read each reason above. An argument error (a bad path, a missing file) is fixed by re-issuing the call with corrected arguments — check the path form against the working directory and session roots in the system prompt. A classifier verdict is not an argument error: do not request that content again with any tool — proceed without it. If the task cannot be done without it, state that blocker in one line. Do not answer with a plan."
 
 // toolRepairDirective is injected at a goal pass boundary when the pass that
@@ -149,9 +138,6 @@ const withheldRepairDirective = "Every tool result in the last two rounds was wi
 // asks for the corrected call rather than restating them, and it names the
 // edit as the deliverable so the repair pass does not turn into a report.
 const toolRepairDirective = "That pass executed no tool successfully — every call was rejected before it ran. The rejection messages are above and each one names what was wrong with the arguments. Fix the arguments and re-issue the call now, starting with the edit that advances the goal. If a tool cannot be called at all, state which one and what it rejected, in one line."
-=======
-const withheldRepairDirective = "Every tool result in the last two rounds was withheld. The errors are above. Re-issue the calls with corrected arguments — check the path form against the working directory and session roots in the system prompt — or state the blocker in one line. Do not answer with a plan."
->>>>>>> Stashed changes
 
 // noteMutation folds one call's observed disk effect into the pass totals.
 // readStreakNudge tracks tool rounds that changed no file and returns the

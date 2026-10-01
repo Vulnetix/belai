@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-<<<<<<< Updated upstream
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/plans"
 	"github.com/vulnetix/belai/internal/prompt"
@@ -15,15 +14,6 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/todos"
-=======
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/todos"
->>>>>>> Stashed changes
 )
 
 // ErrPlanLoopCancelled reports a deliberate cancellation of the plan pass
@@ -370,7 +360,6 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// The planning contract rides a hidden harness directive, sealed at
 		// egress and never rendered in the transcript: full on pass 1 and
 		// every fifth pass, a one-line reminder in between.
-<<<<<<< Updated upstream
 		// Before a planning checklist exists, recording one is optional: the
 		// plan is the deliverable, and the mandatory "call update_plan" check
 		// made the model spend a whole round writing a checklist before it
@@ -389,10 +378,6 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		}
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		s.planFinalPass = false
-=======
-		turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes))...)
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
->>>>>>> Stashed changes
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				reply := out.lastText

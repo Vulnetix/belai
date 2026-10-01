@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-<<<<<<< Updated upstream
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/goals"
@@ -12,15 +11,6 @@ import (
 	"github.com/vulnetix/belai/internal/profiles"
 	"github.com/vulnetix/belai/internal/prompt"
 	"github.com/vulnetix/belai/internal/rolemanager"
-=======
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
->>>>>>> Stashed changes
 )
 
 // An engaged agent profile becomes the system prompt's carrier block: its text
