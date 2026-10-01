@@ -242,6 +242,51 @@ that runs checks but changes nothing, such as the scout running tests:
 A read-only worker with `Bash` and `autonomy: autonomous` still needs the OS
 sandbox and a pass budget, like any autonomous `Bash` worker.
 
+### Filing a handoff under another repository
+
+A worker started in a plain folder, or one that finds work for several
+repositories, can send each handoff to the repository that owns the problem.
+Set `kanban.handoff_repos: true` on its profile and `KanbanHandoff` gains an
+optional `repo` argument:
+
+```json
+{"title": "Raise the queue's visibility timeout", "body": "…", "labels": ["infra"], "repo": "acme/website"}
+```
+
+The item is filed under that repository's project and directory, where the agents
+started in that repository take it. Without `repo` it is filed under the
+worker's own project, as before.
+
+- **A name is a choice from the harness's index, never a path.** `repo` must
+  match a checkout in the local repository index, the same list the `Repos` tool
+  shows. The harness derives the project and directory from that checkout. A
+  path, a URL, a project name or any other text is refused, and nothing is filed.
+- **What the index holds.** Git checkouts found in the children of the working
+  directory's parent, and in their children: the folders beside the worker and the
+  repositories beneath them. It holds at most 200 checkouts from at most 500
+  directories. Hidden directories and those named `node_modules`, `vendor`,
+  `target` and `dist` are skipped, and symlinks are not followed.
+- **How a name matches.** `owner/name`, from the checkout's origin remote, or a
+  bare name, case-insensitively. A bare name that two checkouts share is refused.
+  A checkout with no origin remote has no owner, so it is named by its directory.
+  A refusal lists the names the index holds (at most twenty).
+- **Everything else about the handoff is unchanged.** The labels must be ones
+  `handoff_labels` lists, an assignee one of `handoff_to`, and the hop and
+  per-item limits still apply. A survey's handoffs still go to the survey's
+  `list`, whatever `repo` says. The item links to the item the worker holds, and
+  the worker may add notes to it though it sits in another project.
+- **Duplicates are per project.** The board refuses a second open item with the
+  same title in the same project, so the same title filed under two repositories
+  makes two items, and filed twice under one makes one.
+- **An agent in that repository does the work.** A builder claims items in its
+  own project, so it must be started in the repository the item was filed under
+  (`belai agent start -crew NAME` from there). An item filed under a repository
+  where no worker runs waits on the board.
+- **Not with gates.** `handoff_repos` cannot be combined with a `gates` block, because
+  a gate names a test suite of the worker's own repository.
+- **No repositories beneath the worker.** Every name is refused, and the refusal
+  lists nothing.
+
 ### What a worker's model may do on the board
 
 | Tool | In a worker |

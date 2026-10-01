@@ -608,7 +608,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   confirmations (`KindKanbanWrite`) are harness-composed. The per-turn board
   directive carries counts and item ids only, never item text. The tools take
   no path. Provenance (session, host, project, directory) is stamped by the
-  harness from `kanban.Source` and never taken from arguments. Explore, Task
+  harness from `kanban.Source` and never taken from arguments. The one choice a
+  model has is `KanbanHandoff`'s `repo`, offered only to a profile with
+  `kanban.handoff_repos`: it must match a checkout in the harness's own
+  repository index (`WorkerClaim.UseRepoIndex`), and the project and directory
+  are derived from that checkout (`kanban.ProvenanceFor`), so no model text
+  becomes provenance. An unknown, ambiguous or path-shaped name is refused and
+  nothing is filed, and the survey list, labels, hop limit and per-item cap
+  still apply. Explore, Task
   and fan-out subagents get `KanbanSearch` only, so repository text they read
   cannot persist into the board. A main session's kanban tools are added
   after any tools allowlist (an engaged definition, a background agent, a

@@ -172,3 +172,54 @@ func TestSurveyGraceIsTwoMinutesCappedAtATenth(t *testing.T) {
 		}
 	}
 }
+
+// handoff_repos files a handoff under another repository, so it needs somewhere
+// to hand off to, and it cannot be combined with gates, which name a test suite
+// of the worker's own repository.
+func TestHandoffReposRules(t *testing.T) {
+	p := worker()
+	p.Kanban.HandoffRepos = true
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "handoff_repos needs handoff_to or handoff_labels") {
+		t.Fatalf("no handoff target: %v", err)
+	}
+	p.Kanban.HandoffLabels = []string{"infra"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("labels and handoff_repos: %v", err)
+	}
+	p.Kanban.HandoffLabels = nil
+	p.Kanban.HandoffTo = []string{"terraform-builder"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("assignee and handoff_repos: %v", err)
+	}
+	p.Kanban.Gates = &GatesSpec{Require: true}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be combined with kanban.gates") {
+		t.Fatalf("gates and handoff_repos: %v", err)
+	}
+}
+
+func TestHandoffReposRoundTripsAndIsOffByDefault(t *testing.T) {
+	p := worker()
+	p.Kanban.HandoffLabels = []string{"infra"}
+	data, err := MarshalMarkdown(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "handoff_repos") {
+		t.Errorf("an unset handoff_repos should not be written:\n%s", data)
+	}
+	p.Kanban.HandoffRepos = true
+	data, err = MarshalMarkdown(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMarkdown(data)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, data)
+	}
+	if !got.Kanban.HandoffRepos {
+		t.Fatal("handoff_repos did not survive a markdown round trip")
+	}
+	if ProfileHashChanges := p.Behavioural(); !ProfileHashChanges.Kanban.HandoffRepos {
+		t.Error("handoff_repos changes what a worker may do, so a running worker must pin it")
+	}
+}

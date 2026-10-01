@@ -634,6 +634,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
 	if k := p.Kanban; k != nil {
 		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
+		claim.HandoffRepos = k.HandoffRepos
 		if s := k.Security; s != nil {
 			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
 		}
