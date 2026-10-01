@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -211,6 +212,20 @@ func Icons() []string {
 			out = append(out, p.Icon)
 		}
 	}
+	return out
+}
+
+// IconCategories maps each icon id to the category of the events that use it,
+// for the design system's parity test. An icon shared by events of different
+// categories would be a mistake the test reports, so the map keeps every one.
+func IconCategories() map[string][]Category {
+	out := map[string][]Category{}
+	for _, p := range presentations {
+		if !slices.Contains(out[p.Icon], p.Category) {
+			out[p.Icon] = append(out[p.Icon], p.Category)
+		}
+	}
+	out["dot"] = append(out["dot"], CategoryHousekeeping)
 	return out
 }
 

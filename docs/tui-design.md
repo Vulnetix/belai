@@ -53,7 +53,7 @@ unreadable on a light background.
 | `ColorText` | `#C9D6D2` | `#2A3835` | Body copy of model replies. Softer than `ColorCream` so emphasis has somewhere to go. |
 | `ColorCream` | `#F6EED6` | `#0F1F1C` | Emphasis: what you typed, identifiers the model names, the model id. |
 | `ColorTeal` | `#3AC4B4` | `#137A6F` | The model's voice, the active composer, success `✓`, bullets, switches that are on. The one brand accent. |
-| `ColorTealSoft` | `#76E0CD` | `#1A8C7C` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
+| `ColorTealSoft` | `#76E0CD` | `#178574` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
 | `ColorYou` | `#F49AC8` | `#B23C7E` | The `you` title of a prompt you typed. |
 | `ColorVoice` | `#C9B0F2` | `#7B5BBE` | The `you` title of a dictated prompt, and the composer frame while the speech or fast model works. |
 | `ColorAmber` | `#E8912B` | `#A95A0B` | Needs you, or you stepped in: permission asks, steering, `!` shell, goal mode, YOLO, context over 80%. **Not** routine tool activity. |
@@ -61,7 +61,7 @@ unreadable on a light background.
 | `ColorDiffAddBg` | `#11301F` | `#DFF1E6` | Background of added diff lines. |
 | `ColorDiffDelBg` | `#3A1917` | `#F9E2E0` | Background of removed diff lines. |
 
-`ColorInk` (`#1C3431`) is the foreground on a solid chip.
+`ColorInk` (`#1C3431` dark, `#FBFBF8` light) is the foreground on a solid chip.
 
 Contrast: every role that renders text you must read (`Muted` and up) keeps
 4.5:1 against the terminal background in its theme. `Line` and `Low` are
