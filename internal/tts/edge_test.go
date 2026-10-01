@@ -368,3 +368,22 @@ func TestWSReassemblesFragmentsAndAnswersPings(t *testing.T) {
 		t.Fatal("no pong")
 	}
 }
+
+// A 403 that keeps coming, even with a Date header, is not retried forever: it
+// ends after the same number of attempts as any other failure, without waiting.
+func TestEdgePersistent403WithADateEndsAfterTheRetryCount(t *testing.T) {
+	f := newFakeEdge(t)
+	f.date = time.Now().UTC().Format(http.TimeFormat)
+	f.status = func(int32) int { return http.StatusForbidden }
+	var waits []time.Duration
+	e := &Edge{URL: f.url(), Retries: 3, Sleep: func(d time.Duration) { waits = append(waits, d) }}
+	if _, err := e.Synthesize(context.Background(), "hi", DefaultVoice); err == nil {
+		t.Fatal("a server that always refuses succeeded")
+	}
+	if f.hits.Load() != 4 {
+		t.Fatalf("%d attempts, want 1 + 3 retries", f.hits.Load())
+	}
+	if len(waits) != 0 {
+		t.Fatalf("a clock correction waited: %v", waits)
+	}
+}

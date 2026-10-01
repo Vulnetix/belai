@@ -177,11 +177,12 @@ message -> Prepare -> pieces -> Synthesize (up to 4 at once) -> PCM -> cache
   what arrived still plays, then the card shows the error.
 - **The service.** One websocket per piece to a fixed host, https only. The service offers MP3 and WebM/Opus, not raw audio, so each piece is asked for as 24 kHz mono MP3 and decoded in process with a pure-Go decoder (`go-mp3`, so releases stay free of cgo). The bytes come off the network, so the decoder runs as untrusted-input code: a panic becomes an error, the decoded size is bounded, and anything that is not audio is refused. A sample rate other than 24 kHz is resampled, not guessed at. The
   request carries a token computed from the time (`SecMSGEC`: the time rounded
-  down to five minutes, hashed with the public client token). If the service
-  refuses because the clock is off, the server's `Date` header corrects it and
-  the request is tried again at once. Other failures are retried up to three
-  times, waiting 1, 2 and 4 seconds (a wait never exceeds 8). A refusal that is not a clock
-  problem is not retried. A reply with no audio is an error.
+  down to five minutes, hashed with the public client token). A 403 that carries a `Date` header is taken for a clock that is off: the
+  header corrects the clock and the request is tried again at once, without
+  waiting, and a 403 that keeps coming ends the request after the same number of
+  attempts as any other failure. A 401, or a 403 with no `Date`, is not retried.
+  Other failures are retried up to three times, waiting 1, 2 and 4 seconds (a
+  wait never exceeds 8). A reply with no audio is an error.
 - **Voices.** `tts.voice` is a plain name such as `en-US-AndrewMultilingualNeural`
   (the default), `en-US-AriaNeural` or `en-GB-RyanNeural`. Anything but letters,
   digits and `-` is refused, and the text is escaped before it goes into the
