@@ -41,7 +41,8 @@ from your normal Belai settings for the project directory.
 
 | ACP method or update | Belai behaviour |
 | --- | --- |
-| `initialize` | protocol version 1; embedded file context and images accepted, audio not; no session loading; advertises `sessionCapabilities` `list` and `close`; reads `clientInfo` to name sessions |
+| `initialize` | protocol version 1; embedded file context and images accepted, audio not; no session loading; advertises `sessionCapabilities` `list` and `close`; reads `clientInfo` to name sessions; advertises no MCP transport (`http` and `sse` are both false) |
+| `authenticate` | answered with an empty result. `initialize` advertises no `authMethods`, because Belai signs in through its own credentials, so a client has nothing to authenticate with |
 | `session/new` | starts a session in the editor's project directory |
 | `session/prompt` | runs one turn; text, file links and embedded file text become the prompt, and `image` blocks are attached as images |
 | `session/cancel` | stops the turn; the prompt returns `cancelled` |
@@ -147,6 +148,9 @@ a prompt is running they ask you to cancel it first.
 - "Allow for this session" covers that tool name only, and ends with the
   session.
 - Cancelling a turn returns `cancelled` even when the turn also failed.
+- A method outside the table is refused with method-not-found, naming the method.
+- `session/new` needs an absolute `cwd`; a relative one is refused with
+  invalid-params before any session is built.
 
 ## Images
 
