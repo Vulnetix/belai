@@ -136,3 +136,44 @@ func TestPersonaAvatarsMatchTheWebsite(t *testing.T) {
 		}
 	}
 }
+
+// The project site shows the six crew members by persona. Its copies of the
+// drawings, and the names and first colours in its Agents section, must say what
+// the profiles say.
+func TestSitePersonasMatchTheProfiles(t *testing.T) {
+	resetDir(t)
+	site := filepath.Join("..", "..", "site", "src")
+	page, err := os.ReadFile(filepath.Join(site, "components", "sections", "Agents.astro"))
+	if err != nil {
+		t.Skip("the site is not in this checkout")
+	}
+	for _, name := range []string{
+		"belai:vuln-scout", "belai:patcher", "belai:verifier",
+		"belai:scout", "belai:builder", "belai:reviewer",
+	} {
+		p, err := Load(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mine, err := os.ReadFile(filepath.Join("builtin", "avatars", p.AvatarID+".svg"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		theirs, err := os.ReadFile(filepath.Join(site, "assets", "pix", "personas", p.AvatarID+".svg"))
+		if err != nil {
+			t.Errorf("%s: the site has no copy of the drawing: %v", name, err)
+		} else if !bytes.Equal(mine, theirs) {
+			t.Errorf("%s: the site's drawing differs from the profile's", name)
+		}
+		for _, want := range []string{p.DisplayName, p.Palette[0], p.AvatarID, "role: '" + strings.TrimPrefix(name, "belai:") + "'"} {
+			if !strings.Contains(string(page), want) {
+				t.Errorf("%s: the site's Agents section does not say %q", name, want)
+			}
+		}
+	}
+	for _, dash := range []string{"—", "–", "‘", "’", "“", "”"} {
+		if strings.Contains(string(page), dash) {
+			t.Errorf("the Agents section holds %q; site prose uses plain punctuation", dash)
+		}
+	}
+}
