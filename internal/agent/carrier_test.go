@@ -148,3 +148,35 @@ func TestFlatProfileWinsOverBackgroundDefinition(t *testing.T) {
 		t.Fatalf("ProfileText = %q, want the flat profile", opts.ProfileText)
 	}
 }
+
+// A background definition's facts ride on the foreground carrier after its
+// system prompt, so an engaged definition tells the model where it works. A
+// hidden fact (the AWS external id) stays out.
+func TestBackgroundDefinitionCarriesItsFacts(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	p := agentprofile.AgentProfile{
+		Name:         "infra-check",
+		Description:  "checks infra",
+		SystemPrompt: "You check infrastructure.",
+		Mode:         agentprofile.ModeSingle,
+		Facts: agentprofile.Facts{
+			"aws_region":      {"eu-west-2"},
+			"aws_external_id": {"ext-1234"},
+		},
+	}
+	if _, err := agentprofile.Save(p); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	d := rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "infra-check", AppendCarrier: true}
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
+	if err != nil {
+		t.Fatalf("CarrierOptions: %v", err)
+	}
+	if !strings.HasPrefix(opts.ProfileText, "You check infrastructure.\n\nFacts the profile author declared") ||
+		!strings.Contains(opts.ProfileText, "- aws_region: eu-west-2") {
+		t.Fatalf("ProfileText lacks the facts:\n%s", opts.ProfileText)
+	}
+	if strings.Contains(opts.ProfileText, "ext-1234") {
+		t.Fatalf("a hidden fact reached the carrier:\n%s", opts.ProfileText)
+	}
+}

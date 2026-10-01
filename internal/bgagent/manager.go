@@ -568,13 +568,7 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 
 	history := append([]run.Turn{}, inst.History...)
-	promptText := inst.Profile.SystemPrompt
-	if inst.Profile.Reflection {
-		// Reflection requests a thinking preamble on every loop turn so the
-		// agent's reasoning is visible before it acts.
-		promptText = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + promptText
-	}
-	in := agent.TurnInput{Prompt: promptText}
+	in := agent.TurnInput{Prompt: profilePrompt(inst.Profile)}
 	inst.mu.Lock()
 	task := inst.task
 	inst.task = Task{}
@@ -608,6 +602,22 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 }
 
+// profilePrompt is the text of one turn of a background agent: its system
+// prompt, then the facts it declares (hidden ones omitted), with a thinking
+// preamble ahead of both when it asks for reflection. Reflection requests the
+// preamble on every loop turn so the agent's reasoning is visible before it
+// acts.
+func profilePrompt(p agentprofile.AgentProfile) string {
+	text := p.SystemPrompt
+	if facts := p.FactsBlock(); facts != "" {
+		text += "\n\n" + facts
+	}
+	if p.Reflection {
+		text = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + text
+	}
+	return text
+}
+
 // knowledgeWait bounds how long a background run waits for its index.
 const knowledgeWait = 2 * time.Minute
 
@@ -620,6 +630,7 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(context.Background(), workdir)
 	reg := tools.DefaultWithCaps(workdir, m.settings.ReadOnlyEnabled(), caps, ix)
+	reg.CloudHub().SetFacts(profile.Facts.Map())
 	// The board is how agents hand work to one another, so its tools come
 	// after the allowlist and every definition keeps them.
 	m.mu.Lock()

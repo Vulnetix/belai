@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/factspec"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/shellsafe"
@@ -51,6 +52,13 @@ type nativeCommand struct {
 	// Cd would read a file the model did not name; rebase leaves such an
 	// argument for the build function to resolve against its own base.
 	noPathRebase bool
+	// prepare, when set, runs before the command and returns the environment
+	// it runs in, a harness note for the output and secrets to redact from it.
+	// It is how a cloud tool's facts and credentials reach one subprocess.
+	prepare func(ctx context.Context, n *Native, args map[string]any, env []string) (cloudCall, error)
+	// asks, when set, reports a call that asks the user whatever the rules and
+	// the ask gate say.
+	asks func(h *CloudHub, args map[string]any) bool
 }
 
 // Native is a first-class read-only tool backed by a fixed command shape.
@@ -59,7 +67,16 @@ type Native struct {
 	Root     string
 	MaxBytes int
 	Timeout  time.Duration
-	cmd      nativeCommand
+	// Cloud holds the session's facts and any assumed role's credentials. The
+	// registry fills it; nil means no facts.
+	Cloud *CloudHub
+	cmd   nativeCommand
+}
+
+// AlwaysAsksFor reports a call that must ask the user: the AWS tool naming a
+// role the profile did not declare.
+func (n *Native) AlwaysAsksFor(args map[string]any) bool {
+	return n.cmd.asks != nil && n.cmd.asks(n.Cloud, args)
 }
 
 // Definition returns the static tool metadata.
@@ -158,6 +175,23 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 		binary = strings.ToLower(n.cmd.name)
 	}
 
+	// The profile's facts decide which flags this call may not carry and what
+	// the tool is pointed at. A refused flag stops the call before anything
+	// runs.
+	applied, err := factspec.Bind(n.cmd.name, n.Cloud.Facts(), argv)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(applied.Front)+len(applied.Back) > 0 {
+		argv = append(append(append([]string{}, applied.Front...), argv...), applied.Back...)
+	}
+	call := cloudCall{env: append(proc.ScrubbedEnv(), applied.Env...)}
+	if n.cmd.prepare != nil {
+		if call, err = n.cmd.prepare(ctx, n, args, call.env); err != nil {
+			return Result{}, err
+		}
+	}
+
 	if n.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, n.Timeout)
@@ -166,8 +200,7 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 
 	ec := exec.CommandContext(ctx, binary, argv...)
 	ec.Dir = baseDir(n.Root, n.Cwd)
-	ec.Env = proc.ScrubbedEnv()
-	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
+	ec.Env = append(call.env, calltrace.Env(ctx)...)
 	if stdin != "" {
 		ec.Stdin = strings.NewReader(stdin)
 	}
@@ -188,7 +221,10 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	err = ec.Wait()
 	tw.Flush()
 
-	content := tw.Content()
+	content := redact(tw.Content(), call.redact)
+	if call.note != "" {
+		content = call.note + "\n" + content
+	}
 	kind := n.cmd.kind
 	if kind == "" {
 		kind = KindNative
@@ -941,6 +977,16 @@ func DefaultWithCaps(workdir string, readOnly bool, caps Capabilities, ix repoin
 	}
 	list := append([]Tool{}, base.tools...)
 	list = append(list, extras...)
+	// The cloud tools share the session's hub: the profile's facts and an
+	// assumed role's credentials.
+	for _, t := range extras {
+		switch c := t.(type) {
+		case *Native:
+			c.Cloud = base.cloud
+		case *Vulnetix:
+			c.Cloud = base.cloud
+		}
+	}
 	// With the Vulnetix tool present, Bash sends vulnetix calls to it: the
 	// unhardened Bash path is where scans ran for minutes and fix --yes
 	// edited manifests.

@@ -161,6 +161,20 @@ add or update. It files at most five `build` handoffs, discrepancies before
 gaps. Moving one from Review to Backlog is the confirmation: a builder then
 claims it by its `build` label.
 
+### Facts
+
+A worker profile may carry `facts`: structured key/value pairs about the
+environment it works in, such as an AWS role, a Terraform directory or a
+Kubernetes context ([Facts](agent-profiles.md#facts)). The worker's persona lists
+them, and the cloud tools read the well-known ones, so a crew whose members
+share an account declares the account once per profile and each member points at
+the right place. A `terraform_dir` is relative to the worker's worktree. A worker
+that runs under a role asks nobody: a role its profile lists is used. A role it
+does not list always asks, so it is withheld even for an `autonomous` worker, and
+the item moves to `blocked` as under [Asks](#asks). Facts are part of
+the behaviour a running worker pins, so editing them stops and restarts it, like
+`knowledge`.
+
 ### Pausing a worker
 
 `belai agent pause ID|NAME` (or `p` on the workers tab of `/agents`) asks a

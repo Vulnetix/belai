@@ -57,6 +57,9 @@ type Registry struct {
 	// produces a new registry over the same tools, and Grep, Glob and Read
 	// must keep consulting the one hub.
 	hub *KnowledgeHub
+	// cloud holds the profile's facts and an assumed role's credentials for the
+	// cloud tools. It rides on the registry for the same reason hub does.
+	cloud *CloudHub
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -77,6 +80,7 @@ func (r *Registry) Cwd() *Cwd {
 func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.cwd = r.cwd
 	reg.hub = r.hub
+	reg.cloud = r.cloud
 	return reg
 }
 

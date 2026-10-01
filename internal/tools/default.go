@@ -17,6 +17,7 @@ import (
 func Default(workdir string, readOnly bool) *Registry {
 	cwd := NewCwd(workdir)
 	hub := &KnowledgeHub{}
+	cloud := &CloudHub{}
 	// One read record for the session: Read notes, Edit and Write check.
 	reads := NewReadState()
 	var list []Tool
@@ -47,6 +48,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	base := NewRegistry(list...)
 	base.cwd = cwd
 	base.hub = hub
+	base.cloud = cloud
 	if readOnly {
 		return base.ReadOnly()
 	}

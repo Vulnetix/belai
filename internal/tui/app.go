@@ -2087,6 +2087,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent), never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.workdir, false, caps, ix)
+	reg.CloudHub().SetFacts(p.profile.Facts.Map())
 	// Activated workspace dirs become real confinement roots, so a restored
 	// (or trust-accepted) directory is not just advertised but actually
 	// reachable through SanitizePath.
