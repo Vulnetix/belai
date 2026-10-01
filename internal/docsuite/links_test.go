@@ -120,3 +120,27 @@ func rel(root, p string) string {
 	}
 	return r
 }
+
+// TestEveryDocsPageIsInTheIndex keeps docs/README.md complete: each page under
+// docs/ is linked from it, so a new page cannot go unlisted.
+func TestEveryDocsPageIsInTheIndex(t *testing.T) {
+	root := docparity.Root(t)
+	index := docparity.Read(t, "docs/README.md")
+	entries, err := os.ReadDir(filepath.Join(root, "docs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || e.Name() == "README.md" {
+			continue
+		}
+		pages++
+		if !strings.Contains(index, "]("+e.Name()+")") && !strings.Contains(index, "]("+e.Name()+"#") {
+			t.Errorf("docs/README.md does not link %s", e.Name())
+		}
+	}
+	if pages < 40 {
+		t.Fatalf("only %d pages found; the walk is wrong", pages)
+	}
+}

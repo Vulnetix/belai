@@ -29,6 +29,10 @@ behaviour, and implementation details.
 - [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.
+- [Kanban](kanban.md): the global board, its lists and tools, the TUI pane and
+  how it syncs with the website.
+- [The BKAN file format](bkan.md): how the board file is built byte by byte, the
+  types it holds, and how it is read and written safely.
 
 ## Integrations and protocols
 
@@ -83,10 +87,20 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 | Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
 
+## Analysis
+
+- [Git directories analytics](git-directories-analytics.md): how Belai finds the
+  repository, the layout and language summaries, nearby checkouts and the
+  directories offered for remote control, with their bounds.
+- [Session assessment](session-assessment.md): what saved sessions showed about
+  orchestration, prompts and UX, and the changes made in response.
+
 ## Build, test, and publish
 
 - [Development](development.md): prerequisites, source-running commands, QA
   checklist, tests, versioning, CI, release, and the marketing site.
+- [Marketing site](site.md): the Astro site under `site/`, the sealed block
+  device, shot captures, Terraform and deploy.
 - The public documentation starts at this index. Repository contributors
   should also read [AGENTS.md](../AGENTS.md) before changing security
   invariants.
