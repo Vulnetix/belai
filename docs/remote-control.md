@@ -219,6 +219,36 @@ dispatch queue and both carrying identifiers only:
 Both are `host.dispatch` audit events with the request kind and outcome (see
 [audit.md](audit.md)).
 
+### Avatars
+
+The website's agent builder can give an agent a customised Pix. The website runs
+no model, so it asks a connected host with an `avatar` request that carries one
+identifier, the id of the agent creator the website made. The daemon:
+
+1. refuses unless `sync.remote_prompts` is on, and draws one avatar at a time (a
+   second request meanwhile is refused with the reason);
+2. reads the display name, the four colours and the optional personality from
+   the website, cleans every string to one capped line, and sends the text through
+   the security classifier under the effective posture, as it would a web prompt;
+3. asks this host's **main** model, in a tool-less turn, to redraw Pix with them.
+   The system text is Belai's own and carries the drawing and the rules; the
+   website's words arrive only as labelled data;
+4. admits the reply through `internal/svgguard` and posts back only the
+   guard's own serialisation of it, or the reason it did not draw one.
+
+The guard admits shapes, paths, gradients, clip paths and a blur filter, keeps
+Pix's viewBox, and refuses the whole image for anything else: a script, style,
+text, link, image, `use`, `foreignObject` or animation element, an event
+attribute, a reference other than `url(#id)` to an id the image defines, an
+entity, a comment or a size over 48 KB. Nothing is repaired. A refusal goes back
+as a harness-worded reason, never model or provider text, and the model is told
+only which kind of problem the guard found when it is asked to try once more.
+The server and the website admit the image again before they serve or draw it.
+The drawing takes at most 100 seconds on the host.
+
+The catalogue carries each worker profile's `id`, display name, palette and
+avatar id, so the website can draw the agent. They are presentation only.
+
 ## Files
 
 - `~/.vulnetix/belai/schedules.json`: the host's schedules and the sync cursor.

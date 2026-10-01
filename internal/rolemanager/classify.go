@@ -78,6 +78,9 @@ const (
 	UseCaseGateDraft = "gate_draft"
 	// UseCaseDeliveryReport writes the note on how a card's gates were checked.
 	UseCaseDeliveryReport = "delivery_report"
+	// UseCaseAgentAvatar draws a customised Pix for an agent (internal/avatar). It
+	// stays on the main model: the drawing is long and its quality is the point.
+	UseCaseAgentAvatar = "agent_avatar"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

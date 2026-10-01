@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/avatar"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/proc"
@@ -82,6 +83,10 @@ type Options struct {
 	// user's own sync.remote_prompts (a profile install needs it). It reads the
 	// global settings and fails closed unless a test replaces it.
 	RemotePrompts func() bool
+	// DrawAvatar draws a customised Pix with this host's main model for an
+	// "avatar" request. It returns the SVG, or the reason it could not (harness
+	// text). nil means this daemon has no model to draw with and refuses.
+	DrawAvatar func(ctx context.Context, r avatar.Request) ([]byte, string)
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -114,6 +119,8 @@ type Daemon struct {
 	schedErr map[string]string // per sync step, the last failure logged ("" when it works)
 	started  time.Time
 	wg       sync.WaitGroup
+	// avatarSlot holds one token while an avatar is being drawn.
+	avatarSlot chan struct{}
 }
 
 type child struct {
@@ -172,7 +179,7 @@ func New(o Options) (*Daemon, error) {
 	if o.RemotePrompts == nil {
 		o.RemotePrompts = remotePromptsOn
 	}
-	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now()}, nil
+	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1)}, nil
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -308,7 +315,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 	ack := func(ctx context.Context, id, status, sid, reason string) {
 		kind := "unknown"
 		switch r.Kind {
-		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install":
+		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "avatar":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -352,6 +359,9 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+	case "avatar":
+		// Answered in the background, so a slow model never holds the queue.
+		d.startAvatar(ctx, r, ack)
 	case "profile_backup", "profile_install":
 		var report, why string
 		if r.Kind == "profile_backup" {
