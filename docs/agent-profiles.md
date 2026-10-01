@@ -389,7 +389,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
 | `kanban.survey.title`, `kanban.survey.body` | string | When the board has nothing for the worker, it files and works one survey item with this title (`{project}` replaced, date appended) and body. `title` is required in a `survey` block. See [Finding work](fleet.md#finding-work-kanbansurvey). |
 | `kanban.survey.list` | string | Where the survey's handoffs go, whatever the model asks: `review` (default), `backlog` or `auto` (each handoff routed by whether it is clear and concise, as for `kanban.quality.list`). |
-| `kanban.survey.every` | duration | At most one survey per this interval for the same profile and repository on one machine (at least `1h`, default `24h`). |
+| `kanban.survey.every` | duration | At most one survey per this interval for the same profile and repository on one machine (at least `1h`, default `24h`). A start up to two minutes early (a tenth of the interval at most) still surveys, so an hourly start is not skipped for arriving a moment before the hour is up. |
 | `kanban.security.sweep` | bool | At start, make sure a review ran on HEAD (running it only when no artefact records that commit) and that every finding has a card. Needs the `Vulnetix` tool. See [the security crew](fleet.md#the-security-crew). |
 | `kanban.security.reconcile` | bool | Before each claim, compare the cards with the artefacts on disk: a finding that left the report becomes a gone card for the verifier. Never scans. |
 | `kanban.security.verdicts` | string[] | The verdicts `KanbanVerdict` may record: `fixed`, `false_positive`, `no_fix`, `needs_human`, `rejected`. Empty: the worker has no such tool. |
