@@ -39,7 +39,8 @@ The constants are in `format.go`:
 ```go
 const (
 	magic         = "BKAN"
-	formatVersion = 1
+	formatVersion = 4
+	minVersion    = 1
 	headerLen     = len(magic) + 2
 )
 ```
@@ -74,8 +75,12 @@ kanban.Board{Cursor: 7, Items: []kanban.Item{{
 }}}
 ```
 
-`kanban.Encode` turns it into 519 bytes. Here they are, with the sections
-marked.
+When the format was version 1, `kanban.Encode` turned it into 519 bytes, and
+that capture is what the dumps below show. Today `Encode` writes version 4 and
+the same board is 992 bytes, because `Item` has gained fields and the schema is
+sent with every file (see [Size](#size)). The version 1 file is still valid: it
+is read, and its missing fields decode as zero. Here are the 519 bytes, with the
+sections marked.
 
 **Header** (bytes 0–5):
 
@@ -168,8 +173,8 @@ The full specification is the Go package documentation for `encoding/gob`.
 
 | Board | Bytes |
 |---|---|
-| empty | 405: 6 header, 367 payload (the schema alone), 32 checksum |
-| the one-item example above | 519 |
+| empty | 878: 6 header, 840 payload (the schema alone), 32 checksum |
+| the one-item example above | 992 (519 when the format was version 1) |
 | a typical item after that | roughly 150–600 more, mostly its text |
 
 The schema is written once per file, not once per item. Each `Encode`
@@ -219,6 +224,7 @@ type Item struct {
 	Labels    []string
 	Priority  int
 	Assignee  string
+	PinHost   string
 	Parent    string
 	DependsOn []string
 	Hops      int
@@ -294,6 +300,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `Labels` | Routing labels: lower-case `[a-z0-9:_-]`, at most 8 of at most 32 runes, sorted. A worker claims only items carrying all of its profile's labels. | user, web, or a worker's handoff |
 | `Priority` | -2 to 3, 0 normal. Claims take the highest first. | user, web, or a handoff |
 | `Assignee` | The agent profile the item is routed to; empty means any matching worker. | user, web, or a handoff (from its allowlist) |
+| `PinHost` | The sync host id the item is pinned to: only a worker on that host may claim it, and empty lets any host claim it. A change is written clean (one line, like a title) and is recorded in the item's history as `pinned to host <id>` or `unpinned`. A pulled copy never changes it unless it carries the `agent` block. | user, web, or the CLI; never the harness |
 | `Parent` | The item this one was handed off from. | the harness |
 | `DependsOn` | Items that must be `done` before this one can be claimed. | user, web, or a handoff |
 | `Hops` | Handoffs from the root item; a chain stops at 6. | the harness |
@@ -546,7 +553,8 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `Labels`, `Priority`, `Assignee`, `Parent`, `DependsOn`, `Hops` | `agent.labels`, `agent.priority`, `agent.assignee`, `agent.parent`, `agent.dependsOn`, `agent.hops` | Always sent. |
 | `PinHost` | `agent.pinHost` | A sync host id; the website may set or clear it. Only a worker on that host claims the item. |
 | `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
-| `Finding`, `SeenRef`, `Verdict`, `VEX` | — | Local only; never sent, and a pulled copy keeps the local values. |
+| `Finding`, `SeenRef`, `Verdict`, `VEX` | `agent.finding`, `agent.seenRef`, `agent.verdict`, `agent.vex` | Sent, but only a host sets them: the website ignores them on an edit. A pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. |
+| `Gates`, `Clauses`, `Covers` | — | Local only; never sent, and a pulled copy keeps the local values. |
 | `Dirty` | — | Local only; never sent. |
 
 The routing and claim fields travel in one optional `agent` object
