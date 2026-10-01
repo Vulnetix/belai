@@ -451,6 +451,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevHandoffClarity:  "jev handoff clarity",
 	config.JevGateAlignment:   "jev gate alignment",
 	config.JevRequestCoverage: "jev request coverage",
+	config.JevKnowledgeTopics: "jev knowledge topics",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -467,6 +468,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevHandoffClarity:  "send a delivery handoff to review when it rates as unclear, instead of straight to backlog",
 	config.JevGateAlignment:   "flag a runnable gate whose suite and test may not show its stated outcome, and send its card to review",
 	config.JevRequestCoverage: "file a gap card for a request clause whose covering tasks do not seem to do it",
+	config.JevKnowledgeTopics: "label indexed documents with the topics they are about, by showing the backend a sample of each document's text",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

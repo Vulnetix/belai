@@ -8,15 +8,16 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 )
 
-// The /settings rows of the knowledge store (docs/knowledge.md). All three are
+// The /settings rows of the knowledge store (docs/knowledge.md). All five are
 // per-user host-performance sizes, saved to the user's own settings whatever
 // scope the screen shows: a repository cannot raise them.
 
 const knowledgeRowPrefix = "knowledge."
 
-// knowledgeRows builds the three rows.
+// knowledgeRows builds the five rows.
 func knowledgeRows(s config.Settings, origin map[string]config.Source) []settingsRow {
 	index, project, result := s.KnowledgeLimits()
+	topicChunks, topicDocs := s.KnowledgeTopics()
 	src := sourceLabel(origin["knowledge"])
 	return []settingsRow{
 		{key: "knowledge.max_index_tokens", label: "knowledge per profile", kind: "text", value: strconv.Itoa(index), src: src,
@@ -25,6 +26,10 @@ func knowledgeRows(s config.Settings, origin map[string]config.Source) []setting
 			help: fmt.Sprintf("most estimated tokens of .vulnetix output and @ files kept indexed for a project, %d to %d; global only", config.MinKnowledgeCorpusTokens, config.MaxKnowledgeCorpusTokens)},
 		{key: "knowledge.max_result_tokens", label: "knowledge per search", kind: "text", value: strconv.Itoa(result), src: src,
 			help: fmt.Sprintf("most estimated tokens one search returns across every index, %d to %d; global only", config.MinKnowledgeResultTokens, config.MaxKnowledgeResultTokens)},
+		{key: "knowledge.topic_chunks", label: "knowledge topic chunks", kind: "text", value: strconv.Itoa(topicChunks), src: src,
+			help: fmt.Sprintf("most chunks of one document sent to the decision backend to find its topics; a longer one is sampled, %d to %d; global only", config.MinKnowledgeTopicChunks, config.MaxKnowledgeTopicChunks)},
+		{key: "knowledge.topic_budget_docs", label: "knowledge topic documents", kind: "text", value: strconv.Itoa(topicDocs), src: src,
+			help: fmt.Sprintf("most documents one refresh sends to the decision backend for topics, 0 to %d (0 sends none); global only", config.MaxKnowledgeTopicDocs)},
 	}
 }
 
@@ -35,19 +40,11 @@ func (a *App) knowledgeRaw(key string) string {
 	if k == nil {
 		return ""
 	}
-	var p *int
-	switch key {
-	case "knowledge.max_index_tokens":
-		p = k.MaxIndexTokens
-	case "knowledge.max_project_tokens":
-		p = k.MaxProjectTokens
-	case "knowledge.max_result_tokens":
-		p = k.MaxResultTokens
-	}
-	if p == nil {
+	p := knowledgeField(k, key)
+	if p == nil || *p == nil {
 		return ""
 	}
-	return strconv.Itoa(*p)
+	return strconv.Itoa(**p)
 }
 
 // knowledgeCommit validates and saves one knowledge row. An empty value clears
@@ -62,16 +59,11 @@ func (a *App) knowledgeCommit(key, val string) error {
 	}
 	probe := config.Settings{Knowledge: &config.KnowledgeSettings{}}
 	set := func(k *config.KnowledgeSettings) error {
-		switch key {
-		case "knowledge.max_index_tokens":
-			k.MaxIndexTokens = &n
-		case "knowledge.max_project_tokens":
-			k.MaxProjectTokens = &n
-		case "knowledge.max_result_tokens":
-			k.MaxResultTokens = &n
-		default:
+		p := knowledgeField(k, key)
+		if p == nil {
 			return fmt.Errorf("cannot edit %q", key)
 		}
+		*p = &n
 		return nil
 	}
 	if err := set(probe.Knowledge); err != nil {
@@ -97,16 +89,29 @@ func (a *App) knowledgeUnset(key string) error {
 		if s.Knowledge == nil {
 			return
 		}
-		switch key {
-		case "knowledge.max_index_tokens":
-			s.Knowledge.MaxIndexTokens = nil
-		case "knowledge.max_project_tokens":
-			s.Knowledge.MaxProjectTokens = nil
-		case "knowledge.max_result_tokens":
-			s.Knowledge.MaxResultTokens = nil
+		if p := knowledgeField(s.Knowledge, key); p != nil {
+			*p = nil
 		}
 		if *s.Knowledge == (config.KnowledgeSettings{}) {
 			s.Knowledge = nil
 		}
 	})
+}
+
+// knowledgeField returns the settings field a row edits, or nil for a key that
+// is not one.
+func knowledgeField(k *config.KnowledgeSettings, key string) **int {
+	switch key {
+	case "knowledge.max_index_tokens":
+		return &k.MaxIndexTokens
+	case "knowledge.max_project_tokens":
+		return &k.MaxProjectTokens
+	case "knowledge.max_result_tokens":
+		return &k.MaxResultTokens
+	case "knowledge.topic_chunks":
+		return &k.TopicChunks
+	case "knowledge.topic_budget_docs":
+		return &k.TopicBudgetDocs
+	}
+	return nil
 }

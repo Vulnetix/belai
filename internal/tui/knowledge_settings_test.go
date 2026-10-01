@@ -27,6 +27,8 @@ func TestSettingsKnowledgeRowsDefaultAndGrouped(t *testing.T) {
 		"knowledge.max_index_tokens":   config.DefaultKnowledgeIndexTokens,
 		"knowledge.max_project_tokens": config.DefaultKnowledgeProjectTokens,
 		"knowledge.max_result_tokens":  config.DefaultKnowledgeResultTokens,
+		"knowledge.topic_chunks":       config.DefaultKnowledgeTopicChunks,
+		"knowledge.topic_budget_docs":  config.DefaultKnowledgeTopicDocs,
 	} {
 		row, idx := settingsRowByKey(a, key)
 		if idx < 0 || row.value != strconv.Itoa(want) || row.kind != "text" {

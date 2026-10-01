@@ -32,6 +32,7 @@ var jevThresholdLabels = map[string]string{
 	"option_hit": "jev option hit", "option_margin": "jev option margin", "option_lead": "jev option lead",
 	"mode_confident": "jev mode sure", "mode_margin": "jev mode margin", "mode_headless": "jev mode headless",
 	"clear_at": "jev clear at", "align_at": "jev align at", "cover_at": "jev cover at",
+	"topic_at": "jev topic at",
 }
 
 var jevThresholdHelp = map[string]string{
@@ -59,6 +60,7 @@ var jevThresholdHelp = map[string]string{
 	"clear_at":            "a delivery handoff rated below this goes to review instead of backlog (it only ever narrows)",
 	"align_at":            "a runnable gate rated below this is flagged as possibly not measuring its title, and its card goes to review",
 	"cover_at":            "a request clause whose covering tasks all rate below this gets a gap card",
+	"topic_at":            "the knowledge index labels a document with a topic when the backend scores it at or above this (min 0.50)",
 }
 
 // sliderBar draws v in [0,1] as a bar with a partial-fill knob: full blocks up
@@ -109,6 +111,7 @@ var jevThresholdSections = []struct {
 	{"option order", []string{"option_hit", "option_margin", "option_lead"}},
 	{"mode choice", []string{"mode_confident", "mode_margin", "mode_headless"}},
 	{"delivery crew", []string{"clear_at", "align_at", "cover_at"}},
+	{"knowledge topics", []string{"topic_at"}},
 }
 
 // jevThresholdRows builds one slider row per cut-off, grouped by section.

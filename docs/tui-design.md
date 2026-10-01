@@ -182,6 +182,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `◔` | delivery handoff rated for clarity | `code` |
 | `⊜` | delivery gates rated against their titles | `code` |
 | `⊚` | request clauses rated against the tasks covering them | `code` |
+| `⊩` | indexed documents labelled with the topics they are about | `context` |
 | `⊏` | gates drafted for a card that had none | `context` |
 | `⊐` | note written on how a card's gates were checked | `context` |
 | `?` | question asked | `ask` |

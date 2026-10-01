@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/knowledge/tags"
 )
 
 // Profile names the documents an agent profile lists. ID keys the index on
@@ -42,6 +43,11 @@ type Options struct {
 	// tools. A fleet worker is copied to by the harness in its worktree
 	// instead, so it leaves this off.
 	CopyOutside bool
+	// Tagger labels the persistent indexes' documents as they are ingested;
+	// nil is the deterministic tags.Fast. A tagger that also implements
+	// BeginRefresh(), is told when each Refresh starts, so it can bound the
+	// work it does per refresh.
+	Tagger tags.Tagger
 }
 
 // Report is what a Refresh did, as counts and harness-worded warnings only.
@@ -206,6 +212,11 @@ func (s *Store) Refresh(ctx context.Context) (Report, error) {
 	prof, pix, pdir := s.prof, s.profile, s.profDir
 	opts := s.opts
 	s.mu.Unlock()
+	if b, ok := opts.Tagger.(interface{ BeginRefresh() }); ok {
+		b.BeginRefresh()
+	}
+	pix.SetTagger(opts.Tagger)
+	s.project.SetTagger(opts.Tagger)
 	if pix != nil && prof != nil {
 		st, err := SyncProfile(ctx, pix, prof.Name, opts.Root, prof.Paths, opts.ProfileGate, opts.ProjectGate, opts.IndexTokens)
 		rep.Profile = st
@@ -253,6 +264,18 @@ func (s *Store) SetGates(profile, project Gate) {
 	}
 	s.mu.Lock()
 	s.opts.ProfileGate, s.opts.ProjectGate = profile, project
+	s.mu.Unlock()
+}
+
+// SetTagger replaces the tagger the persistent indexes use at their next
+// Refresh, so a store that outlives a change of provider tags with the current
+// backend.
+func (s *Store) SetTagger(t tags.Tagger) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.opts.Tagger = t
 	s.mu.Unlock()
 }
 

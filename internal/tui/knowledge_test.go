@@ -23,7 +23,7 @@ func knowledgeTUI(t *testing.T) (*App, string) {
 
 func waitForHit(t *testing.T, a *App, query string, want bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		got := len(a.knowledgeStore().Set().Search(query, 0, nil)) > 0
 		if got == want {

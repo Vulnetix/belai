@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/knowledge/kbgate"
+	"github.com/vulnetix/belai/internal/knowledge/tags"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tools"
@@ -41,6 +42,12 @@ type knowledgeDoc struct {
 	Tokens    int    `json:"tokens"`
 	Dropped   int    `json:"dropped,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
+	// Type, Language and Topics are the document's tags: ids from the tag
+	// tables and the vocabulary, never text from the document.
+	Type     string   `json:"type,omitempty"`
+	Language string   `json:"language,omitempty"`
+	Topics   []string `json:"topics,omitempty"`
+	Tagged   string   `json:"tagged_by,omitempty"`
 }
 
 // agentKnowledge implements `belai agent knowledge [-index] [-json] [NAME]`:
@@ -102,6 +109,7 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 		client := httpclient.Default()
 		opts.ProfileGate = kbgate.New(cfg, client, nil, pol, tools.KindRead)
 		opts.ProjectGate = kbgate.New(cfg, client, nil, pol, tools.KindRemote)
+		opts.Tagger = kbgate.NewTagger(cfg, settings)
 	}
 
 	store := knowledge.Open(opts)
@@ -142,6 +150,7 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 			ir.Tokens += d.Tokens
 			ir.Documents = append(ir.Documents, knowledgeDoc{
 				Address: sanitize.Line(d.Address, 300), Chunks: d.Chunks, Tokens: d.Tokens, Dropped: d.Dropped, Truncated: d.Truncated,
+				Type: d.Tags.Kind, Language: d.Tags.Lang, Topics: topicIDs(d.Tags), Tagged: taggedBy(d.Tags),
 			})
 		}
 		out.Indexes = append(out.Indexes, ir)
@@ -163,6 +172,12 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 			if d.Truncated {
 				note += " truncated"
 			}
+			if d.Type != "" {
+				note += " type=" + d.Type
+			}
+			if len(d.Topics) > 0 {
+				note += " topics=" + strings.Join(d.Topics, ",")
+			}
 			fmt.Fprintf(tw, "  %s\t%d chunks\t%d tokens\t%s\n", d.Address, d.Chunks, d.Tokens, strings.TrimSpace(note))
 		}
 		if err := tw.Flush(); err != nil {
@@ -173,6 +188,24 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 		fmt.Fprintln(stderr, "warning:", sanitize.Line(w, 300))
 	}
 	return 0, nil
+}
+
+// topicIDs lists a document's topic ids, best first.
+func topicIDs(r tags.Result) []string {
+	out := make([]string, 0, len(r.Topics))
+	for _, t := range r.Topics {
+		out = append(out, t.ID)
+	}
+	return out
+}
+
+// taggedBy says who decided the topics: the pattern detector or a decision
+// backend.
+func taggedBy(r tags.Result) string {
+	if r.Src == tags.SrcNone {
+		return ""
+	}
+	return r.Src.String()
 }
 
 func capNote(s knowledge.Stats) string {

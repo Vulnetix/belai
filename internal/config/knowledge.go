@@ -15,6 +15,19 @@ const (
 	// DefaultKnowledgeResultTokens is what one search may return.
 	DefaultKnowledgeResultTokens = 3_000
 
+	// DefaultKnowledgeTopicChunks is how many chunks of one document the
+	// knowledge_topics job may show a decision backend. A longer document is
+	// sampled down to this many (and to what the backend's request holds).
+	DefaultKnowledgeTopicChunks = 12
+	// DefaultKnowledgeTopicDocs is how many documents one refresh may send to
+	// the backend for topics. The rest are labelled by the pattern detector and
+	// get their turn at a later refresh.
+	DefaultKnowledgeTopicDocs = 40
+
+	MinKnowledgeTopicChunks = 1
+	MaxKnowledgeTopicChunks = 64
+	MaxKnowledgeTopicDocs   = 1_000
+
 	MinKnowledgeCorpusTokens = 1_000
 	MaxKnowledgeCorpusTokens = 5_000_000
 	MinKnowledgeResultTokens = 200
@@ -34,6 +47,27 @@ type KnowledgeSettings struct {
 	// MaxResultTokens caps what one search returns across every index.
 	// Default 3000.
 	MaxResultTokens *int `json:"max_result_tokens,omitempty"`
+	// TopicChunks is the most chunks of one document the knowledge_topics Jev
+	// job sends to a decision backend; a longer document is sampled. Default 12.
+	TopicChunks *int `json:"topic_chunks,omitempty"`
+	// TopicBudgetDocs is the most documents one refresh sends to a backend for
+	// topics; 0 sends none. Default 40.
+	TopicBudgetDocs *int `json:"topic_budget_docs,omitempty"`
+}
+
+// KnowledgeTopics returns the effective sample size per document and the
+// per-refresh document budget of the knowledge_topics job.
+func (s Settings) KnowledgeTopics() (chunks, docs int) {
+	chunks, docs = DefaultKnowledgeTopicChunks, DefaultKnowledgeTopicDocs
+	if k := s.Knowledge; k != nil {
+		if k.TopicChunks != nil {
+			chunks = *k.TopicChunks
+		}
+		if k.TopicBudgetDocs != nil {
+			docs = *k.TopicBudgetDocs
+		}
+	}
+	return chunks, docs
 }
 
 // KnowledgeLimits returns the effective corpus cap per profile, the corpus cap
@@ -64,6 +98,12 @@ func (k *KnowledgeSettings) merge(from *KnowledgeSettings) {
 	if from.MaxResultTokens != nil {
 		k.MaxResultTokens = from.MaxResultTokens
 	}
+	if from.TopicChunks != nil {
+		k.TopicChunks = from.TopicChunks
+	}
+	if from.TopicBudgetDocs != nil {
+		k.TopicBudgetDocs = from.TopicBudgetDocs
+	}
 }
 
 // ValidateKnowledge rejects a knowledge block with a size outside its bounds,
@@ -81,6 +121,8 @@ func ValidateKnowledge(s Settings) error {
 		{"knowledge.max_index_tokens", k.MaxIndexTokens, MinKnowledgeCorpusTokens, MaxKnowledgeCorpusTokens},
 		{"knowledge.max_project_tokens", k.MaxProjectTokens, MinKnowledgeCorpusTokens, MaxKnowledgeCorpusTokens},
 		{"knowledge.max_result_tokens", k.MaxResultTokens, MinKnowledgeResultTokens, MaxKnowledgeResultTokens},
+		{"knowledge.topic_chunks", k.TopicChunks, MinKnowledgeTopicChunks, MaxKnowledgeTopicChunks},
+		{"knowledge.topic_budget_docs", k.TopicBudgetDocs, 0, MaxKnowledgeTopicDocs},
 	} {
 		if c.v != nil && (*c.v < c.min || *c.v > c.max) {
 			return fmt.Errorf("%s %d must be between %d and %d", c.key, *c.v, c.min, c.max)

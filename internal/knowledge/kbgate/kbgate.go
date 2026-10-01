@@ -81,6 +81,7 @@ func Open(ctx context.Context, s Setup, wait bool) *knowledge.Store {
 		ProfileGate:   New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRead),
 		ProjectGate:   New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRemote),
 		CopyOutside:   s.CopyOutside,
+		Tagger:        NewTagger(s.Cfg, s.Settings),
 	})
 	if wait {
 		_, _ = store.Refresh(ctx)

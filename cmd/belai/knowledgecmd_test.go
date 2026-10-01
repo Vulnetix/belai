@@ -81,3 +81,29 @@ func TestAgentKnowledgeNeedsAProfileThatListsDocuments(t *testing.T) {
 		t.Fatalf("two names: %d %q", code, stderr)
 	}
 }
+
+func TestAgentKnowledgeReportsTagsAsIdsOnly(t *testing.T) {
+	dir := knowledgeRepo(t)
+	s := knowledge.Open(knowledge.Options{Root: dir})
+	if _, err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code := runKnowledge(t, "-json")
+	var rep knowledgeReport
+	if code != 0 || json.Unmarshal([]byte(out), &rep) != nil || len(rep.Indexes) != 1 {
+		t.Fatalf("json: %d %q", code, out)
+	}
+	d := rep.Indexes[0].Documents[0]
+	if d.Type != "scanner" || d.Tagged != "patterns" {
+		t.Fatalf("document tags = %+v", d)
+	}
+	text, _, _ := runKnowledge(t)
+	if !strings.Contains(text, "type=scanner") {
+		t.Fatalf("the table names the type: %q", text)
+	}
+	for _, o := range []string{out, text} {
+		if strings.Contains(o, "postgres") {
+			t.Fatalf("tags are ids; the document's words never appear: %q", o)
+		}
+	}
+}

@@ -41,6 +41,8 @@ const (
 	maxBytesLocal   = 12_000
 	maxSplitDepth   = 6
 	defaultRequests = 64
+	// itemOverhead is what the batcher charges each item beyond its id and label.
+	itemOverhead = 160
 	// scoreWorkers is the number of batches in flight against a remote backend.
 	scoreWorkers = 8
 )
@@ -71,6 +73,9 @@ type ScoreRequest struct {
 	Items []ScoreItem
 	// MaxRequests bounds the requests one call may make; zero means 64.
 	MaxRequests int
+	// NoCache keeps the call out of the score cache: for a context that is
+	// never asked about twice, so its answers would only crowd out others.
+	NoCache bool
 }
 
 // ScoreResult is what came back.
@@ -240,12 +245,14 @@ func (c *Client) Score(ctx context.Context, req ScoreRequest) (ScoreResult, erro
 			continue
 		}
 		seen[it.ID] = true
-		k := scoreKey(base, it)
-		keys[it.ID] = k
-		if s, ok := c.cache.get(k); ok {
-			res.Scores[it.ID] = s
-			res.CacheHits++
-			continue
+		if !req.NoCache {
+			k := scoreKey(base, it)
+			keys[it.ID] = k
+			if s, ok := c.cache.get(k); ok {
+				res.Scores[it.ID] = s
+				res.CacheHits++
+				continue
+			}
 		}
 		todo = append(todo, it)
 	}
@@ -323,7 +330,9 @@ func (c *Client) runBatch(ctx context.Context, req ScoreRequest, items []ScoreIt
 		for _, it := range items {
 			if s, ok := validNoul(answers[questionID(it.ID)]); ok {
 				res.Scores[it.ID] = s
-				c.cache.put(keys[it.ID], s)
+				if k, ok := keys[it.ID]; ok {
+					c.cache.put(k, s)
+				}
 			}
 		}
 		mu.Unlock()
@@ -410,7 +419,7 @@ func packBatches(items []ScoreItem, req ScoreRequest, maxItems, maxBytes int) []
 	var cur []ScoreItem
 	size := fixed
 	for _, it := range items {
-		cost := it.Label.Len() + len(it.ID) + 160
+		cost := it.Label.Len() + len(it.ID) + itemOverhead
 		if len(cur) > 0 && (len(cur) >= maxItems || size+cost > maxBytes) {
 			out = append(out, cur)
 			cur, size = nil, fixed
