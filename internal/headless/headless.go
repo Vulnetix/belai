@@ -99,6 +99,11 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.Workdir, false, caps, ix)
 	reg.CloudHub().SetFacts(p.Facts)
+	// A worker whose profile files handoffs under other repositories resolves
+	// the name against this index: the checkouts beneath its directory.
+	if p.Claim != nil && p.Claim.HandoffRepos {
+		p.Claim.UseRepoIndex(ix)
+	}
 	// A headless session waits for the MCP servers to connect (or fail) so
 	// their tools are on the surface from its first turn.
 	if p.MCP != nil {

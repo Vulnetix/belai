@@ -384,6 +384,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.on_success` | route | Required. Where a completed item goes: `{list, labels, drop_labels}`. |
 | `kanban.on_failure` | route | Where a failed attempt goes; default the list it was claimed from. |
 | `kanban.handoff_to`, `kanban.handoff_labels` | string[] | The profiles and labels `KanbanHandoff` may route new items to. |
+| `kanban.handoff_repos` | bool | Gives `KanbanHandoff` a `repo` argument that files the task under a repository the harness found beside or beneath the worker's directory, so a worker in a plain folder can send each finding to the repo that owns it. Off by default. See [Filing a handoff under another repository](fleet.md#filing-a-handoff-under-another-repository). |
 | `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). |
 | `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
@@ -419,6 +420,7 @@ Validation fails closed:
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
 - `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
+- `handoff_repos` needs `handoff_to` or `handoff_labels`, and cannot be combined with a `gates` block, because a gate names a test suite of the worker's own repository;
 - a `survey` block needs a `title`, a `list` of `review`, `backlog` or `auto`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
 - a `quality` block needs a `list` of `review`, `backlog` or `auto`, and `sweep` needs `handoff_to` or `handoff_labels`;
 - a `gates` block needs a `verify` of `off`, `record` or `enforce`, `require` needs `handoff_to` or `handoff_labels`, `review` needs `verify` to be `enforce`, and `coverage` needs `handoff_to` or `handoff_labels`;

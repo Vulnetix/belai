@@ -35,7 +35,12 @@ type KanbanSpec struct {
 	// may route new items to. Both empty: no handoffs.
 	HandoffTo     []string `json:"handoff_to,omitempty"`
 	HandoffLabels []string `json:"handoff_labels,omitempty"`
-	MaxAttempts   int      `json:"max_attempts,omitempty"`
+	// HandoffRepos gives KanbanHandoff a repo argument that files the task
+	// under a repository checked out beneath the worker's directory, chosen
+	// from the harness's local repository index. It is for a worker that runs
+	// in a plain folder holding several repositories and finds work for each.
+	HandoffRepos bool `json:"handoff_repos,omitempty"`
+	MaxAttempts  int  `json:"max_attempts,omitempty"`
 	// Lease is how long a claim holds without renewal; Poll how often an
 	// idle worker looks for work. Go durations.
 	Lease string `json:"lease,omitempty"`
@@ -386,6 +391,14 @@ func (p AgentProfile) validateWorker() error {
 	for _, l := range k.HandoffLabels {
 		if n := kanban.NormLabels([]string{l}); len(n) != 1 || n[0] != l {
 			return fmt.Errorf("kanban.handoff_labels: %q is not a normalised label (lower-case [a-z0-9:_-])", l)
+		}
+	}
+	if k.HandoffRepos {
+		if len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+			return errors.New("kanban.handoff_repos needs handoff_to or handoff_labels: it files handoffs under other repositories")
+		}
+		if k.Gates != nil {
+			return errors.New("kanban.handoff_repos cannot be combined with kanban.gates: a gate names a test suite of the worker's own repository")
 		}
 	}
 	if k.Lease != "" {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -322,5 +323,106 @@ func TestHourlySurveysOfOneDayShareATitleWithoutColliding(t *testing.T) {
 	}
 	if len(turns) != 3 {
 		t.Fatalf("%d surveys over three hours, want 3", len(turns))
+	}
+}
+
+// A profile's handoff_repos reaches the claim a worker's session works under,
+// and an unset one does not.
+func TestClaimCarriesHandoffRepos(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		store, reg := testEnv(t)
+		var turns []Turn
+		p := scoutProfile()
+		p.Kanban.HandoffRepos = on
+		w := newWorker(t, store, reg, p, handoffRunner(store, &turns))
+		w.Once = false
+		runFor(t, w, 3*time.Second)
+		if len(turns) != 1 || turns[0].Claim == nil {
+			t.Fatalf("handoff_repos %v: %d turns", on, len(turns))
+		}
+		if turns[0].Claim.HandoffRepos != on {
+			t.Errorf("handoff_repos %v: claim has %v", on, turns[0].Claim.HandoffRepos)
+		}
+	}
+}
+
+// A worker in a plain folder that is not a git repository works without one:
+// it surveys, runs its turn in the folder itself, hands the finding off under a
+// repository the index found beside it, and finishes the survey item. This is
+// the hourly CloudWatch analyzer's shape.
+func TestSurveyingWorkerInAPlainFolderFilesUnderTheOwningRepo(t *testing.T) {
+	store, reg := testEnv(t)
+	base := t.TempDir()
+	folder := filepath.Join(base, "work")
+	website := filepath.Join(folder, "website")
+	for _, dir := range []string{folder, website} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/acme/website.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", website}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("git %v: %v %s", args, err, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(folder, ".git")); err == nil {
+		t.Fatal("the worker's folder must not be a repository")
+	}
+
+	p := scoutProfile()
+	p.Kanban.Project = "" // the folder's own project
+	p.Kanban.HandoffRepos = true
+	p.Kanban.Survey.List = "review"
+	p.Workspace = nil
+
+	var turn Turn
+	runner := func(ctx context.Context, tt Turn) (run.Result, error) {
+		turn = tt
+		tt.Claim.UseRepoIndex(repoindex.Scan(ctx, folder))
+		h := tools.KanbanHandoff{KanbanBase: tools.KanbanBase{Store: store, Source: kanban.NewSource(kanban.ProvenanceFor(folder, tt.SessionID, "h")), Claim: tt.Claim}}
+		if _, err := h.Execute(ctx, map[string]any{"title": "Raise the queue timeout", "body": "evidence", "list": "backlog", "labels": []any{"build"}, "repo": "acme/website"}); err != nil {
+			return run.Result{}, err
+		}
+		return complete(ctx, tt)
+	}
+	w := newWorker(t, store, reg, p, runner)
+	w.Repo, w.Once = folder, false
+	runFor(t, w, 3*time.Second)
+
+	if turn.Workdir != folder {
+		t.Fatalf("the turn ran in %q, want the plain folder %q", turn.Workdir, folder)
+	}
+	var survey, handoff kanban.Item
+	items, err := store.Search(kanban.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := store.Search(kanban.Query{Lists: []kanban.List{kanban.Done}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range append(items, done...) {
+		switch {
+		case slices.Contains(it.Labels, agentprofile.SurveyLabel):
+			survey = it
+		case it.Title == "Raise the queue timeout":
+			handoff = it
+		}
+	}
+	if survey.ID == "" || survey.List != kanban.Done {
+		t.Fatalf("the survey item should be filed and done: %+v", survey)
+	}
+	want := kanban.ProvenanceFor(website, "", "")
+	if handoff.ID == "" || handoff.ProjectKey != want.ProjectKey || handoff.Dir != want.Dir {
+		t.Fatalf("the handoff should sit under the website checkout: %+v", handoff)
+	}
+	if handoff.ProjectKey == survey.ProjectKey {
+		t.Error("the handoff stayed in the folder's own project")
+	}
+	if handoff.List != kanban.Review {
+		t.Errorf("a survey's handoff waits in review, got %s", handoff.List)
+	}
+	if handoff.Parent != survey.ID {
+		t.Errorf("the handoff should link to the survey item, got parent %q", handoff.Parent)
 	}
 }
