@@ -109,6 +109,11 @@ type Worker struct {
 	// found nothing to claim, with no crew teammate working, for a quiet
 	// window; a scheduled (cron) worker always stays.
 	Stay bool
+	// Drain makes a scheduled (cron) profile work like any other: look for
+	// work, and exit once nothing is left to claim. A stored schedule fires
+	// the worker on the cron, so the profile's own schedule must not also
+	// keep it alive between ticks.
+	Drain bool
 	// MaxWorkers, when positive, is the cap this worker reserves its slot
 	// under in place of Settings.MaxWorkers(): the cap `agent start` checked
 	// the whole start against (belai rc --max).
@@ -289,6 +294,9 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		maxItems = p.Kanban.MaxItems
 	}
 	sched, isCron, _ := agentprofile.CronSchedule(p.Schedule)
+	if w.Drain {
+		isCron = false
+	}
 	project := ""
 	if p.Kanban != nil {
 		switch strings.ToLower(strings.TrimSpace(p.Kanban.Project)) {

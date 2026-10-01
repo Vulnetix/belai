@@ -45,6 +45,7 @@ the harness read itself, and nothing else can be recorded.
 | host | `host.version_changed` | the Belai version differs from the last one reported |
 | host | `host.rc_online`, `host.rc_offline` | `belai rc` starts and stops |
 | host | `host.dispatch` | the host answers a request from the website (`start`, `stop`, `worker`, `crew`, `pause`, `resume`) |
+| host | `host.schedule` | `belai rc` fires a stored schedule, skips or is refused a run, or turns a schedule off because it cannot accept it |
 | agent | `worker.started`, `worker.state`, `worker.stopped` | a worker starts, is paused or resumed, and stops |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
@@ -57,8 +58,8 @@ the harness read itself, and nothing else can be recorded.
 `data` keys: `attempt`, `change`, `commit`, `dispatch`, `ecosystem`, `exit`,
 `files`, `forge`, `from`, `gate`, `hops`, `justification`, `list`, `os`,
 `package`, `passes`, `path`, `pr`, `previous`, `profile`, `reason`,
-`regressed`, `rule`, `severity`, `state`, `status`, `suite`, `to`, `version`,
-`worker`. Adding one is adding something that can leave the machine, so it
+`regressed`, `rule`, `schedule`, `severity`, `state`, `status`, `suite`, `to`,
+`version`, `worker`. `schedule` is a schedule's UUID. Adding one is adding something that can leave the machine, so it
 needs a line here and a change to `TestDataKeysAllowlist`.
 
 A card links to a vulnerability (`vulnId`) only when it is a security card: one

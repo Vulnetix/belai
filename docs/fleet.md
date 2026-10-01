@@ -95,7 +95,11 @@ One pass of the worker loop:
    `agents.max_workers` slot is free. A teammate that is working holds the
    window open, because it may still hand an item over. `-stay` on
    `belai agent run` or `start` keeps a standing worker that waits for new
-   items, and a worker on a cron `schedule` always stays.
+   items, and a worker on a cron `schedule` always stays. `-drain` is the
+   opposite: the worker exits once nothing is left to claim even when its
+   profile has a `schedule`. `belai rc` passes it when a stored schedule fires
+   a worker (see [remote-control.md](remote-control.md#scheduled-agents)),
+   because the stored schedule is what starts it each time.
 
 ### Finding work: `kanban.survey`
 
@@ -665,7 +669,7 @@ alongside itself.
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME [-once] [-item K-…]` | run a worker in the foreground |
-| `belai agent start NAME \| -crew CREW [-max-workers N] [-stay]` | start detached workers; `-max-workers` replaces `agents.max_workers` for this start |
+| `belai agent start NAME \| -crew CREW [-max-workers N] [-stay \| -drain]` | start detached workers; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule` |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |

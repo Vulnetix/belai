@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
@@ -61,6 +62,21 @@ type Options struct {
 	// (setWorkerPaused unless a test replaces it). The error text is the
 	// refusal reason.
 	PauseWorker func(id string, pause bool) error
+
+	// Schedules is the host's stored schedules (internal/schedule). nil means
+	// this daemon fires none and syncs none.
+	Schedules *schedule.Store
+	// ScheduleRemote is the website half of schedule sync (the sync client
+	// unless a test replaces it).
+	ScheduleRemote schedule.Remote
+	// ScheduleEvery is how often stored schedules are checked and synced
+	// (30s).
+	ScheduleEvery time.Duration
+	// Now is the scheduler's clock (time.Now unless a test replaces it).
+	Now func() time.Time
+	// Busy reports whether a worker of the profile is already live in the
+	// directory's repository (the fleet registry unless a test replaces it).
+	Busy func(profile, dir string) bool
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -70,6 +86,9 @@ type WorkerStart struct {
 	Profile, Crew string
 	// MaxWorkers overrides agents.max_workers for this start when set.
 	MaxWorkers int
+	// Drain makes the workers exit once nothing is left to claim, whatever
+	// cron schedule their profile carries (a stored schedule fires them).
+	Drain bool
 }
 
 // Child is one session to start.
@@ -86,7 +105,8 @@ type Daemon struct {
 	sessions map[string]*child
 	online   bool
 	lastErr  string
-	catalog  string // Inventory.catalogueHash of the last advertisement
+	catalog  string            // Inventory.catalogueHash of the last advertisement
+	schedErr map[string]string // per sync step, the last failure logged ("" when it works)
 	started  time.Time
 	wg       sync.WaitGroup
 }
@@ -135,6 +155,15 @@ func New(o Options) (*Daemon, error) {
 	if o.StartWorkers == nil {
 		o.StartWorkers = runAgentStart
 	}
+	if o.ScheduleEvery <= 0 {
+		o.ScheduleEvery = DefaultScheduleEvery
+	}
+	if o.ScheduleRemote == nil {
+		o.ScheduleRemote = o.Client
+	}
+	if o.Busy == nil {
+		o.Busy = localBusy
+	}
 	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now()}, nil
 }
 
@@ -167,6 +196,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.logf("start sessions at %s", d.o.URL)
 
 	go d.heartbeat(ctx)
+	if d.o.Schedules != nil {
+		d.wg.Add(1)
+		go d.scheduler(ctx)
+	}
 	d.poll(ctx)
 
 	d.shutdown()

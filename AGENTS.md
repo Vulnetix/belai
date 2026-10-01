@@ -877,6 +877,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   of an id (`fleet.ValidID`) and the worker is live in the host's own
   registry, and otherwise refuses it with a reason. It sets or clears the
   worker's empty pause marker and does nothing else.
+- **A scheduled agent starts only what a worker request could.**
+  `internal/schedule` records (profile, cron, directory, on/off) sync with the
+  website like kanban cards, and the website may edit them but never run one or
+  supply a prompt, model, posture or permission. The `belai rc` ticker fires a
+  due record only through `startWorkers`: the daemon matches the directory
+  against its own list, the profile must be a worker profile in its own
+  catalogue, and `belai agent start -drain` applies the trust check, the
+  preflight and the worker cap. A record the host cannot accept (a cron that
+  does not parse, a directory it does not offer, an unknown profile) is turned
+  off with a status, never applied. The run record (last run, status, next run)
+  is written only by the host and a pull never replaces it. A run missed while
+  the daemon was down is skipped, a schedule fires at most once per cron tick,
+  and the run is recorded before it fires so a crash cannot double fire. Text
+  pulled from the website is cleaned before it is stored, and `schedules.json`
+  is private (0600). Every firing and refusal is a `host.schedule` audit event.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line

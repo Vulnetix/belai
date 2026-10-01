@@ -342,6 +342,16 @@ and the inbox run on the syncer's own goroutines.
 - **Website pages:** `src/pages/resolve/belai-*.vue`, in the sidebar's
   **Belai** group.
 
+## Scheduled agents
+
+A host's stored schedules ([remote-control.md](remote-control.md#scheduled-agents))
+sync through the same client the way the board does, under
+`/v1/belai/hosts/{id}/schedules`, and only while `belai rc` runs. The host
+pulls changes after a version cursor and pushes in batches of up to 100. The
+definition is last-writer-wins on its update time; the run record (last run,
+status, next run) is written only by the host, and a pulled schedule never
+replaces it. A text field from the website is cleaned before it is stored.
+
 ## The kanban board
 
 The global kanban board ([kanban.md](kanban.md)) syncs through the same

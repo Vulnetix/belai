@@ -50,9 +50,11 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -provider P -model M       override the model
       -stay                      keep waiting for work instead of exiting
                                  once nothing is left to claim
+      -drain                     exit once nothing is left to claim even
+                                 with a cron schedule (not with -stay)
   start [flags] NAME | -crew C   start detached workers; prints their ids
       -replicas N                workers of NAME (default 1)
-      -trust-dir, -provider, -model, -stay as for run
+      -trust-dir, -provider, -model, -stay, -drain as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
   pause ID|NAME                 finish the card in hand, then claim nothing
@@ -283,9 +285,13 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	crew := fs.String("crew", "", "the crew this worker belongs to (set by `agent start`)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
+	drain := fs.Bool("drain", false, "exit once nothing is left to claim even when the profile has a cron schedule")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay] NAME")
+		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME")
+	}
+	if *stay && *drain {
+		return 2, errors.New("-stay and -drain contradict each other")
 	}
 	name := fs.Arg(0)
 	wd, _ := os.Getwd()
@@ -368,7 +374,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
 		Sessions: sessions, Sync: headless.SyncClient(settings, repo),
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:   *once, Item: *item, Stay: *stay, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
+		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 	}
 	if err := w.Run(ctx); err != nil {
@@ -442,8 +448,12 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	model := fs.String("model", "", "model override")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
+	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
 	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
 		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW")
+	}
+	if *stay && *drain {
+		return 2, errors.New("-stay and -drain contradict each other")
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -517,7 +527,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 		}
 		for _, l := range launches {
-			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, MaxWorkers: spawnMax})
+			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax})
 			if err != nil {
 				return err
 			}

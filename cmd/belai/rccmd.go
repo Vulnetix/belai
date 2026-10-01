@@ -26,6 +26,7 @@ import (
 	"github.com/vulnetix/belai/internal/rc"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/trustgate"
@@ -172,9 +173,15 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	} else if n > 0 {
 		fmt.Fprintf(stderr, "Gave %d agent profile(s) an id.\n", n)
 	}
+	schedules, err := schedule.Open()
+	if err != nil {
+		fmt.Fprintln(stderr, "belai rc: schedules:", err)
+		return 1
+	}
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
 		Max: *max, MaxWorkers: explicitMax(fs, *max), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
+		Schedules: schedules,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)

@@ -439,6 +439,9 @@ type SpawnOptions struct {
 	// Stay keeps the worker waiting for work instead of exiting once the
 	// board has nothing left for it.
 	Stay bool
+	// Drain exits once nothing is left to claim even when the profile has a
+	// cron schedule (a stored schedule fires the worker itself).
+	Drain bool
 	// MaxWorkers, when positive, is the worker cap the start was checked
 	// against (belai rc --max); the worker reserves its slot under the same
 	// cap instead of falling back to agents.max_workers.
@@ -461,6 +464,9 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	}
 	if o.Stay {
 		args = append(args, "-stay")
+	}
+	if o.Drain {
+		args = append(args, "-drain")
 	}
 	if o.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
