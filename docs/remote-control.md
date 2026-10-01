@@ -208,13 +208,14 @@ dispatch queue and both carrying identifiers only:
 - **`profile_install`** names a library profile and one of its versions, and
   whether it may replace a profile here. The daemon reads that version from the
   library, and the server serves that one version only while the request is
-  delivered to this host. The profile is then parsed strictly and validated whole
-  like `belai agent import`, and written only if all of this holds:
-  - `sync.remote_prompts` is on (a request that writes is the same kind of trust
-    as a web prompt);
-  - it does not turn guardrails or permission asks off, is not `autonomous`, and
-    does not allow `Bash` (a profile that lists no tools allows every tool, Bash
-    included, so it lists its tools) or a shell process tool;
+  delivered to this host. An install is a person's action on the website, made
+  with their own login, so it is not held to the rules a web prompt is: it does
+  not need `sync.remote_prompts`, and a profile may be as permissive as the user
+  chooses (guardrails off, autonomous, Bash). The profile is parsed strictly and
+  validated whole like `belai agent import`, and written only if all of this
+  holds:
+  - it is a valid profile (an unknown key or tool, a missing field or a bad
+    palette is refused, as import refuses it);
   - its `id` is the library profile's;
   - it does not take a built-in's name;
   - no profile of that name exists here, or the request set replace and that
@@ -222,9 +223,8 @@ dispatch queue and both carrying identifiers only:
     name is never replaced, and a display name another profile here holds is
     refused.
 
-  A profile you want that the website may not install is still yours to write by
-  hand on this host. The acknowledgement says what was installed, or the reason
-  it was refused: harness words with a short cleaned excerpt, never the profile.
+  The acknowledgement says what was installed, or the reason it was refused:
+  harness words with a short cleaned excerpt, never the profile.
   Replacing a profile stops a worker running on the old one, because a worker
   pins its definition (see [fleet.md](fleet.md)); restart it to use the new one.
 

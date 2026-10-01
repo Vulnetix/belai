@@ -258,23 +258,15 @@ func mustDir(t *testing.T) string {
 	return d
 }
 
-func TestInstallRefusesWhatTheWebsiteMayNotInstall(t *testing.T) {
-	off := false
+func TestInstallRefusesWhatIsNotAValidProfile(t *testing.T) {
 	cases := map[string]struct {
 		mutate func(p *agentprofile.AgentProfile)
 		want   string
 	}{
-		"guardrails off":     {func(p *agentprofile.AgentProfile) { p.Guardrails = &off }, "guardrails off"},
-		"asks off":           {func(p *agentprofile.AgentProfile) { p.AskPermission = &off }, "permission asks off"},
-		"autonomous":         {func(p *agentprofile.AgentProfile) { p.Autonomy = agentprofile.AutonomyAutonomous }, "autonomous"},
-		"Bash":               {func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "Bash"} }, "allows Bash"},
-		"every tool":         {func(p *agentprofile.AgentProfile) { p.Tools = nil }, "allows Bash"},
-		"shell process tool": {func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "KillShell"} }, "shell process tool"},
-		"process restart":    {func(p *agentprofile.AgentProfile) { p.Tools = []string{"ProcessRestart"} }, "shell process tool"},
-		"a built-in's name":  {func(p *agentprofile.AgentProfile) { p.Name = "belai:triage-vulns" }, "built-in"},
-		"unknown tool":       {func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "Telekinesis"} }, "not valid here"},
-		"no description":     {func(p *agentprofile.AgentProfile) { p.Description = "" }, "not valid here"},
-		"bad palette":        {func(p *agentprofile.AgentProfile) { p.Palette = []string{"red"} }, "not valid here"},
+		"a built-in's name": {func(p *agentprofile.AgentProfile) { p.Name = "belai:triage-vulns" }, "built-in"},
+		"unknown tool":      {func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "Telekinesis"} }, "not valid here"},
+		"no description":    {func(p *agentprofile.AgentProfile) { p.Description = "" }, "not valid here"},
+		"bad palette":       {func(p *agentprofile.AgentProfile) { p.Palette = []string{"red"} }, "not valid here"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -297,16 +289,38 @@ func TestInstallRefusesWhatTheWebsiteMayNotInstall(t *testing.T) {
 	}
 }
 
-func TestInstallNeedsRemotePromptsAndAnId(t *testing.T) {
+// An install is the user's own action, made with their login. It is not held to
+// the rules a web prompt is: any profile that validates is installed, however
+// permissive it is, and it does not need sync.remote_prompts.
+func TestInstallTakesAnyValidProfileWithoutTheWebPromptRules(t *testing.T) {
+	off := false
+	cases := map[string]func(p *agentprofile.AgentProfile){
+		"guardrails off":     func(p *agentprofile.AgentProfile) { p.Guardrails = &off },
+		"asks off":           func(p *agentprofile.AgentProfile) { p.AskPermission = &off },
+		"autonomous":         func(p *agentprofile.AgentProfile) { p.Autonomy = agentprofile.AutonomyAutonomous },
+		"Bash":               func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "Bash"} },
+		"every tool":         func(p *agentprofile.AgentProfile) { p.Tools = nil },
+		"shell process tool": func(p *agentprofile.AgentProfile) { p.Tools = []string{"Read", "KillShell", "ProcessRestart"} },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newLibHarness(t)
+			h.on = false // sync.remote_prompts is off: an install does not care
+			p := installable("dep-reviewer", libID)
+			mutate(&p)
+			status, why := h.install(p, false)
+			if status != sessionsync.DispatchStarted {
+				t.Fatalf("ack = %s %q", status, why)
+			}
+			if got, err := agentprofile.Load("dep-reviewer"); err != nil || got.ID != libID {
+				t.Fatalf("installed = %+v %v", got, err)
+			}
+		})
+	}
+}
+
+func TestInstallNeedsAnIdAndAVersionThatLookRight(t *testing.T) {
 	h := newLibHarness(t)
-	h.on = false
-	if status, why := h.install(installable("dep-reviewer", libID), false); status != sessionsync.DispatchRefused || !strings.Contains(why, "sync.remote_prompts") {
-		t.Fatalf("remote_prompts off: %s %q", status, why)
-	}
-	if h.site.fetches != 0 || len(h.stored()) != 0 {
-		t.Fatal("a host that does not take web writes must not even fetch")
-	}
-	h.on = true
 	for name, r := range map[string]sessionsync.Dispatch{
 		"no library":    {Kind: "profile_install", Version: libVer},
 		"not an id":     {Kind: "profile_install", Library: "../x", Version: libVer},
