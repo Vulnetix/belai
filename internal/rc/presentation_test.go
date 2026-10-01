@@ -37,3 +37,28 @@ func TestCatalogueCarriesPresentationAndReadvertisesOnChange(t *testing.T) {
 		t.Fatal("a new display name must change the catalogue hash, or the website never hears of it")
 	}
 }
+
+// A host advertises its built-in workers by their persona, so the console draws
+// Rubber Duck, Kremvax and the rest without anything stored on the host.
+func TestLocalInventoryCarriesBuiltinPersonas(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+
+	got := map[string]sessionsync.RCProfile{}
+	for _, p := range LocalInventory().Profiles {
+		got[p.Name] = p
+	}
+	for name, want := range map[string]string{
+		"belai:vuln-scout": "Rubber Duck", "belai:patcher": "Kremvax", "belai:verifier": "Dark Avenger",
+		"belai:scout": "Juniper Tallis", "belai:builder": "Odo Brannigan", "belai:reviewer": "Isadora Pell",
+	} {
+		p, ok := got[name]
+		if !ok {
+			t.Errorf("%s is not advertised", name)
+			continue
+		}
+		if p.DisplayName != want || len(p.Palette) != 4 || !agentprofile.ValidID(p.AvatarID) || !agentprofile.ValidID(p.ID) {
+			t.Errorf("%s is advertised as %+v", name, p)
+		}
+	}
+}

@@ -290,6 +290,12 @@ A crew is a named set of profiles started together:
 | `belai:delivery` | `belai:scout` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:security` | `belai:vuln-scout` ×1, `belai:patcher` ×2, `belai:verifier` ×1 |
 
+Each built-in member has a persona, so the console shows who is who. The
+security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
+(the verifier); the delivery crew is Juniper Tallis (the scout), Odo Brannigan
+(the builder) and Isadora Pell (the reviewer). See
+[Built-in personas](agent-profiles.md#built-in-personas).
+
 ### The delivery crew
 
 Start it with `belai agent start -crew belai:delivery` or `/fleet`. It runs
