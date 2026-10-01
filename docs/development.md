@@ -559,7 +559,11 @@ selected. Confirm `/agent` (no argument) also opens it. The strip lists
 built-ins first (`◈`), then user profiles, then `↻` background-agent
 definitions. Press `tab` repeatedly and confirm the highlight walks every
 candidate, ends on `(none)`, wraps, and never writes into the prompt; that
-`enter` engages the highlighted one and shows it in the footer chip; and that
+`enter` engages the highlighted one and shows it in the footer chip (an agent
+with a persona by its display name, in its colours: engage `belai:patcher` and
+confirm `Kremvax`, then `ctrl+p` to `belai:verifier` and confirm `Dark Avenger`
+and a colour change on the next frame, and that `(none)` and a profile with no
+persona bring the brand teal back); and that
 `right` moves the cursor until something is highlighted. With a prompt typed
 in the composer, confirm that two keystrokes send it: the first `enter` opens
 the picker, the second engages the highlighted agent **and** starts the turn,
