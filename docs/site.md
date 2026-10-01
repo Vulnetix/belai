@@ -53,11 +53,11 @@ These keep the page readable. Follow them when you add or change a section.
 The agents section (`site/src/components/sections/Agents.astro`, rendered
 from `Features.astro`) is one ladder: helpers, background agents, workers and crews.
 Three step cards open it, and a folded table (cards below `@3xl`) says what changes on
-each step. Then come ten questions to ask any autonomous agent (`#compare`), each answered
-by a mechanism in this repository, the gates that decide when a card is done (`#assurance`),
+each step. Then come ten promises about autonomous work you can sign off on (`#compare`), each
+backed by a mechanism in this repository, the gates that decide when a card is done (`#assurance`),
 a crew's recorded run on a board (`#crews`, which the kanban section links to), the limits on
-crew workers, the built-in crews and a worker profile (`#profiles`), what the Vulnetix
-console adds (`#control-plane`) and the edges of what is covered today. The questions are
+crew workers, the built-in crews and a worker profile (`#profiles`), and what the Vulnetix
+console adds (`#control-plane`). The promises are
 about any unattended agent and name no other product; every answer must stay checkable
 against the code, so change it with the mechanism it cites. The step facts live in one
 `steps` array that feeds both the table and the cards. Keep the run truthful: it quotes the
