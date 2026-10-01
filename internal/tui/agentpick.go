@@ -47,6 +47,10 @@ type agentChoice struct {
 	// Tools is the definition's tool allowlist, honoured when it carries a
 	// foreground turn. Empty means every registered tool.
 	Tools []string
+	// look is the persona the agent-profile tree gives the name, filled in by
+	// loadAgents so a frame never reads a profile from disk. The picker draws
+	// the display name from it; the name stays what is typed and engaged.
+	look agentLook
 }
 
 // loadAgents refreshes the pickable list from both trees: the flat profiles
@@ -86,9 +90,11 @@ func (a *App) loadAgents() {
 	for _, c := range choices {
 		names[c.Name] = struct{}{}
 	}
+	looks := map[string]agentLook{}
 	if list, err := agentprofile.List(); err == nil {
 		sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 		for _, p := range list {
+			looks[p.Name] = agentLook{Display: p.DisplayName, Palette: p.Palette}
 			// A flat profile owns the name: it is the one CarrierOptions
 			// resolves first, so offering a shadowed definition would engage
 			// something other than the row the user picked.
@@ -97,6 +103,11 @@ func (a *App) loadAgents() {
 			}
 			choices = append(choices, agentChoice{Name: p.Name, Background: true, Tools: p.Tools})
 		}
+	}
+	// A flat profile that shares a name with a definition (belai:debug) wears
+	// the definition's persona: the name is one agent to the person using it.
+	for i := range choices {
+		choices[i].look = looks[choices[i].Name]
 	}
 
 	a.agents = choices
@@ -373,7 +384,7 @@ func (a *App) cycleAgentFromChat() tea.Cmd {
 	a.setNamedAgent(choice.Name)
 	a.invalidateAgentSession()
 	a.mode = "agent"
-	msg := "agent: " + choice.Name
+	msg := "agent: " + choice.look.notice(choice.Name)
 	if choice.Background {
 		msg += " (background definition; ctrl+g starts it in the background instead)"
 	}
@@ -414,7 +425,7 @@ func (a *App) acceptAgent() tea.Cmd {
 	a.setNamedAgent(choice.Name)
 	a.invalidateAgentSession()
 	a.mode = "agent"
-	msg := "agent: " + choice.Name
+	msg := "agent: " + choice.look.notice(choice.Name)
 	if choice.Background {
 		msg += " (background definition; ctrl+g starts it in the background instead)"
 	}
@@ -437,6 +448,12 @@ func (a *App) renderAgentPicker() string {
 	parts := make([]string, 0, len(cands)+1)
 	for i, c := range cands {
 		label := c.Name
+		if a.agentArgSub == "" {
+			// Outside /agent argument completion the chips are for choosing, so
+			// they carry the persona. Completing an argument shows the names
+			// that have to be typed.
+			label = c.look.label(c.Name)
+		}
 		switch {
 		case c.Builtin:
 			label = "◈ " + label
