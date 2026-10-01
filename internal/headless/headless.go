@@ -59,8 +59,14 @@ type Params struct {
 	// Narrow, when set, narrows the full registry before the kanban tools
 	// are added (a worker profile's tools allowlist).
 	Narrow func(*tools.Registry) *tools.Registry
-	// Deny adds permission Deny rules on top of the settings' own.
+	// Deny adds permission rules on top of the settings' own. They are the
+	// harness's, so a Permit rule may exempt a call from them; the user's own
+	// Deny and Block rules are never exempted.
 	Deny []string
+	// Permit exempts calls from Deny: a worker profile's own declaration, such
+	// as write access to a synced file, which a broad Deny rule would
+	// otherwise refuse.
+	Permit []string
 	// Persona is a worker profile's text; see agent.Options.Persona.
 	Persona string
 	// Extra tools join after Narrow, so an allowlist cannot drop them: a
@@ -110,8 +116,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		reg = reg.WithKanban(p.Kanban, p.KanbanSource)
 	}
 
-	deny := append(append([]string{}, p.Settings.Permissions.Deny...), p.Deny...)
-	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, deny)
+	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, p.Settings.Permissions.Deny).WithHarness(p.Deny, p.Permit)
 	repoMap := repomap.Scan(ctx, p.Workdir)
 
 	var promptOpts prompt.Options
