@@ -138,6 +138,9 @@ var belaiDirs = map[string]bool{
 	"plans":   true,
 	"goals":   true,
 	"prompts": true,
+	// knowledge holds the copies of a profile's reference documents the
+	// harness places for an agent (docs/knowledge.md); never scanner output.
+	"knowledge": true,
 }
 
 func isBelaiDir(rel string) bool {

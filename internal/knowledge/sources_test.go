@@ -47,7 +47,7 @@ func TestSyncProfileIndexesEligibleFilesOnly(t *testing.T) {
 	write(t, single, "A single listed file about deployments.")
 
 	ix := NewIndex("prof")
-	st, err := SyncProfile(context.Background(), ix, "prof", []string{docs, single}, nil, 0)
+	st, err := SyncProfile(context.Background(), ix, "prof", "", []string{docs, single}, nil, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestSyncProfileRefusesSymlinkRootAndSkipsMissing(t *testing.T) {
 		t.Skip("no symlinks")
 	}
 	ix := NewIndex("p")
-	st, err := SyncProfile(context.Background(), ix, "p", []string{link, filepath.Join(root, "missing")}, nil, 0)
+	st, err := SyncProfile(context.Background(), ix, "p", "", []string{link, filepath.Join(root, "missing")}, nil, nil, 0)
 	if err != nil || len(ix.Docs()) != 0 || st.Skipped != 2 {
 		t.Fatalf("symlink and missing must be skipped: %+v %v", st, err)
 	}
@@ -97,18 +97,18 @@ func TestSyncProfileIsIncrementalAndDropsGoneFiles(t *testing.T) {
 	ix := NewIndex("p")
 	calls := 0
 	gate := func(context.Context, string) (bool, error) { calls++; return true, nil }
-	if _, err := SyncProfile(context.Background(), ix, "p", []string{filepath.Join(root, "d")}, gate, 0); err != nil {
+	if _, err := SyncProfile(context.Background(), ix, "p", "", []string{filepath.Join(root, "d")}, gate, nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	first := calls
-	st, err := SyncProfile(context.Background(), ix, "p", []string{filepath.Join(root, "d")}, gate, 0)
+	st, err := SyncProfile(context.Background(), ix, "p", "", []string{filepath.Join(root, "d")}, gate, nil, 0)
 	if err != nil || calls != first || st.Reused != 2 {
 		t.Fatalf("second sync must reuse both: %+v calls %d/%d", st, calls, first)
 	}
 	if err := os.Remove(filepath.Join(root, "d", "b.md")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SyncProfile(context.Background(), ix, "p", []string{filepath.Join(root, "d")}, gate, 0); err != nil {
+	if _, err := SyncProfile(context.Background(), ix, "p", "", []string{filepath.Join(root, "d")}, gate, nil, 0); err != nil {
 		t.Fatal(err)
 	}
 	if has(ix, "kb+p/d/b.md") || !has(ix, "kb+p/d/a.md") {
@@ -122,7 +122,7 @@ func TestSyncProfileCap(t *testing.T) {
 		write(t, filepath.Join(root, "d", fmt.Sprintf("f%d.md", i)), strings.Repeat("words about subject number one here\n", 60))
 	}
 	ix := NewIndex("p")
-	st, err := SyncProfile(context.Background(), ix, "p", []string{filepath.Join(root, "d")}, nil, 500)
+	st, err := SyncProfile(context.Background(), ix, "p", "", []string{filepath.Join(root, "d")}, nil, nil, 500)
 	if err != nil || !st.Truncated || ix.Tokens() > 500 {
 		t.Fatalf("cap: %+v err=%v tokens=%d", st, err, ix.Tokens())
 	}
@@ -252,5 +252,166 @@ func TestAddressIsPlain(t *testing.T) {
 	}
 	if !IsAddress("kb+project/x") || IsAddress("src/main.go") {
 		t.Fatal("IsAddress")
+	}
+}
+
+func TestSyncProfileRelativePathsResolveUnderTheRootAndCannotLeaveIt(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(root, "docs", "guide.md"), "Rotate the signing key every ninety days.")
+	write(t, filepath.Join(outside, "secret.md"), "outside the repository")
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Skip("no symlinks")
+	}
+	write(t, filepath.Join(root, "real", "x.md"), "inside")
+	if err := os.Symlink(filepath.Join(outside), filepath.Join(root, "real", "up")); err != nil {
+		t.Skip("no symlinks")
+	}
+	ix := NewIndex("p")
+	st, err := SyncProfile(context.Background(), ix, "p", root, []string{"docs", "linked", "real/up", "missing"}, nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has(ix, "kb+p/docs/guide.md") {
+		t.Fatalf("a relative path resolves under the root: %+v", ix.Docs())
+	}
+	for _, d := range ix.Docs() {
+		if strings.Contains(d.Address, "secret") || strings.Contains(d.Address, "linked") || strings.Contains(d.Address, "up/") {
+			t.Fatalf("a relative path led out of the root: %s", d.Address)
+		}
+	}
+	if st.Skipped != 3 {
+		t.Fatalf("symlink, nested symlink and missing are skipped: %+v", st)
+	}
+	// With no root a relative path names nothing.
+	ix2 := NewIndex("p")
+	if st, _ := SyncProfile(context.Background(), ix2, "p", "", []string{"docs"}, nil, nil, 0); len(ix2.Docs()) != 0 || st.Skipped != 1 {
+		t.Fatalf("no root: %+v %+v", st, ix2.Docs())
+	}
+}
+
+func TestSyncProfileVulnetixIsReadAsScannerOutput(t *testing.T) {
+	root := t.TempDir()
+	vx := filepath.Join(root, ".vulnetix")
+	write(t, filepath.Join(vx, "sast.20260101000000.sarif"), `{"runs":[{"tool":{"driver":{"rules":[]}},"results":[
+	 {"ruleId":"VNX-GO-SQLI","level":"error","message":{"text":"matched AKIAIOSFODNN7EXAMPLE"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"db/query.go"},"region":{"startLine":40}}}]}]}]}`)
+	write(t, filepath.Join(vx, "gitleaks-report.json"), `[{"Secret":"AKIAIOSFODNN7EXAMPLE"}]`)
+	write(t, filepath.Join(vx, "memory.yaml"), "notes: uses postgres\n")
+
+	var profileCalls, scannerCalls int
+	profileGate := func(context.Context, string) (bool, error) { profileCalls++; return true, nil }
+	scannerGate := func(context.Context, string) (bool, error) { scannerCalls++; return true, nil }
+	ix := NewIndex("scout")
+	st, err := SyncProfile(context.Background(), ix, "scout", root, []string{".vulnetix"}, profileGate, scannerGate, 0)
+	if err != nil || st.Docs != 2 {
+		t.Fatalf("want the sarif and memory file: %+v err=%v docs=%+v", st, err, ix.Docs())
+	}
+	if profileCalls != 0 || scannerCalls == 0 {
+		t.Fatalf("scanner output is third-party text and goes through the scanner gate: profile=%d scanner=%d", profileCalls, scannerCalls)
+	}
+	for _, d := range ix.Docs() {
+		if strings.Contains(d.Address, "gitleaks") {
+			t.Fatalf("a native third-party report was indexed: %s", d.Address)
+		}
+		if !strings.HasPrefix(d.Address, "kb+scout/.vulnetix/") {
+			t.Fatalf("address = %s", d.Address)
+		}
+	}
+	h := NewSet(ix).Search("VNX-GO-SQLI query injection", 0, nil)
+	if len(h) == 0 || !strings.Contains(h[0].Text, "db/query.go line 40") || strings.Contains(h[0].Text, "AKIA") {
+		t.Fatalf("hits = %+v", h)
+	}
+}
+
+// A profile that lists .vulnetix and the project index both hold the artifacts:
+// a search or a glob shows each passage once.
+func TestAPassageInTheProfileAndTheProjectIsShownOnce(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".vulnetix", "memory.yaml"), "notes: the service stores sessions in postgres\n")
+	prof, proj := NewIndex("scout"), NewIndex(ProjectScope)
+	if _, err := SyncProfile(context.Background(), prof, "scout", root, []string{".vulnetix"}, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncProject(context.Background(), proj, root, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	set := NewSet(prof, proj)
+	if h := set.Search("sessions postgres storage", 0, nil); len(h) != 1 {
+		t.Fatalf("the same passage twice: %+v", h)
+	}
+	if m := set.Match(func(string, string) bool { return true }); len(m) != 1 {
+		t.Fatalf("the same document twice: %v", m)
+	}
+}
+
+func TestEnumerateProfileGivesEachFileAnAddressAndADestination(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(outside, "handbook", "keys.md"), "Rotate keys.")
+	write(t, filepath.Join(outside, "single.md"), "A single file.")
+	write(t, filepath.Join(root, "docs", "guide.md"), "A guide.")
+	write(t, filepath.Join(root, ".vulnetix", "memory.yaml"), "notes: uses postgres\n")
+	write(t, filepath.Join(root, ".vulnetix", "gitleaks-report.json"), `[{"Secret":"AKIA"}]`)
+	files, skipped, err := EnumerateProfile(context.Background(), root, []string{filepath.Join(outside, "handbook"), filepath.Join(outside, "single.md"), "docs", ".vulnetix", "missing"})
+	if err != nil || skipped != 1 {
+		t.Fatalf("skipped=%d err=%v files=%+v", skipped, err, files)
+	}
+	got := map[string]ProfileFile{}
+	for _, f := range files {
+		got[f.Rel] = f
+	}
+	for rel, want := range map[string]string{
+		"handbook/keys.md":      ".vulnetix/knowledge/handbook/keys.md",
+		"single.md":             ".vulnetix/knowledge/single.md",
+		"docs/guide.md":         "docs/guide.md",
+		".vulnetix/memory.yaml": ".vulnetix/memory.yaml",
+	} {
+		f, ok := got[rel]
+		if !ok || f.Dest != want {
+			t.Fatalf("%s: %+v (want dest %s) in %+v", rel, f, want, files)
+		}
+	}
+	if got[".vulnetix/memory.yaml"].Artifact == nil || got["docs/guide.md"].Artifact != nil {
+		t.Fatal("only scanner output is an artefact")
+	}
+	if _, ok := got[".vulnetix/gitleaks-report.json"]; ok {
+		t.Fatal("a native third-party report must not be listed")
+	}
+	if !got["docs/guide.md"].Relative || got["single.md"].Relative {
+		t.Fatal("Relative says whether the listed path was relative")
+	}
+}
+
+func TestBlockedAbsoluteRefusesCredentialStoresAndSystemPlaces(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("BELAI_HOME", filepath.Join(home, "state"))
+	for _, p := range []string{"/", "/etc/shadow", "/etc/ssh/sshd_config", "/proc/1/environ", home, filepath.Join(home, ".ssh"), filepath.Join(home, ".ssh", "id_ed25519"),
+		filepath.Join(home, ".aws"), filepath.Join(home, ".config", "gcloud", "x"), filepath.Join(home, "state"), filepath.Join(home, "state", "kanban")} {
+		if !BlockedAbsolute(p) {
+			t.Errorf("%s must be blocked", p)
+		}
+	}
+	for _, p := range []string{filepath.Join(home, "handbook"), filepath.Join(home, "docs", "a.md"), "/srv/standards", "/usr/share/doc", filepath.Join(home, ".config", "myapp"),
+		"/root/handbook", "/etc/nginx/conf.d", "/boot/docs"} {
+		if BlockedAbsolute(p) {
+			t.Errorf("%s is an ordinary place", p)
+		}
+	}
+}
+
+func TestEnumerateProfileSkipsTheFloorAndSymlinks(t *testing.T) {
+	home, root, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".ssh", "config"), "Host x\n")
+	write(t, filepath.Join(home, "handbook", "a.md"), "A handbook.")
+	write(t, filepath.Join(outside, "secret.md"), "outside")
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Skip("no symlinks")
+	}
+	files, skipped, err := EnumerateProfile(context.Background(), root, []string{"~/.ssh", "~", home, "linked", ".git", "sub/.git/hooks", "~/handbook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Rel != "handbook/a.md" || skipped != 6 {
+		t.Fatalf("only the ordinary document is listed: skipped=%d files=%+v", skipped, files)
 	}
 }

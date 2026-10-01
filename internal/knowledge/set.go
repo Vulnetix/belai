@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -71,9 +72,19 @@ func (s *Set) Search(query string, maxTokens int, allow func(Hit) bool) []Hit {
 	})
 	var out []Hit
 	used := 0
+	// The same passage can sit in two indexes: a profile may list a directory
+	// (.vulnetix) the project index covers too. One copy is enough.
+	seen := map[string]bool{}
 	for _, h := range all {
 		if allow != nil && !allow(h) {
 			continue
+		}
+		if h.Source != "" {
+			key := fmt.Sprintf("%s\x00%d\x00%d", h.Source, h.Start, h.End)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 		}
 		if maxTokens > 0 && used+h.Tokens > maxTokens {
 			continue
@@ -95,8 +106,12 @@ func (s *Set) Match(match func(address, source string) bool) []string {
 	var out []string
 	for _, i := range s.list() {
 		for _, d := range i.Docs() {
-			if !seen[d.Address] && match(d.Address, d.Source) {
-				seen[d.Address] = true
+			key := d.Source
+			if key == "" {
+				key = d.Address
+			}
+			if !seen[key] && match(d.Address, d.Source) {
+				seen[key] = true
 				out = append(out, d.Address)
 			}
 		}

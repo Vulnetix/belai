@@ -17,8 +17,8 @@ const (
 )
 
 // KnowledgeSpec lists the documents a profile may search (docs/knowledge.md).
-// Each path is a file or a directory on the host, written by the user in the
-// profile file. The harness reads them itself, indexes them and lets the
+// Each path is a file or a directory, on the host or inside the project,
+// written in the profile file by the user or shipped in a built-in profile. The harness reads them itself, indexes them and lets the
 // agent search the result through Grep, Glob and Read; the agent is never
 // given a path to read.
 //
@@ -26,7 +26,9 @@ const (
 // carry it, and a backup leaves it out, because a remote request must never be
 // able to choose which local files get indexed.
 type KnowledgeSpec struct {
-	// Paths are absolute, or start with "~/".
+	// Paths are absolute, start with "~/", or are relative to the project's
+	// trusted repository root (for example ".vulnetix"). A relative path may
+	// not leave the repository.
 	Paths []string `json:"paths"`
 }
 
@@ -68,14 +70,21 @@ func validKnowledgePath(s string) error {
 			return errors.New("a path holds a control character")
 		}
 	}
-	if !filepath.IsAbs(s) && !strings.HasPrefix(s, "~/") {
-		return fmt.Errorf("%q must be an absolute path or start with ~/", s)
-	}
 	for _, seg := range strings.Split(filepath.ToSlash(s), "/") {
 		if seg == ".." {
 			return fmt.Errorf("%q must not contain ..", s)
 		}
 	}
+	switch {
+	case filepath.IsAbs(s), strings.HasPrefix(s, "~/"):
+		return nil
+	case strings.HasPrefix(s, "~"):
+		return fmt.Errorf("%q: only ~/ is understood, not another user's home", s)
+	case filepath.Clean(s) == ".":
+		return fmt.Errorf("%q names the project root itself; list a directory under it", s)
+	}
+	// A relative path is the project's own: it is resolved under the trusted
+	// repository root and may not leave it.
 	return nil
 }
 

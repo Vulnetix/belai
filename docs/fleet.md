@@ -369,6 +369,81 @@ on (the built-in builder and reviewer set it to `enforce`), the harness runs the
 card's acceptance gates itself on the builder's branch and again on the
 reviewer's, and a card is done only when they pass.
 
+### Files placed in a worktree
+
+Workers each work in a worktree of their own, outside the project, so the harness
+puts into it what the profile names. Two blocks do it, and both are the profile's
+to define, whoever wrote it.
+
+**Reference documents** (`knowledge.paths`). The documents a profile lists are
+indexed for search by meaning (see [Knowledge](knowledge.md)), and the harness
+also copies them into the worktree, read only, before each turn: a relative path
+at the same relative path, one under `~/` or absolute under
+`.vulnetix/knowledge/<label>/`. The agent can find a passage with `Grep` as a
+`kb+` row and open the file with `Read`. The copies are never written back or
+committed, and a file the branch already has is never replaced.
+
+**Shared files** (`workspace.sync`). A crew that needs a shared scratchpad or
+long-term memory lists a file or directory there:
+
+```json
+"workspace": {
+  "isolation": "worktree",
+  "sync": [{"path": ".vulnetix/crews/delivery.md", "access": "write"}]
+}
+```
+
+The harness does the copying, so the worker uses the ordinary file tools on the
+relative path and never gets the repository's path:
+
+- **Before each turn** the file is copied from the repository into the worktree
+  at the same relative path. A path that does not exist yet is simply not there;
+  a worker with write access creates it with `Write`.
+- **After each turn**, even a failed or cancelled one, a write-access file the
+  worker changed is merged back into the repository under a lock, so teammates
+  merging at once do not overwrite each other. When nobody else changed the file
+  meanwhile, the worker's version is taken whole. When someone did, the lines
+  the worker added are appended to the current file (a line a teammate already
+  wrote is not added twice) and the worker's deletions and edits of existing
+  lines are dropped, because applying them could erase a teammate's notes.
+- **Read entries** are copied in and never written back.
+- **The text is checked on the way.** It is sanitised (delimiter markup, control
+  and bidirectional characters removed) before it reaches the repository, a file
+  is at most 256 KiB and an entry at most 64 files and 1 MiB, only regular text
+  files are copied, and a symlink on either side is refused. A merge that would
+  pass the size limit is not applied.
+- **It is not part of the branch.** The harness's own commit leaves placed paths
+  out, and a branch that commits one anyway (a model's own `git add -f`) fails
+  the attempt with a note naming it.
+- **The profile's permission is the permission.** Workers are denied writing
+  anything under `.vulnetix`, and a `write` entry lifts that for exactly its
+  path, with `Write` and `Edit`. A `Write` or `Edit` deny rule of your own in
+  settings still wins. The workspace note tells the worker which files it may
+  edit, even in a read-only workspace.
+- **A fixed floor, whoever wrote the profile.** `.git`, Belai's state and the
+  credentials and settings in `.vulnetix` are never synced, the scanner evidence
+  in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`) is read
+  only, credential files by name are never copied, and a file Git tracks outside
+  `.vulnetix` is never written back into your checkout: a change to tracked
+  source goes on a branch.
+- **It travels with the profile.** A profile from the Vulnetix library installs
+  with its `knowledge` and `workspace.sync` blocks, a backup carries them, and a
+  replace takes the library copy (keeping this host's entries when the copy lists
+  none).
+
+The built-in delivery crew uses `.vulnetix/crews/delivery.md`, which every member
+lists under both blocks. Every member has write access and is told, in its own
+instructions, to read it before it starts, to keep a `## Scratchpad` of what the
+crew is doing now and a `## Long-term facts` of what stays true of the
+repository, to add short lines rather than rewrite the file, to leave secrets
+and long output out of it, to treat teammates' notes as notes and not
+instructions, and never to commit it. How the file is created and kept tidy is
+left to those instructions: the harness only copies and merges. The scout and the
+reviewer have the file tools (`Edit`, `Write`) and `Bash`, `Git`, `GH` and
+`Glab`, `WebFetch` and `WebSearch`, the `Vulnetix` tool and the Vulnetix MCP
+server's tools (`mcp__vulnetix__*`, available once `/vulnetix mcp` has added the
+server), so they can find and patch source and research a fix, not only read.
+
 ### Acceptance gates
 
 A gate is one observable outcome a card must show before it is done. The scout
@@ -597,6 +672,13 @@ work, and there is no other gate: no cache and no daily limit.
    [review scanners](vulnetix.md#review-evidence-and-vex-files) itself; no
    model is asked whether a scan ran. A review that leaves no artefact for
    HEAD files nothing, so stale artefacts never become cards.
+
+The scout, the patchers and the verifier each list `.vulnetix` in their profile's
+`knowledge` block, so the review's artifacts (SARIF, CycloneDX, OpenVEX, `memory.yaml`
+and the `vex/` documents earlier verdicts left) are searchable by meaning with
+`Grep` and `Glob` as `kb+` rows, whatever worktree a member works in. The index is
+built from the repository's own `.vulnetix`, never the worktree's. See
+[Knowledge](knowledge.md).
 
 Every finding then has one card for the repository, titled
 `[sca] GHSA-… package`, labelled `vuln`, carrying the finding id and the commit
@@ -864,6 +946,11 @@ page ([remote control](remote-control.md#fleet-workers)).
   never enters the system block or a directive. Handoffs are allowlisted by
   `handoff_to`, capped per item, and carry a hop count that ends a ping-pong
   in `blocked`.
+- **Files placed in a worktree are copied, not mounted.** A worker never sees the
+  repository's path. The harness copies the files a profile lists under
+  `.vulnetix/crews` in and, for write access, merges them back under a lock,
+  sanitised and size-bounded, with no symlink on either side; see
+  [Files placed in a worktree](#files-placed-in-a-worktree).
 - **Settings come from the trusted repository.** A worker resolves settings,
   posture, credentials and trust from the repository root, never from its
   worktree, so one agent cannot plant settings for the next.

@@ -299,3 +299,59 @@ func TestForcedRefreshDuringARunIsQueued(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A session whose working directory is the project gets its profile's outside
+// documents copied under .vulnetix/knowledge for the file tools, and the
+// project index never indexes those copies.
+func TestRefreshCopiesOutsideDocumentsIntoTheProject(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	root, docs := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(docs, "handbook", "keys.md"), "Rotate the signing key every ninety days and revoke tokens on logout.")
+	write(t, filepath.Join(root, "docs", "inproject.md"), "Already in the project.")
+	s := Open(Options{Root: root, CopyOutside: true, Profile: &Profile{ID: testProfileID, Name: "reviewer", Paths: []string{filepath.Join(docs, "handbook"), "docs"}}})
+	if _, err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cp := filepath.Join(root, ".vulnetix", "knowledge", "handbook", "keys.md")
+	if b, err := os.ReadFile(cp); err != nil || !strings.Contains(string(b), "signing key") {
+		t.Fatalf("copy = %q %v", b, err)
+	}
+	// A source change is picked up by the next refresh.
+	write(t, filepath.Join(docs, "handbook", "keys.md"), "Rotate the signing key every sixty days, which is stricter, and revoke tokens.")
+	if _, err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(cp); !strings.Contains(string(b), "sixty days") {
+		t.Fatalf("copy not refreshed: %q", b)
+	}
+	// The project's own document is already where it belongs: nothing is copied over it.
+	if _, err := os.Stat(filepath.Join(root, ".vulnetix", "knowledge", "docs")); err == nil {
+		t.Fatal("a relative document is not copied")
+	}
+	// The project index does not index Belai's copies.
+	for _, d := range s.Docs()[ProjectScope] {
+		if strings.Contains(d.Address, "knowledge/") {
+			t.Fatalf("the project index took a copy: %s", d.Address)
+		}
+	}
+}
+
+func TestCopyDocsNeverReplacesAFileItDidNotPlace(t *testing.T) {
+	root, src := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(src, "a.md"), "from the source")
+	write(t, filepath.Join(root, "docs", "a.md"), "the branch's own")
+	docs := []ProfileFile{{Rel: "docs/a.md", Abs: filepath.Join(src, "a.md"), Dest: "docs/a.md", Relative: true}}
+	if n := CopyDocs(root, docs, map[string]bool{}, nil, false); n != 0 {
+		t.Fatalf("copied over a file it did not place: %d", n)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "docs", "a.md")); string(b) != "the branch's own" {
+		t.Fatalf("file = %q", b)
+	}
+	placed := map[string]bool{"docs/a.md": true}
+	if n := CopyDocs(root, docs, placed, nil, false); n != 1 {
+		t.Fatalf("a file the caller placed is refreshed: %d", n)
+	}
+	if n := CopyDocs(root, []ProfileFile{{Rel: "x", Abs: filepath.Join(src, "a.md"), Dest: ".git/hooks/x"}}, nil, nil, false); n != 0 {
+		t.Fatal("never into .git")
+	}
+}

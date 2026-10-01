@@ -55,6 +55,9 @@ type Setup struct {
 	Root string
 	// Profile is the agent profile whose documents are indexed, or nil.
 	Profile *knowledge.Profile
+	// CopyOutside places copies of the profile's documents that live outside
+	// the project under Root/.vulnetix/knowledge (knowledge.Options).
+	CopyOutside bool
 }
 
 // Open builds the session's Store: the caps come from the user's settings and
@@ -77,6 +80,7 @@ func Open(ctx context.Context, s Setup, wait bool) *knowledge.Store {
 		ProjectTokens: project,
 		ProfileGate:   New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRead),
 		ProjectGate:   New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRemote),
+		CopyOutside:   s.CopyOutside,
 	})
 	if wait {
 		_, _ = store.Refresh(ctx)
