@@ -85,6 +85,18 @@ directory with the prompt on stdin. It is an ordinary Belai session:
 - Web prompts sent while a turn runs wait their turn and show as queued.
 - It ends after `--idle` (default 30 minutes) without a prompt, when you press
   **Stop session** on the website, or when remote control stops.
+- **The command is the daemon's, not yours.** `belai rc-session` needs
+  `-session-id` (the id the daemon minted for the session) and `-dispatch` (the
+  website request it answers) and refuses to start without both, with `-mode`
+  (`agent`, `plan` or `goal`, otherwise classified from the prompt) and `-idle`
+  optional. Typing it yourself starts nothing the website knows about. The
+  prompt is read from stdin, cleaned like a web prompt and capped, and an empty
+  prompt is refused.
+
+`belai rc --detach` starts the daemon in the background with
+`BELAI_RC_DETACHED=1` in its environment. That variable is how the daemon knows
+to keep a log file, `~/.vulnetix/belai/rc/rc.log`; set by hand it makes a
+foreground daemon log there too.
 
 At most `--max` sessions (default 3) run at once; the website refuses more.
 An explicit `--max N` is also the fleet worker cap for this host: the daemon

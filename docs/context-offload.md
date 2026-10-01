@@ -107,6 +107,12 @@ except the two newest. Only then does the error end the turn.
 | `offload.threshold_tokens` | `4000` | Estimated size above which a result is offloaded |
 | `offload.preview_tokens` | `1500` | Estimated size of the inline preview (at least 200) |
 
+Two rules keep a bad value from doing harm. A threshold or preview of zero or
+less is treated as unset and takes its default. After that the preview is raised
+to 200 if it is lower, and a threshold that is not above the preview is raised
+to twice the preview, so a result is never replaced by a preview as large as the
+result itself.
+
 Offload changes how much admitted content rides on each request, never what is
 admitted, so any settings layer may set these. The defaults are a starting
 point; [benchmarks](benchmarks.md) describes how to measure other values.
