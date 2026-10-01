@@ -60,6 +60,35 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 
 `id`, `display_name`, `palette` and `avatar_id` only present the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
 
+### Built-in personas
+
+The built-in agents a person addresses by name carry the same presentation
+fields a profile made in the builder does: a display name, a palette, a
+personality and an avatar. They change how the agent is shown and how it writes
+its report, never what it may do.
+
+| Profile | Display name | Style |
+|---|---|---|
+| `belai:vuln-scout` | Rubber Duck | Talks each finding through, then says what is real |
+| `belai:patcher` | Kremvax | Terse numbered bulletins, a status word first |
+| `belai:verifier` | Dark Avenger | Argues the attacker's case against the fix |
+| `belai:scout` | Juniper Tallis | A survey report with small tasks |
+| `belai:builder` | Odo Brannigan | What was built and what proves it |
+| `belai:reviewer` | Isadora Pell | Specific notes, must fix apart from nit |
+| `belai:triage-vulns` | Calder Moss | A ranked list, most urgent first |
+| `belai:debug` | Pip Ostrander | Symptom, check, cause, fix |
+| `belai:fanout` | Marigold Teague | A join of the parallel results |
+| `belai:plan-handoff` | Thaddeus Rook | A handover note with what done looks like |
+
+Each avatar is a drawing of Pix in the agent's colours with one detail that
+suggests its work, and it passes the same `internal/svgguard` check as a drawing
+a host makes for the builder. The files are in
+`internal/agentprofile/builtin/avatars`, named by the profile's `avatar_id`,
+which is a version 5 UUID of `avatar:` and the profile name. They are drawn once
+and shipped, not generated at run time. The console serves its own copy of each
+file, and a test compares the two. The background agents (`belai:vulnetix-scanner`
+and the `belai:deps-*` set) are not shown by name anywhere, so they have no persona.
+
 ### Validation rules
 
 - `knowledge.paths` must list one to 32 distinct paths, each absolute or starting with `~/`, at most 1024 bytes, with no control character and no `..` segment.

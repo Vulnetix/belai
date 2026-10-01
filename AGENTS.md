@@ -967,6 +967,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   reason, never model or provider text. The image is never read back into a model
   and is rendered only as an image; the server and the website admit it again.
   Never add an element to the list that can run code or fetch.
+  A built-in agent's avatar is a drawing shipped with the profile
+  (`internal/agentprofile/builtin/avatars`), never one made at run time, and
+  `TestPersonaAvatarsAreAdmitted` holds each to the same guard, unchanged.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line
