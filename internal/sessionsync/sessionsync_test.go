@@ -631,3 +631,42 @@ func TestActiveProfileSurvivesALineThatNamesNone(t *testing.T) {
 		t.Fatalf("profile = %q after the session was activated again", got)
 	}
 }
+
+// TestSessionSyncDocNamesEveryRecordTheTailReads keeps the "What the session
+// records" table equal to the lines the syncer reads display metadata from:
+// each type tail.observe switches on, and the registration field it feeds, is on the page.
+func TestSessionSyncDocNamesEveryRecordTheTailReads(t *testing.T) {
+	doc := docparity.Read(t, "docs/session-sync.md")
+	for _, typ := range []string{"session_name", "session_meta", "assistant"} {
+		// A row is "| `type` |"; assistant lines are the conversation itself and
+		// are described by the model and provider they carry.
+		if typ == "assistant" {
+			continue
+		}
+		if !strings.Contains(doc, "| `"+typ+"` |") {
+			t.Errorf("the records table has no row for %s, which the syncer reads", typ)
+		}
+	}
+	// What the tail does with a record: the same statement the page makes.
+	src, err := os.ReadFile("syncer.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"activeProfile", "resumedFrom", "cwd", "mode"} {
+		if !strings.Contains(string(src), `json:"`+field+`"`) {
+			t.Errorf("tail.observe no longer reads %s from session_meta, but the page says it does", field)
+		}
+		if !strings.Contains(doc, "`"+field+"`") {
+			t.Errorf("the page does not name %s", field)
+		}
+	}
+
+	// A session_name line sets the registered name, the latest wins, and an empty one never clears it.
+	tl := &tail{}
+	tl.observe(Entry{Type: "session_name", Content: "first name"})
+	tl.observe(Entry{Type: "session_name", Content: "  second name "})
+	tl.observe(Entry{Type: "session_name", Content: "   "})
+	if tl.info.Name != "second name" {
+		t.Errorf("name = %q, want the latest non-empty one, trimmed", tl.info.Name)
+	}
+}
