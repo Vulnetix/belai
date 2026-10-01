@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/headless"
@@ -163,6 +164,13 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	logPath := ""
 	if os.Getenv("BELAI_RC_DETACHED") == "1" {
 		logPath = rcLogPath()
+	}
+	// A profile the website lists needs the same identity every time, so give
+	// older profiles their id before the catalogue is first advertised.
+	if n, err := agentprofile.EnsureIDs(); err != nil {
+		fmt.Fprintln(stderr, "belai rc: could not give every agent profile an id:", err)
+	} else if n > 0 {
+		fmt.Fprintf(stderr, "Gave %d agent profile(s) an id.\n", n)
 	}
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,

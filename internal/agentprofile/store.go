@@ -21,7 +21,9 @@ func Dir() (string, error) {
 }
 
 // Save writes a profile and returns its path. It rejects names that would
-// overwrite a built-in profile once sanitised.
+// overwrite a built-in profile once sanitised. A profile saved without an id
+// keeps the id of the file it replaces, or is given a new one, and a display
+// name another profile on this host already holds is refused.
 func Save(p AgentProfile) (string, error) {
 	if err := p.Validate(); err != nil {
 		return "", err
@@ -41,18 +43,174 @@ func Save(p AgentProfile) (string, error) {
 	// that already exists and holds a different Name.
 	if existing, err := os.ReadFile(path); err == nil {
 		var prev AgentProfile
-		if json.Unmarshal(existing, &prev) == nil && prev.Name != "" && prev.Name != p.Name {
-			return "", fmt.Errorf("refusing to overwrite %s: it holds profile %q", p.FileName(), prev.Name)
+		if json.Unmarshal(existing, &prev) == nil {
+			if prev.Name != "" && prev.Name != p.Name {
+				return "", fmt.Errorf("refusing to overwrite %s: it holds profile %q", p.FileName(), prev.Name)
+			}
+			if p.ID == "" && ValidID(prev.ID) {
+				p.ID = prev.ID
+			}
+		}
+	}
+	if p.ID == "" && !p.Builtin {
+		if p.ID, err = NewID(); err != nil {
+			return "", err
+		}
+	}
+	if p.DisplayName != "" {
+		if holder, taken, err := DisplayNameTaken(DisplayNameKey(p.DisplayName), p.ID); err != nil {
+			return "", err
+		} else if taken {
+			return "", fmt.Errorf("display name %q is already used by profile %q on this host", p.DisplayName, holder)
 		}
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := writeAtomic(path, data); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+// writeAtomic writes data to path through a temporary file in the same
+// directory, so a reader never sees half a profile and a crash leaves the
+// old one.
+func writeAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".profile-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if err := tmp.Chmod(0o600); err == nil {
+		_, err = tmp.Write(data)
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		os.Remove(name)
+	}
+	return err
+}
+
+// stored reads every profile file in the directory leniently: a file that
+// does not parse is skipped, so one broken profile cannot block an identity
+// lookup. File is set on each result.
+func stored() ([]AgentProfile, error) {
+	dir, err := Dir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []AgentProfile
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var p AgentProfile
+		if json.Unmarshal(data, &p) != nil || p.Name == "" {
+			continue
+		}
+		p.File = e.Name()
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// EnsureIDs gives every stored profile that lacks one an id and rewrites it
+// in place, returning how many it stamped. Run when the rc daemon starts so
+// a profile has the same identity every time the website sees it.
+func EnsureIDs() (int, error) {
+	list, err := stored()
+	if err != nil {
+		return 0, err
+	}
+	dir, err := Dir()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, p := range list {
+		if ValidID(p.ID) {
+			continue
+		}
+		if p.ID, err = NewID(); err != nil {
+			return n, err
+		}
+		file := p.File
+		p.File = ""
+		data, err := json.MarshalIndent(p, "", "  ")
+		if err != nil {
+			return n, err
+		}
+		if err := writeAtomic(filepath.Join(dir, file), data); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// ByID finds a profile by its id: a stored profile, a plugin profile or a
+// built-in. The empty and malformed ids match nothing.
+func ByID(id string) (AgentProfile, bool) {
+	if !ValidID(id) {
+		return AgentProfile{}, false
+	}
+	list, _ := stored()
+	for _, p := range list {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	if ExtraProfiles != nil {
+		for _, p := range ExtraProfiles() {
+			if p.ID == id {
+				return p, true
+			}
+		}
+	}
+	for _, p := range builtinProfiles {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return AgentProfile{}, false
+}
+
+// DisplayNameTaken reports whether a stored profile other than exceptID
+// already holds the display-name key (see DisplayNameKey), and its name. The
+// store is per host, so this is the host half of the (display name, host)
+// uniqueness rule.
+func DisplayNameTaken(key, exceptID string) (holder string, taken bool, err error) {
+	if key == "" {
+		return "", false, nil
+	}
+	list, err := stored()
+	if err != nil {
+		return "", false, err
+	}
+	for _, p := range list {
+		if p.DisplayName != "" && DisplayNameKey(p.DisplayName) == key && (exceptID == "" || p.ID != exceptID) {
+			return p.Name, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 // SaveMoving saves p and removes oldFile when it names a different on-disk
