@@ -104,6 +104,7 @@ func (a *App) closeBudgets() {
 func (a *App) handleUsage(ev run.UsageEvent) {
 	a.intelReq.add(ev)
 	a.refreshFooter()
+	a.syncIntel(time.Now())
 	if a.budgets == nil || !a.settings.BudgetWarnEnabled() {
 		return
 	}

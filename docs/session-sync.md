@@ -62,12 +62,13 @@ website never disagree.
 | `ask` | The host stops to ask | Entry id = ask id. `kind`: `permission` (tool, subject, args, the `rule` allow-always would add, the diff), `clarify` / `mode_choice` (the questionnaire), `plan_review` (the plan text, up to 64 KiB) |
 | `ask_answer` | The ask is resolved, closed with its turn, or cancelled | Entry id = `answer-` + ask id. `source` (`host` or `web`), then `decision`, `answers`, or `plan_choice` and `notes` |
 | `rolemanager` | Every role-manager or classifier decision | The existing summary and outcome, plus `verdict`, `verdict_label`, `subject` and `pass`. Decisions the live feed does not show (mode selection, goal and plan evaluation) carry `hidden: true` |
+| `intel_state` | A model call moves a plan limit by a percent, or changes the pace, trend or runway word; at most once a minute | `provider`, `at`, `limits[{provider, window, used, resetsAt, observedAt}]`, `pace`, `trend`, `runway`, `roles[{role, tokens}]` (up to 8). Numbers, window names and the harness's own words only, never provider text. The website draws its limit bars and runway from the latest one |
 
 A decision's `Detail` is never written: only the verdict token and the
 harness's own structure reach the record, as with the live feed.
 
 Resume restores diffs, rebuilds the ask and answer notices, and skips
-`tool_start`, `turn_state` and hidden decisions. None of these records reach
+`tool_start`, `turn_state`, `intel_state` and hidden decisions. None of these records reach
 a model: the conversation is still rebuilt from paired calls and results.
 
 ## What it sends, and where
