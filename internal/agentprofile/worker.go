@@ -161,6 +161,16 @@ func (s SurveySpec) EveryOr() time.Duration {
 	return DefaultSurveyEvery
 }
 
+// SurveyGrace is how early a start may be and still survey. The interval is
+// measured from the stamp the previous survey wrote, which is written after the
+// item is filed, so a start exactly one interval later (an hourly cron, an
+// hourly schedule) lands a fraction of a second short and would be skipped about
+// as often as not. The grace is two minutes, and never more than a tenth of the
+// interval.
+func (s SurveySpec) SurveyGrace() time.Duration {
+	return min(2*time.Minute, s.EveryOr()/10)
+}
+
 // Route is a destination list plus label edits.
 type Route struct {
 	List       string   `json:"list,omitempty"`

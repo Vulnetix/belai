@@ -434,7 +434,7 @@ func (w *Worker) survey(project string) (kanban.Item, bool) {
 	}
 	w.surveyed = true
 	stamp := w.surveyStamp()
-	if fi, err := os.Stat(stamp); err == nil && w.clock().Sub(fi.ModTime()) < k.Survey.EveryOr() {
+	if fi, err := os.Stat(stamp); err == nil && w.clock().Sub(fi.ModTime()) < k.Survey.EveryOr()-k.Survey.SurveyGrace() {
 		w.logf("survey skipped: last one here was %s ago", w.clock().Sub(fi.ModTime()).Round(time.Minute))
 		return kanban.Item{}, false
 	}

@@ -243,3 +243,84 @@ func TestReadOnlyDirective(t *testing.T) {
 		t.Fatal("a read-only worker got the writing directive")
 	}
 }
+
+func hourlyProfile() agentprofile.AgentProfile {
+	p := scoutProfile()
+	p.Kanban.Survey.Every = "1h"
+	return p
+}
+
+// An hourly survey is not skipped because the next start came a moment before
+// the hour was up: the interval is checked against a stamp written after the
+// item was filed, so a start exactly one interval later is always a hair short.
+func TestHourlySurveyRunsWhenTheNextStartIsASecondsEarly(t *testing.T) {
+	store, reg := testEnv(t)
+	var turns []Turn
+	t0 := time.Now()
+	first := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+	first.Once, first.now = false, func() time.Time { return t0 }
+	runFor(t, first, 3*time.Second)
+	if len(turns) != 1 {
+		t.Fatalf("first start: %d turns", len(turns))
+	}
+
+	for name, c := range map[string]struct {
+		after   time.Duration
+		surveys bool
+	}{
+		"exactly an hour":                {time.Hour, true},
+		"thirty seconds early":           {time.Hour - 30*time.Second, true},
+		"just inside the grace":          {time.Hour - 119*time.Second, true},
+		"three minutes early is skipped": {time.Hour - 3*time.Minute, false},
+		"half the interval is skipped":   {30 * time.Minute, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, reg := testEnv(t)
+			var turns []Turn
+			a := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+			a.Once, a.now = false, func() time.Time { return t0 }
+			runFor(t, a, 3*time.Second)
+			at := t0.Add(c.after)
+			b := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+			b.Once, b.Repo, b.now = false, a.Repo, func() time.Time { return at }
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = b.Run(ctx)
+			want := 1
+			if c.surveys {
+				want = 2
+			}
+			if len(turns) != want {
+				t.Fatalf("%d survey turns, want %d\n%s", len(turns), want, b.Log.(*bytes.Buffer).String())
+			}
+			if !c.surveys && !strings.Contains(b.Log.(*bytes.Buffer).String(), "survey skipped") {
+				t.Fatalf("log %q", b.Log.(*bytes.Buffer).String())
+			}
+		})
+	}
+}
+
+// A finished survey does not block the next hour's: the board refuses only a
+// second open item with the same title, and the title carries the date, so the
+// hours of one day share a title.
+func TestHourlySurveysOfOneDayShareATitleWithoutColliding(t *testing.T) {
+	store, reg := testEnv(t)
+	var turns []Turn
+	t0 := time.Now()
+	repo := ""
+	for i := 0; i < 3; i++ {
+		at := t0.Add(time.Duration(i) * time.Hour)
+		w := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+		w.Once, w.now = false, func() time.Time { return at }
+		if repo != "" {
+			w.Repo = repo
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = w.Run(ctx)
+		cancel()
+		repo = w.Repo
+	}
+	if len(turns) != 3 {
+		t.Fatalf("%d surveys over three hours, want 3", len(turns))
+	}
+}

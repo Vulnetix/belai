@@ -3,6 +3,7 @@ package agentprofile
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 var workerProfiles = []string{"belai:scout", "belai:builder", "belai:reviewer", "belai:vuln-scout", "belai:patcher", "belai:verifier"}
@@ -149,5 +150,25 @@ func TestSecurityCrewProfilesCarryTheirHarnessDuties(t *testing.T) {
 	}
 	if s := patcher.Kanban.Security; s == nil || !s.Reconcile {
 		t.Fatalf("patcher must reconcile: %+v", s)
+	}
+}
+
+// An hourly start lands a fraction of a second short of the interval, so the
+// survey tolerates a start two minutes early, and never more than a tenth of
+// the interval.
+func TestSurveyGraceIsTwoMinutesCappedAtATenth(t *testing.T) {
+	for every, want := range map[string]time.Duration{
+		"1h":  2 * time.Minute,
+		"24h": 2 * time.Minute,
+		"":    2 * time.Minute, // the 24h default
+		"30m": 2 * time.Minute, // refused by Validate, but the arithmetic holds
+		"10m": time.Minute,
+		"1m":  6 * time.Second,
+		"bad": 2 * time.Minute, // unparsable falls back to the default interval
+		"-5h": 2 * time.Minute,
+	} {
+		if got := (SurveySpec{Every: every}).SurveyGrace(); got != want {
+			t.Errorf("every %q: grace = %s, want %s", every, got, want)
+		}
 	}
 }

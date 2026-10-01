@@ -140,7 +140,11 @@ Limits:
   default `24h`) for the same profile and repository on the same machine. The
   last survey's time is the mtime of a stamp file under the registry
   (`agents/run/surveys/`). A worker restarted within the interval logs
-  `survey skipped` and does not survey.
+  `survey skipped` and does not survey. A start up to two minutes before the
+  interval is up (a tenth of the interval at most) still surveys: the stamp is
+  written after the item is filed, so a start exactly one `every` later, as an
+  hourly schedule makes, always lands a moment short and would otherwise be
+  skipped about as often as not.
 - **Never for a targeted run.** `-once` and `-item` never survey.
 - **Shared across hosts.** The dated title makes hosts that survey the same
   project on the same day share one item. The board refuses a second open
@@ -160,6 +164,39 @@ looks for untested business rules, missing or stale docs, and site prose to
 add or update. It files at most five `build` handoffs, discrepancies before
 gaps. Moving one from Review to Backlog is the confirmation: a builder then
 claims it by its `build` label.
+
+### A survey on a schedule
+
+A worker surveys at most once each time it starts, so a standing worker (a cron
+`schedule` in its profile, or `-stay`) surveys once and then waits for items. Work
+that should happen every hour is started every hour instead, by either of:
+
+- a stored schedule in `belai rc` (the Hosts page), which runs
+  `belai agent start -drain NAME` in a directory the host offers
+  ([remote-control.md](remote-control.md#scheduled-agents));
+- the operating system's cron, with the same command in the repository:
+  `0 * * * * cd /path/to/repo && belai agent start -drain NAME`.
+
+`-drain` makes the worker exit once nothing is left to claim, so each start is one
+review. With `kanban.survey.every: 1h`:
+
+- **Each start surveys.** Because of the two-minute grace above, the start at the
+  top of every hour files and works one survey item. A start less than about 58
+  minutes after the last survey is skipped, and a log line says so.
+- **Filed work comes first.** If a card the worker can claim is waiting, the start
+  works that card and does not survey, so the survey for that hour does not
+  happen.
+- **One title a day.** The survey item's title is the survey `title` plus the date,
+  so the hours of one day share a title. A finished item never blocks the next
+  hour's, because the board refuses only a second *open* item with the same title.
+  An item still open (a long run that holds its lease, or one the harness blocked
+  because the worker needed an ask) means the next start finds it, cannot claim it
+  and files nothing until that item is finished or moved, or the date changes.
+- **Handoffs wait for a person by default.** Every handoff made while working a
+  survey goes to `survey.list` (`review` unless the profile says `backlog` or
+  `auto`), whatever the model asks.
+- **Missed hours are not made up.** A schedule that was not running at the hour
+  skips it, and the worker reads its own notes for what it last covered.
 
 ### Facts
 
