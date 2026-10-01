@@ -259,6 +259,9 @@ type App struct {
 	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
+	// personaFor is the engaged agent whose colours the TUI wears right now
+	// (syncPersona); empty is the brand palette.
+	personaFor string
 	// agentExplicit marks an agent the user engaged by hand (picker, /agent,
 	// /profile). While set, the mode classifier may not replace or clear the
 	// engaged name — that wipe was how the footer lost it mid-session.
@@ -1091,6 +1094,9 @@ func New(opts Options) *App {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
 	}
 
+	// The persona colours are package state, and this App starts with none
+	// engaged until refreshFooter says otherwise (a profile the project pinned).
+	components.ResetPersona()
 	a.refreshFooter()
 
 	if opts.ResumeSession != "" {
@@ -5294,7 +5300,9 @@ func (a *App) refreshFooter() {
 	// the outer padding, not the terminal.
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
-	a.footer.Agent = a.engagedAgent()
+	a.syncPersona()
+	engaged := a.engagedAgent()
+	a.footer.Agent = lookupAgentLook(engaged).title(engaged)
 	if a.modeAuto {
 		// Auto: the chip names the mode the classifier picked for the last
 		// prompt (agent until one lands) in the profile slot.

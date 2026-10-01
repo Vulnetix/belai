@@ -228,6 +228,9 @@ type renderKey struct {
 	isAttachment bool
 	attachMeta   *FileMeta
 	player       string
+	// theme is ThemeGeneration: a rendered row is ANSI text with the persona's
+	// colours baked in, so a switch of agent must miss the cache.
+	theme uint64
 }
 
 // renderCache is the memoised render of one message (or of a system group, on
@@ -275,6 +278,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		isAttachment: m.IsAttachment,
 		attachMeta:   m.AttachMeta,
 		player:       m.Player.Key(),
+		theme:        ThemeGeneration(),
 	}
 }
 

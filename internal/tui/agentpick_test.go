@@ -47,7 +47,9 @@ func TestAgentPickerListsBuiltinsFirstThenProfiles(t *testing.T) {
 	}
 
 	row := a.renderAgentPicker()
-	if !strings.Contains(row, "reviewer") || !strings.Contains(row, profiles.DebugProfile) {
+	// belai:debug carries a persona, so its chip is drawn by the display name
+	// with the role beside it; a profile without one keeps its name.
+	if !strings.Contains(row, "reviewer") || !strings.Contains(row, "Pip Ostrander (debug)") {
 		t.Fatalf("picker row = %q, want both profiles", row)
 	}
 	if !strings.Contains(row, "◈") {

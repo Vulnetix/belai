@@ -67,6 +67,65 @@ Contrast: every role that renders text you must read (`Muted` and up) keeps
 4.5:1 against the terminal background in its theme. `Line` and `Low` are
 deliberately below that and never carry required information on their own.
 
+### Agent personas
+
+An agent profile can carry a display name and a palette of four colours
+(`display_name` and `palette`, see [agent-profiles.md](agent-profiles.md)). While
+an agent is engaged the TUI wears them, and ctrl+p, the picker and `/agent`
+switch between agents live:
+
+- The **primary** colour replaces `ColorTeal` and the **secondary** replaces
+  `ColorTealSoft`. Nothing else moves: `ColorAmber` and `ColorDanger` keep their
+  safety meaning, and the greys, the text, the category colours and the Pix
+  banner stay as they are. A persona changes who is speaking, never what a
+  colour tells you.
+- A palette colour is one value but the terminal is dark or light, so each is fitted
+  to both. It is kept as it is where it already reads at 4.5:1 on the terminal
+  background, and moved toward white (dark) or black (light) until it does. A
+  test holds every built-in persona to that, and to 3:1 for the chip text on its
+  fill.
+- The footer's mode chip names the agent by its display name (`agent · Kremvax`),
+  the picker draws `Kremvax (patcher)`, and the line that says an agent was
+  engaged reads `agent: Kremvax (belai:patcher)`. Completing an `/agent`
+  argument still shows the profile names, because those are what you type.
+- The agent is dormant outside agent mode, and so are its colours. A profile with
+  no persona, no agent and a new session all show the brand palette.
+- Turns already on screen are drawn again in the new colours: a rendered row is
+  cached with its colours baked in, so a palette change moves the cache key
+  (`components.ThemeGeneration`). The TUI never changes the terminal's own
+  colours or title.
+
+Rules and edge cases:
+
+- **What counts as a palette.** Exactly four `#rrggbb` colours (`PaletteSize`).
+  Anything else (none, three, five, a colour name, a short or unprefixed hex, a
+  value with control bytes) is not a persona: `ApplyPersona` takes any persona off
+  and reports false, so a bad palette can never leave the previous agent's colours
+  on. `agentprofile` already refuses to save one; this guards a hand-edited file.
+- **One agent, two trees.** The persona comes from the agent-profile definition
+  of the name, even when a flat profile of the same name carries the prompt
+  (`belai:debug` is both, and is drawn as Pip Ostrander). A flat profile with no
+  definition has no persona and shows its profile name.
+- **The chip is not the colours.** In auto mode the chip names the mode the
+  classifier picked, and while an approved plan runs it says `executing`; in both
+  the colours still follow the engaged agent. Outside agent mode the agent is
+  dormant, so the chip and the colours go back to the brand together.
+- **Every route ends in one place.** ctrl+p, the picker, `/agent`, a project's
+  pinned agent at startup, resuming a session (the agent it recorded, or none) and
+  a new session all end in `refreshFooter`, so there is no path that changes the
+  agent without changing the colours. `syncPersona` does work only when the agent
+  changed, so a footer refresh on every frame costs nothing.
+- **Cache.** A new `App` starts with the brand palette, whatever the last one
+  left on, and `ResetPersona` does not move the theme generation when no persona
+  is applied, so an idle reset does not redraw the transcript.
+- **Never overridden.** `ColorAmber`, `ColorDanger`, `ColorCream`, `ColorMuted`,
+  `ColorText` and `ColorLine` are fixed (a test checks each).
+
+`components.ApplyPersona` and `components.ResetPersona` are the whole interface.
+`App.syncPersona` calls them from `refreshFooter`, which every route that changes
+the engaged agent ends in. The website draws the same persona for a session by
+the agent it ran under (see [session-sync.md](session-sync.md)).
+
 ## Glyphs
 
 | Glyph | Colour | Meaning |

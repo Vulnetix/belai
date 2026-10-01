@@ -89,6 +89,12 @@ and shipped, not generated at run time. The console serves its own copy of each
 file, and a test compares the two. The background agents (`belai:vulnetix-scanner`
 and the `belai:deps-*` set) are not shown by name anywhere, so they have no persona.
 
+In the TUI, engaging an agent (ctrl+p, the picker or `/agent`) retints the
+accents in the agent's primary and secondary colours and shows its display name in
+the footer and the picker; see [Agent personas](tui-design.md#agent-personas). On
+the website a session is drawn in the colours of the agent that ran it
+(`activeProfile` in the session registration, see [session-sync.md](session-sync.md)).
+
 ### Validation rules
 
 - `workspace.sync` needs `workspace.isolation: worktree`, lists at most 8 distinct, non-overlapping repository-relative paths made of letters, digits and `. _ - /` only, with `access` of `read` or `write`. A path under `.git`, `.vulnetix/belai`, `.vulnetix/settings.json` or `.vulnetix/credentials.json` is refused, and so is write access to the scanner evidence in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`).
