@@ -108,29 +108,55 @@ func hasDotGit(rel string) bool {
 // files the project index reads (see SyncProject), as artefacts. skipped counts
 // the paths and files that were left out.
 func EnumerateProfile(ctx context.Context, root string, paths []string) (files []ProfileFile, skipped int, err error) {
+	return EnumerateProfileOwned(ctx, root, "", paths)
+}
+
+// EnumerateProfileOwned is EnumerateProfile with the profile's owned directory
+// (see ownedfiles.go) as the fallback for a listed path that does not exist on
+// this host: the project's own file, or the file at the listed absolute or home
+// path, always wins. A path found only in owned is held to the same rules as any
+// other (no symlinks, eligible files only, nothing outside owned), but it is not
+// checked against BlockedAbsolute, since it is the daemon's own copy and never a
+// path a request chose. owned may be empty.
+func EnumerateProfileOwned(ctx context.Context, root, owned string, paths []string) (files []ProfileFile, skipped int, err error) {
 	home, _ := os.UserHomeDir()
 	labels := map[string]int{}
 	for _, raw := range paths {
 		if err := ctx.Err(); err != nil {
 			return files, skipped, err
 		}
-		p, relative := raw, false
+		p, relative, resolved := raw, false, true
 		switch {
 		case strings.HasPrefix(p, "~/"):
 			if home == "" {
-				skipped++
-				continue
+				resolved = false
+				break
 			}
 			p = filepath.Join(home, p[2:])
 		case filepath.IsAbs(p):
 		default:
 			// A relative path is the project's own. Without a root it names
-			// nothing.
+			// nothing here, though the owned copy may.
+			relative = true
 			if root == "" {
-				skipped++
-				continue
+				resolved = false
+				break
 			}
-			p, relative = filepath.Join(root, filepath.FromSlash(p)), true
+			p = filepath.Join(root, filepath.FromSlash(p))
+		}
+		fromOwned := false
+		if owned != "" {
+			if _, lerr := os.Lstat(p); !resolved || os.IsNotExist(lerr) {
+				if op, ok := OwnedPath(owned, raw); ok {
+					if _, oerr := os.Lstat(op); oerr == nil {
+						p, resolved, fromOwned = op, true, true
+					}
+				}
+			}
+		}
+		if !resolved {
+			skipped++
+			continue
 		}
 		p, aerr := filepath.Abs(p)
 		if aerr != nil {
@@ -138,7 +164,7 @@ func EnumerateProfile(ctx context.Context, root string, paths []string) (files [
 			continue
 		}
 		cleanRaw := path.Clean(filepath.ToSlash(raw))
-		if (relative && hasDotGit(cleanRaw)) || (!relative && BlockedAbsolute(p)) {
+		if (relative && hasDotGit(cleanRaw)) || (!relative && !fromOwned && BlockedAbsolute(p)) {
 			skipped++
 			continue
 		}
@@ -147,13 +173,19 @@ func EnumerateProfile(ctx context.Context, root string, paths []string) (files [
 			skipped++
 			continue
 		}
-		if relative && !insideRoot(root, p) {
+		switch {
+		case fromOwned:
+			if !insideRoot(owned, p) {
+				skipped++
+				continue
+			}
+		case relative && !insideRoot(root, p):
 			// A symlink on the way (a linked docs directory) must not lead out
 			// of the repository.
 			skipped++
 			continue
 		}
-		if relative && cleanRaw == vulnetixDir {
+		if relative && !fromOwned && cleanRaw == vulnetixDir {
 			arts, aerr := scanartifacts.Enumerate(p)
 			if aerr != nil {
 				skipped++

@@ -260,7 +260,8 @@ identifier, the id of the agent creator the website made. The daemon:
 2. reads the display name, the four colours and the optional personality from
    the website, cleans every string to one capped line, and sends the text through
    the security classifier under the effective posture, as it would a web prompt;
-3. asks this host's **main** model, in a tool-less turn, to redraw Pix with them.
+3. asks this host's **main** model, in a tool-less turn, to redraw Pix with them
+   (and its fast model alongside it, as a stand-in; see below).
    The system text is Belai's own and carries the drawing and the rules; the
    website's words arrive only as labelled data;
 4. admits the reply through `internal/svgguard` and posts back only the
@@ -274,7 +275,10 @@ entity, a comment or a size over 48 KB. Nothing is repaired. A refusal goes back
 as a harness-worded reason, never model or provider text, and the model is told
 only which kind of problem the guard found when it is asked to try once more.
 The server and the website admit the image again before they serve or draw it.
-The drawing takes at most 100 seconds on the host.
+When a fast model is configured, it draws at the same time and its drawing is
+kept in reserve: the main model's is always preferred, and the fast model's
+stands in only if the main model has failed, or has not answered within 100
+seconds and the fast model has. The drawing takes at most 240 seconds on the host.
 
 The catalogue carries each worker profile's `id`, display name, palette and
 avatar id, so the website can draw the agent. They are presentation only.

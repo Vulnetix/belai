@@ -84,6 +84,10 @@ type Workspace struct {
 	Branch string
 	// Worktree is true when Dir is a worktree this worker created.
 	Worktree bool
+	// Owned is the profile's owned directory (config.ProfileFilesDir), the fallback
+	// source for a workspace.sync path the repository does not hold yet: a library
+	// install writes the files a profile carries there, never into a repository.
+	Owned string
 	// Base is the commit the item's work is measured from: the base a new
 	// branch started at, or where an existing branch forked from HEAD.
 	Base string

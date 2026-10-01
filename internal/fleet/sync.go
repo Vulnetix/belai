@@ -82,12 +82,21 @@ func (w *Workspace) SyncIn(repo string, specs []agentprofile.SyncSpec, docs []kn
 		}
 		e := syncEntry{spec: spec, rel: rel, base: map[string][]byte{}}
 		synced = append(synced, rel)
+		srcRoot := repo
 		srcs, err := listSyncSources(repo, rel)
 		if err != nil {
 			return nil, err
 		}
+		if len(srcs) == 0 && w.Owned != "" {
+			// The repository has no copy yet: seed it from the files the profile
+			// carries. The same rules apply (no symlinks, bounded text files).
+			ownedRoot := filepath.Join(w.Owned, knowledge.OwnedRel)
+			if seeded, oerr := listSyncSources(ownedRoot, rel); oerr == nil && len(seeded) > 0 {
+				srcs, srcRoot = seeded, ownedRoot
+			}
+		}
 		for _, f := range srcs {
-			data, err := readSyncFile(filepath.Join(repo, filepath.FromSlash(f)))
+			data, err := readSyncFile(filepath.Join(srcRoot, filepath.FromSlash(f)))
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", f, err)
 			}
