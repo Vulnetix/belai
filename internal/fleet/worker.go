@@ -95,10 +95,15 @@ type Worker struct {
 	Sessions *session.Store
 	// Sync mirrors each item's transcript to the website, so the session id
 	// on the item's notes opens there; nil mirrors nothing. The mirror only
-	// uploads lines the transcript already wrote, and takes no prompts or
-	// answers: nobody types into a worker.
+	// uploads lines the transcript already wrote and takes no answers. It
+	// takes web prompts only when RemotePrompts is on.
 	Sync   *sessionsync.Client
 	mirror *sessionsync.Syncer
+	// RemotePrompts lets the website type into this worker's session (a crew
+	// message arrives as one such prompt per worker). It is the user's own
+	// sync.remote_prompts switch; off, the worker takes nothing from the web.
+	RemotePrompts bool
+	web           *webInbox
 	// Record is this worker's registry entry (ID, Profile, Crew set).
 	Record Record
 	// Once works at most one item (or finds none) and returns.
@@ -264,13 +269,17 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.auditWorker(audit.WorkerStarted, "started")
 	if w.Sync != nil && w.Sessions != nil {
 		w.mirror = sessionsync.New(sessionsync.Options{
-			Client: w.Sync, HostID: headless.HostID(),
+			Client: w.Sync, HostID: headless.HostID(), RemotePrompts: w.RemotePrompts,
 			Host: sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		})
 		// It outlives ctx long enough to upload the last lines and end the
 		// session on the website.
 		w.mirror.Start(context.Background())
 		defer w.mirror.Close(5 * time.Second)
+		if w.RemotePrompts {
+			w.web = &webInbox{mirror: w.mirror, facts: w.profileFacts}
+			go w.web.run(ctx)
+		}
 	}
 	reason, runErr := w.loop(ctx)
 	w.Record.State, w.Record.Item, w.Record.Stopped, w.Record.Reason = StateStopped, "", w.clock().UnixMilli(), reason
@@ -1180,7 +1189,11 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 			t.Emit(e)
 		}
 	}
-	tr.user(prompt)
+	tr.log.User(prompt, map[string]any{"profile_facts": w.profileFacts()})
+	if w.web != nil {
+		w.web.begin(sess, tr)
+		defer w.web.end()
+	}
 	res, err := sess.RunInputObserved(ctx, nil, in, emit)
 	tr.finish(res, err)
 	if syncState != nil {
