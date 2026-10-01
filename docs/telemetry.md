@@ -87,7 +87,8 @@ drops the whole key from project settings.
 
 Export is batched on a background goroutine every 10 seconds and flushed when
 Belai exits. If the collector is slow or down, data is dropped rather than
-slowing a turn, and at most 4096 spans wait between exports.
+slowing a turn, and at most 4096 spans wait between exports. Each export
+request gives up after 10 seconds.
 
 ## Relationship to the local trace
 
@@ -102,6 +103,7 @@ and can be on at the same time.
 - A trailing `/` on the endpoint is removed.
 - With `traces` and `metrics` both false, nothing starts.
 - A string attribute such as a model id keeps letters, digits and `._:/@+-`;
-  anything else becomes `_`, and it is cut at 96 characters.
+  each run of other characters becomes a single `_` (so `a  b` is `a_b`), and it is
+  cut at 96 characters.
 - A collector that is down or slow loses that batch; the next export
   carries the counters again, because they are cumulative.
