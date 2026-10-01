@@ -3,6 +3,8 @@ package tools
 import (
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/docparity"
 )
 
 func valuesDef() Definition {
@@ -133,5 +135,24 @@ func TestCoreToolPathsDeclareTheirFormat(t *testing.T) {
 	}
 	if p := (&Bash{}).Definition().Properties["command"]; p.Format != FormatCommand {
 		t.Errorf("Bash command format = %q", p.Format)
+	}
+}
+
+// The page says a glob or regex is at most 4096 bytes of valid UTF-8 without
+// NUL: that exact size passes, one more byte does not.
+func TestGlobAndRegexBoundaryIs4096Bytes(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/sanitization.md")), " ")
+	if !strings.Contains(doc, "Valid UTF-8, no NUL, at most 4096 bytes") || maxPatternBytes != 4096 {
+		t.Fatalf("the page says 4096 bytes; maxPatternBytes is %d", maxPatternBytes)
+	}
+	for _, f := range []Format{FormatGlob, FormatRegex} {
+		if err := CheckFormat(f, strings.Repeat("a", 4096)); err != nil {
+			t.Errorf("%s of exactly 4096 bytes refused: %v", f, err)
+		}
+		for name, v := range map[string]string{"too long": strings.Repeat("a", 4097), "NUL": "a\x00b", "invalid UTF-8": "a\xffb"} {
+			if err := CheckFormat(f, v); err == nil {
+				t.Errorf("%s accepted a pattern that is %s", f, name)
+			}
+		}
 	}
 }
