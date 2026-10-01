@@ -820,9 +820,9 @@ BuildDate = UTC RFC 3339
 
 ## CI and release
 
-- `.github/workflows/ci.yml` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile on every push and pull request.
+- `.github/workflows/ci.yml` runs on every push (except Dependabot branches), every tag and every pull request, as three jobs. `test` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile. `models` prepares the classifier models and runs the golden tests under the `belai_bert` and `belai_bert_jailbreak` tags, without `-race` because the race detector multiplies the model's memory use. `voice` fetches the pinned speech model, runs the voice tests with `belai_voice` and builds with it.
 - `.github/workflows/release.yml` fires on a `v*` tag: `modelprep` prepares the embedded models (cached by model id + revision), cross-compiles the six vanilla targets plus the three variant families (`belai-bert-guardrails`, `belai-bert-guardrails-jailbreak`, `belai-no-classifier`), publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
-- `.github/workflows/pages.yml` builds the marketing site on `site/**` pushes, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
+- `.github/workflows/pages.yml` builds the marketing site on pushes to `main` that touch `site/**` or the workflow itself, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
 
 ## Site
 
