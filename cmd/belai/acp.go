@@ -34,6 +34,19 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	model := fs.String("model", "", "model id (default: the provider's)")
 	noTranscript := fs.Bool("no-transcript", false, "do not keep a session transcript of editor sessions")
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	// Nothing but protocol may follow on stdout, so a stray word is refused
+	// here rather than starting a server the caller did not mean to run.
+	if fs.NArg() > 0 {
+		if fs.Arg(0) == "help" {
+			fs.Usage()
+			return 0
+		}
+		fmt.Fprintf(stderr, "belai acp: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	wd, _ := os.Getwd()

@@ -60,8 +60,8 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -trust-dir, -provider, -model, -stay, -drain as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
-  pause ID|NAME                 finish the card in hand, then claim nothing
-  resume ID|NAME                take cards again
+  pause ID|NAME                  finish the card in hand, then claim nothing
+  resume ID|NAME                 take cards again
   stop ID|NAME | -all            stop workers; their items go back to the board
   status                         workers and this project's board
 
@@ -73,7 +73,7 @@ a cron schedule keeps it). See docs/fleet.md.
 
 // runAgentCLI implements `belai agent …` and returns the exit code.
 func runAgentCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "help" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "-help" || args[0] == "help" || args[0] == "--help" {
 		fmt.Fprint(stderr, agentUsage)
 		if len(args) == 0 {
 			return 2

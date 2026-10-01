@@ -41,6 +41,7 @@ just check      # gofmt + go vet + go test -race, exactly what CI runs
 | `just ask openai gpt-5 "summarise this repo"` | pin provider and model for one turn |
 | `just detect-mode "refactor the parser"` | report the Role Manager mode decision only |
 | `just run -version` | pass raw flags through |
+| `just run -help` | the command list, examples and grouped flags (`just run help agent` for one command) |
 
 `prompt`, `ask`, and `detect-mode` take their text as an exported shell variable, so quotes, apostrophes, and `@` characters in a model id survive intact:
 

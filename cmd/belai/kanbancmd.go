@@ -95,7 +95,7 @@ func openKanbanCLI(wd string) (*kanbanCLI, error) {
 
 // runKanbanCLI implements `belai kanban …` and returns the exit code.
 func runKanbanCLI(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "help" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "-help" || args[0] == "help" || args[0] == "--help" {
 		fmt.Fprint(stderr, kanbanUsage)
 		if len(args) == 0 {
 			return 2

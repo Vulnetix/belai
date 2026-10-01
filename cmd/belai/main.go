@@ -60,6 +60,19 @@ func main() {
 	defer stop()
 	go hardExitOnSecondSignal(ctx)
 
+	// `belai help <command>` is `belai <command> -h`. Bare `belai help` needs
+	// the flags defined below, so it is answered after they are.
+	if len(os.Args) > 2 && os.Args[1] == "help" {
+		target, ok := helpTarget(os.Args[2:])
+		if !ok {
+			fmt.Fprintf(os.Stderr, "belai help: %q is not a command; run `belai -help` for the list\n", os.Args[2])
+			exitProcess(2)
+		}
+		// The command prints its usage to stderr; here it is the answer, so it
+		// goes to stdout where a pager can take it.
+		os.Stderr = os.Stdout
+		os.Args = append([]string{os.Args[0]}, target...)
+	}
 	// `belai acp` serves the Agent Client Protocol to an editor.
 	if len(os.Args) > 1 && os.Args[1] == "acp" {
 		exitProcess(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
@@ -137,7 +150,14 @@ func main() {
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
 	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
-	flag.Parse()
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	if len(os.Args) == 2 && os.Args[1] == "help" {
+		printHelp(os.Stdout, flag.CommandLine)
+		exitProcess(0)
+	}
+	if ok, code := parseTopLevel(flag.CommandLine, os.Args[1:], os.Stdout, os.Stderr); !ok {
+		exitProcess(code)
+	}
 
 	if *showVersion {
 		fmt.Println(version.Version)

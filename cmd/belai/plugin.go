@@ -46,6 +46,10 @@ func runPluginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		fmt.Fprint(stderr, pluginUsage)
 		return 2
 	}
+	if args[0] == "-h" || args[0] == "-help" || args[0] == "--help" || args[0] == "help" {
+		fmt.Fprint(stderr, pluginUsage)
+		return 0
+	}
 	cmd, rest := args[0], args[1:]
 	fs := flag.NewFlagSet("plugin "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
