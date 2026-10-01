@@ -60,6 +60,9 @@ func (d *Daemon) backupProfile(ctx context.Context, r sessionsync.Dispatch) (str
 			return "", "could not give the profile an id"
 		}
 	}
+	// Listed documents are paths on this host. They stay here: the library
+	// copy is the profile without them, so a restore never names local files.
+	p.Knowledge = nil
 	md, err := agentprofile.MarshalMarkdown(p)
 	if err != nil {
 		return "", "could not export the profile: " + reason(err.Error())
@@ -88,8 +91,21 @@ func (d *Daemon) installProfile(ctx context.Context, r sessionsync.Dispatch) (st
 	if p.ID != r.Library {
 		return "", "the profile is not the one the request named"
 	}
+	// A library profile cannot choose which local files get indexed for an
+	// agent: the documents a profile lists are written in the profile file on
+	// this host.
+	if p.Knowledge != nil {
+		return "", "refused: a profile installed from the library cannot list local documents; add knowledge.paths to the profile file on this host"
+	}
 	if why := installConflict(p, r.Overwrite); why != "" {
 		return "", why
+	}
+	// A replace keeps the documents the user listed on this host, which the
+	// library copy never carries.
+	if r.Overwrite {
+		if existing, err := agentprofile.Load(p.Name); err == nil {
+			p.Knowledge = existing.Knowledge
+		}
 	}
 	if _, err := agentprofile.Save(p); err != nil {
 		return "", "could not save the profile: " + reason(err.Error())

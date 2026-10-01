@@ -144,6 +144,7 @@ var settingsGroupDefs = []struct{ key, title string }{
 	{"budgets", "Budgets"},
 	{"voice", "Voice"},
 	{"readaloud", "Read aloud"},
+	{"knowledge", "Knowledge"},
 	{"jevjobs", "Jev jobs"},
 	{"jevthresholds", "Jev thresholds"},
 }
@@ -157,6 +158,8 @@ func settingsGroupOf(key string) string {
 		return "voice"
 	case strings.HasPrefix(key, "tts."):
 		return "readaloud"
+	case strings.HasPrefix(key, knowledgeRowPrefix):
+		return "knowledge"
 	case strings.HasPrefix(key, jevRowPrefix):
 		return "jevjobs"
 	case strings.HasPrefix(key, jevThresholdRowPrefix):
@@ -184,6 +187,7 @@ func settingsWritesGlobalOnly(key string) bool {
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
+		strings.HasPrefix(key, knowledgeRowPrefix),
 		strings.HasPrefix(key, jevThresholdRowPrefix):
 		return true
 	}
@@ -417,6 +421,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "tts.cache_mb", label: "read aloud cache", kind: "choose", opts: []string{"0", "64", "256", "1024"}, value: strconv.Itoa(s.TTS.TTSCacheMBOr()), src: sourceLabel(origin["tts"]), help: "megabytes of audio kept for replay, least recently used out first; 0 keeps none"},
 		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
+	rows = append(rows, knowledgeRows(s, origin)...)
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.
 	if s.JevConfigured() {
@@ -727,6 +732,9 @@ func (a *App) settingsStepGroup(delta int) tea.Cmd {
 }
 
 func (a *App) rawValue(key string) string {
+	if strings.HasPrefix(key, knowledgeRowPrefix) {
+		return a.knowledgeRaw(key)
+	}
 	switch key {
 	case "provider":
 		return a.settings.Provider
@@ -768,6 +776,9 @@ func (a *App) rawValue(key string) string {
 
 func (a *App) commitTextRow(row settingsRow, raw string) error {
 	val := strings.TrimSpace(raw)
+	if strings.HasPrefix(row.key, knowledgeRowPrefix) {
+		return a.knowledgeCommit(row.key, val)
+	}
 	switch row.key {
 	case "provider":
 		if val == "" {
@@ -1046,6 +1057,9 @@ func (a *App) unsetSetting(key string) error {
 	}
 	if strings.HasPrefix(key, "tests.") {
 		return a.unsetTestsKey(key)
+	}
+	if strings.HasPrefix(key, knowledgeRowPrefix) {
+		return a.knowledgeUnset(key)
 	}
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceUnset(key)

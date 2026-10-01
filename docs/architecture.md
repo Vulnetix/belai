@@ -3505,7 +3505,10 @@ only turn it off or lower budgets — see [testing.md](testing.md)),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,
-`plan_explore`, `goal_explore`), `providers`,
+`plan_explore`, `goal_explore`), `knowledge` (`max_index_tokens`,
+`max_project_tokens`, `max_result_tokens`: the size of the retrieval store behind
+profile documents and `.vulnetix` output; global only, see
+[knowledge.md](knowledge.md)), `providers`,
 `caveman` (default off; toggled from any screen with `f2`),
 `guardrails` and `ask_permission` (both default on; toggled with `f3` and
 `f4`, or together with `/yolo` — the repo-visible project layer may only

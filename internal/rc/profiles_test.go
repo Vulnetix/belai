@@ -411,3 +411,53 @@ func TestInstallRefusalsCarryNoControlOrMarkup(t *testing.T) {
 		t.Fatalf("the reason carries text from the profile: %q", why)
 	}
 }
+
+func withKnowledge(p agentprofile.AgentProfile) agentprofile.AgentProfile {
+	p.Knowledge = &agentprofile.KnowledgeSpec{Paths: []string{"/home/me/handbook"}}
+	return p
+}
+
+// A library copy must never choose which local files an agent indexes.
+func TestInstallRefusesAProfileThatListsLocalDocuments(t *testing.T) {
+	h := newLibHarness(t)
+	status, why := h.install(withKnowledge(installable("dep-reviewer", libID)), false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "cannot list local documents") {
+		t.Fatalf("ack = %s %q", status, why)
+	}
+	if got := h.stored(); len(got) != 0 {
+		t.Fatalf("a refused install wrote %v", got)
+	}
+}
+
+// The backup is the profile without its documents, and an install over the
+// same profile keeps the documents the user listed here.
+func TestBackupLeavesDocumentsOutAndAReplaceKeepsThem(t *testing.T) {
+	h := newLibHarness(t)
+	local := withKnowledge(installable("reviewer", libID))
+	if _, err := agentprofile.Save(local); err != nil {
+		t.Fatal(err)
+	}
+	if status, why := h.run(sessionsync.Dispatch{Kind: "profile_backup", Profile: "reviewer"}); status != sessionsync.DispatchStarted {
+		t.Fatalf("backup: %s %s", status, why)
+	}
+	md := h.site.uploads[0]["markdown"]
+	if strings.Contains(md, "knowledge") || strings.Contains(md, "/home/me/handbook") {
+		t.Fatalf("the backup carries local paths:\n%s", md)
+	}
+	if kept, _ := agentprofile.Load("reviewer"); kept.Knowledge == nil {
+		t.Fatal("a backup must not change the profile on the host")
+	}
+
+	restored := installable("reviewer", libID)
+	restored.Description = "reviews dependency changes, version two"
+	if status, why := h.install(restored, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("replace: %s %s", status, why)
+	}
+	got, err := agentprofile.Load("reviewer")
+	if err != nil || got.Description != restored.Description {
+		t.Fatalf("replace did not apply: %+v %v", got, err)
+	}
+	if got.Knowledge == nil || len(got.Knowledge.Paths) != 1 || got.Knowledge.Paths[0] != "/home/me/handbook" {
+		t.Fatalf("a replace must keep the documents listed on this host: %+v", got.Knowledge)
+	}
+}

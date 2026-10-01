@@ -16,10 +16,11 @@ import (
 // left pointing at a directory the others have left.
 func Default(workdir string, readOnly bool) *Registry {
 	cwd := NewCwd(workdir)
+	hub := &KnowledgeHub{}
 	// One read record for the session: Read notes, Edit and Write check.
 	reads := NewReadState()
 	var list []Tool
-	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024, Cwd: cwd, Reads: reads})
+	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024, Cwd: cwd, Reads: reads, Knowledge: hub})
 	list = append(list, &Write{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &Edit{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &WebFetch{})
@@ -28,8 +29,8 @@ func Default(workdir string, readOnly bool) *Registry {
 		list = append(list, ws)
 	}
 	list = append(list, &Bash{Root: workdir, ReadOnly: readOnly, Timeout: BashDefaultTimeout, MaxBytes: 64 * 1024, Cwd: cwd})
-	list = append(list, &Grep{Root: workdir, MaxMatches: 200, MaxLineLen: 200, Cwd: cwd})
-	list = append(list, &Glob{Root: workdir, MaxResults: 200, Cwd: cwd})
+	list = append(list, &Grep{Root: workdir, MaxMatches: 200, MaxLineLen: 200, Cwd: cwd, Knowledge: hub})
+	list = append(list, &Glob{Root: workdir, MaxResults: 200, Cwd: cwd, Knowledge: hub})
 	list = append(list, &Cd{Cwd: cwd})
 	list = append(list, UpdatePlan{})
 	list = append(list, ExitPlanMode{})
@@ -45,6 +46,7 @@ func Default(workdir string, readOnly bool) *Registry {
 
 	base := NewRegistry(list...)
 	base.cwd = cwd
+	base.hub = hub
 	if readOnly {
 		return base.ReadOnly()
 	}

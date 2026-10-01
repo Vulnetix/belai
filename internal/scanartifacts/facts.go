@@ -85,6 +85,7 @@ func sortedTallies(m map[string]int) []Tally {
 type cdxComponent struct {
 	Type       string    `json:"type"`
 	Name       string    `json:"name"`
+	Version    string    `json:"version"`
 	Purl       string    `json:"purl"`
 	Properties []cdxProp `json:"properties"`
 }

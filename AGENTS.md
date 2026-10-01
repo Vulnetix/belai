@@ -69,6 +69,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   block that rides back on `Write`/`Edit` is shaped the same way: no more
   than ten rows, each flattened to one line, stripped of control and bidi
   runes, with a restricted source field, sealed with a nonce and a SHA-256.
+  The `kb+` rows that `Grep` and `Glob` append from the knowledge store are the
+  one place arbitrary text rides in a shaped kind, and they are safe only
+  because the store classified each chunk when it was ingested (the Knowledge
+  bullet below). Never append anything to those two kinds that did not come from
+  the store.
 - **The read index holds facts, never contents.** `internal/readindex`
   answers a repeated `Read` of an unchanged file whose earlier result is still
   in the conversation with a harness-composed pointer (path, extent, size, git
@@ -103,6 +108,47 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   read primitive. Their content is written by other models, so `KindAgentStore`
   is in `tools.classifierKinds` unconditionally. Do not add a path argument and
   do not add an exemption.
+- **Knowledge is classified once, at ingestion, and a search calls no model.**
+  `internal/knowledge` indexes an agent profile's listed documents, the
+  project's `.vulnetix` output and a session's `@` files for `Grep`, `Glob` and
+  `Read`. The session installs a `tools.Knowledge` in its registry's
+  `KnowledgeHub`, and a tool consults it only on a model's own call
+  (`tools.WithKnowledge`, set in `runTool`'s caller): the harness's `Read` of an
+  `@` attachment or a prefetched file never carries it. The rules:
+  - **Ingestion is the gate.** Every chunk is sanitised and then admitted by
+    `kbgate.New` through the ordinary classifier pipeline (a profile's documents
+    as `KindRead`, scanner text as `KindRemote`). The posture level is checked
+    before the call and guardrails off is sanitise-only. A flagged chunk is never
+    stored, a gate error stores nothing for that document, and a flagged batch is
+    halved until the chunk stands alone. Do not index text that did not pass it.
+  - **Search is a lookup.** The `kb+` rows in a `KindGrep`/`KindGlob` result are
+    sanitise-only because of the rule above; `Read` stays `KindRead` and is
+    classified again. A search for a profile or the project never leaves the
+    process: no provider, no embedding service, no model file, no cgo.
+  - **Profile documents are the user's.** They come from `knowledge.paths` in a
+    profile file on this host, enumerated by the `internal/locate` eligibility
+    rules (no symlink, hidden, binary, oversized or credential-bearing file). A
+    library install that carries the block is refused, a backup omits it and a
+    replace keeps the local paths, so a remote request never chooses which local
+    files are indexed. A web draft never offers it.
+  - **`.vulnetix` is read by the harness.** It walks `scanartifacts.Enumerate` at
+    the trusted repository root (a worker's repository, never its worktree), with
+    no path from a model and no symlink followed. SARIF, CycloneDX and OpenVEX
+    become one chunk per record composed from identifier fields only
+    (`scanartifacts.Records`: never a message, a snippet or a matched secret).
+    Native third-party reports, tool logs and Belai's own state are never
+    indexed. A session's `@` files are indexed in memory after the attachment
+    path admitted them, and are never written.
+  - **Permissions still apply.** A `Read` deny rule on a chunk's source path
+    hides it from search and listing. The registry's file tools carry the hub, so
+    a profile's tools allowlist decides which of them see it. A handoff-scoped
+    subagent and an Explore subagent build their own registry and get none.
+  - **The index is facts the user's host owns.** One file per profile and per
+    project in the state directory (hidden from the sandbox), mode 0600, with a
+    magic, a version and a SHA-256 trailer; a file that fails the check is used
+    for nothing and never overwritten. `knowledge.*` sizes are read from the
+    user's layers only, and no passage text reaches telemetry, the audit log,
+    session sync or the session record.
 - **The confinement boundary is a fixed root set unless the user widens it.**
   The primary working directory is the default confinement root. The only
   ways to add roots are an explicit `/add-dir` command confirmed by the user,

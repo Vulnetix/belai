@@ -7,6 +7,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/readindex"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // Repeated-read answering. The session's readindex records every Read result
@@ -111,7 +112,13 @@ func (s *Session) recordRead(key readindex.Key, callID, result string) {
 		return
 	}
 	whole, span := true, ""
-	if m := readTrailerRE.FindStringSubmatch(result); m != nil {
+	// Related knowledge rides after the trailer and is not file text: a
+	// passage that happens to quote a trailer must not be read as one.
+	file := result
+	if i := strings.Index(file, tools.ReadKnowledgeHeader); i >= 0 {
+		file = file[:i]
+	}
+	if m := readTrailerRE.FindStringSubmatch(file); m != nil {
 		whole = m[1] == "1" && m[2] == m[3]
 		span = fmt.Sprintf("lines %s–%s of %s", m[1], m[2], m[3])
 	}

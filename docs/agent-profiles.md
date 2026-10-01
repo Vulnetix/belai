@@ -55,12 +55,14 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | `display_name` | No | string | The name the console shows, one clean line of at most 64 characters. Unique on the host after Unicode normalisation, trimming, whitespace folding and lower-casing; a second profile with the same folded name is refused on save. |
 | `palette` | No | string[] | Exactly four lowercase `#rrggbb` colours: primary, secondary and the two shades derived for the circle the console draws around the agent. |
 | `avatar_id` | No | string | The UUID of the generated avatar the console shows for this agent. |
+| `knowledge` | No | object | `{ "paths": ["~/handbook", "/srv/standards.md"] }`: up to 32 files or directories, absolute or starting with `~/`, that the agent may search by meaning through `Grep`, `Glob` and `Read` (see [Knowledge](knowledge.md)). Any mode may use it. It is written in the profile file on this host: a profile installed from the library is refused if it carries it, a backup leaves it out, and a replace from the library keeps the paths already here. Changing it restarts a running worker, like any other behavioural field. |
 | `personality` | No | object | Optional style guidance: `report_style` (one line, 280 characters), `focus` (up to 8 lines of 80) and `vocabulary` (up to 20 lines of 32). It is appended to the worker's persona as style hints that rank below the task and never change what the agent may do. |
 
 `id`, `display_name`, `palette` and `avatar_id` only present the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
 
 ### Validation rules
 
+- `knowledge.paths` must list one to 32 distinct paths, each absolute or starting with `~/`, at most 1024 bytes, with no control character and no `..` segment.
 - `name` must be non-empty and filesystem-safe (`[a-zA-Z0-9._-]+`).
 - A non-empty file name must be a safe basename: non-empty, ending in `.json`, with no path separators, and with a stem unchanged by the name sanitiser. It may not collide with a built-in's on-disk file name.
 - `mode` must be one of the five known values.
@@ -420,8 +422,8 @@ sync; see [session-sync.md](session-sync.md#web-agent-drafts)) and
   autonomy, max_iterations, reflection, schedule, monitor_condition, effort,
   tools, and a worker's kanban lists, labels, routes, handoffs, max attempts
   and lease, workspace isolation and publish, pass and wall budgets, and
-  memory. It never offers `guardrails` or `ask_permission`; provider and model
-  are left to inherit.
+  memory. It never offers `guardrails`, `ask_permission` or `knowledge`; provider
+  and model are left to inherit.
 - **How a value is checked:** against the same rules as `Validate`. A name
   must fit `[a-zA-Z0-9._-]` and must not be a `belai:` name. Enums must be
   known values. Tools must be known (`KnownTool`), unknown ones are dropped.

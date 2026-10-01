@@ -556,6 +556,16 @@ offers `enter`/`v` to view, `x` to stop, and `r` to restart. It is bounded: it
 consumes at most one third of the terminal height and refuses to open on
 terminals shorter than six rows so the chat input remains usable.
 
+## Searching the scan output
+
+The files a review leaves in `.vulnetix` (SARIF, CycloneDX, OpenVEX, `memory.yaml`
+and the like) are indexed so an agent can search them by meaning with `Grep`,
+`Glob` and `Read`, in every mode and in fleet workers. Each finding or component
+is one passage built from its identifiers (rule id, severity, file and line,
+package and version, advisory id), never from a message, a snippet or a matched
+secret. The index is refreshed in the background, and the text is classified
+once when it is indexed. See [Knowledge](knowledge.md).
+
 ## Severity parsing
 
 CycloneDX `ratings[]` can mix CVSS, EPSS, SSVC, Coalition ESS, and licence

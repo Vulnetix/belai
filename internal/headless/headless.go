@@ -16,6 +16,8 @@ import (
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/knowledge/kbgate"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
@@ -69,6 +71,15 @@ type Params struct {
 	SandboxEnv    []string
 	// MaxIterations is the per-pass round budget; zero is the default.
 	MaxIterations int
+	// KnowledgeRoot is the trusted repository root whose .vulnetix output is
+	// searchable through Grep, Glob and Read (docs/knowledge.md); empty means
+	// Workdir. A worker sets it to its repository, never its worktree.
+	KnowledgeRoot string
+	// KnowledgeProfile is the agent profile whose documents are searchable, or
+	// nil.
+	KnowledgeProfile *knowledge.Profile
+	// Knowledge is an already-open store; nil has the session open its own.
+	Knowledge *knowledge.Store
 }
 
 // NewSession builds the session.
@@ -112,7 +123,22 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		askDisabled = *p.AskDisabled
 	}
 
+	kb := p.Knowledge
+	if kb == nil {
+		root := p.KnowledgeRoot
+		if root == "" {
+			root = p.Workdir
+		}
+		// An unattended session waits for the index, so its first search sees
+		// the same documents its last one will.
+		kb = kbgate.Open(ctx, kbgate.Setup{
+			Cfg: p.Cfg, Client: p.Client, Levels: p.Posture, Settings: p.Settings,
+			Root: root, Profile: p.KnowledgeProfile,
+		}, true)
+	}
+
 	return agent.NewSession(agent.Options{
+		Knowledge:     kb,
 		Cfg:           p.Cfg,
 		Client:        p.Client,
 		Registry:      reg,

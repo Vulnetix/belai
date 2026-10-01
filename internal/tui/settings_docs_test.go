@@ -67,6 +67,8 @@ func TestSettingsPageListsEveryGlobalOnlyRow(t *testing.T) {
 			named = strings.Contains(doc, "`voice …`")
 		case strings.HasPrefix(r.key, "tts."):
 			named = strings.Contains(doc, "`read aloud …`")
+		case strings.HasPrefix(r.key, "knowledge."):
+			named = strings.Contains(doc, "`knowledge …`")
 		default:
 			named = strings.Contains(doc, "every Jev threshold")
 		}

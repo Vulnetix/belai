@@ -17,6 +17,8 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/knowledge/kbgate"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
@@ -606,6 +608,9 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 }
 
+// knowledgeWait bounds how long a background run waits for its index.
+const knowledgeWait = 2 * time.Minute
+
 func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	workdir := inst.workdir
 	if workdir == "" {
@@ -649,7 +654,18 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		return nil, err
 	}
 
+	// Reference material: the project's .vulnetix output and this definition's
+	// own documents. An unattended run waits for the index, bounded, so its
+	// first search sees what its last one will (docs/knowledge.md).
+	kbCtx, kbCancel := context.WithTimeout(context.Background(), knowledgeWait)
+	defer kbCancel()
+	setup := kbgate.Setup{Cfg: cfg, Client: m.client, Levels: live, Settings: m.settings, Root: workdir}
+	if paths := profile.KnowledgePaths(); len(paths) > 0 {
+		setup.Profile = &knowledge.Profile{ID: profile.ID, Name: profile.Name, Paths: paths}
+	}
+
 	return agent.NewSession(agent.Options{
+		Knowledge:     kbgate.Open(kbCtx, setup, true),
 		Cfg:           cfg,
 		Client:        m.client,
 		Registry:      reg,

@@ -52,6 +52,11 @@ type Registry struct {
 	// over the same tools, and all of them must keep pointing at the same
 	// tracker — two trackers would mean two answers to "where am I".
 	cwd *Cwd
+	// hub is where the session installs its knowledge store (docs/knowledge.md).
+	// It rides on the registry for the same reason cwd does: every narrowing
+	// produces a new registry over the same tools, and Grep, Glob and Read
+	// must keep consulting the one hub.
+	hub *KnowledgeHub
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -71,6 +76,7 @@ func (r *Registry) Cwd() *Cwd {
 // withCwd returns a registry carrying the same tracker as r.
 func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.cwd = r.cwd
+	reg.hub = r.hub
 	return reg
 }
 
