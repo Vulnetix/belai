@@ -554,6 +554,10 @@ func startChild(c Child) (int, func() error, error) {
 		}
 	}
 	proc.SetProcessGroup(cmd)
+	// exec.Command, not CommandContext: the session outlives the dispatch and
+	// a stop signals its group through proc.Terminate/Kill. Start refuses a
+	// non-nil Cancel on a command CommandContext did not make.
+	cmd.Cancel = nil
 	if err := cmd.Start(); err != nil {
 		if logFile != nil {
 			logFile.Close()
