@@ -773,6 +773,19 @@ Rules and edge cases:
 
 The `e2e` package builds `./cmd/belai` into a temp dir and runs it against an `httptest` provider, so it catches exactly the class of bug a stale artefact hides: flags, exit codes, and the Role Manager pipeline as the shipped binary sees them.
 
+**The docs are held to the code.** `just test` fails when a page and the code
+disagree, in both directions. `internal/docparity` is the support code and
+`internal/docsuite` the cross-page checks; the rest sit beside the code they
+describe. They check that every flag, slash command, environment variable and
+audit kind is documented and that a flag, `/command`, file path, Go symbol,
+relative link or heading anchor a page names exists; that every test a page cites
+by name is defined (`TestEveryTestTheDocsCiteExists`); and, per page, the
+limits, defaults, tables and colours it states (the colour roles in
+[tui-design.md](tui-design.md) against `internal/tui/components/theme.go`, the
+record types in [session-sync.md](session-sync.md) against what the syncer
+reads). When you change behaviour, change the page in the same commit and the test
+that pins it tells you which sentence moved.
+
 The local decision-model ladder has an opt-in live test that downloads the
 real weights (~2.6 GB) and drives the llama-server on PATH:
 
