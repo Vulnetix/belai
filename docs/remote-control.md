@@ -142,8 +142,49 @@ predict what will happen to them:
   (`agents.max_workers`, or an explicit `--max`) as it does in a terminal. The ack is `started` with the command's report, or
   `refused` with its error.
 
+## Scheduled agents
+
+While `belai rc` runs it fires the host's stored schedules. A schedule is a
+worker profile, a cron expression (five fields, or `@hourly`, `@daily`,
+`@weekly`, `@monthly`) and one of the directories this host offers, plus an
+on/off switch. The Hosts page lists each host's schedules and lets you add,
+edit, pause and delete them; a change reaches the host within about 30 seconds.
+
+- **Sync.** Schedules mirror to the website the way the kanban board does: the
+  host keeps the durable copy in `schedules.json`, each side's change carries a
+  version, and the host pulls everything after its cursor. The definition
+  (profile, cron, directory, on/off) is last-writer-wins. The run record (when
+  it last ran, how that went, when it runs next) is the host's alone: a pull
+  never replaces it, so an edit on the page cannot lose a run. A delete is a
+  tombstone that reaches every host.
+- **The ticker.** Every 30 seconds the daemon fires each enabled schedule that
+  is due, then syncs. Firing comes first, so an unreachable website never delays
+  a run. Times are the host's local time. A schedule fires at most once per cron
+  tick, and a run that came due while `belai rc` was not running is skipped, not
+  fired late.
+- **What a schedule can start.** Exactly what a `worker` request can: the
+  daemon matches the directory against its own list and the profile against its
+  own catalogue, then runs `belai agent start -drain NAME` there, which applies
+  the trust check, the preflight and the worker cap. `-drain` makes the worker
+  exit once nothing is left to claim, even when the profile has its own `schedule`,
+  because the stored schedule is what starts it. The website supplies no prompt,
+  model, posture or permission.
+- **What it records.** Before it fires, the daemon writes the run time and the
+  next run, so a crash can skip a run but never fire it twice. The outcome is one
+  of `started`, `skipped_busy` (a worker of that profile is still working in that
+  repository), `refused_cap` (the worker cap), `refused_disabled`
+  (`agents.enabled` is off) or `error`. A refused run waits for the next tick.
+- **What it refuses.** A schedule whose cron does not parse, whose directory is
+  not offered or whose profile is not a worker profile in this host's catalogue
+  is turned off with `refused_cron`, `refused_dir` or `refused_profile`, and the
+  page shows the reason. The page checks the same things first for a quick answer,
+  and the host checks again.
+- **Audit.** Each firing and each refusal is a `host.schedule` event with the
+  schedule's id, the profile and the outcome (see [audit.md](audit.md)).
+
 ## Files
 
+- `~/.vulnetix/belai/schedules.json`: the host's schedules and the sync cursor.
 - `~/.vulnetix/belai/rc/rc.json`: the running daemon's record (pid, sessions,
   directories). `belai rc --status`, `--stop` and the TUI footer read it. The
   footer shows `● rc N` while the daemon runs.
@@ -158,11 +199,16 @@ predict what will happen to them:
     and `POST /dispatches/{id}/ack`.
   - Browser: `GET /hosts`, `POST /hosts/{id}/dispatches`,
     `GET|DELETE /dispatches/{id}` and `POST /sessions/{id}/stop`.
+  - Schedules (`belai_schedules.go`): the host pulls with
+    `GET /hosts/{id}/schedules?since=` and pushes with `PUT /hosts/{id}/schedules`;
+    the page uses `GET|POST /hosts/{id}/schedules`,
+    `PATCH|DELETE /hosts/{id}/schedules/{sid}` and `GET /schedules` (every host).
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
   `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,
   `rcMaxWorkers` and `BelaiDispatch.spec` (saas migration
-  `20261001000001_belai_fleet_coordination`).
+  `20261001000001_belai_fleet_coordination`); `BelaiSchedule` (saas migration
+  `20261004000001_add_belai_schedules`).
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.

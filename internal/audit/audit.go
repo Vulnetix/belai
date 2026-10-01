@@ -42,6 +42,7 @@ const (
 	HostRCOnline      Kind = "host.rc_online"
 	HostRCOffline     Kind = "host.rc_offline"
 	HostDispatch      Kind = "host.dispatch"
+	HostSchedule      Kind = "host.schedule"
 
 	WorkerStarted Kind = "worker.started"
 	WorkerState   Kind = "worker.state"
@@ -69,7 +70,7 @@ const (
 
 var kindScope = map[Kind]string{
 	HostFirstSeen: ScopeHost, HostVersionChange: ScopeHost, HostRCOnline: ScopeHost,
-	HostRCOffline: ScopeHost, HostDispatch: ScopeHost,
+	HostRCOffline: ScopeHost, HostDispatch: ScopeHost, HostSchedule: ScopeHost,
 	WorkerStarted: ScopeAgent, WorkerState: ScopeAgent, WorkerStopped: ScopeAgent,
 	CardClaimed: ScopeAgent, CardReleased: ScopeAgent, CardLeaseLapse: ScopeAgent,
 	RepoCommit: ScopeAgent, RepoPublish: ScopeAgent,
@@ -120,7 +121,7 @@ const (
 // docs/audit.md.
 var dataKeys = map[string]bool{
 	"version": true, "previous": true, "os": true, // host
-	"dispatch": true, "status": true, // host.dispatch: kind and ack status
+	"dispatch": true, "status": true, "schedule": true, // host.dispatch: kind and ack status; host.schedule: the id
 	"state": true, "reason": true, "worker": true, "profile": true, // worker
 	"list": true, "from": true, "to": true, "attempt": true, "hops": true, // card
 	"files": true, "pr": true, "forge": true, // repo

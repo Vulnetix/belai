@@ -26,11 +26,18 @@ const maxStartReport = 400
 // directory list and catalogue, then starts it. It returns the start report,
 // or the reason it refused.
 func (d *Daemon) startWorkers(r sessionsync.Dispatch) (string, string) {
+	return d.startWorkersDrain(r, false)
+}
+
+// startWorkersDrain is startWorkers for a stored schedule, which sets drain:
+// the worker exits once nothing is left to claim, whatever cron schedule its
+// profile carries, because the stored schedule is what starts it.
+func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, string) {
 	cwd, ok := Allowed(d.o.Dirs, r.Cwd)
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
-	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers}
+	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain}
 	inv := d.o.Inventory()
 	switch r.Kind {
 	case "worker":
@@ -64,6 +71,9 @@ func runAgentStart(w WorkerStart) (string, error) {
 	args := []string{"agent", "start"}
 	if w.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(w.MaxWorkers))
+	}
+	if w.Drain {
+		args = append(args, "-drain")
 	}
 	if w.Crew != "" {
 		args = append(args, "-crew", w.Crew)
