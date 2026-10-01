@@ -2,6 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
+import Walkthrough from '../ui/Walkthrough.astro';
 import Limits from '../ui/Limits.astro';
 import CopyButton from '../ui/CopyButton.tsx';
 import rubberDuck from '../../assets/pix/personas/8a28c058-0f9e-5320-a948-f2b651f08874.svg?url';
@@ -206,6 +207,11 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
       crew of workers takes work from a board, and the harness claims it, runs the checks and decides
       when it is done.
     </SectionHead>
+
+  <figure class="mt-10 m-0">
+    <Walkthrough id="ubjrP7jpims" title="autonomous agents and crews" />
+    <figcaption class="mono mt-3 text-xs text-vx-ink/75">agents and crews, in motion</figcaption>
+  </figure>
 
   <ol class="mt-10 grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {steps.map((s, i) => {
