@@ -111,8 +111,8 @@ classifier refuses it.
   best reading of the prompt.
 - Audio in prompts is not accepted. Images are: see below.
 - `/tree` is the only slash command, and the TUI panels are not exposed.
-  `/fork` is TUI only: a forked session could not be opened from the editor
-  without `loadSession`.
+  `/tree fork <id>` is TUI only: a forked session could not be opened from the
+  editor without `loadSession`.
 
 ## Session tree
 
