@@ -30,6 +30,12 @@ type libSite struct {
 	fetches  int
 	fail     bool // the library answers 500
 	acks     map[string][3]string
+	// The avatar request: what a fetch returns, and what the host posted back.
+	creator   string
+	creators  int
+	avatars   []map[string]string
+	noCreator bool // the website does not know the request (404)
+	noAvatar  bool // the website refuses the avatar (500)
 }
 
 func (f *libSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +53,22 @@ func (f *libSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/hosts/"+testHost+"/library/profiles/"):
 		f.fetches++
 		json.NewEncoder(w).Encode(map[string]string{"markdown": f.markdown, "version": libVer})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, "/hosts/"+testHost+"/agent-creators/"):
+		f.creators++
+		if f.noCreator {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(f.creator))
+	case r.Method == http.MethodPost && strings.HasPrefix(p, "/hosts/"+testHost+"/agent-creators/") && strings.HasSuffix(p, "/avatar"):
+		if f.noAvatar {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		var in map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.avatars = append(f.avatars, in)
+		w.Write([]byte(`{"ok":true}`))
 	case strings.HasPrefix(p, "/dispatches/") && strings.HasSuffix(p, "/ack"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/dispatches/"), "/ack")
 		var in map[string]string

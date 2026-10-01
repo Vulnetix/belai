@@ -178,6 +178,7 @@ func profileSummary(p agentprofile.AgentProfile) sessionsync.RCProfile {
 		OnSuccess: route(k.OnSuccess), OnFailure: route(k.OnFailure),
 		HandoffTo: nonNil(k.HandoffTo), HandoffLabels: nonNil(k.HandoffLabels),
 		MaxAttempts: k.MaxAttempts, Lease: p.LeaseDuration().String(),
+		ID: p.ID, DisplayName: p.DisplayName, Palette: slices.Clone(p.Palette), AvatarID: p.AvatarID,
 	}
 	if b := p.Budget; b != nil {
 		out.MaxWall, out.MaxPasses = b.MaxWallPerItem, b.MaxPassesPerItem

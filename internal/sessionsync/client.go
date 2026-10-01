@@ -150,6 +150,13 @@ type RCProfile struct {
 	Lease         string   `json:"lease"`
 	MaxWall       string   `json:"maxWall"`
 	MaxPasses     int      `json:"maxPasses"`
+	// How the console presents the agent (agentprofile identity fields): its
+	// UUID, display name, four colours and avatar id. Presentation only; empty
+	// for a profile that has none, and none of it is a prompt.
+	ID          string   `json:"id,omitempty"`
+	DisplayName string   `json:"displayName,omitempty"`
+	Palette     []string `json:"palette,omitempty"`
+	AvatarID    string   `json:"avatarId,omitempty"`
 }
 
 // RCRoute is a destination list plus label edits.
@@ -252,6 +259,8 @@ type Dispatch struct {
 	Library   string `json:"library,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Overwrite bool   `json:"overwrite,omitempty"`
+	// An "avatar" request names the agent creator whose avatar to draw.
+	Creator   string `json:"creator,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 

@@ -181,7 +181,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
 		Max: *max, MaxWorkers: explicitMax(fs, *max), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
-		Schedules: schedules,
+		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd),
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)

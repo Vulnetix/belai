@@ -906,6 +906,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `id`, or reuses another profile's display name. The reason sent back is
   harness text with a short cleaned excerpt, never the profile. The server checks
   shape and size only; the host's validation is the authority.
+- **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
+  what comes back.** An `avatar` request names an agent creator by id and is
+  accepted only while `sync.remote_prompts` is on, one drawing at a time. The
+  display name, colours and personality are the website's text: cleaned to capped
+  lines, admitted through the security classifier under the effective posture,
+  and sent to the model only as labelled data under a system text that is the
+  harness's own. The reply is parsed against a closed list of drawing elements
+  and attributes; any element, attribute, reference, entity, comment or size
+  outside the list refuses the whole image, nothing is repaired, and the bytes
+  posted back are the guard's own serialisation. A refusal is a harness-worded
+  reason, never model or provider text. The image is never read back into a model
+  and is rendered only as an image; the server and the website admit it again.
+  Never add an element to the list that can run code or fetch.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line
