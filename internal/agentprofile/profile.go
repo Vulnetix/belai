@@ -52,6 +52,10 @@ type AgentProfile struct {
 	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
 	Memory    *MemorySpec    `json:"memory,omitempty"`
 	Budget    *BudgetSpec    `json:"budget,omitempty"`
+	// Knowledge lists documents the agent may search through Grep, Glob and
+	// Read (see knowledge.go and docs/knowledge.md). Any mode may use it. It
+	// is local to the host: a web install is refused if it carries it.
+	Knowledge *KnowledgeSpec `json:"knowledge,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
@@ -262,6 +266,9 @@ func (p AgentProfile) Validate() error {
 		}
 	}
 	if err := p.validateIdentity(); err != nil {
+		return err
+	}
+	if err := p.validateKnowledge(); err != nil {
 		return err
 	}
 	return p.validateWorker()

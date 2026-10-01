@@ -43,6 +43,9 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
                                  (every offer taken; -json: the offers and why)
   crews                          crews and their members
   memory NAME [-clear]           a worker's lessons
+  knowledge [-index] [-json] [NAME]  the retrieval indexes: this project's
+                                 .vulnetix output and NAME's listed documents;
+                                 -index brings them up to date first
   run [flags] NAME               run a worker in the foreground
       -once                      work one item (or find none) and exit
       -item K-xxxxxx             work this item
@@ -167,6 +170,9 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 			fmt.Fprintf(stdout, "%s  %s\n    %s\n", c.Name, c.Description, strings.Join(members, ", "))
 		}
 		return 0, nil
+
+	case "knowledge":
+		return agentKnowledge(ctx, fs, rest, stdout, stderr, asJSON)
 
 	case "memory":
 		clear := fs.Bool("clear", false, "delete the lessons")

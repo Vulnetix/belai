@@ -167,6 +167,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateTTS(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateKnowledge(eff.Settings); err != nil {
+		return eff, err
+	}
 	if err := ValidateVulnetix(eff.Settings); err != nil {
 		return eff, err
 	}
@@ -327,6 +330,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.TTS.merge(s.TTS)
 		e.Origin["tts"] = src
+	}
+	if s.Knowledge != nil && src != SourceProject {
+		// How much the host indexes and returns is the user's own sizing: a
+		// repository cannot raise it.
+		if e.Settings.Knowledge == nil {
+			e.Settings.Knowledge = &KnowledgeSettings{}
+		}
+		e.Settings.Knowledge.merge(s.Knowledge)
+		e.Origin["knowledge"] = src
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.

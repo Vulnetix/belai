@@ -47,6 +47,7 @@ import (
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/inputhistory"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/machineprobe"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -301,7 +302,12 @@ type App struct {
 	live     *posture.Live
 	planMode bool
 	agent    *agent.Session
-	events   <-chan agent.Event
+	// knowStore is the knowledge store (docs/knowledge.md), opened on first use
+	// and kept across session rebuilds; knowProfile is the id of the engaged
+	// agent whose documents it holds.
+	knowStore   *knowledge.Store
+	knowProfile string
+	events      <-chan agent.Event
 	// rmEvents carries role-manager activity from the observer into the
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents *rmQueue
@@ -1448,6 +1454,8 @@ func (a *App) sendPending() tea.Cmd {
 
 // send starts a streaming request with the given conversation turns.
 func (a *App) send(turns []run.Turn) tea.Cmd {
+	// A scan since the last turn is searchable on this one (throttled).
+	a.syncKnowledge()
 	if !a.status.Configured {
 		// The initial async credential resolution may not have landed yet, or
 		// a transient resolver/keychain failure left us unconfigured. Retry
@@ -2018,6 +2026,9 @@ type sessionBuildParams struct {
 	// nil when the kanban setting is off.
 	kanban    *kanban.Store
 	kanbanSrc *kanban.Source
+	// knowledge is the App's retrieval store; nil leaves the file tools
+	// filesystem-only.
+	knowledge *knowledge.Store
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2053,6 +2064,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		caps:          a.caps,
 		kanban:        kanbanStoreOf(a),
 		kanbanSrc:     kanbanSourceOf(a),
+		knowledge:     a.knowledgeStoreForBuild(),
 	}
 }
 
@@ -2125,6 +2137,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		return nil, err
 	}
 	return agent.NewSession(agent.Options{
+		Knowledge:     p.knowledge,
 		Cfg:           cfg,
 		Client:        p.client,
 		Registry:      reg,
@@ -5267,6 +5280,7 @@ func (a *App) reloadSettings() error {
 	// A /settings edit of guardrails or ask_permission lands live through the
 	// shared holder, exactly like the f3/f4 toggles.
 	a.syncPosture()
+	a.syncKnowledge()
 	a.refreshFooter()
 	return nil
 }
@@ -5412,6 +5426,7 @@ func (a *App) firewallAvailable() bool {
 func (a *App) clearEngagedAgent() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.syncKnowledge()
 	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false
@@ -5464,6 +5479,7 @@ func (a *App) setNamedAgent(name string) {
 	}
 	a.namedAgent = loaded
 	a.namedAgentTools = tools
+	a.syncKnowledge()
 	a.state.ActiveProfile = loaded
 	a.persistCarrierMeta()
 	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Agent = loaded })

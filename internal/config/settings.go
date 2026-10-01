@@ -118,6 +118,11 @@ type Settings struct {
 	// preference: the text is sent to Microsoft's read-aloud service, so the
 	// project layer cannot turn it on or choose the voice or the cache.
 	TTS *TTSSettings `json:"tts,omitempty"`
+	// Knowledge sizes the retrieval store behind agent profile documents and
+	// project knowledge (docs/knowledge.md). A per-user host-performance
+	// preference: the project layer is dropped, so a repository cannot make a
+	// host index or return more.
+	Knowledge *KnowledgeSettings `json:"knowledge,omitempty"`
 	// Sync mirrors session transcripts to the Vulnetix website while Belai is
 	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
 	// layer may turn it off, never on.

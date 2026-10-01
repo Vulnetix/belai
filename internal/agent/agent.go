@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/imageguard"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/offload"
@@ -48,11 +49,16 @@ import (
 
 // Options configures a new agent session.
 type Options struct {
-	Cfg      run.Config
-	Client   *http.Client
-	Registry *tools.Registry
-	Perms    permissions.Settings
-	Posture  posture.Policy
+	// Knowledge is the retrieval store behind the file tools (docs/knowledge.md):
+	// a profile's documents, the project's .vulnetix output and the session's
+	// @ files. nil leaves Grep, Glob and Read filesystem-only. Subagents built
+	// with their own registry never inherit it.
+	Knowledge *knowledge.Store
+	Cfg       run.Config
+	Client    *http.Client
+	Registry  *tools.Registry
+	Perms     permissions.Settings
+	Posture   posture.Policy
 	// Live, when set, is the shared atomically-read posture/ask holder the
 	// session consults at each gate. The TUI owns one instance for the
 	// process so a toggle pressed mid-turn lands on the next gate check. When
@@ -668,6 +674,7 @@ func NewSession(o Options) (*Session, error) {
 	if locCat != nil {
 		locCat.s = sess
 	}
+	sess.installKnowledge(o.Knowledge)
 	return sess, nil
 }
 
@@ -1782,7 +1789,9 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	// that also moves is covered without teaching this function about it.
 	cwdBefore := s.registry.Cwd().Rel()
 
-	res, err := runTool(sandbox.WithPolicy(ctx, s.sandboxPolicy()), tool, call, emit)
+	// Retrieval rides only on a model's own call: the harness's Read of an @
+	// attachment or a prefetched file gets the filesystem alone.
+	res, err := runTool(tools.WithKnowledge(sandbox.WithPolicy(ctx, s.sandboxPolicy())), tool, call, emit)
 
 	if cwd := s.registry.Cwd(); cwd != nil {
 		if after := cwd.Rel(); after != cwdBefore {

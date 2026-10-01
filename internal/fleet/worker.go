@@ -25,6 +25,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/otel"
@@ -1111,6 +1112,12 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		},
 		Deny:    append([]string{"Write(*.vulnetix/*)", "Edit(*.vulnetix/*)"}, workerGitDeny...),
 		Persona: persona, MaxIterations: p.MaxIterations,
+		// The scanner output of the trusted repository, never the worktree's,
+		// and the documents this profile lists on this host.
+		KnowledgeRoot: w.Repo,
+	}
+	if paths := p.KnowledgePaths(); len(paths) > 0 {
+		params.KnowledgeProfile = &knowledge.Profile{ID: p.ID, Name: p.Name, Paths: paths}
 	}
 	publish := false
 	if ws := t.Workspace; ws != nil && ws.Worktree {
