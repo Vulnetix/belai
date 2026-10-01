@@ -536,7 +536,7 @@ variables.
 **Where the session id comes from.** The TUI wraps each turn's context with its
 current session id and pushes it into the background agent and process
 managers (`SetSessionID`), including after `/new`, resume and plan fork.
-Explore subagents inherit the parent's id. A headless `belai -p` run mints a
+Explore subagents inherit the parent's id. A headless `belai -prompt` run mints a
 fresh id per invocation. The TUI's direct tool runs (inline `!cmd`, `@file`
 admission, the file picker) carry it too.
 

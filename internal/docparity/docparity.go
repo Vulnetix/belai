@@ -140,13 +140,14 @@ func ReadDir(t testing.TB, rel string) string {
 // FlagNames lists the command-line flags the Go package in dir defines with the
 // standard flag package: every call of String, Bool, Int, Int64, Uint, Float64
 // or Duration (name first) and of the matching Var forms (name second) whose
-// name is a string literal. Test files are skipped. The result is sorted and
+// name is a string literal. The generic Var, which registers a flag.Value such
+// as a repeatable --label or --dir, takes its name second too. Test files are skipped. The result is sorted and
 // has no repeats, so a flag a subcommand and the main command both define
 // appears once.
 func FlagNames(t testing.TB, dir string) []string {
 	t.Helper()
 	first := map[string]bool{"String": true, "Bool": true, "Int": true, "Int64": true, "Uint": true, "Float64": true, "Duration": true}
-	second := map[string]bool{"StringVar": true, "BoolVar": true, "IntVar": true, "Int64Var": true, "UintVar": true, "Float64Var": true, "DurationVar": true}
+	second := map[string]bool{"Var": true, "StringVar": true, "BoolVar": true, "IntVar": true, "Int64Var": true, "UintVar": true, "Float64Var": true, "DurationVar": true}
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
