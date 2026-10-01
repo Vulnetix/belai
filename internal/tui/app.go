@@ -328,6 +328,11 @@ type App struct {
 	// intelReq sums what this session's agent calls sent, by part.
 	intelState intelViewState
 	intelReq   intelRequest
+	// intelSyncAt and intelSyncSig are when the last intel_state entry was
+	// written and what it said, so the next is written only when it differs
+	// (intel_sync.go).
+	intelSyncAt  time.Time
+	intelSyncSig string
 	// firewallState is the /firewall screen.
 	firewallState firewallViewState
 	pending       string  // pending prompt to send once configured
