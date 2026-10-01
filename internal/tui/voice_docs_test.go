@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -34,5 +35,31 @@ func TestVoicePageStatesTheComposerLimits(t *testing.T) {
 	}
 	if got := config.DefaultJevThresholds().VoiceAt; got != 0.95 {
 		t.Errorf("the default voice_at is %v, the page says 0.95", got)
+	}
+}
+
+// TestVoicePageListsEveryVoiceCommand derives the verbs from the usage line the
+// handler prints for an unknown one, so a verb added without a Commands row
+// fails here.
+func TestVoicePageListsEveryVoiceCommand(t *testing.T) {
+	src := docparity.Read(t, "internal/tui/voice.go")
+	usage := regexp.MustCompile(`usage: /voice \[([^\]]+)\]`).FindStringSubmatch(src)
+	if usage == nil {
+		t.Fatal("the /voice usage line moved")
+	}
+	doc := docparity.Read(t, "docs/voice.md")
+	section := regexp.MustCompile(`(?s)## Commands(.*?)## Limitations`).FindStringSubmatch(doc)
+	if section == nil {
+		t.Fatal("the Commands section moved")
+	}
+	verbs := strings.Split(usage[1], "|")
+	if len(verbs) < 12 {
+		t.Fatalf("only %d verbs found in the usage line: %v", len(verbs), verbs)
+	}
+	for _, v := range verbs {
+		word := strings.Fields(v)[0]
+		if !strings.Contains(section[1], "`/voice "+word) && !(word == "status" && strings.Contains(section[1], "`/voice` or `/voice status`")) {
+			t.Errorf("the Commands table has no row for /voice %s", word)
+		}
 	}
 }
