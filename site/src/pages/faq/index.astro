@@ -1,13 +1,16 @@
 ---
 import Base from '../../layouts/Base.astro';
 import FAQ from '../../components/sections/FAQ.astro';
+import JumpNav from '../../components/ui/JumpNav.astro';
 
-const title = 'Belai FAQ: install, update and clean-up';
+const title = 'Belai FAQ: data, providers, safety and install';
 const description =
-  'Answers to common install and update questions for Belai, including how to remove the previous signet package name, clear Homebrew caches, and verify a fresh install.';
+  'Answers about what Belai sends off your machine, which providers it supports, what a cloned repository can change and how commands are fenced, plus install and update recipes, including how to remove the previous signet package name and clear Homebrew caches.';
 ---
 
 <Base title={title} description={description}>
+  <JumpNav title="faq" items={[['/#faq', 'back to site']]} />
+
   <div class="flex w-full gap-8 px-4 py-8 sm:px-6 lg:gap-10 lg:px-10 lg:py-10">
     <aside class="status-rail w-52 shrink-0 flex-col justify-between xl:w-56" aria-label="Page sections">
       <div>
@@ -28,8 +31,8 @@ const description =
       </div>
     </aside>
 
-    <main class="min-w-0 flex-1 space-y-8">
-      <FAQ />
+    <main class="min-w-0 flex-1">
+      <FAQ chapter={false} />
     </main>
   </div>
 </Base>

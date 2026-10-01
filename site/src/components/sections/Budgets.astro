@@ -1,6 +1,9 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
 import Shot from '../ui/Shot.astro';
+import Limits from '../ui/Limits.astro';
 import budgetsShot from '../../assets/shots/budgets.svg';
 import footerShot from '../../assets/shots/footer.svg';
 
@@ -8,7 +11,7 @@ import footerShot from '../../assets/shots/footer.svg';
 // colours, and what counts against a budget.
 
 const sealText =
-  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns.";
+  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns. Smaller requests, measured: defer_tools sends the core tools in full and loads the rest through ToolSearch, an oversized result becomes a preview and a reference read back with ReadResult, -usage-json writes tokens per role and model with the request composition as sizes only, and context_windows overrides a model window.";
 
 const windows = [
   {
@@ -47,6 +50,13 @@ const counts = [
   ['older sessions', "Imported from transcripts. A transcript keeps only its last call's usage, so the imported figure is a lower bound"],
 ];
 
+const economy: [string, string][] = [
+  ['Core tools in full, the rest on demand', '`defer_tools` is on by default. A request carries the core tools in full and names the rest in a sealed briefing. `ToolSearch` loads a definition into later requests, and a deferred tool stays callable by name.'],
+  ['Large results stay out of the history', 'A result above the size limit becomes a head-and-tail preview and a reference. `ReadResult` reads slices of the stored result when the model asks, and each slice is classified.'],
+  ['See where the tokens went', '`belai -prompt "…" -usage-json file` writes a summary on exit: tokens per role and model, cache reads and writes, and the request composition, which is the size of the system prompt, tool definitions, history and each tool\'s results. Sizes only, never content.'],
+  ['Windows you can correct', '`context_windows` overrides the context window Belai assumes for a model, in tokens.'],
+];
+
 const limits = [
   ['Set in your own settings', "Budgets are global. A repository's settings file cannot raise or remove them."],
   ['Counted once', 'A session is never counted twice, even when two belai windows import it at the same time.'],
@@ -55,18 +65,13 @@ const limits = [
 ---
 
 <SealedSection label="budgets" sealText={sealText} id="budgets">
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Token budgets</h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Token budgets">
       Give any provider and model an allowance for the session, the local day or the local month, up to
       one of each. Every completed model call counts against the model that served it, including the
       classifier's calls.
-    </p>
-  </div>
+    </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+  <ol class="mt-head grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {windows.map((w, i) => {
       const dark = i === 2;
       return (
@@ -116,16 +121,13 @@ const limits = [
     })}
   </ol>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Three colours in the footer</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Three colours in the footer">
       With <code class="mono">defined</code> routing, the right of the footer's top line shows the selected
       model's budget: the share of tokens left, the time left in the day or month, and a bar. With two or
       more budgets the footer cycles between them every ten seconds
       (<code class="mono">ui.budget_cycle_seconds</code>).
-    </p>
-  </div>
-  <div class="mt-8 grid gap-5 md:grid-cols-3">
+    </SubHead>
+  <div class="mt-head grid gap-5 @2xl:grid-cols-3">
     {colours.map((c) => (
       <div class="overflow-hidden rounded-xl border border-vx-ink">
         <p class="mono flex items-center justify-between gap-3 bg-tui-ink px-4 py-3 text-[13px] text-tui-cream" aria-hidden="true">
@@ -140,25 +142,22 @@ const limits = [
     ))}
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What counts</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="What counts">
       Prompt and completion tokens, reasoning included, under the provider and model that served the
       call. Usage goes into one ledger that every belai process shares.
-    </p>
-  </div>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
+    </SubHead>
+  <div class="mt-head grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 @4xl:col-span-8">
       <ol class="list-none p-0">
         {counts.map(([what, detail]) => (
-          <li class="grid gap-x-4 gap-y-1 border-b border-vx-ink/20 py-3.5 text-sm last:border-b-0 md:grid-cols-[14rem_minmax(0,1fr)] md:text-[15px]">
+          <li class="grid gap-x-4 gap-y-1 border-b border-vx-ink/20 py-3.5 text-sm last:border-b-0 @2xl:grid-cols-[14rem_minmax(0,1fr)] md:text-[15px]">
             <span class="mono font-semibold">{what}</span>
             <span class="text-vx-ink/85">{detail}</span>
           </li>
         ))}
       </ol>
     </div>
-    <div class="min-w-0 lg:col-span-4">
+    <div class="min-w-0 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">SET ONE</p>
         <p class="mt-3 flex flex-wrap items-baseline gap-3 text-vx-cream">
@@ -181,9 +180,15 @@ const limits = [
     <Shot src={footerShot.src} alt="The status footer with an amber day budget on the right of the top line" caption="footer, amber day budget" />
   </div>
 
-  <div class="mt-16 grid border-t-2 border-vx-ink md:grid-cols-3">
+  <SubHead id="economy" title="Smaller requests, measured">
+    Budgets cap what a session may spend. These settings and tools reduce what each request sends in the
+    first place, and show where the tokens went.
+  </SubHead>
+  <Limits items={economy} cols={2} class="mt-head" />
+
+  <div class="mt-sub grid border-t border-vx-ink/60 @3xl:grid-cols-3">
     {limits.map(([title, body]) => (
-      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+      <div class="border-b border-vx-ink/20 py-6 @3xl:pr-8">
         <h4 class="text-lg font-bold">{title}</h4>
         <p class="mt-2 text-sm text-vx-ink/80">
           {body.split(/(ui\.budget_warn)/).map((p) => (p === 'ui.budget_warn' ? <code class="mono">{p}</code> : p))}

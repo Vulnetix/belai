@@ -1083,8 +1083,8 @@ The log says what the worker does, in harness words only:
 
 Anything the detached process prints to stderr before it registers (a bad
 flag, an untrusted directory, a settings error) lands in the same file. With
-remote control running, the tail of this log reaches the website's Sessions
-page ([remote control](remote-control.md#fleet-workers)).
+remote control running, the tail of this log reaches the website, where Belai → Agents
+and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
 
 ## Settings
 

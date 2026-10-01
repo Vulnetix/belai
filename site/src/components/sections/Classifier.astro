@@ -1,6 +1,8 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
 import Walkthrough from '../ui/Walkthrough.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
 
 import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
@@ -92,11 +94,11 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </div>
 
     <div
-      class="caught__stamp mono mt-6 inline-block rounded-lg border-[5px] border-vx-coral bg-vx-ink px-5 py-3 font-bold leading-tight text-vx-coral md:absolute md:right-10 md:top-24 md:mt-0 lg:right-16"
+      class="caught__stamp mono mt-6 inline-block rounded-lg border-[5px] border-vx-coral bg-vx-ink px-5 py-3 font-bold leading-tight text-vx-coral lg:absolute lg:right-16 lg:top-24 lg:mt-0"
       aria-hidden="true"
     >
-      <span class="block text-2xl tracking-[0.04em] md:text-4xl">WITHHELD</span>
-      <span class="mt-1 block text-xs font-medium tracking-[0.08em] md:text-sm">PROMPT_INJECTION</span>
+      <span class="block text-2xl tracking-[0.04em] lg:text-4xl">WITHHELD</span>
+      <span class="mt-1 block text-xs font-medium tracking-[0.08em] lg:text-sm">PROMPT_INJECTION</span>
     </div>
 
     <div class="mt-10 md:mt-14">
@@ -107,34 +109,28 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </div>
   </div>
 
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-6">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">The classifier</h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-6">
-      Belai accepts only one kind of answer about untrusted content: a single token from the five
-      below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
-      token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
-      that returns a probability for each question it is asked, on OpenRouter or on hardware you
-      control. You choose which ones run.
-    </p>
-  </div>
+  <SectionHead title="The classifier">
+    Belai accepts only one kind of answer about untrusted content: a single token from the five
+    below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
+    token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
+    that returns a probability for each question it is asked, on OpenRouter or on hardware you
+    control. You choose which ones run.
+  </SectionHead>
 
-  <ul class="mt-8 grid list-none gap-2 p-0 sm:grid-cols-5" aria-label="The five security sentinels">
+  <ul class="mt-8 grid list-none gap-2 p-0 @xl:grid-cols-5" aria-label="The five security sentinels">
     {sentinels.map((s) => (
       <li class={`sentinel-chip sentinel-chip--${s.tone} py-3 text-center`}>{s.token}</li>
     ))}
   </ul>
 
-  <div class="mt-16">
-    <div class="grid gap-6 lg:grid-cols-2 lg:items-end">
-      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Coverage by setup</h3>
-      <p class="text-vx-ink/80">
-        Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
-        does. The phase rows in <code class="mono">/model</code> show the same thing for your own settings.
-      </p>
-    </div>
-    <div class="coverage-wrap mt-8">
+  <SubHead title="Coverage by setup">
+    Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
+    does. The phase rows in <code class="mono">/model</code> show the same thing for your own settings.
+  </SubHead>
+  <details class="deep deep--wide">
+    <summary>Six setups against four threats</summary>
+    <div class="deep__body">
+    <div class="coverage-wrap mt-4">
       <table class="coverage">
         <thead>
           <tr>
@@ -163,15 +159,16 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <span><span class="cov cov--jev">Jev</span> Jev first, then the sentinel</span>
       <span><span class="cov cov--gap">gap</span> no check</span>
     </p>
-  </div>
+    </div>
+  </details>
 
-  <article class="engine mt-16" aria-labelledby="engine-sentinel">
+  <article class="engine mt-sub" aria-labelledby="engine-sentinel">
     <header class="engine__head">
       <span class="engine__num mono">01</span>
       <h3 id="engine-sentinel" class="text-3xl font-bold tracking-tight text-vx-ink">LLM sentinel</h3>
       <code class="engine__tag mono">classifier.kind: llm</code>
     </header>
-    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           The sentinel can be your only classifier. A chat model reads the sanitized content with no
@@ -246,13 +243,13 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <article class="engine mt-10" aria-labelledby="engine-models">
+  <article class="engine mt-sub" aria-labelledby="engine-models">
     <header class="engine__head">
       <span class="engine__num mono">02</span>
       <h3 id="engine-models" class="text-3xl font-bold tracking-tight text-vx-ink">Embedded models</h3>
       <code class="engine__tag mono">classifier.kind: models</code>
     </header>
-    <div class="engine__body grid gap-8 lg:grid-cols-2 lg:items-center">
+    <div class="engine__body grid gap-8 @4xl:grid-cols-2 @4xl:items-center">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           The default download includes a BERT classifier that runs inside the process. It is written in
@@ -351,13 +348,13 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <article class="engine mt-10" aria-labelledby="engine-jev">
+  <article class="engine mt-sub" aria-labelledby="engine-jev">
     <header class="engine__head">
       <span class="engine__num mono">03</span>
       <h3 id="engine-jev" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on OpenRouter</h3>
       <code class="engine__tag mono">typesafe/jev-1.13</code>
     </header>
-    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           Jev is a model from TypeSafe that answers questions with probabilities through OpenRouter's
@@ -433,13 +430,13 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <article class="engine mt-10" aria-labelledby="engine-jev-local">
+  <article class="engine mt-sub" aria-labelledby="engine-jev-local">
     <header class="engine__head">
       <span class="engine__num mono">03b</span>
       <h3 id="engine-jev-local" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on your own machine</h3>
       <code class="engine__tag mono">decision-local · jev</code>
     </header>
-    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           The same questions Jev answers on OpenRouter can be answered on hardware you control. Pick{' '}
@@ -497,15 +494,14 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <div class="mt-20">
-    <div class="grid gap-6 lg:grid-cols-2 lg:items-end">
-      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">When a check fails</h3>
-      <p class="text-vx-ink/80">
-      An error always blocks the content. An unclear result can be passed to another engine. This list
-      covers every case.
-      </p>
-    </div>
-    <ul class="ledger mt-8 list-none p-0">
+  <SubHead title="When a check fails">
+    An error always blocks the content. An unclear result can be passed to another engine. This list
+    covers every case.
+  </SubHead>
+  <details class="deep deep--wide">
+    <summary>Every outcome, from blocked to let through</summary>
+    <div class="deep__body">
+    <ul class="ledger mt-4 list-none p-0">
       {outcomes.map((o) => (
         <li class={`ledger__row ledger__row--${o.tone}`}>
           <span class="ledger__event">{o.event}</span>
@@ -518,9 +514,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <span><span class="ledger-key ledger-key--hand"></span>passed to an LLM</span>
       <span><span class="ledger-key ledger-key--open"></span>let through and noted in the feed</span>
     </p>
-  </div>
+    </div>
+  </details>
 
-  <figure class="mt-12">
+  <figure class="mt-sub">
     <div class="overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
       <img src={classifierShot.src} alt="The /model classifier rows showing kind, phase 1, phase 2 and phase 3" class="block h-auto w-full" loading="lazy" />
     </div>

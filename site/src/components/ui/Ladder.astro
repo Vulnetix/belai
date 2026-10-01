@@ -26,7 +26,7 @@ const slots = await Promise.all(
 );
 ---
 
-<ol class={`mt-10 grid list-none gap-5 p-0 ${cols === 4 ? 'md:grid-cols-2 xl:grid-cols-4' : 'lg:grid-cols-3'}`}>
+<ol class={`mt-head grid list-none gap-5 p-0 ${cols === 4 ? '@2xl:grid-cols-2 @5xl:grid-cols-4' : '@3xl:grid-cols-3'}`}>
   {steps.map((s, i) => {
     const dark = i === last;
     return (
@@ -45,7 +45,7 @@ const slots = await Promise.all(
   })}
 </ol>
 {from && to && (
-  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+  <div class="mono mt-3 hidden items-center gap-4 text-sm @4xl:flex" aria-hidden="true">
     <span class="text-vx-ink/60">{from}</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>{to}</span>

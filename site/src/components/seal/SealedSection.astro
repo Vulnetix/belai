@@ -1,5 +1,7 @@
 ---
 import { createHash } from 'node:crypto';
+import SectionBreak from '../ui/SectionBreak.astro';
+import { chapterOf } from '../../lib/sections';
 
 interface Props {
   /** The section label used in the opening/closing delimiter tags. */
@@ -11,9 +13,13 @@ interface Props {
   /** Stable nonce. Defaults to a deterministic value derived from the label. */
   nonce?: string;
   id?: string;
+  /** Show the chapter break above the frame. On by default for any id that is
+   *  a home-page section; a standalone page turns it off. */
+  chapter?: boolean;
 }
 
-const { label, sealText, nonce, id } = Astro.props;
+const { label, sealText, nonce, id, chapter: showChapter = true } = Astro.props;
+const chapter = showChapter ? chapterOf(id) : null;
 
 // Nonces are stable across builds so the rendered delimiters diff cleanly and
 // the verify tick has a fixed, human-legible value to show.
@@ -27,13 +33,15 @@ const digest = createHash('sha256')
   .digest('hex');
 ---
 
+{chapter && <SectionBreak chapter={chapter} />}
+
 <section class="sealed" data-nonce={resolvedNonce} data-sha={digest} id={id}>
   <header class="seal-head">
     <code>&lt;{label} nonce={resolvedNonce} sha256={digest.slice(0, 8)}…&gt;</code>
     <span class="seal-badge">sealed</span>
   </header>
 
-  <div class="seal-body px-6 py-8 md:px-10 md:py-12">
+  <div class="seal-body @container px-6 py-8 md:px-10 md:py-12">
     <slot />
   </div>
 

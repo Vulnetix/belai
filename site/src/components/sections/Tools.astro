@@ -11,7 +11,7 @@ import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
 // go, and the boundary Bash runs inside (internal/sandbox).
 
 const sealText =
-  'Tools: the core tools take the arguments models are trained on, a fixed-argv native catalogue of 25 read-only utilities never goes through a shell, and Cd is confined so the working directory moves inside the session roots. Bash, inline !cmd and supervised processes run in an OS sandbox: bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend.';
+  'Tools: the core tools take the arguments models are trained on, a fixed-argv native catalogue of 25 read-only utilities never goes through a shell, and Cd is confined so the working directory moves inside the session roots. Bash, inline !cmd and supervised processes run in an OS sandbox: bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend. Other repositories on this machine: Repos lists the git checkouts among the sibling directories of the working directory, two levels deep, without following a symlink, RepoFiles lists a checkout with git ls-files and RepoRead reads one file from it, each call limited to the checkout it names, and a file RepoRead returns is classified like any file read.';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -94,6 +94,12 @@ const limits = [
   ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. The command dies with Belai.'],
 ];
 
+const repoTools: [string, string][] = [
+  ['A bounded scan', '`Repos` lists the git checkouts among the sibling directories of the working directory, two levels deep. The scan is bounded in time and size, skips `node_modules`, `vendor`, `target` and `dist`, and never follows a symlink. Nothing is fetched or cloned: a miss lists what is available locally.'],
+  ['One checkout per call', '`RepoFiles` runs `git ls-files` in a checkout and `RepoRead` reads one file from it. Each call is limited to the checkout it names, and a path with a `..` that escapes the checkout is refused.'],
+  ['Named from the remote', 'A checkout is named `owner/repo` from its origin remote, or by a bare name when only one matches. What `RepoRead` returns is classified like any file you read.'],
+];
+
 const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
 ---
 
@@ -136,9 +142,12 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     shape. A tool that can print a file's contents is classified like <code class="mono">Read</code>; the
     rest return output whose shape Belai knows.
   </SubHead>
-  <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  <details class="deep deep--wide">
+    <summary>The 25 tools, by group</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
     {catalogue.map((g) => (
-      <div class={`rounded-xl border border-vx-ink p-4 ${g.group === 'transform' ? 'lg:row-span-2' : ''}`}>
+      <div class={`rounded-xl border border-vx-ink p-4 ${g.group === 'transform' ? '@4xl:row-span-2' : ''}`}>
         <p class="mono text-xs tracking-wider text-vx-ink/60">{g.group.toUpperCase()}</p>
         <ul class="mt-3 flex list-none flex-wrap gap-2 p-0">
           {g.tools.map(([name, reads]) => (
@@ -152,12 +161,17 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     <span><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-vx-ink align-[-0.05em]"></span>can print a file, so classified</span>
     <span><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm border border-vx-ink/40 align-[-0.05em]"></span>shaped output, sanitised</span>
   </p>
+    </div>
+  </details>
 
   <SubHead title="Arguments models already know">
     The core tools take the arguments models are trained on, so the model does not have to learn a new
     shape for the same job.
   </SubHead>
-  <dl class="mt-8 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 md:grid-cols-2">
+  <details class="deep deep--wide">
+    <summary>The core tools and their arguments</summary>
+    <div class="deep__body">
+  <dl class="mt-4 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @2xl:grid-cols-2">
     {core.map(([tool, what]) => (
       <div class="bg-vx-cream p-5">
         <dt><code class="mono text-base font-semibold">{tool}</code></dt>
@@ -165,13 +179,18 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </div>
     ))}
   </dl>
+    </div>
+  </details>
 
   <SubHead title="The right tool for the command">
     With a decision backend configured, a plain <code class="mono">grep -rn</code> or{' '}
     <code class="mono">cat</code> sent to <code class="mono">Bash</code> can run as the builtin tool made for
     it. The model is told, in the result, that the swap happened.
   </SubHead>
-  <ol class="mt-8 list-none p-0">
+  <details class="deep">
+    <summary>The steps of a swap, and when one is skipped</summary>
+    <div class="deep__body">
+  <ol class="mt-4 list-none p-0">
     {swapSteps.map((step, i) => (
       <li class={`grid grid-cols-[2rem_minmax(0,1fr)] gap-3 py-4 ${i < swapSteps.length - 1 ? 'border-b border-vx-ink/20' : ''}`}>
         <span class="mono text-vx-ink/60">{i + 1}</span>
@@ -184,13 +203,15 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     <code class="mono">Grep ← Bash</code>, and a command sent twice runs as Bash the second time.{' '}
     <a class="underline" href={`${docBase}jev-jobs.md`}>docs/jev-jobs.md</a>
   </p>
+    </div>
+  </details>
 
   <SubHead title="Where to look first">
     Before the explore subagents start, Belai ranks the files your goal is about and hands each subagent the
     best few, so they search less. The model can ask for the same list with the deferred{' '}
     <code class="mono">Locate</code> tool. It returns paths, line numbers and percentages, never file text.
   </SubHead>
-  <dl class="mt-8 grid gap-x-8 gap-y-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+  <dl class="mt-8 grid gap-x-8 gap-y-4 @2xl:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
     {locateFacts.map(([term, text]) => (
       <>
         <dt class="font-semibold">{term}</dt>
@@ -209,7 +230,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     nowhere outside it. You can still reach past the root yourself: <code class="mono">@../</code>,{' '}
     <code class="mono">@/</code> or <code class="mono">@~/</code> browses one folder at a time.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+  <div class="mt-head grid gap-8 @4xl:grid-cols-2 @4xl:items-center">
     <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={cdConfine} /></div>
     <ol class="m-0 list-none p-0">
       <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/20 py-4">
@@ -227,12 +248,18 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </ol>
   </div>
 
+  <SubHead id="repos" title="Other repositories on this machine">
+    A task sometimes needs a file from a sibling checkout, such as a shared workflow or a library. Three
+    tools read it without moving the working directory.
+  </SubHead>
+  <Limits items={repoTools} class="mt-head" />
+
   <SubHead id="sandbox" title="The sandbox">
     Belai's own file tools stay inside the workspace roots, but a command can reach anything your account
     can. So <code class="mono">Bash</code>, inline <code class="mono">!cmd</code> and supervised processes run
     under an operating-system boundary: bubblewrap on Linux, <code class="mono">sandbox-exec</code> on macOS.
   </SubHead>
-  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+  <div class="mt-head grid gap-4 @2xl:grid-cols-2 @5xl:grid-cols-4">
     {sandbox.map((s) => (
       <div class={`rounded-xl border border-vx-ink p-5 ${s.tone}`}>
         <p class="mono text-xs tracking-wider opacity-70">{s.what.toUpperCase()}</p>
@@ -242,8 +269,8 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </div>
     ))}
   </div>
-  <div class="mt-6 grid gap-8 lg:grid-cols-12 lg:items-start">
-    <dl class="m-0 grid min-w-0 gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-3 lg:col-span-8">
+  <div class="mt-6 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <dl class="m-0 grid min-w-0 gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @xl:grid-cols-3 @4xl:col-span-8">
       {sandboxModes.map(([mode, what]) => (
         <div class="bg-vx-cream p-4">
           <dt><code class="mono font-semibold">sandbox.mode: {mode}</code></dt>
@@ -251,7 +278,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         </div>
       ))}
     </dl>
-    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-4">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-4">
       <p class="mono text-xs tracking-wider text-vx-cream/70">THE STRICT POLICY</p>
       <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{`"sandbox": {
   "mode": "required",
@@ -265,5 +292,5 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </div>
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

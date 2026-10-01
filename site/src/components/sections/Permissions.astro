@@ -66,9 +66,9 @@ const limits = [
     The permissions in effect combine policy, session, tool kind and role. Each grant records which of
     these added it, and <code class="mono">/permissions</code> shows it.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-2 @4xl:items-center">
     <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
-    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-2">
+    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @xl:grid-cols-2">
       {sources.map(([k, v]) => (
         <div class="bg-vx-cream p-5">
           <dt class="mono font-semibold">{k}</dt>
@@ -82,7 +82,7 @@ const limits = [
     The approval prompt shows the diff of the change as well as the path, and allow-always writes the
     rule it names.
   </SubHead>
-  <div class="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
+  <div class="mt-8 grid gap-6 @4xl:grid-cols-2 @4xl:items-start">
     <Shot src={approvalDiffShot.src} alt="The approval prompt showing a diff" caption="approval prompt, diff in the prompt" />
     <Shot src={permissionsShot.src} alt="The permissions screen" caption="/permissions" />
   </div>
@@ -102,7 +102,7 @@ const limits = [
       <rect x="40" y="130" width="104" height="52" rx="26" class="gs-off fill-vx-coral/15 stroke-vx-coral" />
       <circle cx="118" cy="156" r="20" class="gs-knob fill-vx-cream" />
       <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-on" fill="currentColor" stroke="none">on</text>
-      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-off fill-[#B8332E]" stroke="none">off</text>
+      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-off fill-vx-red-deep" stroke="none">off</text>
 
       <rect x="24" y="278" width="220" height="44" rx="8" class="fill-tui-ink" stroke="none" />
       <text x="40" y="305" font-family="Geist Mono, monospace" font-size="13" class="gs-on fill-tui-teal" stroke="none">● guardrails  ● ask</text>
@@ -139,5 +139,5 @@ const limits = [
     </svg>
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

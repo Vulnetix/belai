@@ -1,6 +1,7 @@
 ---
-// SectionHead opens a section: a large title on the left and the lead
-// paragraph on the right. The lead is the slot.
+// SectionHead opens a section: a large title and the lead paragraph. Side by
+// side once the section body is wide enough for a readable lead, stacked
+// below that. The lead is the slot.
 
 interface Props {
   title: string;
@@ -9,9 +10,9 @@ interface Props {
 const { title } = Astro.props;
 ---
 
-<div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-  <div class="lg:col-span-7">
+<div class="grid gap-6 @4xl:grid-cols-12 @4xl:items-end">
+  <div class="@4xl:col-span-7">
     <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">{title}</h2>
   </div>
-  <div class="text-lg text-vx-ink/80 lg:col-span-5"><slot /></div>
+  <div class="text-lg text-vx-ink/80 @4xl:col-span-5"><slot /></div>
 </div>

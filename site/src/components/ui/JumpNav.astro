@@ -1,0 +1,37 @@
+---
+// JumpNav is the section menu for screens too narrow for the side rail. It
+// sticks to the top, names the section being read, and opens a list of every
+// section. The scroll-spy in Base.astro keeps the name current and closes the
+// list when a link is chosen.
+import { sections, chapterNumber } from '../../lib/sections';
+
+interface Props {
+  /** Replaces the section list, for pages that are not the home page. */
+  items?: readonly (readonly [string, string, string?])[];
+  title?: string;
+}
+
+const { items, title = 'sections' } = Astro.props;
+const total = sections.length;
+const list: readonly (readonly [string, string, string?])[] =
+  items ?? sections.map(([id, label], i) => [`#${id}`, label, chapterNumber({ n: i + 1, total })] as const);
+---
+
+<nav class="jump" aria-label="On this page">
+  <details class="jump__box">
+    <summary class="jump__summary mono">
+      <span class="jump__brand">▌ belai</span>
+      <span class="jump__current" data-jump-current>{title}</span>
+    </summary>
+    <ul class="jump__list">
+      {list.map((item) => (
+        <li>
+          <a href={item[0]} data-jump={item[0].replace(/^#/, '')} data-label={item[2] ? `${item[2]} · ${item[1]}` : item[1]} class="jump__link mono">
+            {item[2] && <span class="jump__num">{item[2]}</span>}
+            <span>{item[1]}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </details>
+</nav>
