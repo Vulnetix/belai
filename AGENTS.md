@@ -704,6 +704,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     worker's registry record, set only by the CLI or the TUI. It carries no
     text, is checked between cards so a turn is never cut off, and a
     valid worker id is the only path it can name.
+  - **Web prompts to a worker.** Only with the user's `sync.remote_prompts`
+    (`Worker.RemotePrompts`; a project layer may only turn it off). A prompt
+    typed into a worker's session, such as a crew message the Agents page sends
+    to each live worker, is cleaned by `sessionsync.CleanPrompt`, enters the
+    running turn only through `Session.Steer` (sanitised and admitted at the
+    pass boundary like typed steering) or is held, at most eight, for the next
+    turn. It is never a slash command, a shell command or an answer, and it
+    writes no file. The `profile_facts` on a worker's user entries are harness
+    facts (names, presentation, hash, model, tool count), never the prompt or
+    the tool list.
   - **Item text.** The claimed item's text reaches the model only as a
     `kanban` attachment gated exactly like a `KanbanSearch` result
     (`agent.TurnInput.KanbanItem`): sanitised, and classified unless the
