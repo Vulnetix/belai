@@ -18,7 +18,7 @@ import isadoraPell from '../../assets/pix/personas/47b621eb-90fd-53d0-9127-c28e0
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Agents: helpers, background agents, workers and crews. Helpers (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Workers (belai agent start) are processes that claim items off the kanban board, alone or in a crew, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. Both crews run once per repository and have no daily limit. The delivery crew runs your test suites once for the current commit and files what they show, as failing suites, thin coverage, untested packages, property tests, fixtures, contract tests, mutation testing and docs that disagree with the code, as tasks: a clear, concise task goes straight to Backlog for a builder, and one that needs you to confirm or split it waits in Review. Launching it again on the same commit adds nothing the board already has. Each task carries acceptance gates that name a test suite the harness detected, never a command. The harness runs them on the builder branch and again on the reviewer branch, a run that tested nothing is not a pass, and a card is done only when they pass, with the reviewer deciding the gates no test can observe. A request is split into clauses, and any clause no task covers gets a gap card. The security crew and scans only when no artefact in .vulnetix records the current commit. It files one card per finding, patchers fix them or report a false positive, no known fix or a need for a person, and the verifier checks each claim itself and has the harness write an OpenVEX file for the verdict. A profile can declare facts: the AWS role, account and region an agent works in, a Terraform directory, a Kubernetes context. The cloud tools read them, so a crew points at the right place without each prompt repeating it. A role the profile lists is assumed without a prompt, any other role asks you, and its temporary credentials stay in memory and reach only the AWS and Terraform commands. With belai rc running, the website sets schedules for workers, keeps a library of backed-up profiles with versions you can rewind and install on a host, and asks the host to draw a customised Pix for an agent. Ten questions to ask any autonomous agent, answered by the mechanism: the harness decides when a task is done by running acceptance gates, the harness claims work in one locked write, git runs layered inside the OS sandbox, a vulnerability finding is scanned, re-scanned and verified by the harness, a request is split into clauses and an uncovered clause gets a gap card, text another agent wrote is classified, a hash-chained audit records facts, a host pulls its requests and re-checks each one, budgets and handoff caps stop a runaway, and any provider or a local model can be used. Gates are references to a detected suite, never a command; a regression against the base commit counts; manual gates go to the reviewer. The Vulnetix console shows what needs a person, merges a crew into one thread with a group message, previews the flow when a card is assigned, pins a card to a host, assigns it to a person by email, pauses and resumes workers, keeps profile versions, draws avatars, verifies the audit chain and charts usage. The sandbox is alpha, the audit is tamper-evident and needs sync, remote sessions cannot ask, and cloud tools and scans run outside the sandbox.';
+  'Agents: helpers, background agents, workers and crews. Helpers (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Workers (belai agent start) are processes that claim items off the kanban board, alone or in a crew, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. Both crews run once per repository and have no daily limit. The delivery crew runs your test suites once for the current commit and files what they show, as failing suites, thin coverage, untested packages, property tests, fixtures, contract tests, mutation testing and docs that disagree with the code, as tasks: a clear, concise task goes straight to Backlog for a builder, and one that needs you to confirm or split it waits in Review. Launching it again on the same commit adds nothing the board already has. Each task carries acceptance gates that name a test suite the harness detected, never a command. The harness runs them on the builder branch and again on the reviewer branch, a run that tested nothing is not a pass, and a card is done only when they pass, with the reviewer deciding the gates no test can observe. A request is split into clauses, and any clause no task covers gets a gap card. The security crew and scans only when no artefact in .vulnetix records the current commit. It files one card per finding, patchers fix them or report a false positive, no known fix or a need for a person, and the verifier checks each claim itself and has the harness write an OpenVEX file for the verdict. A profile can declare facts: the AWS role, account and region an agent works in, a Terraform directory, a Kubernetes context. The cloud tools read them, so a crew points at the right place without each prompt repeating it. A role the profile lists is assumed without a prompt, any other role asks you, and its temporary credentials stay in memory and reach only the AWS and Terraform commands. With belai rc running, the website sets schedules for workers, keeps a library of backed-up profiles with versions you can rewind and install on a host, and asks the host to draw a customised Pix for an agent. Autonomous work you can sign off on, ten promises each backed by a mechanism: the harness decides when a task is done by running acceptance gates, the harness claims work in one locked write, git runs layered inside the OS sandbox, a vulnerability finding is scanned, re-scanned and verified by the harness, a request is split into clauses and an uncovered clause gets a gap card, text another agent wrote is classified, a hash-chained audit records facts, a host pulls its requests and re-checks each one, budgets and handoff caps stop a runaway, and any provider or a local model can be used. Gates are references to a detected suite, never a command; a regression against the base commit counts; manual gates go to the reviewer. The Vulnetix console shows what needs a person, merges a crew into one thread with a group message, previews the flow when a card is assigned, pins a card to a host, assigns it to a person by email, pauses and resumes workers, keeps profile versions, draws avatars, verifies the audit chain and charts usage.';
 
 type Step = {
   n: string;
@@ -75,19 +75,19 @@ const steps: Step[] = [
   },
 ];
 
-// The questions are about any unattended agent. Each answer is a mechanism in
-// this repository, so a reader can check it. Nothing here describes another product.
-const questions: [string, string][] = [
-  ['Who decides a task is done?', 'The harness. It runs the card\'s acceptance gates after the turn and the exit code decides. A run that tested nothing is not a pass, and a reviewer that approves cannot overrule a failing gate.'],
-  ['Who claims the work?', 'The harness, in one locked write to the board. No tool lets a model claim an item, move a card or change a lease, so two workers never hold the same one.'],
-  ['What can it do to your git history?', 'Commit on its own branch. Git runs in the OS sandbox with your config, hooks, index and every other ref read-only, new objects go to a private store, and one tool pushes, to one branch.'],
-  ['What happens to a vulnerability finding?', 'The harness decides whether a scan ran. A patcher\'s fix is re-scanned by the harness after every round, a separate verifier re-runs the scanner, and the harness writes the OpenVEX file for the verdict.'],
-  ['What happens to the part of a request nobody covered?', 'A request is split into at most twelve clauses. Every handoff must cover one, and a clause no task covers gets a gap card, filed by the harness from ids alone.'],
-  ['Where does text another agent wrote go?', 'Through the security classifier before any model reads it: card text, lessons, handoffs and setup failures. A withheld card is blocked, and no worker takes it.'],
-  ['What is recorded?', 'With sync on, a hash-chained audit of claims, commits, gate results and VEX files, built from fixed fields and never from prompts or output. The Vulnetix server recomputes the chain and flags a break.'],
-  ['Who can steer it from outside?', 'A host that pulls its own requests and checks each one again. There is no inbound port, and the website cannot set a claim, a model, a posture or a permission. A message to a running worker needs sync.remote_prompts and is admitted like typed steering.'],
-  ['What stops a runaway?', 'No worker starts with guardrails off, and an autonomous one refuses to start without a pass budget, or with Bash and no working sandbox. Each item has pass, token and wall-clock budgets, handoffs stop at five per item and six hops, and a crew runs once per repository.'],
-  ['Which models can it use?', 'Any provider Belai supports, or a model on your machine. A profile picks the provider, model and effort for the roles it runs, and the security classifier ships in the binary and needs no provider key.'],
+// Ten promises about any unattended agent. Each body is a mechanism in this
+// repository, so a reader can check it. Nothing here describes another product.
+const promises: [string, string][] = [
+  ['Done means the tests passed', 'After each turn the harness runs the acceptance gates on the card and the exit code decides. A run that tested nothing is not a pass, and a reviewer who approves cannot overrule a failing gate.'],
+  ['Two workers never take the same card', 'Every claim is one locked write to the board. No tool lets a model claim an item, move a card or change a lease, so the harness stays in charge of who works on what.'],
+  ['Your git history stays yours', 'An agent commits on a branch of its own. Git runs in the OS sandbox with your config, hooks, index and every other ref read-only, new objects go to a private store, and one tool pushes, to one branch.'],
+  ['Every vulnerability ends in a verdict', 'The harness decides whether a scan ran. Each patcher fix is re-scanned after every round, a separate verifier re-runs the scanner, and the harness writes the OpenVEX file that records the verdict.'],
+  ['Every part of your request gets tracked', 'A request is split into at most twelve clauses. Every handoff covers one, and a clause no task covers gets a gap card, filed by the harness from ids alone.'],
+  ['Text from other agents is checked before it is read', 'Card text, lessons, handoffs and setup failures all pass the security classifier before any model reads them. A withheld card is blocked, and no worker takes it.'],
+  ['Every action leaves a record you can verify', 'With sync on, a hash-chained audit records claims, commits, gate results and VEX files from fixed fields, never from prompts or output. The Vulnetix server recomputes the chain and flags a break.'],
+  ['Steer a crew from the website', 'A host pulls its own requests and checks each one again. There is no inbound port, and the website cannot set a claim, a model, a posture or a permission. A message to a running worker needs sync.remote_prompts and is admitted like typed steering.'],
+  ['A runaway has a ceiling', 'No worker starts with guardrails off, and an autonomous one refuses to start without a pass budget, or with Bash and no working sandbox. Each item has pass, token and wall-clock budgets, handoffs stop at five per item and six hops, and a crew runs once per repository.'],
+  ['Bring the model you already use', 'Any provider Belai supports, or a model on your machine. A profile picks the provider, model and effort for the roles it runs, and the security classifier ships in the binary with no provider key to set up.'],
 ];
 
 const assurance: [string, string][] = [
@@ -110,13 +110,6 @@ const control: [string, string][] = [
   ['Profiles with history', 'A profile backs up to the library as versions you can rewind, and installs on another host from the website after the host validates it as a profile. The Agent Builder drafts every field from one sentence.'],
   ['A face of its own', 'Give an agent a name, colours and a personality, and your host draws its Pix with your main model. Belai admits only an image made of plain shapes and gradients, so a drawing cannot carry a script or fetch anything.'],
   ['Usage over time', 'Analytics charts tokens, models, tools, turns and time over 7, 30 or 90 days, and feeds the plan limits, pace and runway each host reports.'],
-];
-
-const caveats: [string, string][] = [
-  ['The sandbox is alpha', 'It uses bubblewrap on Linux and sandbox-exec on macOS. Where no backend works, on Windows or Linux without bwrap, a worker that has Bash refuses to start.'],
-  ['The audit is tamper-evident', 'The server stores a broken chain flagged and never drops it, which shows an edit and does not prevent one. The audit runs only while session sync is on.'],
-  ['Remote sessions run with asks off', 'A session the website starts through belai rc has asks off, so a tool that would need your approval is withheld.'],
-  ['Some tools run outside the sandbox', 'AWS, Terraform and the Vulnetix scans run as their own processes with a scrubbed environment, and are not inside the OS sandbox.'],
 ];
 
 const quickstart = `belai kanban add "Add a CONTRIBUTING.md" -label build
@@ -323,13 +316,13 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
     </div>
   </details>
 
-  <!-- Ten questions -->
-  <SubHead id="compare" title="Ten questions to ask any autonomous agent">
-    Whatever agent you leave running, these are the questions that decide how far you can trust it. Each
-    answer names the mechanism in Belai, so you can check it in the source.
+  <!-- Ten promises -->
+  <SubHead id="compare" title="Autonomous work you can sign off on">
+    Leave a crew running and read the result when you are back. These ten things hold while you are away,
+    and each rests on a mechanism you can read in the source.
   </SubHead>
   <ol class="mt-head list-none p-0">
-    {questions.map(([q, a], i) => (
+    {promises.map(([q, a], i) => (
       <li class="grid gap-x-10 gap-y-2 border-b border-vx-ink/20 py-6 first:border-t first:border-vx-ink/60 @3xl:grid-cols-[17rem_minmax(0,1fr)]">
         <h4 class="text-lg font-bold leading-snug"><span class="mono mr-2 text-sm font-medium text-vx-mint-strong">{String(i + 1).padStart(2, '0')}</span>{q}</h4>
         <p class="text-vx-ink/85">{a}</p>
@@ -526,9 +519,4 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
     </div>
   </details>
 
-  <!-- Where the limits are -->
-  <SubHead title="What to know before you rely on it">
-    These four are about the edges of what the harness covers today.
-  </SubHead>
-  <Limits items={caveats} cols={2} class="mt-head" />
 </SealedSection>
