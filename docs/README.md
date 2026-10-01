@@ -25,7 +25,9 @@ behaviour, and implementation details.
 ## Agents
 
 - [Agent Profiles](agent-profiles.md): reusable foreground and background agent
-  definitions, schema, lifecycle, autonomy, and the profile builder.
+  definitions, schema, lifecycle, autonomy, the profile builder, and
+  [facts](agent-profiles.md#facts) that point the cloud tools at an account, a
+  cluster or a Terraform directory.
 - [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.

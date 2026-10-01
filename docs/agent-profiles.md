@@ -39,7 +39,7 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | *(file name)* | No | string | The on-disk filename (e.g. `triage-deps.json`), independent of `name`. It is never serialised — the file's own name is the record. Empty means derive it from `name`. The editor exposes it as its own field; renaming via `name` moves the file only while the file name is still derived. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
-| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `AskUserQuestion`, `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `Skill`, `SkillDraft`, `SubAgentLog`, `Task`, `update_plan`, `WebFetch`, `WebSearch`, `Write`; the tools a session adds when available: `KanbanSearch`, `KanbanUpdate`, `KanbanMove`, `KanbanAdd`, `KanbanHandoff`, `Vulnetix`, `ToolSearch`, `ProcessRestart`, `BashOutput`, `KillShell`, `ProcessList`, `Screenshot`, `Repos`, `RepoFiles`, `RepoRead`, `GH`, `Glab`; and MCP tools as `mcp__<server>__<tool>` (the tool part may be `*`). |
+| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `AskUserQuestion`, `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `Skill`, `SkillDraft`, `SubAgentLog`, `Task`, `update_plan`, `WebFetch`, `WebSearch`, `Write`; the tools a session adds when available: `KanbanSearch`, `KanbanUpdate`, `KanbanMove`, `KanbanAdd`, `KanbanHandoff`, `Vulnetix`, `ToolSearch`, `ProcessRestart`, `BashOutput`, `KillShell`, `ProcessList`, `Screenshot`, `Repos`, `RepoFiles`, `RepoRead`, `GH`, `Glab`, `Git`, `PublishBranch`; the native catalogue's tools, offered when their binary is installed and signed in: `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`, `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Stripe`, `OnePassword`, `Bitwarden`, and the read-only commands `Cat`, `Head`, `Tail`, `File`, `Strings`, `LS`, `Find`, `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `WC`, `Tr`, `Paste`, `Join`, `Echo`, `Date`, `Pwd`, `Env`, `Diff`, `Cmp`; and MCP tools as `mcp__<server>__<tool>` (the tool part may be `*`). |
 | `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`, `worker`. A `worker` claims kanban items; see [Worker profiles](#worker-profiles). |
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). A worker profile's own cron keeps a started worker waiting between ticks; nothing starts it. A host that runs `belai rc` starts workers on a cron from its stored schedules instead ([remote-control.md](remote-control.md#scheduled-agents)). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |
@@ -56,9 +56,117 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | `palette` | No | string[] | Exactly four lowercase `#rrggbb` colours: primary, secondary and the two shades derived for the circle the console draws around the agent. |
 | `avatar_id` | No | string | The UUID of the generated avatar the console shows for this agent. |
 | `knowledge` | No | object | `{ "paths": ["~/handbook", "/srv/standards.md"] }`: up to 32 files or directories, absolute, starting with `~/`, or relative to the project (resolved under its trusted repository root), that the agent may search by meaning through `Grep`, `Glob` and `Read` (see [Knowledge](knowledge.md)). Any mode may use it. It travels with the profile: a library install keeps it, a backup carries it, and a replace takes the library copy (keeping this host's paths when the copy lists none). Under the fixed floor in [Knowledge](knowledge.md#profile-knowledge) nothing sensitive is ever listed. A fleet worker also gets a read-only copy of the documents in its worktree. Changing it restarts a running worker, like any other behavioural field. |
+| `facts` | No | object | Structured key/value pairs about the environment the agent works in, such as an AWS role, a Terraform directory or a Kubernetes context. Each value is a string or a list of strings. Any key is accepted and shown to the model; a [well-known key](#facts) is also read by the tool it names. Not for secrets. Changing it restarts a running worker, like any other behavioural field. |
 | `personality` | No | object | Optional style guidance: `report_style` (one line, 280 characters), `focus` (up to 8 lines of 80) and `vocabulary` (up to 20 lines of 32). It is appended to the worker's persona as style hints that rank below the task and never change what the agent may do. |
 
 `id`, `display_name`, `palette` and `avatar_id` only present the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
+
+### Facts
+
+`facts` declares what is true of the place an agent works: the AWS role it uses, the Terraform directory it plans in, the Kubernetes context it reads. A value is a string or a list of strings.
+
+```yaml
+facts:
+  aws_role_arn: arn:aws:iam::123456789012:role/ReadOnly
+  aws_account_id: "123456789012"
+  aws_region: eu-west-2
+  terraform_dir: infra/prod
+  aws_log_groups: [/app/api, /app/worker]
+  environment: prod
+```
+
+- **Any key is accepted.** A key is lowercase letters, digits and underscores, starts with a letter and is at most 64 characters. Every fact except a hidden one is listed in the profile section of the agent's system block under a line that says the facts are data and never change what the agent may do. A key the harness does not know is read by the model and by nothing else.
+- **A well-known key is also read by a tool.** The table below names each one, the shape its value must have and what the tool receives. The harness chooses the environment variable or flag; no model argument does. A value that does not fit its shape is refused when the profile loads.
+- **Typos are named, not refused.** A key under a tool prefix (`aws_`, `terraform_`, `kubectl_`, `azure_`, `gcloud_`, `github_`, `gitlab_`, `pulumi_`, `heroku_`, `fly_`, `vercel_`, `netlify_`, `doctl_`, `onepassword_`, `vulnetix_`, `stripe_`) that is not well-known still loads. `belai agent validate` and `belai agent import` print a warning with the nearest well-known key, so `aws_role_arns` is reported as probably meant to be `aws_role_arn`.
+- **Limits.** At most 64 keys and 32 values per key. Each value is one non-empty line of at most 512 characters with no control, bidirectional or delimiter characters. Values are refused, never repaired.
+- **Not for secrets.** Facts are shown to the model. A key ending in `_secret`, `_token`, `_password`, `_passphrase`, `_api_key` or `_credentials` is refused, and so is a value shaped like an AWS access key id. Credentials come from the tool's own sign-in (an AWS profile, `gcloud auth`, a kubeconfig), and the harness holds a role's temporary credentials in memory only.
+- **Pin or default.** A fact marked *pin* is a boundary: while it is set, a flag that would point the tool elsewhere (`--context`, `--project`, `-chdir`, and the like) is refused. An unpinned fact is a default, and an explicit flag on the call wins. Separately, flags that send a tool's credentials to another endpoint or identity are refused with or without facts (the table after the facts table). A flag matches in its `--flag=value` form and as an abbreviation, since a CLI may read either, and a flag after a bare `--` is an argument to something else.
+- **Facts never widen.** They do not change the `tools` allowlist, the permission rules, the sandbox or the confinement roots, and a fact for a tool the profile does not allow does nothing. `Git`, `Repos`, `Screenshot`, `WebFetch`, `WebSearch` and the kanban tools read no facts.
+- **Whose they are.** Profiles come from the user's own layers, so a repository cannot add a fact. A library backup and install carry them. Changing a fact restarts a running worker, because it changes what the worker does. The agent drafter never offers `facts`.
+
+<!-- facts-table:begin -->
+| Fact | Value | Effect | Pin |
+| ---- | ----- | ------ | --- |
+| `aws_role_arn` | list of IAM role ARNs | The roles the AWS tool may assume without asking; with one value, the default role. Terraform uses the default role's credentials. | yes |
+| `aws_account_id` | list of 12-digit account ids | Guard: the caller identity's account must be listed after the role resolves, or the call is refused. | yes |
+| `aws_region` | an AWS region | Sets AWS_REGION and AWS_DEFAULT_REGION for AWS and Terraform. A --region flag still wins. | no |
+| `aws_profile` | a profile name from ~/.aws | Sets AWS_PROFILE, which is also the identity a role is assumed from. --profile is refused. | yes |
+| `aws_external_id` | an external id | Passed as --external-id when a role is assumed. Kept out of the prompt. | no |
+| `aws_session_seconds` | 900 to 43200 | The lifetime of an assumed role session (default 3600). | no |
+| `terraform_dir` | a relative directory under the session root | Terraform runs as terraform -chdir=DIR. A -chdir flag is refused. | yes |
+| `terraform_workspace` | a workspace name | Sets TF_WORKSPACE. | yes |
+| `tf_var_NAME` | a string or a list | tf_var_NAME sets TF_VAR_NAME for Terraform. A list becomes a JSON array. NAME is lowercase. | no |
+| `kubectl_context` | a kubeconfig context name | Adds --context. A --context flag is refused. | yes |
+| `kubectl_namespace` | a namespace | Adds --namespace unless the call names one with -n, --namespace or -A. | no |
+| `kubectl_kubeconfig` | an absolute path or one under ~/ | Sets KUBECONFIG. A --kubeconfig flag is refused. | yes |
+| `azure_subscription` | a subscription id or name | Adds --subscription to the az commands that take it, and sets ARM_SUBSCRIPTION_ID for Terraform. A --subscription flag is refused. | yes |
+| `azure_tenant` | a tenant id | Sets ARM_TENANT_ID for Terraform. | yes |
+| `azure_resource_group` | a resource group name | Sets AZURE_DEFAULTS_GROUP, the group az uses when a command names none. | no |
+| `azure_location` | an Azure location | Sets AZURE_DEFAULTS_LOCATION. | no |
+| `azure_config_dir` | an absolute path or one under ~/ | Sets AZURE_CONFIG_DIR, which holds az's accounts and tokens. | yes |
+| `gcloud_project` | a project id | Sets CLOUDSDK_CORE_PROJECT, and GOOGLE_PROJECT for Terraform. A --project flag is refused. | yes |
+| `gcloud_account` | an account email | Sets CLOUDSDK_CORE_ACCOUNT. A --account flag is refused. | yes |
+| `gcloud_region` | a Compute region | Sets CLOUDSDK_COMPUTE_REGION, and GOOGLE_REGION for Terraform. | no |
+| `gcloud_zone` | a Compute zone | Sets CLOUDSDK_COMPUTE_ZONE, and GOOGLE_ZONE for Terraform. | no |
+| `gcloud_impersonate_service_account` | a service account email | Sets CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT, and GOOGLE_IMPERSONATE_SERVICE_ACCOUNT for Terraform. Only a profile declares it; a --impersonate-service-account flag is refused. | yes |
+| `gcloud_configuration` | a gcloud configuration name | Sets CLOUDSDK_ACTIVE_CONFIG_NAME. A --configuration flag is refused. | yes |
+| `github_host` | a hostname | Sets GH_HOST, the host gh uses when a command names none. | no |
+| `github_repo` | [HOST/]OWNER/REPO | Sets GH_REPO, the repository gh uses outside a checkout. | no |
+| `gitlab_host` | a hostname | Sets GITLAB_HOST. | no |
+| `gitlab_repo` | GROUP/REPO | Sets GITLAB_REPO. | no |
+| `gitlab_group` | a group path | Sets GITLAB_GROUP. | no |
+| `pulumi_stack` | a stack name | Sets PULUMI_STACK. | no |
+| `pulumi_backend_url` | a URL with scheme https, file, s3, gs or azblob | Sets PULUMI_BACKEND_URL. | yes |
+| `heroku_app` | an app name | Sets HEROKU_APP. | no |
+| `fly_app` | an app name | Sets FLY_APP. | no |
+| `vercel_org_id` | an organization id | Sets VERCEL_ORG_ID. | yes |
+| `vercel_project_id` | a project id | Sets VERCEL_PROJECT_ID. | yes |
+| `vercel_scope` | a team slug | Adds --scope to the vercel commands that take it. | no |
+| `netlify_site_id` | a site id | Sets NETLIFY_SITE_ID. | no |
+| `doctl_context` | a doctl context name | Sets DIGITALOCEAN_CONTEXT. A --context flag is refused. | yes |
+| `onepassword_account` | an account sign-in address or id | Sets OP_ACCOUNT. An --account flag is refused. | yes |
+| `vulnetix_org_id` | an organization id | Sets VULNETIX_ORG_ID for the Vulnetix tool. | no |
+| `vulnetix_project` | a project name | Sets VULNETIX_PROJECT. | no |
+| `vulnetix_namespace` | a namespace | Sets VULNETIX_NAMESPACE. | no |
+| `vulnetix_environment` | an environment name | Sets VULNETIX_ENVIRONMENT. | no |
+<!-- facts-table:end -->
+
+Keys that carry context for the model and that nothing reads are listed so profiles use the same names: `aws_log_groups`, `aws_account_alias`, `terraform_backend`, `terraform_version`, `fly_org`, `stripe_account`, `environment`, `service`, `team`, `owner` and `runbook`. They never draw a warning.
+
+Flags that carry a tool's credentials to another endpoint, identity or trust root are refused whether or not the profile has facts, because the credentials a call carries attach to every request:
+
+<!-- refused-flags:begin -->
+| Tool | Flags always refused |
+| ---- | -------------------- |
+| `AWS` | `--profile`, `--endpoint-url`, `--ca-bundle`, `--no-verify-ssl`, `--no-sign-request` |
+| `GCloud` | `--impersonate-service-account`, `--access-token-file` |
+| `Kubectl` | `--kubeconfig`, `--server`, `-s`, `--token`, `--as`, `--as-group`, `--as-uid`, `--certificate-authority`, `--client-certificate`, `--client-key`, `--insecure-skip-tls-verify`, `--username`, `--password`, `--tls-server-name`, `--proxy-url` |
+<!-- refused-flags:end -->
+
+#### AWS roles
+
+The `AWS` tool takes an optional `role_arn` beside its `command`. The roles in `aws_role_arn` are the profile's declaration of what the agent may assume, so they need no prompt. With exactly one declared, the tool uses it without an argument. A role ARN the model derived or was given that is not declared asks the user on every call, whatever the permission rules say, and is withheld where nobody can be asked (a background or headless worker). A permission rule matches `<command> role=<arn>`, for example `AWS(*role/ReadOnly*)`, and a deny rule still wins.
+
+Before the command runs, the harness checks whether the role is already in use. If `aws sts get-caller-identity` returns the role, or a session of it in the same account, nothing is assumed. Otherwise it assumes the role from the caller's own identity (`aws_profile` when set) with a session named `belai-` and eight hex characters, for `aws_session_seconds` (default 3600) and with `aws_external_id` when set. A refusal reaches the model as the AWS error code alone. The temporary credentials stay in memory for the session, are renewed five minutes before they expire, and reach only the `AWS` and `Terraform` subprocesses. They are never written to disk and never appear in a result, in `Env` output or in the `Bash` environment. `aws_account_id` is checked against the resolved identity, so a role in the wrong account is refused before the command runs.
+
+#### Facts and roles: edge cases
+
+These follow from the rules above and each has a test.
+
+- **One value or a list.** `aws_role_arn: X` and `aws_role_arn: [X]` are the same fact, and a list of one is written back as a plain string. A key that takes one value (`aws_region`, `terraform_dir`) refuses two. A number or boolean reads as its text (`aws_session_seconds: 3600`). `null`, a mapping and a nested list are refused, and so is a key written twice, an upper-case key and a key that is not text.
+- **No facts is the old behaviour.** An empty `facts` is the same as none. Terraform then runs with no `-chdir` and no credentials of its own, and `AWS` makes no STS call.
+- **A fact for a tool the profile does not allow does nothing.** Facts bind to a tool only when the tool is on the profile's surface. They never add one.
+- **Several declared roles are not a default.** With two or more in `aws_role_arn` and no `role_arn` argument, the call runs as the ambient identity. The model picks one by passing `role_arn`. `Terraform` has no argument, so with two declared roles it runs as the ambient identity too.
+- **A role that is already the caller is not assumed.** The check accepts the role's own ARN or a session of it in the same account (`assumed-role/NAME/SESSION`, with the role's path left out). A held role is never used as the base for another: each assumption starts from the ambient identity (`aws_profile` when set).
+- **Credentials renew early.** Held credentials are reused until five minutes before they expire, then replaced. `aws_session_seconds` is 900 to 43200 and the default is 3600. A caller identity read for the account guard is reused for two minutes. New facts (a restarted worker, a re-engaged profile) discard every held role.
+- **The account guard fails closed.** `aws_account_id` is checked after the role resolves, against the role's account or the caller's. A caller whose account cannot be read (no `aws` binary, no credentials, a timeout of twenty seconds) is refused, not passed.
+- **Failures say little.** A refused assumption reaches the model as `could not assume role NAME: AWS error CODE`, and any other failure as the exit status or "the aws CLI is not installed". Provider text, account ids and the request id are not repeated.
+- **A role the user approves still asks next time.** The approval covers one call. No allow rule or ask setting stops the prompt for a role the profile does not list, and a deny rule always blocks it. Listing the role in `aws_role_arn` is what makes it declared. An `autonomous` worker is withheld on an undeclared role like any other session that cannot ask.
+- **Path facts expand `~/`.** `kubectl_kubeconfig` and `azure_config_dir` take an absolute path or one under `~/`, expanded when the call runs. A path with a `..` segment is refused.
+- **Terraform variables.** `tf_var_NAME` sets `TF_VAR_NAME`: one value as written, several as a JSON array. `NAME` is lower-case, and a name that ends in `_secret`, `_token` or `_password` is refused like any other fact.
+- **Namespaces and subscriptions.** `kubectl_namespace` adds nothing when the call already names a namespace (`-n`, `--namespace`, `-A`, `--all-namespaces`) and is not added to `kubectl config` commands. `azure_subscription` is added only to the `az` commands that take it (`group`, `vm`, `aks`, `acr`, `resource` and `account show`, not `account list`). `vercel_scope` is not added to `vercel whoami`.
+- **`aws logs tail --follow` never runs.** It streams until cancelled, so it is refused with a pointer to `--since`.
+- **Subagents get none.** An Explore or handoff subagent builds its own registry, so its cloud tools hold no facts and no credentials.
 
 ### Built-in personas
 
@@ -99,6 +207,7 @@ the website a session is drawn in the colours of the agent that ran it
 
 - `workspace.sync` needs `workspace.isolation: worktree`, lists at most 8 distinct, non-overlapping repository-relative paths made of letters, digits and `. _ - /` only, with `access` of `read` or `write`. A path under `.git`, `.vulnetix/belai`, `.vulnetix/settings.json` or `.vulnetix/credentials.json` is refused, and so is write access to the scanner evidence in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`).
 - `knowledge.paths` must list one to 32 distinct paths, each absolute, starting with `~/` or relative to the project, at most 1024 bytes, with no control character and no `..` segment; a relative path may not name the project root itself.
+- `facts` keys must be lowercase letters, digits and underscores starting with a letter, with at most 64 keys, 32 values per key and one clean line of at most 512 characters per value. A key that names a secret and a value shaped like an AWS access key id are refused. A well-known key must hold a value of its shape and the number of values it takes (see [Facts](#facts)).
 - `name` must be non-empty and filesystem-safe (`[a-zA-Z0-9._-]+`).
 - A non-empty file name must be a safe basename: non-empty, ending in `.json`, with no path separators, and with a stem unchanged by the name sanitiser. It may not collide with a built-in's on-disk file name.
 - `mode` must be one of the five known values.

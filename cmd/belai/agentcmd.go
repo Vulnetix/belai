@@ -137,6 +137,9 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 		if err != nil {
 			return 1, fmt.Errorf("%s: %w", fs.Arg(0), err)
 		}
+		for _, w := range p.FactWarnings() {
+			fmt.Fprintf(stderr, "%s: warning: %s\n", fs.Arg(0), w)
+		}
 		if cmd == "validate" {
 			fmt.Fprintf(stdout, "%s: valid %s profile %q\n", fs.Arg(0), p.Mode, p.Name)
 			return 0, nil

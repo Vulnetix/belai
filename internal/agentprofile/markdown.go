@@ -120,7 +120,7 @@ var markdownKeyOrder = []string{
 	"name", "id", "display_name", "palette", "avatar_id", "personality",
 	"description", "identity", "tools", "mode", "schedule", "monitor_condition", "reflection",
 	"max_iterations", "autonomy", "provider", "model", "effort", "guardrails", "ask_permission",
-	"kanban", "workspace", "budget", "memory", "knowledge",
+	"facts", "kanban", "workspace", "budget", "memory", "knowledge",
 }
 
 // MarshalMarkdown writes p as a markdown agent definition: the JSON keys as
