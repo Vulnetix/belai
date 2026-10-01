@@ -1,6 +1,12 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import rubberDuck from '../../assets/pix/personas/8a28c058-0f9e-5320-a948-f2b651f08874.svg?url';
+import kremvax from '../../assets/pix/personas/3e8f176f-1538-5d79-b2c7-2eb35edfe989.svg?url';
+import darkAvenger from '../../assets/pix/personas/52f09d1b-981d-59e9-b770-2eec1e628b49.svg?url';
+import juniperTallis from '../../assets/pix/personas/2c302f2e-3661-5878-81af-495e448f910f.svg?url';
+import odoBrannigan from '../../assets/pix/personas/85d6dca1-af97-5646-9e64-a704a4677ce0.svg?url';
+import isadoraPell from '../../assets/pix/personas/47b621eb-90fd-53d0-9127-c28e09c2d120.svg?url';
 
 // One section for every agent Belai runs besides the session: read-only
 // subagents, background agents and crews of kanban workers. It is laid out as
@@ -104,10 +110,31 @@ const fences = [
   ['Unclear work waits for you','Each time the delivery crew starts, the harness runs your test suites once for the current commit and files what they show as work for the scout: failing suites, thin coverage, untested packages, property tests, fixtures, contract tests and mutation testing. The scout works in a throwaway worktree where nothing is committed. Each task it hands on carries acceptance gates. A clear, concise task goes to Backlog for a builder, and one that needs you to confirm or split it lands in Review. The harness runs the gates itself before a card moves on.'],
 ];
 
-const crews = [
-  { name: 'belai:delivery', what: 'a request, or a test run on HEAD → reviewed branches', members: [['scout', 1], ['builder', 2], ['reviewer', 1]] },
-  { name: 'belai:security', what: 'a review of HEAD → verified fixes and a VEX for every verdict', members: [['vuln-scout', 1], ['patcher', 2], ['verifier', 1]] },
-] as const;
+// Each built-in member has a persona (internal/agentprofile/builtin): a display
+// name, a palette whose first colour borders the Pix, and a drawing. A test in
+// the Belai repository checks these names, colours and files against the profiles.
+type Member = { role: string; n: number; name: string; colour: string; face: string; line: string };
+
+const crews: { name: string; what: string; members: Member[] }[] = [
+  {
+    name: 'belai:delivery',
+    what: 'a request, or a test run on HEAD → reviewed branches',
+    members: [
+      { role: 'scout', n: 1, name: 'Juniper Tallis', colour: '#2f8f5b', face: juniperTallis, line: 'Writes the survey: what is where, and small tasks for the builders.' },
+      { role: 'builder', n: 2, name: 'Odo Brannigan', colour: '#d9732a', face: odoBrannigan, line: 'Says what was built and which check proves it.' },
+      { role: 'reviewer', n: 1, name: 'Isadora Pell', colour: '#8a3a6b', face: isadoraPell, line: 'Cites the line, says why it matters and separates must-fix from nit.' },
+    ],
+  },
+  {
+    name: 'belai:security',
+    what: 'a review of HEAD → verified fixes and a VEX for every verdict',
+    members: [
+      { role: 'vuln-scout', n: 1, name: 'Rubber Duck', colour: '#f2c12e', face: rubberDuck, line: 'Talks each finding through out loud, then says which are real.' },
+      { role: 'patcher', n: 2, name: 'Kremvax', colour: '#b3262e', face: kremvax, line: 'Reports in short numbered bulletins, status word first.' },
+      { role: 'verifier', n: 1, name: 'Dark Avenger', colour: '#5b2d91', face: darkAvenger, line: 'Argues the attacker\'s case against every fix before accepting it.' },
+    ],
+  },
+];
 
 const profile = `---
 name: docs-writer
@@ -350,18 +377,39 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
             <code class="mono text-base font-semibold">{c.name}</code>
             <span class="text-sm text-vx-ink/60">{c.what}</span>
           </p>
-          <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            {c.members.map(([m, n]) => (
-              <>
-                <span class="rounded-lg border border-vx-ink px-3 py-1.5"><b>{m}</b> ×{n}</span>
-                <span aria-hidden="true">→</span>
-              </>
+          <ul class="mt-3 grid gap-3 sm:grid-cols-3">
+            {c.members.map((m) => (
+              <li class="flex gap-3 rounded-lg border border-vx-ink p-3 text-sm">
+                <img
+                  src={m.face}
+                  alt=""
+                  width="48"
+                  height="48"
+                  loading="lazy"
+                  class="h-12 w-12 flex-none rounded-full border-[3px] bg-vx-bone/60"
+                  style={`border-color: ${m.colour}`}
+                />
+                <span class="min-w-0">
+                  <b class="block">{m.name}</b>
+                  <code class="mono text-xs text-vx-ink/60">{m.role} ×{m.n}</code>
+                  <span class="mt-1 block text-vx-ink/80">{m.line}</span>
+                </span>
+              </li>
             ))}
-            <span class="rounded-lg bg-vx-mint px-3 py-1.5">draft PR</span>
+          </ul>
+          <p class="mt-3 text-sm">
+            <span class="rounded-lg bg-vx-mint px-3 py-1.5">ends in a draft PR</span>
           </p>
         </div>
       ))}
       <p class="mt-7 text-vx-ink/80">
+        Each built-in member has a persona: a display name, a colour palette, a short personality that sets
+        how it writes its report, and a Pix drawn in its colours. The Vulnetix console shows the agent by these.
+        A persona changes how an agent writes and looks, and has no effect on what it may do.
+        <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md#built-in-personas`}>docs/agent-profiles.md</a>{' '}
+        lists the ten built-in personas.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         A worker is an ordinary profile with <code class="mono">mode: worker</code>: its{' '}
         <code class="mono">kanban</code> block says what it takes and where it goes next,{' '}
         <code class="mono">workspace</code> gives it a worktree, <code class="mono">budget</code> bounds one
