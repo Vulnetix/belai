@@ -176,6 +176,15 @@ when the user's credentials resolve for exactly one provider.
 | `llama-server` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
 | `kiro` | `claude-sonnet-4.5` |
+| `alibaba` | `qwen3-30b-a3b` |
+| `deepseek` | `deepseek-chat` |
+| `fireworks` | `accounts/fireworks/models/llama-v3p3-70b-instruct` |
+| `groq` | `llama-3.3-70b-versatile` |
+| `minimax` | `minimax-text-01` |
+| `mistral` | `mistral-large-latest` |
+| `moonshot` | `kimi-k2-0711` |
+| `together` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `xai` | `grok-3-latest` |
 | `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
 A custom provider from `settings.json` falls through to the `openrouter/free`
