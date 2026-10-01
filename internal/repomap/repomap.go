@@ -22,7 +22,6 @@ import (
 // Scan bounds: never walk unboundedly.
 const (
 	scanTimeout = 5 * time.Second
-	maxDirs     = 200
 	maxFiles    = 2000
 )
 
@@ -375,10 +374,10 @@ func layout(ctx context.Context, root string) []DirSummary {
 				}
 				return nil
 			}
-			files++
-			if files > maxFiles {
+			if files >= maxFiles {
 				return filepath.SkipAll
 			}
+			files++
 			return nil
 		})
 		out = append(out, DirSummary{Name: e.Name(), Files: files})
