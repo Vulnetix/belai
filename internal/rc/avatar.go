@@ -21,8 +21,9 @@ import (
 // back is admitted by internal/svgguard before it leaves, so the website never
 // receives a model's text, only an image the guard wrote.
 
-// avatarTimeout bounds one drawing. The website expires the request later.
-var avatarTimeout = 100 * time.Second
+// avatarTimeout bounds one drawing, main and fast model together. The website
+// expires the request after five minutes, which leaves room to post the result.
+var avatarTimeout = 240 * time.Second
 
 // startAvatar checks an avatar request and starts it in the background, so a
 // slow model never holds up the queue. Only one drawing runs at a time; another

@@ -177,9 +177,15 @@ func readText(p string, max int64) ([]byte, os.FileInfo, error) {
 // reads it and classified through scannerGate. The index is trimmed to
 // capTokens.
 func SyncProfile(ctx context.Context, ix *Index, scope, root string, paths []string, gate, scannerGate Gate, capTokens int) (Stats, error) {
+	return SyncProfileOwned(ctx, ix, scope, root, "", paths, gate, scannerGate, capTokens)
+}
+
+// SyncProfileOwned is SyncProfile with the profile's owned directory as the
+// fallback for a listed path missing on this host (see EnumerateProfileOwned).
+func SyncProfileOwned(ctx context.Context, ix *Index, scope, root, owned string, paths []string, gate, scannerGate Gate, capTokens int) (Stats, error) {
 	var st Stats
 	keep := map[string]bool{}
-	files, skipped, err := EnumerateProfile(ctx, root, paths)
+	files, skipped, err := EnumerateProfileOwned(ctx, root, owned, paths)
 	st.Skipped += skipped
 	if err != nil {
 		return st, err

@@ -1656,6 +1656,18 @@ func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.
 	return r
 }
 
+// NewFastClassifier is the fast tier on its own, for a caller that runs it
+// beside the main model whatever the use case. It is nil when there is no fast
+// tier, or when the fast tier is the main model, which a second call would only
+// repeat.
+func NewFastClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
+	f := cfg.Routing.Fast
+	if f == nil || (f.Provider == cfg.Provider && f.Model == cfg.Model) {
+		return nil
+	}
+	return classifierFromConfig(mainClassifierConfig(*f), client, onRetry)
+}
+
 // tieredClassifier sends fast use cases to the fast tier and everything else
 // to the main model.
 type tieredClassifier struct {

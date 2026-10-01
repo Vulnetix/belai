@@ -218,7 +218,8 @@ func (s *Store) Refresh(ctx context.Context) (Report, error) {
 	pix.SetTagger(opts.Tagger)
 	s.project.SetTagger(opts.Tagger)
 	if pix != nil && prof != nil {
-		st, err := SyncProfile(ctx, pix, prof.Name, opts.Root, prof.Paths, opts.ProfileGate, opts.ProjectGate, opts.IndexTokens)
+		owned, _ := config.ProfileFilesDir(prof.ID)
+		st, err := SyncProfileOwned(ctx, pix, prof.Name, opts.Root, owned, prof.Paths, opts.ProfileGate, opts.ProjectGate, opts.IndexTokens)
 		rep.Profile = st
 		if err != nil {
 			return rep, err
@@ -227,7 +228,7 @@ func (s *Store) Refresh(ctx context.Context) (Report, error) {
 			rep.Warnings = append(rep.Warnings, "the profile index was not saved: "+err.Error())
 		}
 		if opts.CopyOutside && opts.Root != "" {
-			if files, _, eerr := EnumerateProfile(ctx, opts.Root, prof.Paths); eerr == nil {
+			if files, _, eerr := EnumerateProfileOwned(ctx, opts.Root, owned, prof.Paths); eerr == nil {
 				CopyDocs(opts.Root, files, nil, nil, true)
 			}
 		}

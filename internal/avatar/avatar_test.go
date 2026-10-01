@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/pix"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -218,5 +219,75 @@ func TestFactsAreLabelledData(t *testing.T) {
 	bare, _ := Request{DisplayName: "X", Palette: request().Palette}.Clean()
 	if strings.Contains(bare.Facts(), "reports") || strings.Contains(bare.Facts(), "weighs") {
 		t.Fatalf("an empty personality still shows: %q", bare.Facts())
+	}
+}
+
+// slowClassifier answers after a delay, or when its context ends.
+type slowClassifier struct {
+	delay time.Duration
+	reply string
+}
+
+func (s slowClassifier) Classify(ctx context.Context, _ rolemanager.ClassifierPayload) (string, error) {
+	select {
+	case <-time.After(s.delay):
+		return s.reply, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (s slowClassifier) ClassifyStream(ctx context.Context, p rolemanager.ClassifierPayload, _ func(string)) (string, error) {
+	return s.Classify(ctx, p)
+}
+
+func TestFastModelStandsInOnlyWhenTheMainModelDoesNotDeliver(t *testing.T) {
+	good := recoloured()
+	other := strings.ReplaceAll(good, "#00b8a5", "#00b8a6")
+	cases := []struct {
+		name     string
+		main     slowClassifier
+		mainErr  error
+		fast     slowClassifier
+		wantFast bool
+		wantWhy  string
+	}{
+		{name: "the main model wins when it answers within its wait", main: slowClassifier{delay: 20 * time.Millisecond, reply: good}, fast: slowClassifier{reply: other}},
+		{name: "a fast drawing waits out the main model's head start", main: slowClassifier{delay: 100 * time.Millisecond, reply: good}, fast: slowClassifier{reply: other}},
+		{name: "the fast model stands in for a main model that is too slow", main: slowClassifier{delay: time.Hour, reply: good}, fast: slowClassifier{reply: other}, wantFast: true},
+		{name: "the fast model stands in for a main model that fails", main: slowClassifier{reply: "no drawing here", delay: 0}, fast: slowClassifier{reply: other}, wantFast: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := Drawer{Classifier: c.main, Fast: c.fast, MainWait: 300 * time.Millisecond}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			svg, why := d.Draw(ctx, request())
+			if why != "" || len(svg) == 0 {
+				t.Fatalf("draw = %d bytes, %q", len(svg), why)
+			}
+			gotFast := strings.Contains(string(svg), "00b8a6")
+			if gotFast != c.wantFast {
+				t.Errorf("used the fast model = %v, want %v", gotFast, c.wantFast)
+			}
+		})
+	}
+}
+
+func TestBothModelsFailingReportsTheMainModel(t *testing.T) {
+	main := &fakeClassifier{err: errors.New("provider text that must not leak")}
+	fast := &fakeClassifier{replies: []string{"Sorry.", "Sorry."}}
+	svg, why := Drawer{Classifier: main, Fast: fast}.Draw(context.Background(), request())
+	if svg != nil || why != ReasonModel {
+		t.Fatalf("draw = %d bytes, %q; want the main model's reason %q", len(svg), why, ReasonModel)
+	}
+}
+
+func TestTheDeadlineStillEndsARaceNeitherModelFinishes(t *testing.T) {
+	d := Drawer{Classifier: slowClassifier{delay: time.Hour}, Fast: slowClassifier{delay: time.Hour}, MainWait: 10 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, why := d.Draw(ctx, request()); why != ReasonTooLong {
+		t.Fatalf("why = %q, want %q", why, ReasonTooLong)
 	}
 }

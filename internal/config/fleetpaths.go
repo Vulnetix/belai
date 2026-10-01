@@ -79,6 +79,22 @@ func ProfileKnowledgeDir(profileID string) (string, error) {
 	return filepath.Join(dir, "profiles", profileID), nil
 }
 
+// ProfileFilesDir is the directory that holds the files one agent profile
+// carries, keyed by the profile's id: what a library install wrote for the
+// documents and synced files the profile names (docs/knowledge.md, "A profile's
+// own files"). The daemon owns it; nothing in a repository points here. Like the
+// rest of the state directory the OS sandbox hides it from every command.
+func ProfileFilesDir(profileID string) (string, error) {
+	if !validKnowledgeID(profileID) {
+		return "", fmt.Errorf("%q is not a profile id", profileID)
+	}
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "profiles", "files", profileID), nil
+}
+
 // ProjectKnowledgeDir is the directory of one project's index, keyed by the
 // SHA-256 of the project's cleaned absolute root so the path names no
 // directory. root is the trusted repository root, never a worktree.

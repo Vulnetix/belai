@@ -1167,10 +1167,12 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	specs := p.SyncPaths()
 	var docs []knowledge.ProfileFile
 	if paths := p.KnowledgePaths(); len(paths) > 0 && t.Workspace != nil && t.Workspace.Worktree && t.Setup == "" {
-		docs, _, _ = knowledge.EnumerateProfile(ctx, w.Repo, paths)
+		owned, _ := config.ProfileFilesDir(p.ID)
+		docs, _, _ = knowledge.EnumerateProfileOwned(ctx, w.Repo, owned, paths)
 	}
 	if (len(specs) > 0 || len(docs) > 0) && t.Workspace != nil && t.Workspace.Worktree && t.Setup == "" {
 		var serr error
+		t.Workspace.Owned, _ = config.ProfileFilesDir(p.ID)
 		if syncState, serr = t.Workspace.SyncIn(w.Repo, specs, docs); serr != nil {
 			return run.Result{}, fmt.Errorf("place the profile's files in the worktree: %w", serr)
 		}

@@ -75,7 +75,7 @@ func TestRemoteControlPageStatesTheDefaultsAndCaps(t *testing.T) {
 		"clipped to 240 bytes",
 		"all the tails together stay under 48 KiB",
 		"Every 30 seconds the daemon fires each enabled schedule",
-		"The drawing takes at most 100 seconds on the host",
+		"The drawing takes at most 240 seconds on the host",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/remote-control.md does not say %q", want)
@@ -84,7 +84,7 @@ func TestRemoteControlPageStatesTheDefaultsAndCaps(t *testing.T) {
 	if DefaultIdle != 30*time.Minute || DefaultMax != 3 || config.DefaultMaxWorkers != 4 {
 		t.Errorf("idle %v, max %d, workers %d disagree with the page", DefaultIdle, DefaultMax, config.DefaultMaxWorkers)
 	}
-	if RecentWorkers != 15*time.Minute || maxInvWorkers != 64 || DefaultScheduleEvery != 30*time.Second || avatarTimeout != 100*time.Second {
+	if RecentWorkers != 15*time.Minute || maxInvWorkers != 64 || DefaultScheduleEvery != 30*time.Second || avatarTimeout != 240*time.Second {
 		t.Errorf("recent %v, workers %d, schedule %v, avatar %v disagree with the page", RecentWorkers, maxInvWorkers, DefaultScheduleEvery, avatarTimeout)
 	}
 	if sessionsync.RCWorkerLogLines != 12 || sessionsync.RCWorkerLogLine != 240 || sessionsync.RCWorkerLogBudget != 48<<10 {

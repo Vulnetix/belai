@@ -44,6 +44,8 @@ func rcDrawAvatar(wd string) func(context.Context, avatar.Request) ([]byte, stri
 		pipe := run.NewPipeline(cfg, client, cache)
 		d := avatar.Drawer{
 			Classifier: run.NewRoleClassifier(cfg, client, nil),
+			// The fast model draws too, and stands in when the main one is slow or fails.
+			Fast: run.NewFastClassifier(cfg, client, nil),
 			Admit: func(ctx context.Context, text string) error {
 				_, err := pipe.Admit(ctx, text, "web avatar", pol)
 				return err
