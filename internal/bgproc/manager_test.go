@@ -97,20 +97,34 @@ func TestAttemptsCap(t *testing.T) {
 	// without a client, so the process just sits in StateRecovering. Burn the
 	// remaining attempts by restarting with the same command, which counts as
 	// one attempt and exits immediately again.
-	time.Sleep(200 * time.Millisecond)
-	p, ok := m.Lookup("p0")
-	if !ok || p.State != StateRecovering {
-		t.Fatalf("expected recovering, got %+v", p)
+	// Each wait polls for the state it needs rather than sleeping, so a loaded
+	// machine cannot make the test see a process that has not exited yet.
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				p, _ := m.Lookup("p0")
+				t.Fatalf("timed out waiting for %s; process is %+v", what, p)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
-	_ = m.RestartProcess(p.ID, "false")
-	time.Sleep(200 * time.Millisecond)
-	_ = m.RestartProcess(p.ID, "false")
-	time.Sleep(200 * time.Millisecond)
+	waitFor("the first exit to leave the process recovering", func() bool {
+		p, ok := m.Lookup("p0")
+		return ok && p.State == StateRecovering
+	})
+	_ = m.RestartProcess("p0", "false")
+	waitFor("the restarted process to exit", func() bool {
+		p, ok := m.Lookup("p0")
+		return ok && p.State == StateRecovering
+	})
+	_ = m.RestartProcess("p0", "false")
+	waitFor("the process to be removed after the attempt cap", func() bool {
+		_, ok := m.Lookup("p0")
+		return !ok
+	})
 
-	p, ok = m.Lookup("p0")
-	if ok {
-		t.Fatalf("expected process removed after cap, got %+v", p)
-	}
 	sawFail := false
 	drainEvents(m, func(e Event) bool {
 		if e.Kind == "fail" {
