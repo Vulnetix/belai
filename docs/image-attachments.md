@@ -174,8 +174,8 @@ round can pick it up without re-discovering the constraints.
 
 ### Option A: half-block terminal preview, stdlib only
 
-Decode the image with `image/png`, `image/jpeg`, and `image/gif` from the
-standard library, downsample to the panel width, and render each cell as a pair
+Decode the image with `image/png` and `image/jpeg` from the standard library
+(admission refuses GIF and every other format), downsample to the panel width, and render each cell as a pair
 of pixels using the upper/lower half-block glyph (`▄`/`▀`) with per-segment
 foreground and background colours.
 
@@ -190,7 +190,8 @@ Cons:
 
 - Half blocks halve the vertical resolution.
 - Requires the `Seg` background and line-painter changes noted above.
-- Still cannot send the image to a model until the wire shape is multimodal.
+- Draws the card's image only; what the model receives is unchanged, since the
+  wire shapes already carry the admitted PNG.
 
 ### Option B: kitty/sixel graphics protocol
 
@@ -217,13 +218,14 @@ with a dedicated key while the Read panel is focused, and exited with `esc`.
 
 ## Recommended order
 
+The wire work is done: `run.Attachment` has an `image` kind and every
+surface above encodes it. What remains is the preview itself.
+
 1. Add a per-segment background to `components.Seg` and teach the line painter
    to emit half-block cells.
-2. Add an `image` attachment kind and a decoder that creates a half-block
-   preview.
+2. Decode the already-admitted PNG (`internal/imageguard` output) into a
+   half-block preview.
 3. Render the preview in a new transcript row type (`Role: "tool"`,
    `ToolName: "Read"`, plus a `Meta["image"] = true` marker).
-4. Gate the feature behind a `settings`/`state` flag until the wire shape is
-   multimodal.
-5. Extend `run.Attachment` and `internal/wire` for image payloads, then map
-   them per provider.
+4. Gate the feature behind a `settings`/`state` flag until it has been used
+   in more than one terminal.
