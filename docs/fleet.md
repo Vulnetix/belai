@@ -668,19 +668,20 @@ alongside itself.
 | `belai agent crews` | crews and their members |
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent status` | running workers and this project's board |
-| `belai agent run NAME [-once] [-item K-…]` | run a worker in the foreground |
-| `belai agent start NAME \| -crew CREW [-max-workers N] [-stay \| -drain]` | start detached workers; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule` |
+| `belai agent run NAME [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground. `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached` and `-max-workers` to the workers it launches; they are not for typing |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; exactly one of NAME and `-crew` is required |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |
 | `belai agent pause ID \| NAME` | finish the card in hand, then claim nothing until resumed |
 | `belai agent resume ID \| NAME` | take cards again |
-| `belai kanban add TITLE [-label L] [-priority N] [-assignee NAME] [-depends K-…]` | file an item |
-| `belai kanban list [-list L] [-label L] [-project all] [-json]` | list items |
+| `belai kanban add TITLE [-body TEXT \| -body-file FILE] [-list backlog\|review] [-label L] [-priority N] [-assignee NAME] [-depends K-…] [-project NAME] [-json]` | file an item. `-body-file` reads the details from a file and replaces `-body`; `-list` is `backlog` (default) or `review`, and anything else is refused; `-priority` runs -2 to 3; `-label` and `-depends` repeat. A card is not filed twice: when an unfinished card in the same project has the same title (compared ignoring case and extra spaces), the command prints that card's id marked `(already on the board)` and files nothing |
+| `belai kanban list [-list L[,L…]] [-label L] [-assignee NAME] [-project all] [-limit N] [-json]` | list items. With no `-list` it shows every list but `done`. `-project` is `current` (default), `all` or a project name. `-limit` caps the rows at N (default 50) |
 | `belai kanban show ID` | one item with its history |
 | `belai kanban move ID LIST [-note TEXT]` | move an item |
 | `belai kanban note ID TEXT` | add a note |
 | `belai kanban release ID` | clear a claim |
+| `belai kanban delete ID` | delete an item. The delete is a tombstone that syncs, so the website and other hosts drop it too. A claimed item is deleted as well, and the worker that held it finds its lease lost at the next renewal |
 | `belai kanban assign ID PROFILE \| -crew CREW [-host this\|ID\|none] [-start]` | route an item to a profile or crew, optionally pinned |
 | `belai kanban import FILE.jsonl` | file many items |
 

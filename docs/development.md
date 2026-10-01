@@ -69,6 +69,13 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
 | `-classifier-model` | security-classifier model (default: the main model) |
 | `-classifier-effort` | security-classifier thinking effort (default: `none`) |
+| `-classifier-kind` | security-classifier stack: `llm`, `jev` or `models` (default: `models` when the binary embeds a model, else `llm`) |
+| `-classifier-phase1-model` | phase-1 prompt-saturation model id |
+| `-classifier-phase1-source` | phase-1 source: `embedded` or `huggingface` |
+| `-classifier-phase1-threshold` | phase-1 attack threshold, a probability; `0` or unset means the default `0.75` |
+| `-classifier-phase2-model` | phase-2 jailbreak model id |
+| `-classifier-phase2-source` | phase-2 source: `embedded`, `huggingface` or `disabled` |
+| `-classifier-phase2-threshold` | phase-2 attack threshold; `0` or unset means the default `0.75` |
 | `-caveman` | enable caveman voice rewrite for this run |
 | `-guardrails` | posture guardrails, **on by default**; `-guardrails=false` forces every gate to `ignore` for this run, overriding both the project `preferences.yaml` and any per-gate flag |
 | `-ask-permission` | the permission-ask gate, **on by default**; `-ask-permission=false` resolves every `ask` decision to allow with no prompt |
@@ -109,6 +116,39 @@ The switch is read from the **settings**, not the flag, so
 CLI path too. The flag is folded into those settings first, so it still works;
 reading the flag alone used to mean a settings file that disabled guardrails
 was honoured by the TUI and ignored by the CLI.
+
+### Environment variables
+
+The environment is one layer of the settings merge (below the flags, above the
+files), so each variable here sets the same thing as the setting and flag beside
+it. An empty value is ignored. A boolean variable is read with Go's
+`strconv.ParseBool` (`1`, `t`, `true`, `0`, `f`, `false`, in either case), and any
+other value is ignored, so a typo never turns a gate off. A threshold is read as
+a number; text that is not one counts as unset.
+
+| Variable | Sets | Flag |
+| --- | --- | --- |
+| `BELAI_PROVIDER` (then `PI_PROVIDER`) | `provider` | `-provider` |
+| `BELAI_MODEL` | `model` | `-model` |
+| `BELAI_EFFORT` | `effort` | `-effort` |
+| `BELAI_GUARDRAILS` | `guardrails` | `-guardrails` |
+| `BELAI_ASK_PERMISSION` | `ask_permission` | `-ask-permission` |
+| `BELAI_FIREWALL` | `firewall.enabled` | `-firewall` |
+| `BELAI_CLASSIFIER_KIND` | `classifier.kind` | `-classifier-kind` |
+| `BELAI_CLASSIFIER_PROVIDER` | `classifier.provider` | `-classifier-provider` |
+| `BELAI_CLASSIFIER_MODEL` | `classifier.model` | `-classifier-model` |
+| `BELAI_CLASSIFIER_EFFORT` | `classifier.effort` | `-classifier-effort` |
+| `BELAI_CLASSIFIER_CAVEMAN` | `classifier.caveman` | none |
+| `BELAI_CLASSIFIER_PHASE1_MODEL`, `_SOURCE`, `_THRESHOLD` | `classifier.phase1.model`, `.source`, `.threshold` | `-classifier-phase1-model`, `-source`, `-threshold` |
+| `BELAI_CLASSIFIER_PHASE2_MODEL`, `_SOURCE`, `_THRESHOLD` | `classifier.phase2.model`, `.source`, `.threshold` | `-classifier-phase2-model`, `-source`, `-threshold` |
+
+A variable outside this table does not set a setting. `BELAI_HOME`,
+`BELAI_BASE_URL`, `BELAI_WORKTREES_DIR`, `BELAI_NO_KITTY` and
+`BELAI_NO_UPDATE_CHECK` (`1`, `true` or `yes` turns the release check off for
+air-gapped and CI runs; the `update_check` setting is the durable opt-out) are
+described where they apply, and the variables that tell Belai where local model
+files already are (`BELAI_MODELS_DIR`, `HF_HUB_CACHE`, `HF_HOME`, `LLAMA_CACHE`)
+are in [Local inference](architecture.md#local-inference).
 
 ### Provider and model defaults
 

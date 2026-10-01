@@ -3513,11 +3513,24 @@ tighten them, never loosen a global `true` back to `false`; the per-project
 user preference file may set them both ways),
 `vulnetix.firewall_enabled` (default off; toggled with `f10` — the project
 layer may only turn it off, the preference file may turn it on),
-`allow_project_providers`, and the `classifier` block
+`allow_project_providers` and `allow_project_workspace_dirs` (global-only
+opt-ins, both off by default: without them a project file's `providers`,
+`provider_labels` and `workspace_dirs` are dropped when settings merge, and a
+note says so in the transcript at startup; the `workspace_dirs` note is skipped
+once you have ruled on those directories. A project `workspace_dirs` entry takes
+effect only when you accept it by name in the first-run trust prompt or with
+`/add-dir`, which needs no opt-in), `vulnetix_sweep_enabled` and `vulnetix_sweep_roots` (the
+project sweep), the `vulnetix` block (`subcommands`, `timeout`, `autofix`,
+`gateway_url`, `firewall_enabled`, `dep_watch`, and the accepted but unused
+`continue_on_error` and `org_id`; each key's default and layer rule is in
+[vulnetix.md](vulnetix.md#review-settings)), and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
-in the Security classifier section above. That enumeration is the whole
-`config.Settings` struct, plus two keys that are accepted on read and never
-written back:
+in the Security classifier section above. Every other key has its own section
+in these pages; `TestEverySettingIsDocumented` fails when a key the struct
+accepts is named nowhere under `docs/`, and
+`TestEveryTopLevelSettingReachesTheEffectiveSettings` fails when one is
+accepted and saved but never takes effect. Two keys are accepted on read and
+never written back:
 
 - `bash_readonly` — the deprecated alias for `read_only`. `Settings.UnmarshalJSON`
   folds it into `read_only` only when the canonical key is absent, then clears
@@ -3608,6 +3621,21 @@ model; otherwise a fresh port returned by `net.Listen("tcp", "127.0.0.1:0")`.
 OpenAI-surface base URL, so the probe, the launch, and the stored credential
 can never disagree. The old hard-coded `18080` and duplicate port lists are
 gone.
+
+**Where model files are found.** `localinfer.FindModelFile` looks for exactly
+one repository file on disk before anything is downloaded, in this order, and
+uses the first match with no network call:
+
+1. Belai's own directory, `$BELAI_MODELS_DIR` or `<user cache>/belai/models`,
+   where a file is stored as `<org>--<repo>/<file>`.
+2. The Hugging Face hub cache, in `$HF_HUB_CACHE`, then `$HF_HOME/hub`, then
+   `~/.cache/huggingface/hub`, in any snapshot of `models--<org>--<repo>`.
+3. llama.cpp's own cache, `$LLAMA_CACHE` then `<user cache>/llama.cpp`, where a
+   `-hf` download is named `<org>_<repo>_<file>`.
+
+An empty file never counts, and neither does a partial download (`.part`,
+`.incomplete`). The Hugging Face token, when set, is sent to Hugging Face and
+nowhere else, and Belai downloads weights only after you confirm the size.
 
 Supporting pieces:
 
