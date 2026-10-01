@@ -14,9 +14,9 @@ The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.
 `site/src/pages/index.astro` composes one long scroller with a sticky left status
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
-hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents & crews ·
-memory · processes · budgets · session intelligence · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
-integrations · cli · qol · start · faq
+hero · beliefs · trust · classifier · sealed · labs · modes · tools · diagnostics · permissions · agents & crews ·
+memory · processes · budgets · session intelligence · providers · routing · vulnetix · kanban · web sessions · extend ·
+cli · qol · start · faq
 
 The agents section (`site/src/components/sections/Agents.astro`, rendered
 from `Features.astro`) is one ladder: helpers, background agents, workers and crews.
@@ -50,8 +50,9 @@ block (`#audit`) says what the History page's Hosts and Agents tabs show and
 lists the events in the `audit` array; keep that list in step with the kinds in
 `internal/audit` and [docs/audit.md](audit.md).
 
-The sandbox, extend and integrations sections live in
-`site/src/components/sections/Extend.astro`. Each card links to the matching
+The extend section, with its integrations and editors blocks, lives in
+`site/src/components/sections/Extend.astro`; the sandbox block is part of the
+tools section (`Tools.astro`, anchor `#sandbox`). Each card links to the matching
 doc under `docs/` on GitHub, so the site states the rule and the doc carries
 the edge cases.
 
@@ -138,7 +139,7 @@ Determinism rules:
 gated behind `var.manage_pages = false`, the GitHub Pages block. The Pages block
 is net-new for the org and delivered inert: `terraform plan` proposes no
 repository change until `manage_pages` is flipped and the repository is imported
-first (`terraform import github_repository.belai belai`).
+first (`terraform import github_repository_pages.belai belai`).
 
 ## Deploy
 
