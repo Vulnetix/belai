@@ -802,10 +802,10 @@ func transformTools() []nativeCommand {
 			subject: func(map[string]any) string { return "" },
 		},
 		{
-			name: "Date", desc: "Print the current date and time (UTC).",
+			name: "Date", desc: "Print the current date and time (UTC) as ISO 8601, with the Unix time in seconds, for time windows such as --start-time.",
 			props: map[string]Property{},
 			argv: func(_ string, _ map[string]any, _ string) ([]string, string, error) {
-				return []string{"-u"}, "", nil
+				return []string{"-u", "+%Y-%m-%dT%H:%M:%SZ (Unix %s)"}, "", nil
 			},
 			subject: func(map[string]any) string { return "" },
 		},
