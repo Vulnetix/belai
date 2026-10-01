@@ -21,6 +21,14 @@ Belai prints a verification URL and a code. Open the URL, confirm the code,
 and approve the request; Belai polls until AWS answers and then stores the
 login.
 
+The poll asks every 5 seconds, or at the interval AWS names when that is
+longer, and waits 5 seconds longer each time AWS says to slow down (or answers
+HTTP 429). It stops at the code's own expiry, or after 10 minutes when AWS gave
+none. A transport error or an unreadable reply is retried until then. An
+expired code and a denial in the browser each end the sign-in with their own
+message, and any other answer ends it with the HTTP status and AWS's error
+code only.
+
 | Flag | Meaning |
 | --- | --- |
 | `-start-url` | IAM Identity Center start URL. Omit it for an AWS Builder ID. |
