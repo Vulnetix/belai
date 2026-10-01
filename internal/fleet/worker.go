@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/knowledge"
@@ -228,6 +229,20 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 	// agents.publish off does not stop a publishing profile: it runs without
 	// PublishBranch, and nothing is pushed (Worker.publishes).
 	return nil
+}
+
+// CheckRepo refuses a profile whose workspace is a git worktree when repo is
+// not a git repository. A worker started in a plain directory (a folder that
+// holds several repositories, say) would otherwise claim an item, or file its
+// own survey item, and only then fail to prepare a workspace for it.
+func CheckRepo(p agentprofile.AgentProfile, repo string) error {
+	if p.IsolationMode() != agentprofile.IsolationWorktree {
+		return nil
+	}
+	if _, ok := gitinfo.Detect(repo); ok {
+		return nil
+	}
+	return fmt.Errorf("profile %s uses workspace.isolation: worktree, which needs a git repository, and %s is not one: run the command from inside the repository the worker should work in (a profile that only reads can run in a plain folder, with no workspace block)", p.Name, repo)
 }
 
 // Run claims and works items until ctx ends, Once is satisfied, or the

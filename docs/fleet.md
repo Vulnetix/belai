@@ -242,6 +242,31 @@ that runs checks but changes nothing, such as the scout running tests:
 A read-only worker with `Bash` and `autonomy: autonomous` still needs the OS
 sandbox and a pass budget, like any autonomous `Bash` worker.
 
+### Where a worker may start
+
+A worktree is a git checkout, so a profile with `workspace.isolation: worktree`
+(every built-in worker, and any profile that writes) must start inside a git
+repository. `belai agent run` and `belai agent start` check this before
+anything else is claimed or filed and refuse with `profile NAME uses
+workspace.isolation: worktree, which needs a git repository, and DIR is not
+one`. The check follows the working directory up to its repository root, so a
+subdirectory is fine. A folder that holds several repositories is not: change
+into one of them, or start one worker set per repository. A schedule from
+`belai rc` runs `belai agent start -drain` in its directory, so a schedule whose
+directory is not a repository is refused the same way and its run is recorded as
+`error`.
+
+A profile with no `workspace` block, `isolation: none` or `isolation: shared` is
+not checked, and it runs in the folder itself, git or not. The harness then
+makes no worktree, branch or commit and touches nothing in git, which is how a
+read-only worker such as an hourly log analyzer runs from a folder that holds
+several repositories (see [Filing a handoff under another repository](#filing-a-handoff-under-another-repository)).
+Only a profile that cannot write may omit the `workspace` block: one with
+`Write`, `Edit` or `Bash` needs `worktree` or `shared`. A repository with no commit passes this check and then fails when
+the harness prepares the first worktree, which the worker investigates as a
+setup failure (the failure is attached to the item and the release note stays
+harness facts).
+
 ### Filing a handoff under another repository
 
 A worker started in a plain folder, or one that finds work for several

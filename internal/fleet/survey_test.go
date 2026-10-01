@@ -326,6 +326,56 @@ func TestHourlySurveysOfOneDayShareATitleWithoutColliding(t *testing.T) {
 	}
 }
 
+// A worktree needs a git repository. A worker started in a plain directory is
+// refused up front, instead of claiming (or filing) an item and then failing to
+// prepare a workspace for it.
+func TestCheckRepoRefusesAWorktreeProfileOutsideGit(t *testing.T) {
+	plain := t.TempDir()
+	worktree := scoutProfile()
+	worktree.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree, ReadOnly: true}
+
+	err := CheckRepo(worktree, plain)
+	if err == nil {
+		t.Fatal("a worktree profile in a plain directory must be refused")
+	}
+	for _, want := range []string{"t-scout", "workspace.isolation: worktree", "git repository", plain} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+
+	if out, err := exec.Command("git", "-C", plain, "init", "-q").CombinedOutput(); err != nil {
+		t.Skipf("git init: %v %s", err, out)
+	}
+	if err := CheckRepo(worktree, plain); err != nil {
+		t.Errorf("a git repository: %v", err)
+	}
+	sub := filepath.Join(plain, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckRepo(worktree, sub); err != nil {
+		t.Errorf("a directory inside a repository: %v", err)
+	}
+}
+
+// Only a worktree needs git: a profile with no isolation or a shared checkout
+// is not refused for the directory it starts in.
+func TestCheckRepoLeavesOtherIsolationAlone(t *testing.T) {
+	plain := t.TempDir()
+	none := scoutProfile()
+	if err := CheckRepo(none, plain); err != nil {
+		t.Errorf("no workspace block: %v", err)
+	}
+	for _, iso := range []string{"", agentprofile.IsolationNone, agentprofile.IsolationShared} {
+		p := scoutProfile()
+		p.Workspace = &agentprofile.WorkspaceSpec{Isolation: iso}
+		if err := CheckRepo(p, plain); err != nil {
+			t.Errorf("isolation %q: %v", iso, err)
+		}
+	}
+}
+
 // A profile's handoff_repos reaches the claim a worker's session works under,
 // and an unset one does not.
 func TestClaimCarriesHandoffRepos(t *testing.T) {
