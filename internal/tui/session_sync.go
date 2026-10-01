@@ -84,14 +84,18 @@ func (a *App) startSessionSync() {
 		a.syncNote = "off (" + err.Error() + ")"
 		return
 	}
+	host := sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}
 	a.syncer = sessionsync.New(sessionsync.Options{
 		Client:        client,
 		HostID:        hostID,
-		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
+		Host:          host,
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
 		RemoteAnswers: a.settings.SyncRemoteAnswersEnabled(),
 	})
 	a.syncer.Start(context.Background())
+	// The audit log goes where session sync goes: its own hash-chained facts
+	// stream (docs/audit.md), uploaded with the same client and credential.
+	a.audit = sessionsync.StartAudit(context.Background(), client, hostID, host, dir)
 	// The kanban board mirrors through the same client, so it goes only
 	// where session sync goes and only with the same credential.
 	a.startKanbanSync(client, hostID)
@@ -171,6 +175,8 @@ func (a *App) closeSync() {
 	}
 	a.syncer.Close(3 * time.Second)
 	a.syncer = nil
+	a.audit.Close(3 * time.Second)
+	a.audit = nil
 	a.syncedID = ""
 	a.remoteQueue = nil
 }

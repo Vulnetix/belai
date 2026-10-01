@@ -40,6 +40,7 @@ behaviour, and implementation details.
   Fastly ARC, Kong and AI Security Gateway, custom proxies, read-only
   OpenRouter and Cloudflare), modes, key storage and event cards.
 - [Session sync](session-sync.md): mirroring sessions to the Vulnetix website
+- [Audit log](audit.md): the hash-chained record of host and agent actions, facts only
   (History and live Sessions) and prompting a live session from the browser.
 - [Remote control](remote-control.md): `belai rc`, which lets the website
   start and drive sessions on this machine.

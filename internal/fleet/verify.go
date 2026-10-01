@@ -3,9 +3,11 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/quality"
 	"github.com/vulnetix/belai/internal/repomap"
@@ -161,6 +163,15 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 		}
 		if _, err := w.Store.SetGate(it.ID, w.Record.ID, r.gate.ID, state, head, note); err != nil {
 			w.logf("%s: gate %s: %v", it.Short(), r.gate.ID, err)
+		} else {
+			// Facts only: the gate's id, suite and state, the exit code the
+			// harness read, never the run's output or the gate's note.
+			data := map[string]string{"gate": r.gate.ID, "suite": r.gate.Suite, "status": string(state)}
+			if r.at >= 0 {
+				data["exit"] = strconv.Itoa(resultAt(r.at).ExitCode)
+			}
+			w.auditItem(audit.GateVerified, it, audit.Fact{SessionID: w.Record.Session, Commit: head, BaseCommit: ws.Base,
+				Branch: ws.Branch, Outcome: string(state), Data: data})
 		}
 		v.Gates = append(v.Gates, quality.GateResult{ID: r.gate.ID, Kind: string(r.gate.Kind), Suite: r.gate.Suite, State: string(state), Note: note})
 		if state != kanban.GateMet {
@@ -187,6 +198,10 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 		regressed = quality.Regressions(base, cmp)
 	}
 	v.Regressed = regressed
+	if len(regressed) > 0 {
+		w.auditItem(audit.GateVerified, it, audit.Fact{SessionID: w.Record.Session, Commit: head, BaseCommit: ws.Base, Branch: ws.Branch,
+			Outcome: "regressed", Data: map[string]string{"gate": "regression", "regressed": strconv.Itoa(len(regressed))}})
+	}
 	v.AllRunnable = allMet
 	if ran {
 		if err := quality.WriteVerification(w.Repo, v); err != nil {

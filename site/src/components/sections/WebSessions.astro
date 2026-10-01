@@ -7,7 +7,7 @@ import Limits from '../ui/Limits.astro';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins.';
+  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken.';
 
 const answers = [
   {
@@ -46,6 +46,17 @@ const path = [
   ['syncer', 'uploads it about 30 ms later with the lines that came with it, gzipped when large'],
   ['server', 'Postgres notifications wake the page and the host inbox'],
   ['page', 'shows it, about one round trip after it happened'],
+];
+
+const audit = [
+  ['host.first_seen · version_changed', 'this machine reported for the first time, or with a new Belai version'],
+  ['host.rc_online · rc_offline', 'belai rc started or stopped'],
+  ['host.dispatch', 'a request from the website (start, stop, worker, crew, pause, resume) and whether the host carried it out'],
+  ['card.claimed · released', 'a worker took a card and handed it back, with the list it went to'],
+  ['card.lease_lapsed', 'a claim ran out of lease and the card went back to its list'],
+  ['repo.commit', 'the commit id Belai read from git, the base the branch started at and how many files changed'],
+  ['gate.verified', 'a gate and the exit code that decided it, or a regression against the base'],
+  ['vex.written · finding.carded', 'the VEX for a verdict, and the card a scan filed for a finding'],
 ];
 
 const limits = [
@@ -154,6 +165,64 @@ const limits = [
       </p>
       <p class="mt-4 text-sm">
         <a class="text-vx-ink underline" href={`${docBase}session-sync.md`}>docs/session-sync.md</a>
+      </p>
+    </div>
+  </div>
+
+  <SubHead title="An audit trail of hosts and agents" id="audit">
+    Sync also carries a second record: what your hosts and agents did. <strong>Belai → History</strong> shows
+    it in two tabs beside the session list.
+  </SubHead>
+  <div class="mt-8 grid gap-5 md:grid-cols-2">
+    <article class="rounded-xl border border-vx-ink p-5">
+      <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+      <h4 class="mt-3 text-xl font-bold">Hosts</h4>
+      <p class="mt-3 text-sm text-vx-ink/80">
+        Each machine that runs Belai: when it was first seen, the Belai versions and hostnames it has run under,
+        when remote control came online or went offline, and every request the website made of it with how the
+        host answered. Open a host to read its own log, which follows new events as they arrive.
+      </p>
+    </article>
+    <article class="rounded-xl border border-vx-ink bg-vx-ink p-5 text-vx-cream">
+      <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+      <h4 class="mt-3 text-xl font-bold">Agents</h4>
+      <p class="mt-3 text-sm text-vx-cream/80">
+        Every claim and release of a card, the commit an agent left on the item's branch, each gate decided by
+        its exit code, the draft pull request and the VEX. A row about a vulnerability links to it, to the card
+        and to the session that did the work. Filter by vulnerability, card, agent or repository.
+      </p>
+    </article>
+  </div>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-7">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE AUDIT LOG HOLDS</p>
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[13rem_minmax(0,1fr)]">
+        {audit.map(([name, what]) => (
+          <>
+            <dt class="text-vx-mint">{name}</dt>
+            <dd class="m-0 font-sans text-vx-cream/80">{what}</dd>
+          </>
+        ))}
+      </dl>
+    </div>
+    <div class="min-w-0 lg:col-span-5">
+      <p class="text-vx-ink/80">
+        An event is a fixed set of identifiers: a worker profile, a card id, a branch, a commit id, an advisory
+        id and an enum verdict. A prompt, a reply, a command, tool output or a file has no field to go in, and
+        Belai stamps the time and the order itself.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Each event carries the SHA-256 of itself and the event before it, so an edited or missing row breaks
+        every hash after it. The Verify chain button on the page re-checks the stored rows and names the
+        first event that no longer fits.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The log travels with sync: <span class="mono">/sync off</span> stops it, a repository can switch sync
+        off, and switching it on belongs to your own settings.
+      </p>
+      <p class="mt-4 text-sm">
+        <a class="text-vx-ink underline" href={`${docBase}audit.md`}>docs/audit.md</a>
       </p>
     </div>
   </div>

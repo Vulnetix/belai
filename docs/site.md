@@ -45,7 +45,10 @@ and every bar keeps its width. The rules the section states are R15 to R22 in
 Without JS the demo shows its first state (this week, timeline).
 
 The web sessions section (`site/src/components/sections/WebSessions.astro`)
-covers following and answering a session on the Vulnetix website.
+covers following and answering a session on the Vulnetix website. Its audit
+block (`#audit`) says what the History page's Hosts and Agents tabs show and
+lists the events in the `audit` array; keep that list in step with the kinds in
+`internal/audit` and [docs/audit.md](audit.md).
 
 The sandbox, extend and integrations sections live in
 `site/src/components/sections/Extend.astro`. Each card links to the matching
