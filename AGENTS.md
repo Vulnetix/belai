@@ -892,20 +892,22 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and the run is recorded before it fires so a crash cannot double fire. Text
   pulled from the website is cleaned before it is stored, and `schedules.json`
   is private (0600). Every firing and refusal is a `host.schedule` audit event.
-- **A web profile install is a prompt-grade write that fails closed.** The
+- **A web profile install is the user's own action, and is validated as a
+  profile.** The
   website keeps a library of agent profiles (versions in S3, indexed per
   tenant) and asks a host to back one up or install one through the dispatch
   queue, `profile_backup` and `profile_install`. A request carries identifiers
   only, and the server answers a host's upload or fetch only for the request that
   names it, while it is delivered to that host. A backup writes nothing on the
-  host. An install is accepted only while `sync.remote_prompts` is on; the
-  fetched markdown is parsed strictly and validated whole (`agentprofile`), and
-  it is refused if it turns guardrails or permission asks off, is autonomous,
-  allows `Bash` (an empty tools list allows it) or a shell process tool, names
-  a built-in, would replace a profile without an explicit replace and the same
-  `id`, or reuses another profile's display name. The reason sent back is
-  harness text with a short cleaned excerpt, never the profile. The server checks
-  shape and size only; the host's validation is the authority.
+  host. An install is made by a person with their own login, so it is not held to
+  the rules for web prompts: it does not need `sync.remote_prompts` and a
+  profile may be as permissive as the user chooses. The fetched markdown is still
+  parsed strictly and validated whole (`agentprofile`), and it is refused if it
+  is not a valid profile, names a built-in, would replace a profile without an
+  explicit replace and the same `id`, or reuses another profile's display name.
+  The reason sent back is harness text with a short cleaned excerpt, never the
+  profile. The server checks shape and size only; the host's validation is the
+  authority. Do not add a content rule here that a prompt would need.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

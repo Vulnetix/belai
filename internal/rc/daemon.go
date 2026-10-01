@@ -79,8 +79,9 @@ type Options struct {
 	// Busy reports whether a worker of the profile is already live in the
 	// directory's repository (the fleet registry unless a test replaces it).
 	Busy func(profile, dir string) bool
-	// RemotePrompts reports whether the website may write to this host: the
-	// user's own sync.remote_prompts (a profile install needs it). It reads the
+	// RemotePrompts reports whether the website may send this host text for a
+	// model to read: the user's own sync.remote_prompts (an avatar request needs
+	// it; a profile install does not, being the user's own action). It reads the
 	// global settings and fails closed unless a test replaces it.
 	RemotePrompts func() bool
 	// DrawAvatar draws a customised Pix with this host's main model for an
