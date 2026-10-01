@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/factspec"
 	"github.com/vulnetix/belai/internal/proc"
 )
 
@@ -231,7 +232,9 @@ var cloudSpecs = []cloudSpec{
 	},
 	{
 		name: "AWS", binary: "aws",
-		desc:  "Query AWS (read-only): caller identity, S3 listing, and describe/list operations.",
+		desc: "Query AWS (read-only): caller identity, S3 listing, CloudWatch logs and metrics, and describe/list operations. " +
+			"Pass role_arn to run the command as an IAM role: the harness checks whether the role is already the caller and assumes it when it is not. " +
+			"A role the profile declares (aws_role_arn) is used without asking; any other role asks the user.",
 		probe: []string{"sts", "get-caller-identity"},
 		prefixes: []string{
 			"sts get-caller-identity",
@@ -239,11 +242,17 @@ var cloudSpecs = []cloudSpec{
 			"s3api list-buckets", "s3api list-objects", "s3api get-object",
 			"ec2 describe-instances", "ec2 describe-security-groups", "ec2 describe-vpcs", "ec2 describe-subnets",
 			"cloudformation describe-stacks", "cloudformation list-stacks",
-			"logs describe-log-groups",
+			"logs describe-log-groups", "logs describe-log-streams", "logs filter-log-events",
+			"logs get-log-events", "logs tail", "logs start-query", "logs get-query-results", "logs describe-queries",
+			"cloudwatch get-metric-data", "cloudwatch list-metrics", "cloudwatch describe-alarms",
 			"iam list-users", "iam list-roles",
 			"lambda list-functions",
 			"eks list-clusters",
 		},
+		gate: awsGate,
+		// Log events, bucket objects and tags are written by applications and
+		// third parties, so the output is classified before the model reads it.
+		classify: true,
 	},
 	{
 		name: "AZ", binary: "az",
@@ -426,7 +435,54 @@ func cloudNative(cs cloudSpec) nativeCommand {
 	if cs.classify {
 		cmd.kind = KindRemote
 	}
+	// Flags that carry a tool's credentials to another endpoint are refused up
+	// front, so a call that could never run does not first ask the user.
+	inner := cmd.build
+	cmd.build = func(root string, args map[string]any) ([]string, string, error) {
+		argv, stdin, err := inner(root, args)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := factspec.Bind(cs.name, nil, argv); err != nil {
+			return nil, "", err
+		}
+		return argv, stdin, nil
+	}
+	switch cs.name {
+	case factspec.ToolAWS:
+		cmd.props["role_arn"] = stringProp("Optional IAM role ARN to run the command as, e.g. arn:aws:iam::123456789012:role/ReadOnly. Omit it to use the profile's declared role, or the current identity when none is declared.")
+		build := cmd.build
+		cmd.build = func(root string, args map[string]any) ([]string, string, error) {
+			if s, _ := argString(args, "role_arn"); strings.TrimSpace(s) != "" {
+				if _, _, _, ok := factspec.ParseRoleARN(strings.TrimSpace(s)); !ok {
+					return nil, "", fmt.Errorf("role_arn is not an IAM role ARN (arn:aws:iam::ACCOUNT:role/NAME)")
+				}
+			}
+			return build(root, args)
+		}
+		cmd.subject = func(args map[string]any) string {
+			s, _ := argString(args, "command")
+			s = strings.TrimSpace(s)
+			if r, _ := argString(args, "role_arn"); strings.TrimSpace(r) != "" {
+				s += " role=" + strings.TrimSpace(r)
+			}
+			return s
+		}
+		cmd.prepare = awsPrepare
+		cmd.asks = awsAsks
+	case factspec.ToolTerraform:
+		cmd.prepare = terraformPrepare
+	}
 	return cmd
+}
+
+// awsGate refuses an aws command that never ends. logs tail --follow streams
+// until it is cancelled, and the call would only sit until its timeout.
+func awsGate(cmd string) error {
+	if factspec.HasFlag(strings.Fields(cmd), "--follow") {
+		return fmt.Errorf("--follow streams without end; read a window with --since instead")
+	}
+	return nil
 }
 
 // cloudAllowed reports whether cmd is one of the spec's read-only prefixes.

@@ -30,6 +30,7 @@ the sanitiser sits in the tool-result pipeline.
 | Loopback test used by all of the above | `internal/netguard` | `IsLoopbackHost` | n/a |
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
 | Tool argument | `internal/tools` | `CheckArgs`, `CheckFormat` | Refuses |
+| Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
 
 Repairing is used for text whose content has value even when part of it is
 hostile (a tool result, a prompt): the dangerous part is cut and the rest
@@ -268,6 +269,28 @@ check. The `Format` is not sent to the model. Formats:
 
 Read, Write, Edit, Glob, Grep and Cd declare `path`, WebFetch `url`, Bash
 `command`, Grep's pattern `regex`. An undeclared format fails closed.
+
+## Profile facts: `factspec`
+
+A profile's `facts` ([Facts](agent-profiles.md#facts)) are text the author wrote that
+reaches the model and, for the well-known keys, a tool's environment and argv.
+`factspec.Validate` refuses a key that is not lowercase letters, digits and
+underscores, a key that names a secret (`_secret`, `_token`, `_password`,
+`_passphrase`, `_api_key`, `_credentials`), a value that is not one clean line
+(unchanged by `sanitize.Text`, at most 512 characters), a value shaped like an AWS
+access key id, and a well-known key whose value does not fit its shape. It
+refuses rather than repairs, so a value is read as it was written.
+
+`factspec.Bind` is the other half. It maps a fact to a fixed environment variable
+or flag chosen from the harness's table, never from a model argument. It also
+refuses, for the tools it names, the flags that carry credentials to another
+endpoint or identity (`--profile`, `--endpoint-url`, `--ca-bundle`,
+`--no-verify-ssl`, `--no-sign-request`, the kubeconfig, server, token and
+impersonation flags, `--impersonate-service-account`, `--access-token-file`), and
+the flags a pinned fact would be overridden by. A flag matches in its `--flag=value`
+form and as an abbreviation, since a CLI may read either, and a flag after a
+bare `--` is an argument to something else. A hidden fact (`aws_external_id`) is
+read by the harness and left out of the prompt.
 
 ## Testing
 

@@ -426,6 +426,11 @@ The tool takes the arguments after `vulnetix` and builds the argv itself:
   table follows the CLI's command manifest, so no call fails on an unknown
   flag (`sbom` takes neither `--path` nor `--disable-memory`).
 - `--path` and `-o` must stay inside the working tree.
+- An engaged profile's `vulnetix_org_id`, `vulnetix_project`,
+  `vulnetix_namespace` and `vulnetix_environment` facts
+  ([Facts](agent-profiles.md#facts)) set `VULNETIX_ORG_ID`, `VULNETIX_PROJECT`,
+  `VULNETIX_NAMESPACE` and `VULNETIX_ENVIRONMENT` for the call, after the
+  environment scrub. `VULNETIX_API_URL` and the key are never set from a fact.
 - Scans run one at a time, because they write the same `.vulnetix/`
   artifacts, under a 15-minute limit.
 - Output is stripped of ANSI codes, progress bars and spinner redraws, then

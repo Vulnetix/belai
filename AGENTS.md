@@ -37,8 +37,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a control or bidi stripper, a loopback test or a shell splitter.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
-  `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
-  repository text), `RepoRead` and the native tools that can print a file's
+  `Read` (a file's bytes), `GH`/`Glab`/`AWS` results (`KindRemote`, third-party
+  repository text, log events and bucket objects), `RepoRead` and the native tools that can print a file's
   contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
@@ -108,6 +108,43 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   read primitive. Their content is written by other models, so `KindAgentStore`
   is in `tools.classifierKinds` unconditionally. Do not add a path argument and
   do not add an exemption.
+- **Facts point a tool and never widen it, and a role's credentials stay in
+  memory.** `internal/factspec` is the one table behind a profile's `facts`
+  (`docs/agent-profiles.md#facts`). The rules:
+  - **Facts are the user's.** They come from a profile in the user's layers, so
+    a repository cannot add one; the drafter never offers them. Any key of the
+    right shape is accepted and listed to the model under framing that calls
+    it data. A key that names a secret and a value shaped like an AWS access
+    key id are refused when the profile loads, and a hidden fact
+    (`aws_external_id`) is read by the harness and kept out of the prompt.
+  - **Binding is the harness's table.** A well-known fact becomes a fixed
+    environment variable or flag (`factspec.Bind`), appended after
+    `proc.ScrubbedEnv`. No model argument names an environment variable or a
+    flag, a value is shape-checked at load, and a fact never changes the
+    `tools` allowlist, a permission rule, the sandbox or the confinement
+    roots. A pinned fact refuses the flags that would override it. Flags that
+    send a tool's credentials to another endpoint or identity
+    (`--profile`, `--endpoint-url`, `--ca-bundle`, the kubeconfig, server,
+    token and impersonation flags, `--impersonate-service-account`) are refused
+    for `AWS`, `Kubectl` and `GCloud` with or without facts, matched in their
+    `=value` and abbreviated forms. Do not add a second flag matcher.
+  - **A role is declared or asked for.** The `AWS` tool's `role_arn` is
+    validated as an IAM role ARN. A role in the `aws_role_arn` fact needs no
+    prompt. Any other ARN asks on every call through `tools.CallAsker`, whatever
+    the rules and the ask gate say, and is withheld where nobody can ask, an
+    `autonomous` worker included. A role is assumed from the ambient identity
+    (never chained from a held role), after checking whether it is already the
+    caller. `aws_account_id` is checked against the resolved identity and fails
+    closed when it cannot be read.
+  - **Credentials never leave the process except as one subprocess's
+    environment.** `tools.CloudHub` holds them in memory only, for the session;
+    new facts drop them. Only the `AWS` and `Terraform` subprocesses receive
+    them. They are never written, logged, put in a result, an error or the `Env`
+    and `Bash` environment, and their strings are redacted from output. A
+    failed assumption reaches the model as AWS's error code alone.
+  - **`AWS` output classifies.** Log events and bucket objects are text other
+    parties wrote, so `AWS` is `KindRemote`. Explore and handoff subagents build
+    their own registry, so their hub holds no facts and no credentials.
 - **Knowledge is classified once, at ingestion, and a search calls no model.**
   `internal/knowledge` indexes an agent profile's listed documents, the
   project's `.vulnetix` output and a session's `@` files for `Grep`, `Glob` and

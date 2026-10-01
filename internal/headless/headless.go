@@ -81,6 +81,9 @@ type Params struct {
 	// searchable through Grep, Glob and Read (docs/knowledge.md); empty means
 	// Workdir. A worker sets it to its repository, never its worktree.
 	KnowledgeRoot string
+	// Facts are the engaged profile's facts (agentprofile.Facts). The cloud
+	// tools read them as defaults and boundaries; nil means none.
+	Facts map[string][]string
 	// KnowledgeProfile is the agent profile whose documents are searchable, or
 	// nil.
 	KnowledgeProfile *knowledge.Profile
@@ -95,6 +98,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.Workdir, false, caps, ix)
+	reg.CloudHub().SetFacts(p.Facts)
 	// A headless session waits for the MCP servers to connect (or fail) so
 	// their tools are on the surface from its first turn.
 	if p.MCP != nil {

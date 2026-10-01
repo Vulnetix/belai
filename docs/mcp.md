@@ -95,6 +95,8 @@ The `mcp` key is read from your global settings only. A repository's
   `*_TOKEN`, `*_SECRET`, `BELAI_*` from your shell), gets only the variables
   you list, and runs in its own process group. With `sandbox: true` it runs
   under the OS sandbox too.
+- A profile's [facts](agent-profiles.md#facts) are not passed to MCP servers. A
+  server that needs a credential gets it through its own `env` entry.
 - Belai offers servers nothing to call back: no roots, sampling or
   elicitation. It only answers `ping`.
 - The `vulnetix:cli` header reference is resolved when the server is dialled

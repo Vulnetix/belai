@@ -62,6 +62,9 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, executePlan bool
 				// the other tree. Flat profiles win the name.
 				if bg, bgErr := agentprofile.Load(d.AgentName); bgErr == nil {
 					profileText = bg.SystemPrompt
+					if facts := bg.FactsBlock(); facts != "" {
+						profileText += "\n\n" + facts
+					}
 					break
 				}
 				loadErr = fmt.Errorf("load profile %q: %w", d.AgentName, err)

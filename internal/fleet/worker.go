@@ -1123,7 +1123,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 			return r
 		},
 		Deny:    append([]string{"Write(*.vulnetix/*)", "Edit(*.vulnetix/*)"}, workerGitDeny...),
-		Persona: persona, MaxIterations: p.MaxIterations,
+		Persona: persona, Facts: p.Facts.Map(), MaxIterations: p.MaxIterations,
 		// The scanner output of the trusted repository, never the worktree's,
 		// and the documents this profile lists on this host.
 		KnowledgeRoot: w.Repo,
