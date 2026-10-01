@@ -1536,7 +1536,8 @@ becomes a hard "build system prompt" error on the live path.
 ## Max-iteration bound
 
 The agent loop is bounded to prevent infinite tool-call loops. The default
-maximum is 10 iterations; each provider turn counts as one iteration. One run
+maximum is 40 iterations (`resilience.max_iterations`); each provider turn
+counts as one iteration. One run
 of that bounded loop is a **pass**.
 
 Explore subagents get their own budget: each task's round budget (2–5 by
