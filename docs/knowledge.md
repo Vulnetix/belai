@@ -85,17 +85,61 @@ List the documents in the profile file, which only you write:
 }
 ```
 
-Each path is a file or a directory, absolute or starting with `~/`, up to 32 of
-them. A directory is walked with the same rules the `/locate` inventory uses:
+Each path is a file or a directory, up to 32 of them: absolute, starting with
+`~/`, or relative to the project (resolved under the trusted repository root, and
+never allowed to leave it, even through a symlink). A directory is walked with the same rules the `/locate` inventory uses:
 `.gitignore` and `.ignore` apply, and symlinks, hidden files, dependency
 directories, binary files, files over 16 MiB and files that hold credentials
 (`.env`, key stores, `credentials*`, `id_rsa*`) are never indexed. A listed path
 that is itself a symlink is skipped.
 
-The listed documents stay on this host. A profile installed from the Vulnetix
-library cannot carry the block (the install is refused, because a library copy
-must not choose which local files get indexed), a backup leaves it out, and
-replacing a profile from the library keeps the paths you listed here.
+The relative path `.vulnetix` is read the way the project index reads that
+directory (see [Project knowledge](#project-knowledge)): one passage per finding,
+classified as third-party text, with native reports left out. The built-in
+`belai:security` crew lists it in all three of its profiles, so its scout,
+patchers and verifier always have the review's artifacts to search. A passage
+that both a profile and the project index hold is shown once.
+
+A profile from the Vulnetix library carries its `knowledge` block like any other
+field: it installs with it, a backup includes it, and a replace takes the
+library copy (or keeps the paths already on this host when the copy lists none),
+so retrieval works for a profile that came from the library as it does for one
+you wrote. The paths are only paths. What they name is read on the host that
+runs the agent, through the same eligibility rules and the classifier, and under
+a fixed floor that holds whoever wrote the profile: the filesystem root, your
+home directory itself, `.git`, credential stores (`~/.ssh`, `~/.gnupg`,
+`~/.aws`, `~/.kube`, `~/.docker`, `~/.config/gcloud`, `~/.config/gh`), the
+kernel's pseudo filesystems (proc, sys and dev under the filesystem root), the few
+system files that hold secrets (the shadow, sudoers, ssh and ssl private key
+files under etc) and Belai's state directory are never listed, and they are
+skipped without error. Everything else is yours to list, including every
+ordinary directory under your home directory (a user running as root keeps
+theirs under the root account's home) and under etc.
+
+### Copies in the worker's directory
+
+A fleet worker works in a git worktree, outside the project and outside the
+places an agent's file tools reach. So the harness also places a copy of what the
+profile lists in that worktree before each turn, read only, and the agent can open
+it with `Read` as well as find it by meaning:
+
+| Listed path | Copied to |
+| --- | --- |
+| relative (`docs/`, `.vulnetix`) | the same relative path |
+| under `~/` or absolute | `.vulnetix/knowledge/<label>/<path>`, where `<label>` is the listed path's last name (the same label the `kb+` address uses) |
+
+The copy follows the index's rules (the same files, no credentials, no native
+scanner reports) and is bounded (2000 files, 4 MiB a file, 32 MiB in all; past
+that the rest is still searchable). A file is refreshed when its source changes,
+and a file the branch already has, or the worker made, is never replaced. The
+copies are never written back and never committed, and the workspace note tells
+the worker where they are. `.vulnetix/knowledge` is Belai's own directory: the
+project index skips it.
+
+A foreground session and a background agent work in the project itself, where a
+relative document already is. For a listed path outside the project, a refresh
+places the copy under the project's `.vulnetix/knowledge/<label>/`, so those
+agents can open it with their file tools too.
 
 ## Project knowledge
 
@@ -212,9 +256,11 @@ needs an id, which `belai agent import -force` gives it.
   `Read` deny rule blocks is not returned, and a document it blocks is not
   listed. The rule is matched against the absolute path and, under a workspace
   root, the root-relative one.
-- **Local only.** Profile documents come from paths in your own profile file.
-  The project's index is keyed by the trusted repository root, never a worktree.
-  Telemetry, the audit log and session sync carry no passage text.
+- **A fixed floor.** Whatever a profile lists, the harness never reads `.git`,
+  credential stores, the system's directories or Belai's state, and a relative
+  path never leaves the repository. The project's index is keyed by the trusted
+  repository root, never a worktree. Telemetry, the audit log and session sync
+  carry no passage text.
 
 ## Business rules
 
@@ -234,9 +280,9 @@ test files is not named here, so this table and the code move together.
 | K8 | A `Read` deny rule on a passage's source file hides that passage and its document | `TestReadDenyRuleHidesTheSourceFromRetrieval` |
 | K9 | Rows reach the model with no classifier call: text was classified once, at ingestion | `TestGrepRowsReachTheModelWithoutAClassifierCall`, `TestKnowledgeRowsReachGrepClassifiedOnceAtIngestion` |
 | K10 | One hub serves every narrowing of the file tools, so a restricted registry shares the same store | `TestHubIsSharedByEveryNarrowing` |
-| K11 | A profile lists up to 32 paths, each absolute or starting `~/`; unknown keys in the block and unreadable paths are refused; the block survives the markdown form and does not change what the agent may do | `TestKnowledgeLimitMatchesTheStore`, `TestKnowledgeAcceptsAbsoluteAndHomePaths`, `TestKnowledgeRefusesWhatItCannotRead`, `TestKnowledgeRejectsUnknownKeysInsideTheBlock`, `TestKnowledgeSurvivesMarkdownAndIsBehavioural` |
+| K11 | A profile lists up to 32 paths, each absolute, starting `~/` or relative to the project (a relative path may not contain `..` or name the project root); unknown keys in the block and unreadable paths are refused; the block survives the markdown form and does not change what the agent may do | `TestKnowledgeLimitMatchesTheStore`, `TestKnowledgeAcceptsAbsoluteAndHomePaths`, `TestKnowledgeRefusesWhatItCannotRead`, `TestKnowledgeRejectsUnknownKeysInsideTheBlock`, `TestKnowledgeSurvivesMarkdownAndIsBehavioural` |
 | K12 | A directory is walked with the `/locate` rules: only eligible files are indexed, a symlinked root is refused and a missing path is skipped | `TestSyncProfileIndexesEligibleFilesOnly`, `TestSyncProfileRefusesSymlinkRootAndSkipsMissing` |
-| K13 | A profile installed from the library that lists documents is refused, a backup leaves the block out and a replace keeps the paths listed on this host | `TestInstallRefusesAProfileThatListsLocalDocuments`, `TestBackupLeavesDocumentsOutAndAReplaceKeepsThem` |
+| K13 | A profile from the library that lists documents installs with them, a backup carries them, a replace takes the library copy and keeps this host's paths only when the copy lists none | `TestInstallKeepsTheDocumentsAProfileLists`, `TestBackupCarriesDocumentsAndAReplaceTakesThem`, `TestReplaceKeepsLocalDocumentsWhenTheLibraryCopyListsNone` |
 | K14 | The engaged agent's documents are searchable in agent, plan and goal mode, follow a swapped agent, and the session build carries the store | `TestEngagedProfileDocumentsFollowTheEngagedAgentInEveryMode`, `TestSetFollowsASwappedProfile`, `TestSessionBuildCarriesTheKnowledgeStore` |
 | K15 | The project index comes from `<project>/.vulnetix` at a fixed place: structured artifacts become one passage per record, composed from identifier fields only, and secrets, logs and Belai's own state are never indexed | `TestSyncProjectStructuredAndSkipsSecrets`, `TestRecordsSARIFOnePerResultAndNoMessage`, `TestRecordsCycloneDXComponentsAndVulns`, `TestRecordsOpenVEXAndOtherKinds` |
 | K16 | Only the newest copy of a repeated scan is indexed, and a newer scan replaces it at the next refresh | `TestSyncProjectIndexesOnlyTheNewestCopyOfARepeatedScan` |
@@ -258,6 +304,13 @@ test files is not named here, so this table and the code move together.
 | K32 | A profile's directory is keyed by its id, never its name; anything that is not a lowercase UUID is refused | `TestProfileKnowledgeDirRefusesNonIDs` |
 | K33 | With no store, or no profile, every tool is filesystem only | `TestStoreNilAndNoProfileAreInert`, `TestNoStoreMeansFilesystemOnly`, `TestGrepWithoutAStoreIsUnchanged` |
 | K34 | A knowledge address is plain text of the form `kb+scope/path`, never a path that exists | `TestAddressIsPlain` |
+| K35 | A relative path resolves under the trusted repository root and cannot leave it, even through a symlinked directory; with no root it names nothing | `TestSyncProfileRelativePathsResolveUnderTheRootAndCannotLeaveIt` |
+| K36 | A profile that lists `.vulnetix` gets the scanner output as the project index reads it (one passage per finding, no native reports, no matched secrets), classified as third-party text | `TestSyncProfileVulnetixIsReadAsScannerOutput` |
+| K37 | Each member of the `belai:security` crew lists `.vulnetix` and tells its agent where the artifacts are | `TestSecurityCrewMembersListTheReviewArtifacts` |
+| K38 | Every file a profile lists is enumerated once, with its address and the place a copy goes: a relative path keeps its place, one outside the project goes under `.vulnetix/knowledge/<label>/`, scanner output is flagged as such | `TestEnumerateProfileGivesEachFileAnAddressAndADestination` |
+| K39 | A profile can never list the filesystem root, the home directory, `.git`, a credential store, a system directory or Belai's state, whoever wrote it | `TestBlockedAbsoluteRefusesCredentialStoresAndSystemPlaces`, `TestEnumerateProfileSkipsTheFloorAndSymlinks` |
+| K40 | A session that works in the project itself gets a copy of the profile's outside documents under `.vulnetix/knowledge/<label>/`, refreshed when the source changes, and the project index never indexes those copies | `TestRefreshCopiesOutsideDocumentsIntoTheProject` |
+| K41 | A copy never replaces a file the harness did not place (a tracked file, the worker's own), and never goes into `.git` | `TestCopyDocsNeverReplacesAFileItDidNotPlace` |
 
 ## Edge cases
 
@@ -273,3 +326,4 @@ test files is not named here, so this table and the code move together.
 | E8 | A listed path is missing | It is skipped; the rest are indexed | `TestSyncProfileRefusesSymlinkRootAndSkipsMissing` |
 | E9 | A profile or file name has spaces, `..` or control characters | The address is normalised to plain text (`../a/./b\x01c.md` under `my profile:x` becomes `kb+my-profile-x/a/b_c.md`), and an ordinary path is never mistaken for an address | `TestAddressIsPlain` |
 | E10 | A profile is swapped mid-session | The store follows the engaged agent at the next turn | `TestSetFollowsASwappedProfile` |
+| E11 | A profile lists `.vulnetix` and the project index holds the same artifacts | A search and a glob show each passage and each document once | `TestAPassageInTheProfileAndTheProjectIsShownOnce` |

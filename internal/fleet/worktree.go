@@ -86,8 +86,15 @@ type Workspace struct {
 	Worktree bool
 	// Base is the commit the item's work is measured from: the base a new
 	// branch started at, or where an existing branch forked from HEAD.
-	Base      string
-	repo      string
+	Base string
+	repo string
+	// synced are the repository-relative paths a profile's workspace.sync
+	// copied in. The harness's commit never includes them (see changedPaths).
+	synced []string
+	// placed are the files the harness itself put in the worktree (reference
+	// documents and synced files), by worktree-relative path. They are never
+	// committed.
+	placed    map[string]bool
 	gitDir    string
 	commonDir string
 	dotgit    []byte
@@ -270,6 +277,10 @@ func (w *Workspace) changedPaths(ctx context.Context) ([]string, error) {
 			continue
 		}
 		status, path := f[:2], f[3:]
+		if w.isSynced(path) {
+			// A crew's shared scratchpad is never part of the branch.
+			continue
+		}
 		paths = append(paths, path)
 		if status[0] == 'R' || status[0] == 'C' {
 			if i+1 < len(fields) && fields[i+1] != "" {

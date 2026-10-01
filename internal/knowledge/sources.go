@@ -168,77 +168,48 @@ func readText(p string, max int64) ([]byte, os.FileInfo, error) {
 	return data, info, nil
 }
 
-// SyncProfile brings ix in line with the documents a profile lists. Each path
-// is a file or a directory under the user's own say-so (it comes from the
-// profile file, never from a model or a repository). Eligibility is the
-// locate inventory's: no symlinks, hidden, binary, oversized, dependency or
-// credential-bearing files. Chunks go through gate. The index is trimmed to
+// SyncProfile brings ix in line with the documents a profile lists, as
+// EnumerateProfile names them: each path is a file or a directory under the
+// user's own say-so (it comes from the profile file, never from a model or a
+// repository), absolute, under the home directory (~/), or relative to root,
+// the project's trusted repository root. Chunks go through gate; the relative
+// path .vulnetix is the project's scanner output, read as the project index
+// reads it and classified through scannerGate. The index is trimmed to
 // capTokens.
-func SyncProfile(ctx context.Context, ix *Index, scope string, paths []string, gate Gate, capTokens int) (Stats, error) {
+func SyncProfile(ctx context.Context, ix *Index, scope, root string, paths []string, gate, scannerGate Gate, capTokens int) (Stats, error) {
 	var st Stats
 	keep := map[string]bool{}
-	home, _ := os.UserHomeDir()
-	labels := map[string]int{}
-	for _, raw := range paths {
-		if err := ctx.Err(); err != nil {
+	files, skipped, err := EnumerateProfile(ctx, root, paths)
+	st.Skipped += skipped
+	if err != nil {
+		return st, err
+	}
+	for _, f := range files {
+		stop, err := ingestFile(ctx, ix, &st, keep, Address(scope, f.Rel), f, gate, scannerGate, capTokens)
+		if err != nil {
 			return st, err
 		}
-		p := raw
-		if strings.HasPrefix(p, "~/") && home != "" {
-			p = filepath.Join(home, p[2:])
-		}
-		p, err := filepath.Abs(p)
-		if err != nil {
-			st.Skipped++
-			continue
-		}
-		info, err := os.Lstat(p)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 {
-			st.Skipped++
-			continue
-		}
-		label := filepath.Base(p)
-		labels[label]++
-		if labels[label] > 1 {
-			label = fmt.Sprintf("%s-%d", label, labels[label])
-		}
-		type file struct{ abs, rel string }
-		var files []file
-		if info.IsDir() {
-			inv, err := locate.Build(ctx, p)
-			if err != nil {
-				if ctx.Err() != nil {
-					return st, ctx.Err()
-				}
-				st.Skipped++
-				continue
-			}
-			for _, f := range inv.Files {
-				files = append(files, file{filepath.Join(inv.Root, filepath.FromSlash(f.Path)), path.Join(label, f.Path)})
-			}
-		} else {
-			if _, ok := locate.EligibleFile(p, info.Size()); !ok {
-				st.Skipped++
-				continue
-			}
-			files = append(files, file{p, label})
-		}
-		for _, f := range files {
-			stop, err := syncFile(ctx, ix, &st, keep, Address(scope, f.rel), f.abs, gate, capTokens)
-			if err != nil {
-				return st, err
-			}
-			if stop {
-				break
-			}
-		}
-		if st.Truncated {
+		if stop {
 			break
 		}
 	}
 	ix.Retain(keep)
 	ix.Fit(capTokens)
 	return st, nil
+}
+
+// insideRoot reports whether p, after symlinks, is root or below it.
+func insideRoot(root, p string) bool {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // syncFile ingests one plain-text file. stop is true once the cap is reached.
@@ -298,53 +269,51 @@ const vulnetixDir = ".vulnetix"
 func SyncProject(ctx context.Context, ix *Index, root string, gate Gate, capTokens int) (Stats, error) {
 	var st Stats
 	keep := map[string]bool{}
-	dir := filepath.Join(root, vulnetixDir)
-	info, err := os.Lstat(dir)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		ix.Retain(keep)
-		return st, nil
-	case err != nil:
+	if _, err := syncVulnetix(ctx, ix, &st, keep, root, ProjectScope, gate, capTokens); err != nil {
 		return st, err
-	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-		return st, fmt.Errorf("knowledge: %s is not a plain directory", dir)
-	}
-	arts, err := scanartifacts.Enumerate(dir)
-	if err != nil {
-		return st, err
-	}
-	for _, a := range arts {
-		if err := ctx.Err(); err != nil {
-			return st, err
-		}
-		if a.Superseded {
-			continue
-		}
-		addr := Address(ProjectScope, path.Join(vulnetixDir, filepath.ToSlash(a.Rel)))
-		var stop bool
-		switch a.Kind {
-		case scanartifacts.KindSARIF, scanartifacts.KindCycloneDXSBOM, scanartifacts.KindCycloneDXCBOM,
-			scanartifacts.KindCycloneDXAIBOM, scanartifacts.KindOpenVEX, scanartifacts.KindOpenVEXRiskAccepted:
-			stop, err = syncRecords(ctx, ix, &st, keep, addr, a, gate, capTokens)
-		case scanartifacts.KindMemory, scanartifacts.KindCapabilities, scanartifacts.KindPackagesScan,
-			scanartifacts.KindAnalyzeReport:
-			stop, err = syncFile(ctx, ix, &st, keep, addr, a.Path, gate, capTokens)
-		case scanartifacts.KindUnknown:
-			switch strings.ToLower(filepath.Ext(a.Rel)) {
-			case ".json", ".yaml", ".yml", ".md", ".txt":
-				stop, err = syncFile(ctx, ix, &st, keep, addr, a.Path, gate, capTokens)
-			}
-		}
-		if err != nil {
-			return st, err
-		}
-		if stop {
-			break
-		}
 	}
 	ix.Retain(keep)
 	ix.Fit(capTokens)
 	return st, nil
+}
+
+// syncVulnetix ingests root/.vulnetix under the given address scope. A missing
+// directory adds nothing; one that is a symlink, or not a directory, is an
+// error. stop is true once the cap is reached.
+func syncVulnetix(ctx context.Context, ix *Index, st *Stats, keep map[string]bool, root, scope string, gate Gate, capTokens int) (bool, error) {
+	dir := filepath.Join(root, vulnetixDir)
+	info, err := os.Lstat(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, err
+	case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
+		return false, fmt.Errorf("knowledge: %s is not a plain directory", dir)
+	}
+	arts, err := scanartifacts.Enumerate(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, a := range arts {
+		if err := ctx.Err(); err != nil {
+			return true, err
+		}
+		if a.Superseded || !wantArtifact(a) {
+			continue
+		}
+		a := a
+		f := ProfileFile{Abs: a.Path, Artifact: &a}
+		addr := Address(scope, path.Join(vulnetixDir, filepath.ToSlash(a.Rel)))
+		stop, err := ingestFile(ctx, ix, st, keep, addr, f, gate, gate, capTokens)
+		if err != nil {
+			return true, err
+		}
+		if stop {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // syncRecords ingests a structured artifact, one chunk per record. Its SHA is

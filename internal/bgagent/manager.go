@@ -659,7 +659,7 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	// first search sees what its last one will (docs/knowledge.md).
 	kbCtx, kbCancel := context.WithTimeout(context.Background(), knowledgeWait)
 	defer kbCancel()
-	setup := kbgate.Setup{Cfg: cfg, Client: m.client, Levels: live, Settings: m.settings, Root: workdir}
+	setup := kbgate.Setup{Cfg: cfg, Client: m.client, Levels: live, Settings: m.settings, Root: workdir, CopyOutside: true}
 	if paths := profile.KnowledgePaths(); len(paths) > 0 {
 		setup.Profile = &knowledge.Profile{ID: profile.ID, Name: profile.Name, Paths: paths}
 	}

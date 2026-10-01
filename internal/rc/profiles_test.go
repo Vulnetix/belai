@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -413,25 +414,28 @@ func TestInstallRefusalsCarryNoControlOrMarkup(t *testing.T) {
 }
 
 func withKnowledge(p agentprofile.AgentProfile) agentprofile.AgentProfile {
-	p.Knowledge = &agentprofile.KnowledgeSpec{Paths: []string{"/home/me/handbook"}}
+	p.Knowledge = &agentprofile.KnowledgeSpec{Paths: []string{"/home/me/handbook", ".vulnetix"}}
 	return p
 }
 
-// A library copy must never choose which local files an agent indexes.
-func TestInstallRefusesAProfileThatListsLocalDocuments(t *testing.T) {
+// A library profile that lists documents installs and keeps them: RAG has to
+// work for a profile that came from the library as it does for one written here.
+func TestInstallKeepsTheDocumentsAProfileLists(t *testing.T) {
 	h := newLibHarness(t)
+	h.on = false // an install does not need sync.remote_prompts
 	status, why := h.install(withKnowledge(installable("dep-reviewer", libID)), false)
-	if status != sessionsync.DispatchRefused || !strings.Contains(why, "cannot list local documents") {
+	if status != sessionsync.DispatchStarted {
 		t.Fatalf("ack = %s %q", status, why)
 	}
-	if got := h.stored(); len(got) != 0 {
-		t.Fatalf("a refused install wrote %v", got)
+	got, err := agentprofile.Load("dep-reviewer")
+	if err != nil || len(got.KnowledgePaths()) != 2 || got.KnowledgePaths()[1] != ".vulnetix" {
+		t.Fatalf("installed = %+v %v", got.Knowledge, err)
 	}
 }
 
-// The backup is the profile without its documents, and an install over the
-// same profile keeps the documents the user listed here.
-func TestBackupLeavesDocumentsOutAndAReplaceKeepsThem(t *testing.T) {
+// A backup carries the listed documents and synced files, so a restore gives the
+// same agent the same reference material, and a replace takes the library copy.
+func TestBackupCarriesDocumentsAndAReplaceTakesThem(t *testing.T) {
 	h := newLibHarness(t)
 	local := withKnowledge(installable("reviewer", libID))
 	if _, err := agentprofile.Save(local); err != nil {
@@ -441,23 +445,137 @@ func TestBackupLeavesDocumentsOutAndAReplaceKeepsThem(t *testing.T) {
 		t.Fatalf("backup: %s %s", status, why)
 	}
 	md := h.site.uploads[0]["markdown"]
-	if strings.Contains(md, "knowledge") || strings.Contains(md, "/home/me/handbook") {
-		t.Fatalf("the backup carries local paths:\n%s", md)
+	if !strings.Contains(md, "knowledge:") || !strings.Contains(md, "/home/me/handbook") {
+		t.Fatalf("the backup must carry the documents:\n%s", md)
 	}
-	if kept, _ := agentprofile.Load("reviewer"); kept.Knowledge == nil {
-		t.Fatal("a backup must not change the profile on the host")
+	back, err := agentprofile.ParseMarkdown([]byte(md))
+	if err != nil || len(back.KnowledgePaths()) != 2 {
+		t.Fatalf("round trip = %+v %v", back.Knowledge, err)
 	}
-
-	restored := installable("reviewer", libID)
-	restored.Description = "reviews dependency changes, version two"
-	if status, why := h.install(restored, true); status != sessionsync.DispatchStarted {
+	updated := withKnowledge(installable("reviewer", libID))
+	updated.Knowledge = &agentprofile.KnowledgeSpec{Paths: []string{"/srv/standards"}}
+	updated.Description = "version two"
+	if status, why := h.install(updated, true); status != sessionsync.DispatchStarted {
 		t.Fatalf("replace: %s %s", status, why)
 	}
 	got, err := agentprofile.Load("reviewer")
-	if err != nil || got.Description != restored.Description {
+	if err != nil || got.Description != "version two" || len(got.KnowledgePaths()) != 1 || got.KnowledgePaths()[0] != "/srv/standards" {
+		t.Fatalf("a copy that lists documents is taken as it is: %+v %v", got.Knowledge, err)
+	}
+}
+
+// A library copy that lists none (backed up before the profile had any) must not
+// wipe what is listed on this host.
+func TestReplaceKeepsLocalDocumentsWhenTheLibraryCopyListsNone(t *testing.T) {
+	h := newLibHarness(t)
+	if _, err := agentprofile.Save(withKnowledge(withSync(installable("kept", libID)))); err != nil {
+		t.Fatal(err)
+	}
+	restored := installable("kept", libID)
+	restored.Description = "older copy"
+	if status, why := h.install(restored, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("replace: %s %s", status, why)
+	}
+	got, err := agentprofile.Load("kept")
+	if err != nil || got.Description != "older copy" || len(got.KnowledgePaths()) != 2 {
+		t.Fatalf("documents were lost: %+v %v", got.Knowledge, err)
+	}
+}
+
+func withSync(p agentprofile.AgentProfile) agentprofile.AgentProfile {
+	p.Mode = agentprofile.ModeWorker
+	p.Autonomy = agentprofile.AutonomySupervised
+	p.Tools = []string{"Read", "Edit"}
+	p.Kanban = &agentprofile.KanbanSpec{Lists: []string{"backlog"}, OnSuccess: agentprofile.Route{List: "done"}}
+	p.Workspace = &agentprofile.WorkspaceSpec{
+		Isolation: agentprofile.IsolationWorktree,
+		Sync:      []agentprofile.SyncSpec{{Path: ".vulnetix/crews/team.md", Access: agentprofile.SyncWrite}},
+	}
+	return p
+}
+
+// A library profile that syncs files installs with them: the profile defines the
+// files and the permission, and the harness keeps its floor under them.
+func TestInstallKeepsTheFilesAProfileSyncs(t *testing.T) {
+	h := newLibHarness(t)
+	status, why := h.install(withSync(installable("teamnotes", libID)), false)
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("ack = %s %q", status, why)
+	}
+	got, err := agentprofile.Load("teamnotes")
+	if err != nil || len(got.SyncPaths()) != 1 || !got.SyncPaths()[0].Writes() {
+		t.Fatalf("installed = %+v %v", got.Workspace, err)
+	}
+	// A path the harness never syncs is still refused as an invalid profile.
+	bad := withSync(installable("badnotes", libID2))
+	bad.Workspace.Sync = []agentprofile.SyncSpec{{Path: ".git/hooks/pre-commit", Access: agentprofile.SyncWrite}}
+	if status, why := h.install(bad, false); status != sessionsync.DispatchRefused || !strings.Contains(why, "not valid") {
+		t.Fatalf("a protected path must fail validation: %s %q", status, why)
+	}
+}
+
+func TestBackupCarriesSyncAndAReplaceKeepsLocalSyncWhenTheCopyHasNone(t *testing.T) {
+	h := newLibHarness(t)
+	if _, err := agentprofile.Save(withSync(installable("teamnotes", libID))); err != nil {
+		t.Fatal(err)
+	}
+	if status, why := h.run(sessionsync.Dispatch{Kind: "profile_backup", Profile: "teamnotes"}); status != sessionsync.DispatchStarted {
+		t.Fatalf("backup: %s %s", status, why)
+	}
+	md := h.site.uploads[0]["markdown"]
+	if !strings.Contains(md, "crews/team.md") {
+		t.Fatalf("the backup must carry the sync paths:\n%s", md)
+	}
+	restored := withSync(installable("teamnotes", libID))
+	restored.Workspace.Sync = nil
+	restored.Description = "version two"
+	if status, why := h.install(restored, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("replace: %s %s", status, why)
+	}
+	got, err := agentprofile.Load("teamnotes")
+	if err != nil || got.Description != "version two" {
 		t.Fatalf("replace did not apply: %+v %v", got, err)
 	}
-	if got.Knowledge == nil || len(got.Knowledge.Paths) != 1 || got.Knowledge.Paths[0] != "/home/me/handbook" {
-		t.Fatalf("a replace must keep the documents listed on this host: %+v", got.Knowledge)
+	if sp := got.SyncPaths(); len(sp) != 1 || sp[0].Path != ".vulnetix/crews/team.md" || !sp[0].Writes() {
+		t.Fatalf("a copy with no sync entries keeps this host's: %+v", got.Workspace)
+	}
+}
+
+// RAG has to just work for a profile that came from the library: install it,
+// and its documents under the home directory are indexed, searchable, and
+// copied where the agent's file tools reach them, with no step in between.
+func TestALibraryProfilesDocumentsWorkEndToEnd(t *testing.T) {
+	h := newLibHarness(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, "handbook"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "handbook", "keys.md"), []byte("Rotate the signing key every ninety days and revoke tokens on logout."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := installable("handbook-reviewer", libID)
+	p.Knowledge = &agentprofile.KnowledgeSpec{Paths: []string{"~/handbook"}}
+	if status, why := h.install(p, false); status != sessionsync.DispatchStarted {
+		t.Fatalf("install: %s %s", status, why)
+	}
+	got, err := agentprofile.Load("handbook-reviewer")
+	if err != nil || got.ID == "" {
+		t.Fatalf("installed profile = %+v %v", got, err)
+	}
+	project := t.TempDir()
+	store := knowledge.Open(knowledge.Options{
+		Root: project, CopyOutside: true,
+		Profile: &knowledge.Profile{ID: got.ID, Name: got.Name, Paths: got.KnowledgePaths()},
+	})
+	rep, err := store.Refresh(context.Background())
+	if err != nil || rep.Profile.Docs != 1 {
+		t.Fatalf("refresh = %+v %v", rep, err)
+	}
+	if hits := store.Set().Search("how often is the signing key rotated", 0, nil); len(hits) == 0 || !strings.HasPrefix(hits[0].Address, "kb+handbook-reviewer/handbook/") {
+		t.Fatalf("hits = %+v", hits)
+	}
+	if b, err := os.ReadFile(filepath.Join(project, ".vulnetix", "knowledge", "handbook", "keys.md")); err != nil || !strings.Contains(string(b), "signing key") {
+		t.Fatalf("the copy for the agent's file tools: %q %v", b, err)
 	}
 }

@@ -186,6 +186,10 @@ type WorkspaceSpec struct {
 	// Publish is "none" (default) or "draft_pr": when the item reaches done,
 	// push its branch and open a draft pull request.
 	Publish string `json:"publish,omitempty"`
+	// Sync lists files and directories under .vulnetix/crews that the harness
+	// copies into the worktree before each turn and, with write access, merges
+	// back after it (see sync.go). It needs isolation: worktree.
+	Sync []SyncSpec `json:"sync,omitempty"`
 }
 
 // MemorySpec turns on the worker's lessons file.
@@ -453,6 +457,9 @@ func (p AgentProfile) validateWorker() error {
 		}
 		if strings.HasPrefix(strings.TrimSpace(w.Base), "-") {
 			return errors.New("workspace.base must be a commit or branch, not an option")
+		}
+		if err := validateSync(w); err != nil {
+			return err
 		}
 	}
 	if b := p.Budget; b != nil {

@@ -125,12 +125,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     sanitise-only because of the rule above; `Read` stays `KindRead` and is
     classified again. A search for a profile or the project never leaves the
     process: no provider, no embedding service, no model file, no cgo.
-  - **Profile documents are the user's.** They come from `knowledge.paths` in a
-    profile file on this host, enumerated by the `internal/locate` eligibility
-    rules (no symlink, hidden, binary, oversized or credential-bearing file). A
-    library install that carries the block is refused, a backup omits it and a
-    replace keeps the local paths, so a remote request never chooses which local
-    files are indexed. A web draft never offers it.
+  - **Profile documents are the profile's to list, under a floor.** They come
+    from `knowledge.paths` in a profile (a file on this host, a built-in or a
+    library profile, which installs and backs up with the block), absolute, under
+    `~/`, or relative to the trusted repository root and never allowed to leave
+    it, enumerated by the `internal/locate` eligibility rules (no symlink, hidden,
+    binary, oversized or credential-bearing file) and refused outright under
+    `knowledge.BlockedAbsolute` and for `.git`. A listed `.vulnetix` is read as
+    scanner output, through the scanner gate. A web draft never offers the block.
   - **`.vulnetix` is read by the harness.** It walks `scanartifacts.Enumerate` at
     the trusted repository root (a worker's repository, never its worktree), with
     no path from a model and no symlink followed. SARIF, CycloneDX and OpenVEX
@@ -712,6 +714,35 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
       dir after each turn.
     The harness commits what is left, after checking HEAD is still the
     item's branch.
+  - **Files are placed by the harness and permitted by the profile.** A
+    worker's profile defines what is put in its worktree
+    (`internal/fleet/sync.go`), and the harness does the copying, so a worker is
+    never given the repository path and has no mount of it. The documents in
+    `knowledge.paths` are copied read-only (`knowledge.EnumerateProfile` and
+    `CopyDocs`: a relative path in place, an outside path under
+    `.vulnetix/knowledge/<label>/`, never over a file the harness did not place).
+    `workspace.sync` entries are copied in before each turn and, for `write`,
+    merged back after it under a lock (`config.AcquireFileLock`, the lockfile in
+    the state directory): the worker's version when nobody else changed the file,
+    otherwise the lines it added appended, and never its deletions. The text is
+    sanitised, files and entries are bounded, only regular text files are copied,
+    a symlink on either side is refused, and a path is plain characters so a
+    permission rule built from it is exact. Whoever wrote the profile (a library
+    install is allowed and keeps both blocks), a fixed floor holds:
+    `agentprofile.ProtectedRead` and `ProtectedWrite` (Git's files, Belai's state,
+    credentials and settings, the scanner evidence), `knowledge.BlockedAbsolute`
+    (the filesystem root, the home directory itself, credential stores, the
+    kernel's pseudo filesystems, the system files that hold secrets, Belai's
+    state), credential files by name, and no write-back over a
+    file Git tracks outside `.vulnetix`. The harness's commit leaves placed paths
+    out (`Workspace.changedPaths`) and a branch that commits one fails the
+    attempt. A worker's `Write(*.vulnetix/*)` and `Edit(*.vulnetix/*)` denies are
+    `permissions.Settings.Harness` rules, and a `write` entry adds a `Permit` rule
+    for exactly its path (`fleet.SyncPermits`); `Permit` exempts a call from
+    `Harness` rules only, never from the user's `Deny` or `Block`, never a shell
+    line, and neither field is read from a settings file. The text is model output
+    that other workers read, so it reaches a model only through `Read` (classified)
+    or the knowledge index (classified at ingestion).
   - **Pushing.** Only `PublishBranch` pushes (`KindPublish`,
     mutating, sanitise-only): exactly the item's branch, by an explicit
     refspec, to a GitHub/GitLab `origin`, then a draft pull request. It is on

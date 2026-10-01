@@ -36,6 +36,12 @@ type Options struct {
 	// ProfileGate and ProjectGate admit chunks at ingestion; nil is sanitising
 	// alone (the guardrails-off posture).
 	ProfileGate, ProjectGate Gate
+	// CopyOutside has a refresh also place copies of the profile's documents
+	// that live outside the project under Root/.vulnetix/knowledge, so an agent
+	// whose working directory is the project can open them with its file
+	// tools. A fleet worker is copied to by the harness in its worktree
+	// instead, so it leaves this off.
+	CopyOutside bool
 }
 
 // Report is what a Refresh did, as counts and harness-worded warnings only.
@@ -201,13 +207,18 @@ func (s *Store) Refresh(ctx context.Context) (Report, error) {
 	opts := s.opts
 	s.mu.Unlock()
 	if pix != nil && prof != nil {
-		st, err := SyncProfile(ctx, pix, prof.Name, prof.Paths, opts.ProfileGate, opts.IndexTokens)
+		st, err := SyncProfile(ctx, pix, prof.Name, opts.Root, prof.Paths, opts.ProfileGate, opts.ProjectGate, opts.IndexTokens)
 		rep.Profile = st
 		if err != nil {
 			return rep, err
 		}
 		if err := saveIfUsed(pix, pdir); err != nil {
 			rep.Warnings = append(rep.Warnings, "the profile index was not saved: "+err.Error())
+		}
+		if opts.CopyOutside && opts.Root != "" {
+			if files, _, eerr := EnumerateProfile(ctx, opts.Root, prof.Paths); eerr == nil {
+				CopyDocs(opts.Root, files, nil, nil, true)
+			}
 		}
 	}
 	if s.project != nil && opts.Root != "" {

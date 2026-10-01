@@ -26,7 +26,10 @@ func (a *App) knowledgeStore() *knowledge.Store {
 		return a.knowStore
 	}
 	index, project, _ := a.settings.KnowledgeLimits()
-	a.knowStore = knowledge.Open(knowledge.Options{Root: a.workdir, IndexTokens: index, ProjectTokens: project})
+	// CopyOutside: the foreground agent works in the project itself, so a
+	// document it lists from elsewhere is copied under .vulnetix/knowledge for
+	// its file tools.
+	a.knowStore = knowledge.Open(knowledge.Options{Root: a.workdir, IndexTokens: index, ProjectTokens: project, CopyOutside: true})
 	a.syncKnowledge()
 	return a.knowStore
 }
