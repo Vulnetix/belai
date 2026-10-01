@@ -12,11 +12,11 @@ import (
 func boolPtr(b bool) *bool { return &b }
 
 func TestVulnetixAutoFixDefaultsFalse(t *testing.T) {
-	if (VulnetixSettings{}).AutoFixEnabled() {
+	if (&VulnetixSettings{}).AutoFixEnabled() {
 		t.Fatal("AutoFix must default false")
 	}
 	trueVal := true
-	if !(VulnetixSettings{AutoFix: &trueVal}).AutoFixEnabled() {
+	if !(&VulnetixSettings{AutoFix: &trueVal}).AutoFixEnabled() {
 		t.Fatal("AutoFixEnabled should honour the opt-in")
 	}
 }
