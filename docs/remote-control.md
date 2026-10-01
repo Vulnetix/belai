@@ -126,7 +126,8 @@ predict what will happen to them:
   lines of the worker's own log, startup included. The daemon reads that log
   by the worker's id from the fleet log directory, never from a path in the
   record. Each line is cleaned the way a web prompt is (delimiter markup,
-  ANSI, control and bidi runes removed) and clipped to 240 bytes, and all the
+  ANSI, control and bidi runes removed) and clipped to 240 bytes on a character
+  boundary, with `…` marking the cut, and all the
   tails together stay under 48 KiB. The log holds harness lines and the
   worker process's stderr, never a transcript: model output goes to the
   item's session. The server cleans it again and applies the same caps.
