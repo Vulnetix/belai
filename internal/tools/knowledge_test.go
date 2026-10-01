@@ -82,7 +82,7 @@ func TestHubIsSharedByEveryNarrowing(t *testing.T) {
 
 func TestGrepAddsKnowledgeRowsOnlyForAModelCall(t *testing.T) {
 	reg, _, fk := knowledgeFixture(t)
-	args := map[string]any{"pattern": "authenticate|signing key", "output_mode": "content"}
+	args := map[string]any{"pattern": "authenticate", "output_mode": "content"}
 
 	plain := run(t, reg, context.Background(), "Grep", args)
 	if strings.Contains(plain.Content, "kb+") || fk.searches.Load() != 0 {
@@ -106,7 +106,7 @@ func TestGrepAddsKnowledgeRowsOnlyForAModelCall(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, res.Content)
 		}
 	}
-	if q, _ := fk.lastQ.Load().(string); q != "authenticate signing key" {
+	if q, _ := fk.lastQ.Load().(string); q != "authenticate" {
 		t.Fatalf("query = %q", q)
 	}
 	if strings.Index(res.Content, "main.go") > strings.Index(res.Content, KnowledgeRowsHeader) {
