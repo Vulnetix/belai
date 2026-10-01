@@ -239,7 +239,9 @@ no model, so it asks a connected host with an `avatar` request that carries one
 identifier, the id of the agent creator the website made. The daemon:
 
 1. refuses unless `sync.remote_prompts` is on, and draws one avatar at a time (a
-   second request meanwhile is refused with the reason);
+   second request meanwhile is refused with the reason). The slot is free as soon as
+   the drawing is done, before the website is told, so a request sent right after
+   an acknowledgement is never refused for a drawing that has finished;
 2. reads the display name, the four colours and the optional personality from
    the website, cleans every string to one capped line, and sends the text through
    the security classifier under the effective posture, as it would a web prompt;
