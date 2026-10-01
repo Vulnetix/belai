@@ -273,14 +273,16 @@ const (
 
 // SessionMeta is the session's registration and display metadata.
 type SessionMeta struct {
-	HostID          string `json:"hostId"`
-	ProjectKey      string `json:"projectKey,omitempty"`
-	ProjectName     string `json:"projectName,omitempty"`
-	Cwd             string `json:"cwd,omitempty"`
-	Name            string `json:"name,omitempty"`
-	Model           string `json:"model,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	Mode            string `json:"mode,omitempty"`
+	HostID      string `json:"hostId"`
+	ProjectKey  string `json:"projectKey,omitempty"`
+	ProjectName string `json:"projectName,omitempty"`
+	Cwd         string `json:"cwd,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	// ActiveProfile is the agent profile the session ran under (belai:patcher).
+	ActiveProfile   string `json:"activeProfile,omitempty"`
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 	ResumedFromID   string `json:"resumedFromId,omitempty"`
 	RemotePrompts   bool   `json:"remotePrompts"`

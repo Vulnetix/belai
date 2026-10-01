@@ -44,6 +44,30 @@ the Vulnetix website. Two console pages show it:
   turn*, *running*, *refused* or *expired*.
 - **The website renders only committed lines, in `seq` order.** A line that
   arrives past a gap triggers a refetch of the gap, not an out-of-order render.
+- **A session names the agent it ran under.** The registration carries
+  `activeProfile` (`belai:patcher`), read from the latest `session_meta` line
+  that names one. A switch with ctrl+p appends a new `session_meta` line, so the
+  syncer sees it and registers the session again, and the website shows the
+  session by that agent's display name and colours. Rules and edge cases:
+  - The latest line that names a profile wins (`session.LatestMeta` merges the
+    same way), so ctrl+p from `belai:patcher` to `belai:verifier` moves the
+    session to the second agent.
+  - A line that names no profile leaves it alone. `activeProfile` is
+    `omitempty`, so clearing the agent never reaches the transcript and does not
+    unset it on the website; the last agent that ran stays.
+  - The server keeps the stored value when a registration carries none (a host
+    that predates the field, or a session that never engaged an agent), caps it
+    at 128 bytes, and matches it in History search (`patcher` finds
+    `belai:patcher`).
+  - A worker session's first `session_meta` line carries the worker's profile
+    and its name is `<profile> · <card> <title>`. For a session registered before
+    the host reported `activeProfile`, the website reads the profile from that
+    name prefix, and `saas` backfills the column from the synced `session_meta`
+    lines.
+  - The profile is a name, not a presentation. The website resolves the display
+    name and colours itself (the built-in agents from a table that mirrors
+    `internal/agentprofile/builtin`, a custom agent from the host's catalogue), so
+    a profile with no persona is shown by its name in the console colours.
 - **A web answer is a request too.** It resolves an ask only when the host
   applies it and writes the `ask_answer` line (see [Web answers](#web-answers)).
 

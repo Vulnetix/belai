@@ -41,15 +41,18 @@ type Options struct {
 // it. Fields the JSONL later reveals (name, cwd, model, mode) are picked up
 // from the file as it is tailed.
 type SessionInfo struct {
-	ID              string
-	Path            string // the session's .jsonl
-	ProjectKey      string
-	ProjectName     string
-	Cwd             string
-	Name            string
-	Model           string
-	Provider        string
-	Mode            string
+	ID          string
+	Path        string // the session's .jsonl
+	ProjectKey  string
+	ProjectName string
+	Cwd         string
+	Name        string
+	Model       string
+	Provider    string
+	Mode        string
+	// ActiveProfile: the agent profile the session ran under, read from the
+	// latest session_meta line so a ctrl+p switch reaches the website.
+	ActiveProfile   string
 	ParentSessionID string
 	ResumedFromID   string
 	// DispatchID: the rc request that started this session (see Dispatch).
@@ -501,7 +504,7 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 	i := t.info
 	return SessionMeta{
 		HostID: s.opts.HostID, ProjectKey: i.ProjectKey, ProjectName: i.ProjectName, Cwd: i.Cwd,
-		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode,
+		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode, ActiveProfile: i.ActiveProfile,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
 		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
 		DispatchID: i.DispatchID,
@@ -623,13 +626,15 @@ func (t *tail) observe(e Entry) {
 		t.set(&t.info.Name, strings.TrimSpace(e.Content))
 	case "session_meta":
 		var m struct {
-			Cwd         string `json:"cwd"`
-			Mode        string `json:"mode"`
-			ResumedFrom string `json:"resumedFrom"`
+			Cwd           string `json:"cwd"`
+			Mode          string `json:"mode"`
+			ResumedFrom   string `json:"resumedFrom"`
+			ActiveProfile string `json:"activeProfile"`
 		}
 		if json.Unmarshal([]byte(e.Content), &m) == nil {
 			t.set(&t.info.Cwd, m.Cwd)
 			t.set(&t.info.Mode, m.Mode)
+			t.set(&t.info.ActiveProfile, m.ActiveProfile)
 			t.set(&t.info.ResumedFromID, m.ResumedFrom)
 		}
 	case "assistant":
@@ -659,6 +664,7 @@ func mergeInfo(old, n SessionInfo) SessionInfo {
 	n.Model = orStr(n.Model, old.Model)
 	n.Provider = orStr(n.Provider, old.Provider)
 	n.Mode = orStr(n.Mode, old.Mode)
+	n.ActiveProfile = orStr(n.ActiveProfile, old.ActiveProfile)
 	n.ParentSessionID = orStr(n.ParentSessionID, old.ParentSessionID)
 	n.ResumedFromID = orStr(n.ResumedFromID, old.ResumedFromID)
 	return n
