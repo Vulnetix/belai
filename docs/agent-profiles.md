@@ -420,6 +420,7 @@ Validation fails closed:
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
 - `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
+- a worker with `isolation: worktree` is refused by `belai agent run` and `start` unless it starts inside a git repository (see [Where a worker may start](fleet.md#where-a-worker-may-start));
 - `handoff_repos` needs `handoff_to` or `handoff_labels`, and cannot be combined with a `gates` block, because a gate names a test suite of the worker's own repository;
 - a `survey` block needs a `title`, a `list` of `review`, `backlog` or `auto`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
 - a `quality` block needs a `list` of `review`, `backlog` or `auto`, and `sweep` needs `handoff_to` or `handoff_labels`;

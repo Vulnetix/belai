@@ -319,6 +319,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	if err := fleet.Preflight(profile, settings, pol); err != nil {
 		return 1, err
 	}
+	if err := fleet.CheckRepo(profile, repo); err != nil {
+		return 1, err
+	}
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
 		return 1, fmt.Errorf("load embedded classifier: %w", err)
 	}
@@ -502,6 +505,9 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		}
 		if err := fleet.Preflight(p, settings, pol); err != nil {
 			return 1, fmt.Errorf("%s: %w", l.profile, err)
+		}
+		if err := fleet.CheckRepo(p, repo); err != nil {
+			return 1, err
 		}
 	}
 	store, err := kanban.OpenDefault()
