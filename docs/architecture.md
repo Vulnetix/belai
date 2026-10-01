@@ -1994,7 +1994,11 @@ The footer is a rule plus three content lines:
   for goal), cwd (home collapsed to `~`) and git branch (`⎇ main`), joined by
   `·`. The mode chip carries the engaged agent when there is one —
   `agent · reviewer` — so what is carrying the turn is visible without opening
-  anything. cwd and branch are omitted entirely when unset, so a non-git
+  anything. An agent with a persona is named by its display name
+  (`agent · Kremvax`) and the accents take its colours (see
+  [Agent personas](tui-design.md#agent-personas)); in auto mode the slot names
+  the mode the classifier picked and while a plan runs it reads `executing`,
+  and the colours still follow the engaged agent. cwd and branch are omitted entirely when unset, so a non-git
   directory shows the chip alone — until the agent moves, at which point the
   directory renders even outside a repository, because a footer that
   disagreed with the paths in the transcript would be worse than no footer.
@@ -2934,7 +2938,12 @@ prompt in the composer, so it is deliberately not `enter`.
 
 The engaged agent is session state: it applies to every following turn
 (`App.namedAgent` → `agent.TurnInput.ForceAgent`), shows in the footer chip
-next to the mode, and is cleared by `/clear`. It is **agent mode only**. Plan
+next to the mode, and is cleared by `/clear`. Every change of it ends in
+`refreshFooter`, which calls `App.syncPersona`: the accents take the agent's
+palette and the picker, the footer and the switch notice use its display name
+(`lookupAgentLook` reads the agent-profile definition of the name, so a flat
+profile such as `belai:debug` wears the definition's persona). ctrl+p cycles the
+list and each step re-themes live. It is **agent mode only**. Plan
 and goal mode carry Belai's own plan or goal — `resolveCarrier` admits
 exactly one carrier, and `ForceAgent` also forces the mode, so sending an
 engaged agent from plan mode would silently drop the mode the user picked.
