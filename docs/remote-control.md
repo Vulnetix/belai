@@ -182,6 +182,43 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
 - **Audit.** Each firing and each refusal is a `host.schedule` event with the
   schedule's id, the profile and the outcome (see [audit.md](audit.md)).
 
+## Agent library
+
+The website keeps a library of agent profiles so a profile survives the machine
+it came from. Two requests reach a profile on this host, both through the
+dispatch queue and both carrying identifiers only:
+
+- **`profile_backup`** names one of this host's profiles. The daemon exports it
+  as markdown (the same form `belai agent import` reads, with its `id`, display
+  name, palette and personality) and uploads it, and the website stores it as a
+  new version. A backup writes nothing on this host. Built-in profiles ship with
+  Belai, so a request for one is refused.
+- **`profile_install`** names a library profile and one of its versions, and
+  whether it may replace a profile here. The daemon reads that version from the
+  library, and the server serves that one version only while the request is
+  delivered to this host. The profile is then parsed strictly and validated whole
+  like `belai agent import`, and written only if all of this holds:
+  - `sync.remote_prompts` is on (a request that writes is the same kind of trust
+    as a web prompt);
+  - it does not turn guardrails or permission asks off, is not `autonomous`, and
+    does not allow `Bash` (a profile that lists no tools allows every tool, Bash
+    included, so it lists its tools) or a shell process tool;
+  - its `id` is the library profile's;
+  - it does not take a built-in's name;
+  - no profile of that name exists here, or the request set replace and that
+    profile has the same `id`. A profile that holds the same `id` under another
+    name is never replaced, and a display name another profile here holds is
+    refused.
+
+  A profile you want that the website may not install is still yours to write by
+  hand on this host. The acknowledgement says what was installed, or the reason
+  it was refused: harness words with a short cleaned excerpt, never the profile.
+  Replacing a profile stops a worker running on the old one, because a worker
+  pins its definition (see [fleet.md](fleet.md)); restart it to use the new one.
+
+Both are `host.dispatch` audit events with the request kind and outcome (see
+[audit.md](audit.md)).
+
 ## Files
 
 - `~/.vulnetix/belai/schedules.json`: the host's schedules and the sync cursor.
@@ -203,12 +240,21 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
     `GET /hosts/{id}/schedules?since=` and pushes with `PUT /hosts/{id}/schedules`;
     the page uses `GET|POST /hosts/{id}/schedules`,
     `PATCH|DELETE /hosts/{id}/schedules/{sid}` and `GET /schedules` (every host).
+  - Library (`belai_library.go`): the host answers a backup with
+    `POST /hosts/{id}/library/backups` and an install with
+    `GET /hosts/{id}/library/profiles/{profile}/versions/{version}?dispatch=`.
+    The page lists, saves and rewinds under `/library/profiles` and checks a
+    display name with `/library/names/check`. A version is one write-once S3
+    object under `belai/{tenant}/agents/{profile}/{YYYYMMDDHHMM}.md`, indexed in
+    Postgres; a rewind saves an old version as the new latest one.
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
   `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,
   `rcMaxWorkers` and `BelaiDispatch.spec` (saas migration
   `20261001000001_belai_fleet_coordination`); `BelaiSchedule` (saas migration
-  `20261004000001_add_belai_schedules`).
+  `20261004000001_add_belai_schedules`); `BelaiAgentProfile` and
+  `BelaiAgentProfileVersion` (saas migration
+  `20261004000002_add_belai_agent_library`).
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.

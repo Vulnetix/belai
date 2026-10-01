@@ -244,7 +244,14 @@ type Dispatch struct {
 	Profile string `json:"profile,omitempty"`
 	Crew    string `json:"crew,omitempty"`
 	// Worker is the worker id a "pause" or "resume" request names.
-	Worker    string `json:"worker,omitempty"`
+	Worker string `json:"worker,omitempty"`
+	// A "profile_install" request names a library profile and one of its
+	// versions, and says whether it may replace this host's profile of the same
+	// name and id. A "profile_backup" request names the host's profile in
+	// Profile. Identifiers only: the profile text is fetched, never carried.
+	Library   string `json:"library,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Overwrite bool   `json:"overwrite,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -77,6 +78,10 @@ type Options struct {
 	// Busy reports whether a worker of the profile is already live in the
 	// directory's repository (the fleet registry unless a test replaces it).
 	Busy func(profile, dir string) bool
+	// RemotePrompts reports whether the website may write to this host: the
+	// user's own sync.remote_prompts (a profile install needs it). It reads the
+	// global settings and fails closed unless a test replaces it.
+	RemotePrompts func() bool
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -163,6 +168,9 @@ func New(o Options) (*Daemon, error) {
 	}
 	if o.Busy == nil {
 		o.Busy = localBusy
+	}
+	if o.RemotePrompts == nil {
+		o.RemotePrompts = remotePromptsOn
 	}
 	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now()}, nil
 }
@@ -300,7 +308,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 	ack := func(ctx context.Context, id, status, sid, reason string) {
 		kind := "unknown"
 		switch r.Kind {
-		case "start", "stop", "worker", "crew", "pause", "resume":
+		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -344,10 +352,28 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+	case "profile_backup", "profile_install":
+		var report, why string
+		if r.Kind == "profile_backup" {
+			report, why = d.backupProfile(ctx, r)
+		} else {
+			report, why = d.installProfile(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Profile), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	default:
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}
 }
+
+// sanitizeName reduces a profile name from a request to a short identifier for
+// the log.
+func sanitizeName(s string) string { return sanitize.Ident(s, 64) }
 
 func (d *Daemon) ack(ctx context.Context, id, status, sid, reason string) {
 	if err := d.o.Client.AckDispatch(ctx, id, status, sid, reason); err != nil && ctx.Err() == nil {
