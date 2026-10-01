@@ -87,6 +87,19 @@ type reviewReportMsg struct {
 // startReview launches a /vulnetix review on the UI loop. The scanners run in
 // the background and report one by one; each finished scanner gets a card in
 // the main thread and, when it found something, its own scanner agent.
+// reviewCommand builds the review from the effective settings: the unattended fix
+// (vulnetix.autofix, off by default), the scanner subset (vulnetix.subcommands,
+// every scanner by default) and each scan's time limit (vulnetix.timeout, none
+// by default). Config validation has already refused a name outside the
+// allowlist or a timeout that does not parse.
+func (a *App) reviewCommand(cli *vulnetixcli.CLI) commands.Vulnetix {
+	v := a.settings.Vulnetix
+	return commands.Vulnetix{
+		CLI: cli, Workdir: a.workdir, Observer: quietObserver{a},
+		AutoFix: v.AutoFixEnabled(), Subcommands: v.ReviewSubcommands(), Timeout: v.ReviewTimeout(),
+	}
+}
+
 func (a *App) startReview() tea.Cmd {
 	if a.review != nil {
 		a.addSystem("a vulnetix review is already running · f9 for output")
@@ -97,14 +110,10 @@ func (a *App) startReview() tea.Cmd {
 		a.addSystem("vulnetix failed: " + err.Error())
 		return nil
 	}
-	autoFix := false
-	if a.settings.Vulnetix != nil {
-		autoFix = a.settings.Vulnetix.AutoFixEnabled()
-	}
 	// The scan rows are shown in the runs panel, but their stdout is not
 	// round-tripped: the triage turn carries structured report attachments
 	// instead of nine pretty-printed terminal tables.
-	v := commands.Vulnetix{CLI: cli, Workdir: a.workdir, Observer: quietObserver{a}, AutoFix: autoFix}
+	v := a.reviewCommand(cli)
 	names, err := v.ActivityNames()
 	if err != nil {
 		a.addSystem("vulnetix failed: " + err.Error())
@@ -131,7 +140,7 @@ func (a *App) startReview() tea.Cmd {
 		cancel:       cancel,
 		seq:          a.reviewSeq,
 		started:      time.Now(),
-		autoFix:      autoFix,
+		autoFix:      v.AutoFix,
 		names:        names,
 		done:         map[string]bool{},
 		agents:       map[string]string{},

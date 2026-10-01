@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -166,12 +167,23 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateTTS(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateVulnetix(eff.Settings); err != nil {
+		return eff, err
+	}
 	SetActiveJevThresholds(eff.Settings.JevThresholds())
 	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
 	}
 
 	return eff, nil
+}
+
+// vulnetix returns the effective vulnetix block, creating it on first use.
+func (e *Effective) vulnetix() *VulnetixSettings {
+	if e.Settings.Vulnetix == nil {
+		e.Settings.Vulnetix = &VulnetixSettings{}
+	}
+	return e.Settings.Vulnetix
 }
 
 // apply merges a partial settings view over eff, recording the provenance of
@@ -235,6 +247,36 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Vulnetix.GatewayURL = s.Vulnetix.GatewayURL
 		e.Origin["gateway_url"] = src
+	}
+	// The background sweep that finds other .vulnetix projects under your home
+	// directory: a repo-visible project layer may turn it off, never choose
+	// where it walks, so a repository cannot point it at directories of its own.
+	if s.VulnetixSweepEnabled != nil && (!*s.VulnetixSweepEnabled || src != SourceProject) {
+		e.Settings.VulnetixSweepEnabled = s.VulnetixSweepEnabled
+		e.Origin["vulnetix_sweep_enabled"] = src
+	}
+	if src != SourceProject && len(s.VulnetixSweepRoots) > 0 {
+		e.Settings.VulnetixSweepRoots = slices.Clone(s.VulnetixSweepRoots)
+		e.Origin["vulnetix_sweep_roots"] = src
+	}
+	if v := s.Vulnetix; v != nil {
+		// The review keys. autofix lets `/vulnetix review` run `vulnetix fix
+		// --yes` on the tree, so a repo-visible project layer may turn it off
+		// but never on. subcommands and timeout shape what a review scans and
+		// for how long: only the user's own layers set them, so a repository
+		// cannot narrow the scanners that look at it.
+		if v.AutoFix != nil && (!*v.AutoFix || src != SourceProject) {
+			e.vulnetix().AutoFix = v.AutoFix
+			e.Origin["vulnetix.autofix"] = src
+		}
+		if src != SourceProject && len(v.Subcommands) > 0 {
+			e.vulnetix().Subcommands = slices.Clone(v.Subcommands)
+			e.Origin["vulnetix.subcommands"] = src
+		}
+		if src != SourceProject && v.Timeout != "" {
+			e.vulnetix().Timeout = v.Timeout
+			e.Origin["vulnetix.timeout"] = src
+		}
 	}
 	if s.Sync != nil {
 		// Session sync sends transcripts off the machine and lets the website

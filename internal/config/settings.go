@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -474,8 +476,72 @@ func (s VulnetixSettings) GatewayURLOrDefault() string {
 
 // AutoFixEnabled reports whether /vulnetix review may run `vulnetix fix --yes`
 // unattended. Default false: the review attaches a --dry-run plan instead.
-func (s VulnetixSettings) AutoFixEnabled() bool {
-	return s.AutoFix != nil && *s.AutoFix
+func (s *VulnetixSettings) AutoFixEnabled() bool {
+	return s != nil && s.AutoFix != nil && *s.AutoFix
+}
+
+// VulnetixSubcommandNames are the names `vulnetix.subcommands` may hold: the
+// nine review scanners and the post-scan fix activity. The review keeps its own
+// table (commands.AllowedSubcommands); a test pins the two together, because
+// config cannot import commands.
+var VulnetixSubcommandNames = []string{"sca", "containers", "sast", "secrets", "iac", "malscan", "sbom", "aibom", "cbom", "fix"}
+
+// MaxVulnetixTimeout bounds `vulnetix.timeout`, so a typo cannot hold a review
+// open for days.
+const MaxVulnetixTimeout = 24 * time.Hour
+
+// ReviewTimeout is how long each review scan may run, from vulnetix.timeout.
+// Zero means no limit, the default: a scan runs until it exits or is killed.
+// ValidateVulnetix has already refused a value that does not parse.
+func (s *VulnetixSettings) ReviewTimeout() time.Duration {
+	if s == nil || s.Timeout == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s.Timeout)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return min(d, MaxVulnetixTimeout)
+}
+
+// ReviewSubcommands is the scanner subset vulnetix.subcommands names, or nil
+// for every scanner.
+func (s *VulnetixSettings) ReviewSubcommands() []string {
+	if s == nil {
+		return nil
+	}
+	return s.Subcommands
+}
+
+// ValidateVulnetix rejects a vulnetix block (and vulnetix_sweep_roots) holding a subcommand outside the
+// allowlist or a timeout that is not a positive duration up to
+// MaxVulnetixTimeout, naming the key. It runs when settings are loaded, so a
+// bad value fails at startup rather than when a review starts.
+func ValidateVulnetix(s Settings) error {
+	for _, root := range s.VulnetixSweepRoots {
+		if !filepath.IsAbs(root) {
+			return fmt.Errorf("vulnetix_sweep_roots: %q must be an absolute path", root)
+		}
+	}
+	v := s.Vulnetix
+	if v == nil {
+		return nil
+	}
+	for _, name := range v.Subcommands {
+		if !slices.Contains(VulnetixSubcommandNames, name) {
+			return fmt.Errorf("vulnetix.subcommands: %q is not one of %s", name, strings.Join(VulnetixSubcommandNames, ", "))
+		}
+	}
+	if v.Timeout != "" {
+		d, err := time.ParseDuration(v.Timeout)
+		switch {
+		case err != nil:
+			return fmt.Errorf("vulnetix.timeout %q is not a duration such as 10m or 1h30m", v.Timeout)
+		case d <= 0 || d > MaxVulnetixTimeout:
+			return fmt.Errorf("vulnetix.timeout %q must be longer than zero and at most %s", v.Timeout, MaxVulnetixTimeout)
+		}
+	}
+	return nil
 }
 
 // UpdateCheckEnabled reports whether the startup release check may run.
@@ -1022,7 +1088,8 @@ type ResilienceSettings struct {
 	// MaxAttempts is the inclusive pre-first-byte retry budget per model
 	// call. It defaults to 3.
 	MaxAttempts int `json:"max_attempts,omitempty"`
-	// MaxIterations is the per-prompt tool-loop budget. It defaults to 10.
+	// MaxIterations is the per-prompt tool-loop budget. It defaults to 40
+	// (DefaultMaxIterations).
 	MaxIterations int `json:"max_iterations,omitempty"`
 	// MaxPasses is the goal-mode pass-loop ceiling. Zero means unbounded;
 	// the default honours that, and the setting exists for CI and for anyone
@@ -1520,6 +1587,24 @@ func (s Settings) Override(proj Settings) Settings {
 			out.Vulnetix = &v
 		}
 		out.Vulnetix.DepWatch = &t
+	}
+	// Likewise the project sweep: a project file may turn it off; the roots it
+	// walks stay the user's.
+	if proj.VulnetixSweepEnabled != nil && !*proj.VulnetixSweepEnabled {
+		f := false
+		out.VulnetixSweepEnabled = &f
+	}
+	// Likewise autofix, which lets a review run `vulnetix fix --yes` on the
+	// tree: a project file may turn it off, never on.
+	if proj.Vulnetix != nil && proj.Vulnetix.AutoFix != nil && !*proj.Vulnetix.AutoFix {
+		f := false
+		if out.Vulnetix == nil {
+			out.Vulnetix = &VulnetixSettings{}
+		} else {
+			v := *out.Vulnetix
+			out.Vulnetix = &v
+		}
+		out.Vulnetix.AutoFix = &f
 	}
 	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
 		if proj.ReadOnly != nil {
