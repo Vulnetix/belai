@@ -80,6 +80,8 @@ website never disagree.
 
 | Type | Written when | Carries |
 | --- | --- | --- |
+| `session_name` | The model names the session, or a continued session inherits its parent's name (`meta.source` is `model` or `inherited`) | The name in `content`. The syncer reads it into the registration, so it is the title the website shows; the latest non-empty name wins, and an empty one never clears it |
+| `session_meta` | A session starts, and whenever the mode, a plan or goal, or the engaged agent changes | `cwd`, `mode`, `resumedFrom` and `activeProfile`, each into the registration. Lines merge: a field a line omits keeps its last value (`session.LatestMeta`) |
 | `turn_state` | A turn starts, and after its last rows are written | `turn_id`, `state` (`started`, `ended`, `error`, `interrupted`), `started_at`, `duration_ms` |
 | `tool_start` | A main-thread tool call starts | `tool_call_id`, `tool_name`, `tool_args`, `started_at` |
 | `tool` (`meta.diff`) | A tool that changed files returns | The rendered diff rows per file (`filediff.Change.Wire`), capped at 256 KiB. Every path keeps its header past the cap |
