@@ -45,11 +45,11 @@ Each component list names directories relative to the plugin root:
 | --- | --- |
 | `skills` | `<name>/SKILL.md` [skills](skills.md) |
 | `hooks` | `*.json` [hook files](hooks.md), with the commands they run |
-| `prompts` | `*.md` prompts; the file name (lowercase letters, digits, hyphens) is the prompt name |
+| `prompts` | `*.md` prompts; the file name is the prompt name: lowercase letters, digits and hyphens, at most 64, not starting with a hyphen |
 | `agents` | `*.json` [agent profiles](agent-profiles.md) |
 
-`name` must be lowercase letters, digits and hyphens (at most 40), and not
-`belai`, `user` or `builtin`. Any other manifest key fails validation. Every
+`name` must be lowercase letters, digits and hyphens (at most 40, not starting
+with a hyphen), and not `belai`, `user` or `builtin`. Any other manifest key fails validation. Every
 component path must be a directory inside the plugin, after following
 symlinks. Each component is checked with the validator Belai uses for your
 own files, and one invalid component fails the whole plugin.
@@ -140,7 +140,8 @@ listing before confirming.
   components load.
 - A plugin directory whose manifest no longer reads, or names a different
   plugin than its registry entry, is skipped at load.
-- A prompt file whose name is not lowercase letters, digits and hyphens, or
-  which is larger than 64 KiB, is skipped.
+- A prompt file whose name breaks the rule above, or which is larger than
+  64 KiB (exactly 64 KiB is read), is skipped, and the rest of the plugin still
+  loads.
 - A component path that is missing, is a file rather than a directory, or
   leads outside the plugin (including through a symlink) fails the install.
