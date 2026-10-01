@@ -106,6 +106,7 @@ func keySections() []keySection {
 		{"screen switcher (f1)", []keyBinding{
 			{"a, m, p, s, k", "agents, model, providers, settings, permissions"},
 			{"r, x, l, v, h", "prompts, processes, lsp, vulnetix, sessions"},
+			{"n", "knowledge"},
 			{"up, down, enter", "move the highlight and open it"},
 			{"f1, esc", "close the switcher"},
 		}},
@@ -297,6 +298,17 @@ func keySections() []keySection {
 			{"s", "toggle scope: global, project"},
 			{"p", "preview which rule matches a subject"},
 			{"esc", "back"},
+		}},
+		{"knowledge (/knowledge)", []keyBinding{
+			{"1, 2, 3, tab, shift+tab", "switch between project, global and agents"},
+			{"up, down, k, j", "move; pgup, pgdn, ctrl+u, ctrl+d, space page; home, end, g, G jump"},
+			{"enter", "global and agents: open the highlighted index; on a document, show its indexed text"},
+			{"/", "filter by words or labels (type:test, lang:go, topic:jwt, kind:sarif, tool:semgrep); esc clears"},
+			{"s", "search like a model: type a query, enter runs it, tab picks grep, glob or read"},
+			{"m", "switch between grep, glob and read and run the search again"},
+			{"enter", "in search results: open the document on the highlighted line"},
+			{"q, esc", "close the document or the results, then the filter, then the screen"},
+			{"r", "reload the indexes"},
 		}},
 		{"trusted directories (/trusted)", []keyBinding{
 			{"up, down", "move (also k, j)"},

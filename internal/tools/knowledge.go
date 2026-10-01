@@ -256,6 +256,13 @@ func hasArg(args map[string]any, key string) bool {
 // whose address (without the kb+ prefix) matches the pattern, then those whose
 // text resembles the pattern's words, marked as similar.
 func knowledgeGlob(k Knowledge, pattern string, max int) string {
+	matched, similar := knowledgeGlobMatches(k, pattern, max)
+	return knowledgeFileList(matched, similar)
+}
+
+// knowledgeGlobMatches is the address list behind knowledgeGlob and the set of
+// those found by meaning rather than by the pattern.
+func knowledgeGlobMatches(k Knowledge, pattern string, max int) ([]string, map[string]bool) {
 	matched := k.Match(func(a string) bool { return matchGlob(pattern, strings.TrimPrefix(a, "kb+")) })
 	sort.Strings(matched)
 	seen := map[string]bool{}
@@ -275,5 +282,5 @@ func knowledgeGlob(k Knowledge, pattern string, max int) string {
 	if max > 0 && len(matched) > max {
 		matched = matched[:max]
 	}
-	return knowledgeFileList(matched, similar)
+	return matched, similar
 }

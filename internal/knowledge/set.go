@@ -119,3 +119,12 @@ func (s *Set) Match(match func(address, source string) bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Indexes returns the indexes the set searches, in order. A view that browses
+// documents uses it to reach each one; the slice is the caller's.
+func (s *Set) Indexes() []*Index {
+	if s == nil {
+		return nil
+	}
+	return append([]*Index(nil), s.list()...)
+}

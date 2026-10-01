@@ -247,3 +247,52 @@ func TestKnowledgeRowsClipAndNumber(t *testing.T) {
 		t.Fatalf("rows = %q", lines)
 	}
 }
+
+func TestPreviewsAreTheToolsOwnKnowledgeSections(t *testing.T) {
+	reg, _, fk := knowledgeFixture(t)
+	ctx := WithKnowledge(context.Background())
+
+	rows, hits := PreviewGrep(fk, "authenticate", false)
+	grep := run(t, reg, ctx, "Grep", map[string]any{"pattern": "authenticate", "output_mode": "content"})
+	if rows == "" || len(hits) != 3 || !strings.Contains(grep.Content, rows) {
+		t.Fatalf("the preview must be the section Grep appends:\n%s\n--- in ---\n%s", rows, grep.Content)
+	}
+	files, _ := PreviewGrep(fk, "authenticate", true)
+	grepFiles := run(t, reg, ctx, "Grep", map[string]any{"pattern": "authenticate", "output_mode": "files_with_matches"})
+	if files == "" || !strings.Contains(grepFiles.Content, files) {
+		t.Fatalf("files mode:\n%s\n--- in ---\n%s", files, grepFiles.Content)
+	}
+
+	list, addrs := PreviewGlob(fk, "**/*.sarif")
+	glob := run(t, reg, ctx, "Glob", map[string]any{"pattern": "**/*.sarif"})
+	if list == "" || !strings.Contains(glob.Content, list) {
+		t.Fatalf("glob:\n%s\n--- in ---\n%s", list, glob.Content)
+	}
+	if len(addrs) == 0 || addrs[0] != "kb+project/.vulnetix/sast.sarif" {
+		t.Fatalf("addresses %v", addrs)
+	}
+
+	related, rhits := PreviewRead(fk, "Rotate the signing key and revoke tokens on logout", "")
+	if !strings.Contains(related, ReadKnowledgeHeader) || len(rhits) == 0 {
+		t.Fatalf("related block: %q", related)
+	}
+	if got, _ := PreviewRead(fk, "text", "/docs/auth.md"); strings.Contains(got, "kb+prof/handbook/auth.md") {
+		t.Fatalf("the document's own copy must be left out: %q", got)
+	}
+}
+
+func TestPreviewsOfNothingAreEmpty(t *testing.T) {
+	if out, hits := PreviewGrep(nil, "x", false); out != "" || hits != nil {
+		t.Fatal("nil store")
+	}
+	_, _, fk := knowledgeFixture(t)
+	if out, _ := PreviewGrep(fk, `\b\w+\b ^$`, false); out != "" && fk.searches.Load() == 0 {
+		t.Fatal("a pattern with no words must not search")
+	}
+	if out, addrs := PreviewGlob(nil, "*"); out != "" || addrs != nil {
+		t.Fatal("nil store")
+	}
+	if out, _ := PreviewRead(nil, "x", ""); out != "" {
+		t.Fatal("nil store")
+	}
+}

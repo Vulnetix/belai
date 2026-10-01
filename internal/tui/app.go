@@ -414,6 +414,7 @@ type App struct {
 	gsState             gettingStartedState
 	rcState             rcViewState
 	trustedState        trustedViewState
+	knowledgeState      knowledgeViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -2244,6 +2245,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 	if cmd, ok := a.handleKiroLoginMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleKnowledgeMsg(msg); ok {
 		return a, cmd
 	}
 	switch m := msg.(type) {

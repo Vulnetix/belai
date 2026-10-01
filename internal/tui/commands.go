@@ -542,6 +542,18 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("trusted", "manage trusted directories, the ones remote control offers", nil, func(a *App, arg string) tea.Cmd {
 		return a.openTrusted()
 	})
+	r.Register("knowledge", "browse and search indexed knowledge: this project, every project, the agents", func() []string {
+		return []string{"project", "global", "agents"}
+	}, func(a *App, arg string) tea.Cmd {
+		tab := knowTabProject
+		switch strings.ToLower(strings.TrimSpace(arg)) {
+		case "global":
+			tab = knowTabGlobal
+		case "agents", "agent":
+			tab = knowTabAgents
+		}
+		return a.openKnowledge(tab)
+	})
 	r.Register("fleet", "kanban worker agents: start, stop and watch them", func() []string {
 		return []string{"start", "crew", "stop"}
 	}, func(a *App, arg string) tea.Cmd {
