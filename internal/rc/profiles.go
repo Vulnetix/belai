@@ -185,6 +185,7 @@ func (d *Daemon) installOne(ctx context.Context, dispatchID, library, version st
 	if why := installConflict(p, overwrite); why != "" {
 		return p, "", why
 	}
+	skipped := ""
 	// A replace keeps the documents and synced files listed on this host when
 	// the library copy lists none (a version backed up before the profile had
 	// any); a copy that lists them is taken as it is.
@@ -194,12 +195,13 @@ func (d *Daemon) installOne(ctx context.Context, dispatchID, library, version st
 				p.Knowledge = existing.Knowledge
 			}
 			if sync := existing.SyncPaths(); len(sync) > 0 && len(p.SyncPaths()) == 0 {
-				ws := agentprofile.WorkspaceSpec{}
-				if p.Workspace != nil {
-					ws = *p.Workspace
+				if carried, ok := carrySync(p, existing, sync); ok {
+					p = carried
+				} else {
+					// Keep the library copy as it is rather than refuse a profile
+					// that was valid: say what was left behind.
+					skipped = "; this host's shared files were not carried over, because the library copy has no worktree to copy them into"
 				}
-				ws.Sync = sync
-				p.Workspace = &ws
 			}
 		}
 	}
@@ -218,6 +220,7 @@ func (d *Daemon) installOne(ctx context.Context, dispatchID, library, version st
 	if nfiles > 0 {
 		report = fmt.Sprintf(", with %d file%s", nfiles, plural(nfiles, "", "s"))
 	}
+	report += skipped
 	if len(p.KnowledgePaths()) > 0 {
 		report += "; " + d.indexProfile(ctx, p.Name)
 	}
@@ -316,4 +319,28 @@ func remotePromptsOn() bool {
 func syncProfilesOn() bool {
 	s, err := config.LoadGlobal()
 	return err == nil && s.SyncProfilesEnabled()
+}
+
+// carrySync puts this host's workspace.sync entries on a library copy that lists
+// none, for a replace. Sync needs a worktree to copy into, so a copy that does
+// not isolate in one takes the host's worktree isolation when the host has it
+// (an agent that shares files is a worktree worker). The result must still be a
+// valid profile: when it is not, carrySync reports false and the copy is left as
+// it is, so a replace never turns a valid library profile into a refusal.
+func carrySync(p, existing agentprofile.AgentProfile, sync []agentprofile.SyncSpec) (agentprofile.AgentProfile, bool) {
+	ws := agentprofile.WorkspaceSpec{}
+	if p.Workspace != nil {
+		ws = *p.Workspace
+	}
+	ws.Sync = sync
+	if (ws.Isolation == "" || ws.Isolation == agentprofile.IsolationNone) &&
+		existing.Workspace != nil && existing.Workspace.Isolation == agentprofile.IsolationWorktree {
+		ws.Isolation = agentprofile.IsolationWorktree
+	}
+	candidate := p
+	candidate.Workspace = &ws
+	if candidate.Validate() != nil {
+		return p, false
+	}
+	return candidate, true
 }
