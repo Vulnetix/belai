@@ -213,9 +213,11 @@ func TestKnowledgeGlobalListsEveryProjectAndPicksOne(t *testing.T) {
 	if !a.knowledgeEntries()[rows[0].entry].current {
 		t.Fatal("this project is listed first")
 	}
-	// Filter to the other project by its path and open it.
+	// Filter to the other project by its whole path and open it. The last
+	// element alone ("002") is also a substring of the random directory both
+	// temp dirs share, so it matched this project too about one run in a hundred.
 	knowKey(t, a, "/")
-	typeKnowledge(t, a, filepath.Base(other))
+	typeKnowledge(t, a, other)
 	knowKey(t, a, "enter")
 	if n := len(a.knowledgeShown()); n != 1 {
 		t.Fatalf("filtered to %d projects, want 1", n)
