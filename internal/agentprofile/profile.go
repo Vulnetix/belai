@@ -37,6 +37,16 @@ type AgentProfile struct {
 	// Identity is a worker's persona: who it is and how it works. It rides
 	// with system_prompt as the profile section of the system block.
 	Identity string `json:"identity,omitempty"`
+	// ID is the profile's own UUID. It follows the profile through backup and
+	// install, so the name can change without the profile becoming another.
+	ID string `json:"id,omitempty"`
+	// DisplayName, Palette and AvatarID present the agent in the console; see
+	// identity.go. None of them affects what the agent may do.
+	DisplayName string   `json:"display_name,omitempty"`
+	Palette     []string `json:"palette,omitempty"`
+	AvatarID    string   `json:"avatar_id,omitempty"`
+	// Personality is optional style guidance appended to the persona.
+	Personality *Personality `json:"personality,omitempty"`
 	// Worker blocks (mode: worker; see worker.go and docs/fleet.md).
 	Kanban    *KanbanSpec    `json:"kanban,omitempty"`
 	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
@@ -184,6 +194,9 @@ func loadBuiltins() map[string]AgentProfile {
 			continue
 		}
 		p.Builtin = true
+		if p.ID == "" {
+			p.ID = BuiltinID(p.Name)
+		}
 		if err := p.Validate(); err != nil {
 			continue
 		}
@@ -247,6 +260,9 @@ func (p AgentProfile) Validate() error {
 		if !KnownTool(t) {
 			return fmt.Errorf("unknown tool %q", t)
 		}
+	}
+	if err := p.validateIdentity(); err != nil {
+		return err
 	}
 	return p.validateWorker()
 }

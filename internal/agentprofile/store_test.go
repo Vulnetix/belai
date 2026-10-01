@@ -102,12 +102,9 @@ func TestListAndDeleteOrdering(t *testing.T) {
 
 func resetDir(t *testing.T) {
 	t.Helper()
-	d, err := Dir()
-	if err != nil {
-		t.Skipf("Dir() failed: %v", err)
-	}
-	_ = os.RemoveAll(d)
-	t.Cleanup(func() { _ = os.RemoveAll(d) })
+	// A private state directory: the helper once cleared the real profiles
+	// directory of whoever ran the tests.
+	t.Setenv("BELAI_HOME", t.TempDir())
 }
 
 // Agent profiles live under the global directory, not the legacy ~/.belai

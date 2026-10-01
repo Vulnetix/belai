@@ -51,6 +51,13 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | `effort` | No | string | Reasoning-effort hint: one of `low`, `medium`, `high`, `none`. Ignored by providers that do not support effort. Omitted means inherit the session setting. |
 | `guardrails` | No | bool | When set, overrides the guardrails switch for this agent. `true` enforces the default posture; `false` ignores every gate. Omitted means inherit `settings.guardrails`. |
 | `ask_permission` | No | bool | When set, overrides the permission-ask gate for this agent. `true` asks before mutating; `false` treats every permission decision as allow. Omitted means inherit `settings.ask_permission`. |
+| `id` | No | string | The profile's own lowercase UUID. A saved profile gets one when it has none (and keeps the id of the file it replaces), `belai rc` stamps older profiles when it starts, and a built-in's id is a version 5 UUID of its name so every host agrees on it. The id follows the profile through a library backup and install. |
+| `display_name` | No | string | The name the console shows, one clean line of at most 64 characters. Unique on the host after Unicode normalisation, trimming, whitespace folding and lower-casing; a second profile with the same folded name is refused on save. |
+| `palette` | No | string[] | Exactly four lowercase `#rrggbb` colours: primary, secondary and the two shades derived for the circle the console draws around the agent. |
+| `avatar_id` | No | string | The UUID of the generated avatar the console shows for this agent. |
+| `personality` | No | object | Optional style guidance: `report_style` (one line, 280 characters), `focus` (up to 8 lines of 80) and `vocabulary` (up to 20 lines of 32). It is appended to the worker's persona as style hints that rank below the task and never change what the agent may do. |
+
+`id`, `display_name`, `palette` and `avatar_id` only present the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
 
 ### Validation rules
 
@@ -63,6 +70,7 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 - `monitor_condition` is required when `mode` is `monitor`; ignored otherwise.
 - `effort` must be one of `low`, `medium`, `high`, `none` when set.
 - `provider` must be a built-in provider name or a valid custom-provider name when set; profiles may *name* providers but never define them.
+- `id` and `avatar_id` must be lowercase UUIDs, `palette` empty or four lowercase `#rrggbb` values, and `display_name` and every `personality` line one clean line within its cap with no delimiter markup, control or bidirectional characters. These are refused, never repaired.
 - A profile that sets `guardrails: false`, `autonomy: autonomous`, a looping mode (`loop`, `scheduled`, `monitor`), and omits `max_iterations` is rejected. Unattended, unbounded, and unguarded is three relaxations stacked, which is too many for a single definition.
 
 ## Background agent lifecycle

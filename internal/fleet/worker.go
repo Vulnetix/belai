@@ -152,8 +152,10 @@ type Worker struct {
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
 // changes under it, so an edit takes effect only on a deliberate restart.
+// Presentation (id, display name, palette, avatar) is left out: stamping an id
+// or recolouring an agent must not stop a worker that is running.
 func ProfileHash(p agentprofile.AgentProfile) string {
-	data, _ := json.Marshal(p)
+	data, _ := json.Marshal(p.Behavioural())
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:8])
 }
@@ -1073,7 +1075,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		settings.Resilience = &res
 	}
 	askOff := p.Autonomy == agentprofile.AutonomyAutonomous
-	persona := strings.TrimSpace(strings.TrimSpace(p.Identity) + "\n\n" + strings.TrimSpace(p.SystemPrompt))
+	persona := p.Persona()
 	if t.Memory != "" {
 		persona += "\n\nLessons from your earlier items are attached; use what applies."
 	}
