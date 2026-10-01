@@ -161,10 +161,11 @@ func (e Env) oscSupport() oscFlavour {
 	return oscNone
 }
 
-// Resolve picks the concrete backend for name. auto prefers an OSC sequence
+// Resolve picks the concrete backend for name. An empty or unknown name is
+// auto. auto prefers an OSC sequence
 // the terminal is known to show, then the platform notifier, then the bell.
 func (e Env) Resolve(name string) string {
-	if name != "" && name != BackendAuto {
+	if ValidBackend(name) && name != BackendAuto {
 		return name
 	}
 	if e.oscSupport() != oscNone {
@@ -191,7 +192,7 @@ func (e Env) ResolveDetached(name string) string {
 	if b != BackendOSC && b != BackendBell {
 		return b
 	}
-	if name != "" && name != BackendAuto {
+	if ValidBackend(name) && name != BackendAuto {
 		return ""
 	}
 	switch e.GOOS {

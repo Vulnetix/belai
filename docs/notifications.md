@@ -43,6 +43,12 @@ service, a chat webhook) without Belai knowing about it.
 | `osascript` | macOS `display notification`, fixed argv |
 | `auto` | `osc` when the terminal is recognised, else `notify-send` or `osascript` when installed, else `bell` |
 
+`auto` recognises a terminal from its environment: `KITTY_WINDOW_ID`,
+`TERM_PROGRAM=WezTerm`, a `TERM` starting `foot` or `rxvt`, or `KONSOLE_VERSION`
+select OSC 777; `TERM_PROGRAM=iTerm.app` or `ghostty`, `WT_SESSION` or
+`ConEmuPID` select OSC 9. `TMUX` being set wraps the sequence for tmux. On Linux
+and the BSDs the platform notifier is `notify-send`; on macOS it is `osascript`.
+
 Escape sequences are written straight to `/dev/tty`, not through the screen
 renderer, which strips OSC sequences from everything it draws.
 
@@ -73,7 +79,7 @@ five-second timeout, off the UI goroutine.
 | --- | --- | --- |
 | `enabled` | `false` | dropped |
 | `backend` | `auto` (an unknown value also means `auto`) | dropped |
-| `events` | as above; add `turn_done` or `agent_done` to opt in | dropped |
+| `events` | as above; add `turn_done` or `agent_done` to opt in. A [fleet](fleet.md) worker also notifies `worker_blocked` and `worker_failed` when `events` is left out | dropped |
 | `min_turn_seconds` | `30` | dropped |
 
 Notifications are a per-user preference, so the whole key is ignored in a
@@ -88,12 +94,17 @@ project's `.vulnetix/settings.json`. Set it in your global `settings.json`.
 
 ## Edge cases
 
-- `events` left out means the default set. `events: []` means no desktop
+- `events` left out means the default set: `permission`, `clarify`, `plan_ready`,
+  `goal_done` and `goal_stalled`. `events: []` means no desktop
   notifications at all; the `notification` hook still fires.
 - An unknown name in `events` is ignored. An unknown `backend` means `auto`.
 - `min_turn_seconds` of 0 or less means 30.
 - A goal or an approved plan notifies `goal_done` or `goal_stalled` when its
   report starts, never `turn_done` as well.
 - A background agent notifies once, when its loop ends.
+- A detached fleet worker has no terminal, so `osc` and `bell` would only write
+  escape codes into its log. It uses `notify-send` or `osascript` when one is
+  installed and otherwise sends nothing; an explicit `osc` or `bell` backend
+  sends nothing for it.
 - A backend that fails (no `notify-send`, no terminal) is dropped silently:
   a notification never interrupts the turn.

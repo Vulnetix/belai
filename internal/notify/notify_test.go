@@ -120,3 +120,23 @@ func TestEveryEventHasAMessage(t *testing.T) {
 		t.Fatal("unknown name accepted")
 	}
 }
+
+// An unknown backend name is auto, for the terminal and for a detached worker.
+func TestUnknownBackendIsAuto(t *testing.T) {
+	e := env(map[string]string{"KITTY_WINDOW_ID": "1"}, "linux")
+	for _, name := range []string{"", "auto", "carrier-pigeon"} {
+		if got := e.Resolve(name); got != BackendOSC {
+			t.Errorf("Resolve(%q) = %q, want osc on kitty", name, got)
+		}
+	}
+	if got := e.ResolveDetached("carrier-pigeon"); got != "" {
+		t.Errorf("ResolveDetached(unknown) = %q, want nothing with no platform notifier", got)
+	}
+	if got := e.ResolveDetached(BackendOSC); got != "" {
+		t.Errorf("ResolveDetached(osc) = %q, want nothing", got)
+	}
+	withNotifier := env(map[string]string{"KITTY_WINDOW_ID": "1"}, "linux", "notify-send")
+	if got := withNotifier.ResolveDetached("carrier-pigeon"); got != BackendNotifySend {
+		t.Errorf("ResolveDetached(unknown) = %q, want notify-send when installed", got)
+	}
+}
