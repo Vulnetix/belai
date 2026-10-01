@@ -246,7 +246,7 @@ func ingestFile(ctx context.Context, ix *Index, st *Stats, keep map[string]bool,
 		if structuredArtifact(*f.Artifact) {
 			return syncRecords(ctx, ix, st, keep, addr, *f.Artifact, scannerGate, capTokens)
 		}
-		return syncFile(ctx, ix, st, keep, addr, f.Abs, scannerGate, capTokens)
+		return syncFile(ctx, ix, st, keep, addr, f.Abs, docMeta{Artifact: string(f.Artifact.Kind), Tool: f.Artifact.Tool}, scannerGate, capTokens)
 	}
-	return syncFile(ctx, ix, st, keep, addr, f.Abs, gate, capTokens)
+	return syncFile(ctx, ix, st, keep, addr, f.Abs, docMeta{}, gate, capTokens)
 }

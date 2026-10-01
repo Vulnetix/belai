@@ -130,3 +130,20 @@ func TestDeliveryCutoffsDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("resolved %+v", r)
 	}
 }
+
+func TestTopicAtDefaultAndFloor(t *testing.T) {
+	if got := DefaultJevThresholds().TopicAt; got != 0.70 {
+		t.Fatalf("topic_at default %v", got)
+	}
+	low := 0.49
+	if err := (&JevThresholdSettings{TopicAt: &low}).Validate(); err == nil || !strings.Contains(err.Error(), "topic_at") {
+		t.Fatalf("a topic label needs a clear majority, got %v", err)
+	}
+	ok := 0.5
+	if err := (&JevThresholdSettings{TopicAt: &ok}).Validate(); err != nil {
+		t.Fatalf("0.5 is the floor: %v", err)
+	}
+	if !ValidJevJob("knowledge_topics") {
+		t.Fatal("knowledge_topics is not a job")
+	}
+}

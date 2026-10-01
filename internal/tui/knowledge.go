@@ -50,6 +50,7 @@ func (a *App) syncKnowledge() {
 		kbgate.New(cfg, client, cache, live, tools.KindRead),
 		kbgate.New(cfg, client, cache, live, tools.KindRemote),
 	)
+	a.knowStore.SetTagger(kbgate.NewTagger(cfg, a.settings))
 	var prof *knowledge.Profile
 	if p, ok := a.engagedProfile(); ok && p.ID != "" {
 		if paths := p.KnowledgePaths(); len(paths) > 0 {

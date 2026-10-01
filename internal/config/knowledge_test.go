@@ -65,3 +65,35 @@ func TestKnowledgeGlobalOutOfRangeFailsResolve(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestKnowledgeTopicsDefaultAndOverride(t *testing.T) {
+	c, d := Settings{}.KnowledgeTopics()
+	if c != DefaultKnowledgeTopicChunks || d != DefaultKnowledgeTopicDocs {
+		t.Fatalf("defaults = %d %d", c, d)
+	}
+	c, d = Settings{Knowledge: &KnowledgeSettings{TopicChunks: ip(30), TopicBudgetDocs: ip(0)}}.KnowledgeTopics()
+	if c != 30 || d != 0 {
+		t.Fatalf("overrides = %d %d (0 documents is a valid, off, budget)", c, d)
+	}
+	var k KnowledgeSettings
+	k.merge(&KnowledgeSettings{TopicChunks: ip(5), TopicBudgetDocs: ip(7)})
+	if *k.TopicChunks != 5 || *k.TopicBudgetDocs != 7 {
+		t.Fatalf("merge dropped a topic key: %+v", k)
+	}
+}
+
+func TestValidateKnowledgeTopicBoundsNameTheKey(t *testing.T) {
+	for key, s := range map[string]Settings{
+		"knowledge.topic_chunks":      {Knowledge: &KnowledgeSettings{TopicChunks: ip(0)}},
+		"knowledge.topic_chunks ":     {Knowledge: &KnowledgeSettings{TopicChunks: ip(MaxKnowledgeTopicChunks + 1)}},
+		"knowledge.topic_budget_docs": {Knowledge: &KnowledgeSettings{TopicBudgetDocs: ip(MaxKnowledgeTopicDocs + 1)}},
+	} {
+		err := ValidateKnowledge(s)
+		if err == nil || !strings.Contains(err.Error(), strings.TrimSpace(key)) {
+			t.Errorf("%s: err = %v", key, err)
+		}
+	}
+	if err := ValidateKnowledge(Settings{Knowledge: &KnowledgeSettings{TopicChunks: ip(MinKnowledgeTopicChunks), TopicBudgetDocs: ip(0)}}); err != nil {
+		t.Fatalf("bounds are inclusive: %v", err)
+	}
+}

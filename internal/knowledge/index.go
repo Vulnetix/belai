@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/knowledge/tags"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
@@ -36,6 +37,15 @@ type Doc struct {
 	Dropped int
 	// Truncated is true when the cap stopped the document short.
 	Truncated bool
+	// Tags is the document's type, labels and topics (package tags). A
+	// document indexed before tags existed has the zero value and is tagged on
+	// the next sync.
+	Tags tags.Result
+	// Artifact and Tool name the scanner artefact a .vulnetix file is, and
+	// Records says each chunk is one scanner record; they feed the tagger.
+	Artifact string
+	Tool     string
+	Records  bool
 }
 
 // storedChunk is one admitted chunk. Tf is its raw term-frequency vector; the
@@ -46,6 +56,10 @@ type storedChunk struct {
 	Text       string
 	Tokens     int32
 	Tf         []feat
+	// Label marks the one harness-composed chunk that carries the document's
+	// labels so a search by label finds it. It is not part of the document's
+	// text and holds nothing the tag tables do not name.
+	Label bool
 }
 
 type posting struct {
@@ -60,6 +74,7 @@ type Index struct {
 	docs   []Doc
 	chunks []storedChunk
 	tokens int
+	tagger tags.Tagger
 
 	// derived by finalize
 	dirty bool
@@ -113,6 +128,10 @@ type Input struct {
 	// re-gated.
 	SHA    string
 	Chunks []RawChunk
+	// Artifact, Tool and Records describe a scanner artefact for the tagger.
+	Artifact string
+	Tool     string
+	Records  bool
 }
 
 // Result reports what Ingest did with one document.
@@ -144,6 +163,7 @@ func (ix *Index) Ingest(ctx context.Context, in Input, gate Gate, capTokens int)
 		if d.SHA != "" && d.SHA == in.SHA {
 			ix.docs[old].Source, ix.docs[old].Size, ix.docs[old].ModNano = in.Source, in.Size, in.ModTime.UnixNano()
 			ix.mu.Unlock()
+			ix.refreshTags(ctx, in.Address)
 			return Result{Admitted: d.Chunks, Dropped: d.Dropped, Reused: true, Truncated: d.Truncated}, nil
 		}
 	}
@@ -194,6 +214,18 @@ func (ix *Index) Ingest(ctx context.Context, in Input, gate Gate, capTokens int)
 	if len(kept) == 0 && res.Truncated {
 		return Result{Skipped: true, Truncated: true}, ErrCapReached
 	}
+	// Tag the admitted text. The tagger may ask a decision backend, so it runs
+	// before the commit lock is taken.
+	doc := Doc{
+		Address: in.Address, Source: in.Source, Size: in.Size, ModNano: in.ModTime.UnixNano(), SHA: in.SHA,
+		Chunks: len(kept), Tokens: used, Dropped: dropped, Truncated: res.Truncated,
+		Artifact: in.Artifact, Tool: in.Tool, Records: in.Records,
+	}
+	texts := make([]string, len(kept))
+	for i, c := range kept {
+		texts[i] = c.Text
+	}
+	doc.Tags = ix.tagging().Tag(ctx, tagInput(doc, texts))
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	ix.removeLocked(in.Address)
@@ -201,11 +233,9 @@ func (ix *Index) Ingest(ctx context.Context, in Input, gate Gate, capTokens int)
 	for i := range kept {
 		kept[i].Doc = di
 	}
-	ix.docs = append(ix.docs, Doc{
-		Address: in.Address, Source: in.Source, Size: in.Size, ModNano: in.ModTime.UnixNano(), SHA: in.SHA,
-		Chunks: len(kept), Tokens: used, Dropped: dropped, Truncated: res.Truncated,
-	})
+	ix.docs = append(ix.docs, doc)
 	ix.chunks = append(ix.chunks, kept...)
+	ix.chunks = append(ix.chunks, labelChunk(doc.Tags, relOf(in.Address), di))
 	ix.tokens += used
 	ix.dirty = true
 	res.Admitted, res.Dropped = len(kept), dropped
@@ -355,6 +385,10 @@ type Hit struct {
 	Text       string
 	Tokens     int
 	Score      float64
+	// Label is true for the chunk that carries the document's labels.
+	Label bool
+	// Labels are the document's searchable labels (type, language, topics).
+	Labels []string
 }
 
 // MinScore is the cosine similarity below which a chunk is not a hit. Hashed
@@ -408,6 +442,7 @@ func (ix *Index) search(query string, limit int) []Hit {
 		out = append(out, Hit{
 			Index: ix.name, Address: d.Address, Source: d.Source,
 			Start: int(c.Start), End: int(c.End), Text: c.Text, Tokens: int(c.Tokens), Score: float64(a.s),
+			Label: c.Label, Labels: d.Tags.All(),
 		})
 	}
 	return out

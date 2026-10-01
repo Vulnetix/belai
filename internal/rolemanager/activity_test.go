@@ -46,6 +46,7 @@ var allEvents = []Event{
 	EventExploreLocate,
 	EventVoiceCommand,
 	EventRequestScale,
+	EventKnowledgeTopics,
 	EventGoalJudge,
 	EventGateDraft,
 	EventDeliveryReport,

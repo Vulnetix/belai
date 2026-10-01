@@ -213,7 +213,7 @@ func insideRoot(root, p string) bool {
 }
 
 // syncFile ingests one plain-text file. stop is true once the cap is reached.
-func syncFile(ctx context.Context, ix *Index, st *Stats, keep map[string]bool, addr, abs string, gate Gate, capTokens int) (stop bool, err error) {
+func syncFile(ctx context.Context, ix *Index, st *Stats, keep map[string]bool, addr, abs string, meta docMeta, gate Gate, capTokens int) (stop bool, err error) {
 	if fi, serr := os.Lstat(abs); serr == nil && fi.Mode().IsRegular() && ix.Unchanged(addr, fi.Size(), fi.ModTime()) {
 		keep[addr] = true
 		st.Docs++
@@ -226,12 +226,15 @@ func syncFile(ctx context.Context, ix *Index, st *Stats, keep map[string]bool, a
 		return false, nil
 	}
 	sha := hashBytes(data)
-	in := Input{Address: addr, Source: abs, Size: info.Size(), ModTime: info.ModTime(), SHA: sha}
+	in := Input{Address: addr, Source: abs, Size: info.Size(), ModTime: info.ModTime(), SHA: sha, Artifact: meta.Artifact, Tool: meta.Tool}
 	if !ix.Current(addr, sha) {
 		in.Chunks = SplitText(string(data))
 	}
 	return ingest(ctx, ix, st, keep, in, gate, capTokens)
 }
+
+// docMeta is what a scanner artefact tells the tagger about a text file.
+type docMeta struct{ Artifact, Tool string }
 
 // ingest runs one document through Ingest and folds the outcome into st. A
 // gate error fails that document alone (it is not indexed), a cap stops the
@@ -336,7 +339,7 @@ func syncRecords(ctx context.Context, ix *Index, st *Stats, keep map[string]bool
 		return false, nil
 	}
 	sha := hashBytes(data)
-	in := Input{Address: addr, Source: a.Path, Size: info.Size(), ModTime: info.ModTime(), SHA: sha}
+	in := Input{Address: addr, Source: a.Path, Size: info.Size(), ModTime: info.ModTime(), SHA: sha, Artifact: string(a.Kind), Tool: a.Tool, Records: true}
 	if !ix.Current(addr, sha) {
 		recs, err := scanartifacts.Records(ctx, a.Kind, a.Path, maxArtifactBytes)
 		if err != nil && len(recs) == 0 {

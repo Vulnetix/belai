@@ -72,6 +72,13 @@ const JevGateAlignment JevJob = "gate_alignment"
 // marks a clause covered.
 const JevRequestCoverage JevJob = "request_coverage"
 
+// JevKnowledgeTopics scores a document's sampled chunks against the knowledge
+// topic vocabulary in one decision call, so the index labels it by what it is
+// about. It only tags: a label is a search aid and never approves, permits or
+// admits anything. Unlike the other jobs it sends document text to the
+// backend, bounded to the sampled chunks of an admitted document.
+const JevKnowledgeTopics JevJob = "knowledge_topics"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -89,6 +96,7 @@ var JevJobs = []JevJob{
 	JevHandoffClarity,
 	JevGateAlignment,
 	JevRequestCoverage,
+	JevKnowledgeTopics,
 }
 
 // LocatePreview values for jev.locate_previews.

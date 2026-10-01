@@ -19,7 +19,9 @@ without approving anything. This page is the reference for the relevance jobs.
 - **Its input is harness facts and cleaned text.** Every string sent to a
   decision backend is a `DecisionText`, built only by `sanitize.ForDecision`
   ([sanitisation](sanitization.md#decision-backends-fordecision)). File
-  contents, attachment bytes and tool output are not sent.
+  contents, attachment bytes and tool output are not sent, with one exception:
+  [knowledge topics](#knowledge-topics) sends a bounded sample of an indexed
+  document's admitted text.
 - **It needs a backend.** With no decision backend configured (the local
   decision model, the hosted `typesafe` provider, a self-hosted Jev provider, or OpenRouter's hosted Jev) no job
   runs and none appears in `/settings`.
@@ -70,6 +72,7 @@ prompt runs with it.
 | `handoff_clarity` | Sends a delivery handoff to review when it rates as unclear, instead of straight to backlog | Shipped |
 | `gate_alignment` | Flags a runnable gate whose suite and test may not show its stated outcome, and sends its card to review | Shipped |
 | `request_coverage` | Files a gap card for a request clause whose covering tasks do not seem to do it | Shipped |
+| `knowledge_topics` | Labels each indexed document with the topics it is about, by scoring a sample of its text against a vocabulary of about three hundred in one request | Shipped |
 
 ## Scores and thresholds
 
@@ -87,6 +90,7 @@ with the default shown; a job reads the value from your settings:
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
 | | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
 | | `goal_complete_at`, `goal_rival_max`, `goal_not_started_at` | 0.90, 0.20, 0.85 | A goal pass is clearly complete at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly not started at `goal_not_started_at` with the same limit; `goal_complete_at` cannot be set below 0.5 and `goal_rival_max` cannot exceed 0.5 |
+| | `topic_at` | 0.70 | The knowledge index labels a document with a topic the backend scores at or above this; it cannot be set below 0.5 |
 | | `clear_at`, `align_at`, `cover_at` | 0.50, 0.40, 0.40 | A delivery handoff rated below `clear_at` goes to review, a gate below `align_at` is flagged, and a clause whose tasks all rate below `cover_at` gets a gap card. They only narrow, so raising one means more review |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
 | `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
@@ -622,3 +626,43 @@ other case, a clause a handoff claims to cover but does not do.
 
 Recorded as a `request_coverage` event: `sound`, `suspect` or `unknown`, and
 counts.
+
+### Knowledge topics
+
+The [knowledge index](knowledge.md#labels-and-topics) labels every document with
+the topics it is about. A pattern detector does this on its own and needs no
+model. With a decision backend this job refines it, so a topic the patterns
+missed is found and one they over-read is dropped.
+
+- **What the backend sees. This is the one job that sends document text.** A
+  sample of the document's chunks, as `DecisionText`, and the labels of the
+  topics asked about. The text has already been sanitised and admitted by the
+  security classifier at ingestion, and a flagged chunk is never stored, so it is
+  never sent. A document of at most `knowledge.topic_chunks` chunks (default 12)
+  is sent whole when it fits the request. A longer one is sampled: the first
+  chunk, the last and evenly spaced ones between, as many as the request holds.
+  Scanner artifacts are labelled from their kind and tool and are never sent.
+- **One request.** The question carries as many topics as the backend takes in a
+  request (128 for OpenRouter, TypeSafe and a self-hosted server, 24 for the local
+  model), the ones the pattern detector found first and then a spread across the
+  vocabulary's domains. The document text gets the rest of the request's byte
+  budget; if the topics leave too little, the lowest ranked are dropped first. A
+  failed request is not retried or split. Each topic is rated against one
+  criterion: the topic is a main subject of the document, not a passing mention.
+- **The decision.** A topic the backend was asked about and answered keeps the
+  label when it scores at or above `topic_at` (0.70), and loses it below that,
+  even if the patterns found it. A topic it was not asked about, or did not
+  answer, keeps the pattern detector's verdict. The label is a search aid. It
+  does not admit, permit or approve anything.
+- **Bounds.** At most `knowledge.topic_budget_docs` documents (default 40) are
+  sent per refresh, so a first index of a large corpus is filled over several
+  refreshes. After three failed requests in a refresh the backend is left alone
+  until the next one. With a budget of 0, no backend or the switch off, nothing is
+  sent and the pattern detector labels alone. Both `knowledge` keys and
+  `topic_at` are read from your own settings layers only.
+- **Edge cases.** A document the backend did not answer keeps its pattern topics
+  and is tried again at a later refresh while there is budget. The call stays out
+  of the score cache, since a document is not asked about twice.
+
+Recorded as a `knowledge_topics` event: `scored` or `unknown`, and counts of
+topics asked and labelled, never the document or a topic.

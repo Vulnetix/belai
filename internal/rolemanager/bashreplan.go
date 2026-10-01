@@ -362,6 +362,28 @@ func RecordRequestScale(verdict string, scorePct int, model string, took time.Du
 	recordTimed(EventRequestScale, verdict, "", fmt.Sprintf("score=%d", scorePct), 0, model, took)
 }
 
+// RecordKnowledgeTopics emits the outcome of asking the decision backend which
+// topics a document is about: verdict "scored" (the backend answered) or
+// "unknown" (it did not, so the pattern detector's topics stand). Only counts
+// are recorded: how many topics were asked and how many were labelled, never
+// the document, its path or a topic.
+func RecordKnowledgeTopics(verdict string, asked, labelled int, model string, took time.Duration) {
+	recordTimed(EventKnowledgeTopics, verdict, "", fmt.Sprintf("asked=%d labelled=%d", asked, labelled), 0, model, took)
+}
+
+func knowledgeTopicsDescription(a Activity) Description {
+	d := Description{
+		Summary: "Asked which topics an indexed document is about",
+		Outcome: "no answer, so the pattern detector's topics stand",
+		Tone:    ToneNeutral,
+		Levels:  LevelAll,
+	}
+	if a.Verdict == "scored" {
+		d.Outcome = "labelled the document with the topics it scored highest"
+	}
+	return d
+}
+
 func requestScaleDescription(a Activity) Description {
 	d := Description{
 		Summary: "Sized the request to decide how much preparation it needs",

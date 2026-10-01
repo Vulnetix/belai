@@ -46,6 +46,9 @@ type JevThresholds struct {
 	// flagged, and a request clause whose covering tasks all rate below CoverAt
 	// gets a gap card. Each only narrows, so a higher value means more review.
 	ClearAt, AlignAt, CoverAt float64
+	// TopicAt is the score a topic needs for the knowledge index to label a
+	// document with it. A label only helps a search find the document.
+	TopicAt float64
 }
 
 // DefaultJevThresholds are the values used when nothing is configured.
@@ -58,6 +61,7 @@ func DefaultJevThresholds() JevThresholds {
 		OptionHit: 0.50, OptionMargin: 0.10, OptionLead: 0.25,
 		ModeConfident: 0.80, ModeMargin: 0.25, ModeHeadless: 0.50,
 		ClearAt: 0.50, AlignAt: 0.40, CoverAt: 0.40,
+		TopicAt: 0.70,
 	}
 }
 
@@ -88,6 +92,7 @@ type JevThresholdSettings struct {
 	ClearAt          *float64 `json:"clear_at,omitempty"`
 	AlignAt          *float64 `json:"align_at,omitempty"`
 	CoverAt          *float64 `json:"cover_at,omitempty"`
+	TopicAt          *float64 `json:"topic_at,omitempty"`
 }
 
 // thresholdSlot pairs a setting key with its slot in the settings form and in
@@ -111,6 +116,7 @@ func (t *JevThresholdSettings) slots(r *JevThresholds) []thresholdSlot {
 		{"option_lead", &t.OptionLead, &r.OptionLead}, {"mode_confident", &t.ModeConfident, &r.ModeConfident},
 		{"mode_margin", &t.ModeMargin, &r.ModeMargin}, {"mode_headless", &t.ModeHeadless, &r.ModeHeadless},
 		{"clear_at", &t.ClearAt, &r.ClearAt}, {"align_at", &t.AlignAt, &r.AlignAt}, {"cover_at", &t.CoverAt, &r.CoverAt},
+		{"topic_at", &t.TopicAt, &r.TopicAt},
 	}
 }
 
@@ -187,6 +193,8 @@ func (t *JevThresholdSettings) validate() error {
 		return fmt.Errorf("jev.thresholds.goal_not_started_at %v must be at least 0.5", r.GoalNotStartedAt)
 	case r.GoalRivalMax > 0.5:
 		return fmt.Errorf("jev.thresholds.goal_rival_max %v must be at most 0.5: a rival verdict above it contradicts a clear call", r.GoalRivalMax)
+	case r.TopicAt < 0.5:
+		return fmt.Errorf("jev.thresholds.topic_at %v must be at least 0.5: a topic label is a claim about a document, so it needs a clear majority", r.TopicAt)
 	case r.LeadAt > r.HitAt:
 		return fmt.Errorf("jev.thresholds: lead_at %v must not exceed hit_at %v", r.LeadAt, r.HitAt)
 	}

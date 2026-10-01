@@ -145,6 +145,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     hides it from search and listing. The registry's file tools carry the hub, so
     a profile's tools allowlist decides which of them see it. A handoff-scoped
     subagent and an Explore subagent build their own registry and get none.
+  - **Labels and topics are harness facts.** Every document is tagged at
+    ingestion (`internal/knowledge/tags`). Labels come from the path, size and
+    structure through fixed tables, topics from a fixed vocabulary matched by a
+    deterministic detector (no model, no network, at most 64 KiB read), refined
+    only by the `knowledge_topics` job. The per-document label line indexed
+    beside the passages is composed by the harness from those tables and the
+    vocabulary, holds none of the document's text, and is sanitise-only for that
+    reason. Never add document text to it, and never let a model name a label.
   - **The index is facts the user's host owns.** One file per profile and per
     project in the state directory (hidden from the sandbox), mode 0600, with a
     magic, a version and a SHA-256 trailer; a file that fails the check is used
@@ -300,7 +308,18 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   [docs/jev-jobs.md](docs/jev-jobs.md) work inside the surface the mode already
   allows; permissions, hooks, the ask gate, the classifier and the sandbox still
   apply to what they produce. Their input is harness facts and `DecisionText`
-  only, never file contents, attachment bytes or tool output. An unavailable
+  only, never file contents, attachment bytes or tool output, with one named
+  exception: `knowledge_topics` (`internal/knowledge/kbgate/tagger.go`) sends a
+  bounded sample of an indexed document's chunks, as `DecisionText`, to the
+  decision backend the user set up. Those chunks were sanitised and admitted by
+  the security classifier at ingestion, a flagged chunk is never stored so never
+  sent, and a scanner artifact is never sent. The sample is at most
+  `knowledge.topic_chunks` chunks and what one request holds
+  (`jev.TopicLimits`), the call is one request, never retried or split, and at
+  most `knowledge.topic_budget_docs` documents go per refresh. It only tags: a
+  topic label helps a search find a document and never admits, permits or
+  approves anything. Its failure is the pattern detector's result. Do not add a
+  second job that sends file text. An unavailable
   backend, an unanswered item or an answer outside 0 to 1 is *unknown*, and the
   job falls back to the ordinary behaviour, never to a chat model. Each job is a
   `jev.jobs.<job>` switch that defaults on, runs only with a decision backend

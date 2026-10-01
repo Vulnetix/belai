@@ -176,7 +176,9 @@ indexed first.
   "knowledge": {
     "max_index_tokens": 200000,
     "max_project_tokens": 200000,
-    "max_result_tokens": 3000
+    "max_result_tokens": 3000,
+    "topic_chunks": 12,
+    "topic_budget_docs": 40
   }
 }
 ```
@@ -190,13 +192,16 @@ what you are charged.
 | `knowledge.max_index_tokens` | `200000`; the most one agent profile keeps indexed | 1000 to 5000000 | dropped |
 | `knowledge.max_project_tokens` | `200000`; the most the project keeps indexed (`.vulnetix` output and `@` files together) | 1000 to 5000000 | dropped |
 | `knowledge.max_result_tokens` | `3000`; the most one search returns, across every index | 200 to 50000 | dropped |
+| `knowledge.topic_chunks` | `12`; the most chunks of one document sent to a decision backend to find its topics (a longer document is sampled) | 1 to 64 | dropped |
+| `knowledge.topic_budget_docs` | `40`; the most documents one refresh sends to a decision backend for topics; 0 sends none | 0 to 1000 | dropped |
 
 A value outside its range fails settings resolution with a message naming the
 key. A repository cannot raise a limit, so the whole `knowledge` key is ignored
 in a project's `.vulnetix/settings.json`. Set it in your global `settings.json`
-or in `/settings`, which has three rows in the *Knowledge* group, always saved
-to your global file: `knowledge per profile`, `knowledge for project` and
-`knowledge per search`. `x` returns a row to its default.
+or in `/settings`, which has five rows in the *Knowledge* group, always saved
+to your global file: `knowledge per profile`, `knowledge for project`,
+`knowledge per search`, `knowledge topic chunks` and `knowledge topic documents`.
+`x` returns a row to its default.
 
 When a corpus is larger than its limit, documents are taken in order and the
 rest are left out. `belai agent knowledge` says so, and lowering a limit trims
@@ -209,12 +214,57 @@ belai agent knowledge [-index] [-json] [NAME]
 ```
 
 Prints each index with its size against its limit and one row per document:
-address, passages, tokens, and how many were dropped at ingestion. It prints
-counts and addresses, never passage text. With a profile `NAME` it shows that
+address, passages, tokens, how many were dropped at ingestion, its type and its
+topic ids. With `-json` each document also has its language and who decided its
+topics (`patterns` or `jev`). It prints counts, addresses and tag ids, never
+passage text. With a profile `NAME` it shows that
 profile's documents as well as the project's. With `-index` it first brings the
 indexes up to date, which sends new text through the security classifier (see
 below); `-trust-dir`, `-provider` and `-model` apply to that step. A profile
 needs an id, which `belai agent import -force` gives it.
+
+## Labels and topics
+
+Every document is tagged when it is indexed, so a search can find it by what it is and what it is about.
+
+- **Labels** come from the path, the size and the structure through fixed
+  tables, never from free text. They are written `key:value`: `type:` (source,
+  test, doc, config, data, ci, iac, dependency, scanner, build or script),
+  `lang:`, `ext:`, `dir:`, `size:`, `kind:` (readme, changelog, license, adr,
+  runbook, lockfile, manifest, or a scanner artifact's kind), `tool:`, `eco:`,
+  `shape:records`, `has:` (tests, frontmatter, code-fences, tables, todo, links)
+  and `heading:` words from a document's first headings.
+- **Topics** come from a vocabulary of about three hundred in sixteen domains:
+  security, languages, web and APIs, data, cloud, delivery, quality, operations,
+  AI, frontend, mobile and systems, docs, compliance, product, code and the agent
+  platform. A document keeps at most 24, written `topic:<id>` (for example
+  `topic:jwt`, `topic:kubernetes`, `topic:sbom`).
+
+The pattern detector always runs. It splits the text into words (and camelCase
+and snake_case names), matches each topic's word and phrase table in one pass,
+and tries a few anchored regular expressions for shapes such as `CVE-2024-1234`.
+It reads at most 64 KiB of a document, takes no model and no network, and a
+topic needs the evidence of three ordinary terms, or a strong one and an
+ordinary one. With a decision backend configured, the `knowledge_topics`
+[Jev job](jev-jobs.md#knowledge-topics) refines the result in one request per
+document. That job sends a bounded sample of the document's admitted text to the
+backend, an exception to the rule that Jev jobs see harness facts only; the
+sample size is `knowledge.topic_chunks`, and `knowledge.topic_budget_docs`
+bounds how many documents one refresh sends. Without a backend, or with the job
+off, nothing is sent and the patterns decide.
+
+Tags are stored with the document and refreshed with it. An unchanged document is
+not tagged again. One tagged under an older format, or indexed before tags
+existed, is tagged again from the passages the index already holds, without
+reading the file. A document the backend has not scored is offered to it again at
+a later refresh while the budget lasts.
+
+Each document also has one line that holds its labels, the names of its topics and
+the words of its path, indexed beside its passages. A `Grep` or `Glob` for
+`authentication` or `type test` finds it like any passage, and it shows as the
+row at line 0. The line is composed by the harness from the tag tables and the
+vocabulary, holds nothing from the document's own text, and is not counted in
+its passages.
 
 ## How it works
 
@@ -236,6 +286,9 @@ needs an id, which `belai agent import -force` gives it.
   is not used and not overwritten, and the session starts with an empty index
   and a warning. The state directory is hidden from every sandboxed command, so
   a model reaches the text only through the three file tools.
+- **Tags.** A document's type, labels and topics are stored in the same index
+  file, so no format version changes: an older Belai ignores them, and a newer
+  one tags a document it finds without them at the next refresh.
 - **Updates.** A document is read again only when its size or modification time
   changes, and its passages are classified again only when its SHA-256 changes.
 
@@ -248,6 +301,11 @@ needs an id, which `belai agent import -force` gives it.
   until a flagged passage stands alone. A flagged passage is never stored, and
   a classifier that cannot answer stores nothing for that document. A search
   afterwards looks up text that was already admitted, so it calls no model.
+- **Topic detection sends text, on purpose.** With a decision backend, a
+  bounded sample of a document's already admitted text is sent to it to find the
+  document's topics (see [Labels and topics](#labels-and-topics)). A flagged
+  passage was never stored, so it is never sent. A backend is the one you set up
+  yourself; with none, nothing is sent.
 - **Guardrails off** sends nothing to the classifier at ingestion either, as
   everywhere else. The text is still sanitised.
 - **`Read` stays classified.** Its result is a `Read` result, so the related
@@ -311,6 +369,19 @@ test files is not named here, so this table and the code move together.
 | K39 | A profile can never list the filesystem root, the home directory, `.git`, a credential store, a system directory or Belai's state, whoever wrote it | `TestBlockedAbsoluteRefusesCredentialStoresAndSystemPlaces`, `TestEnumerateProfileSkipsTheFloorAndSymlinks` |
 | K40 | A session that works in the project itself gets a copy of the profile's outside documents under `.vulnetix/knowledge/<label>/`, refreshed when the source changes, and the project index never indexes those copies | `TestRefreshCopiesOutsideDocumentsIntoTheProject` |
 | K41 | A copy never replaces a file the harness did not place (a tracked file, the worker's own), and never goes into `.git` | `TestCopyDocsNeverReplacesAFileItDidNotPlace` |
+| K42 | Every document is tagged at ingestion with labels from fixed tables; the label line is indexed beside its passages, holds nothing from the document, and is not counted as a passage | `TestIngestTagsEveryDocumentAndLabelsAreSearchable`, `TestLabelChunkHoldsOnlyHarnessText`, `TestDetectLabelsAGoTestFile`, `TestLabelKinds`, `TestLabelsAreCleanAndBounded`, `TestLabelTextHoldsOnlyVocabulary`, `TestResultAllIsSortedAndHasIgnoresCase` |
+| K43 | The vocabulary is about three hundred unique topics, each with patterns; the detector splits identifiers, uses path hints, reads at most 64 KiB and scores a topic as a confidence of at least 0.5 | `TestVocabularyIsWellFormed`, `TestMatchFindsTopicsFromWordsAndRegexes`, `TestMatchSplitsIdentifiers`, `TestMatchUsesPathHints`, `TestMatchBoundsItsWork`, `TestMatchEmptyDocument`, `TestScoresAreConfidences` |
+| K44 | Tags live with the document: an unchanged one is not tagged again, a changed one is, and one from an older format or from before tags existed is tagged again from its stored passages without reading the file | `TestUnchangedDocumentKeepsItsTagsWithoutTaggingAgain`, `TestChangedDocumentIsTaggedAgain`, `TestStaleTagsAreRedoneFromStoredChunks`, `TestDocumentIndexedBeforeTagsExistGetsTagged`, `TestTagsSurviveSaveAndLoad`, `TestFastTaggerRefreshesOnlyStaleVersions` |
+| K45 | A scanner artifact is labelled from its kind and tool and its text is never sent to a decision backend | `TestScannerArtefactTagsCarryTheKind`, `TestTaggerSendsNothingForScannerRecordsOrEmptyDocuments` |
+| K46 | With a decision backend the topics job asks in one request about as many topics as the backend takes (128, or 24 for the local model): those the detector found first, then a spread across the domains | `TestTaggerAsksOneCallAndTheBackendDecides`, `TestTaggerPutsDetectorFindsFirstInTheCall`, `TestCandidatesPutFoundTopicsFirstThenSpreadDomains`, `TestTopicLimitsFollowTheBackend`, `TestRateTopicsIsOneRequestForEveryTopic` |
+| K47 | The question always fits one request: a long document is sampled (first, last and evenly spaced passages, at most `knowledge.topic_chunks`), and topics are dropped before the document is starved | `TestSample`, `TestTaggerFitsTheRequestAndSamplesLongDocuments`, `TestTaggerDropsTopicsBeforeStarvingTheDocument`, `TestTopicBudgetArithmeticMatchesTheBatcher` |
+| K48 | A topic the backend answered is kept at or above `jev.thresholds.topic_at` and dropped below it; one it was not asked about, or did not answer, keeps the detector's verdict | `TestMergeLetsTheBackendDecideWhatItAnswered`, `TestMergeWithNoAnswersIsTheDetector` |
+| K49 | A failed request is neither retried nor split; after three failures in a refresh the backend is left alone until the next, `knowledge.topic_budget_docs` bounds the documents sent per refresh, and the call stays out of the score cache | `TestRateTopicsMakesNoSecondRequestAfterAFailure`, `TestTaggerFallsBackToPatternsWhenTheBackendFails`, `TestTaggerStopsAfterRepeatedFailuresUntilTheNextRefresh`, `TestTaggerBudgetIsPerRefresh`, `TestTaggerRefreshWantsAJevPassOnlyWhileItCanGiveOne`, `TestRateTopicsStaysOutOfTheScoreCache` |
+| K50 | With no decision backend, the job switched off or a budget of 0, the deterministic tagger runs and nothing is sent | `TestNewTaggerIsDeterministicWithoutABackendOrBudget` |
+| K51 | The two topic settings have defaults and ranges and name the key when out of range | `TestKnowledgeTopicsDefaultAndOverride`, `TestValidateKnowledgeTopicBoundsNameTheKey` |
+| K53 | A document's indexed text is its passages joined with the overlap removed, and a scanner record keeps its own line | `TestDocumentJoinsChunksWithoutTheOverlap`, `TestDocumentOfRecordsKeepsEachRecord` |
+| K58 | The topic cut-off cannot be set below 0.5, and the job is a switch like the others | `TestTopicAtDefaultAndFloor` |
+| K59 | `belai agent knowledge` reports each document's type, language, topic ids and who decided them (`patterns` or `jev`), as ids only | `TestAgentKnowledgeReportsTagsAsIdsOnly` |
 
 ## Edge cases
 
@@ -327,3 +398,4 @@ test files is not named here, so this table and the code move together.
 | E9 | A profile or file name has spaces, `..` or control characters | The address is normalised to plain text (`../a/./b\x01c.md` under `my profile:x` becomes `kb+my-profile-x/a/b_c.md`), and an ordinary path is never mistaken for an address | `TestAddressIsPlain` |
 | E10 | A profile is swapped mid-session | The store follows the engaged agent at the next turn | `TestSetFollowsASwappedProfile` |
 | E11 | A profile lists `.vulnetix` and the project index holds the same artifacts | A search and a glob show each passage and each document once | `TestAPassageInTheProfileAndTheProjectIsShownOnce` |
+| E12 | The decision backend answers nothing for a document | The pattern topics stand and the document is offered again at a later refresh while the budget lasts | `TestTaggerFallsBackToPatternsWhenTheBackendFails` |
