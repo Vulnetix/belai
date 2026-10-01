@@ -88,3 +88,17 @@ func TestProfilePageStatesTheKanbanBounds(t *testing.T) {
 		}
 	}
 }
+
+// TestKanbanPageStatesTheRoutingRangeAndPullInterval pins the priority range,
+// the label cap and the pull interval docs/kanban.md gives.
+func TestKanbanPageStatesTheRoutingRangeAndPullInterval(t *testing.T) {
+	requirePhrases(t, "docs/kanban.md",
+		fmt.Sprintf("**priority**, %d to %d", kanban.MinPriority, kanban.MaxPriority),
+		fmt.Sprintf("up to %s)", word(kanban.MaxLabels)),
+		"The TUI pulls the website's changes every 15 seconds",
+	)
+	// The default pull interval is 15 seconds when none is set.
+	if got := kanban.DefaultPullEvery; got != 15*time.Second {
+		t.Errorf("the default pull interval is %v, the page says 15 seconds", got)
+	}
+}
