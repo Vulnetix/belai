@@ -130,7 +130,7 @@ and percent escapes that decode to a control character at any depth up to four
 
 | Profile | Scheme | Host |
 | --- | --- | --- |
-| `Fetch` (model-supplied) | `http` or `https` | Must be public: internal names (`localhost`, `*.local`, `*.internal`, `*.localdomain`, `*.lan`, `*.home.arpa`, single-label names) and any address in a forbidden range are refused |
+| `Fetch` (model-supplied) | `http` or `https` | Must be public: internal names (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.intranet`, `*.localdomain`, `*.lan`, `*.home.arpa`, single-label names) and any address in a forbidden range are refused |
 | `Endpoint` (user-configured) | `https`, or `http` to a loopback host | Any host, private addresses included, because self-hosted services live there |
 
 `Forbidden` covers, after unmapping IPv4-mapped IPv6: `0/8`, `10/8`,
