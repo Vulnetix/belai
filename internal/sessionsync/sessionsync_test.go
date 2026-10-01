@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/belai/internal/docparity"
 )
 
 const (
@@ -231,6 +234,42 @@ func TestMirrorsFileLineForLine(t *testing.T) {
 		if a != "ApiKey org:hex" {
 			t.Fatalf("auth header %q", a)
 		}
+	}
+}
+
+// The profile a session runs under rides the registration, and a later
+// session_meta line (ctrl+p picked another agent) re-registers the session.
+func TestActiveProfileReachesTheRegistration(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	profile := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].ActiveProfile
+	}
+	s := startSyncer(t, srv, false)
+
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	appendLines(t, path, line("a", "session_meta", `{"schema":2,"activeProfile":"belai:patcher"}`))
+	s.Nudge()
+	eventually(t, "the first profile", func() bool { return profile() == "belai:patcher" })
+
+	appendLines(t, path, line("b", "session_meta", `{"schema":2,"activeProfile":"belai:verifier"}`))
+	s.Nudge()
+	eventually(t, "the switched profile", func() bool { return profile() == "belai:verifier" })
+
+	// A line that names no profile leaves it alone.
+	appendLines(t, path, line("c", "session_meta", `{"schema":2,"mode":"agent"}`))
+	s.Nudge()
+	eventually(t, "the mode update", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].Mode == "agent"
+	})
+	if got := profile(); got != "belai:verifier" {
+		t.Fatalf("profile after a mode-only line = %q", got)
 	}
 }
 
@@ -522,5 +561,73 @@ func TestCloseFlushesASessionActivatedJustBefore(t *testing.T) {
 			t.Fatalf("round %d: registered %d, %d lines, ended %v; want 1, 2, true", i, registered, fake.count(testSess), ended)
 		}
 		srv.Close()
+	}
+}
+
+// TestSessionSyncDocNamesTheActiveProfileRules keeps the rules docs/session-sync.md
+// states for activeProfile equal to the code: the wire field, its omitempty (so a
+// cleared agent is never sent), and the cap the page gives for the server.
+func TestSessionSyncDocNamesTheActiveProfileRules(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/session-sync.md")), " ")
+
+	f, ok := reflect.TypeOf(SessionMeta{}).FieldByName("ActiveProfile")
+	if !ok {
+		t.Fatal("SessionMeta has no ActiveProfile")
+	}
+	tag := f.Tag.Get("json")
+	if tag != "activeProfile,omitempty" {
+		t.Fatalf("the wire tag is %q; the page says it is activeProfile and omitempty", tag)
+	}
+	for _, want := range []string{
+		"`activeProfile`", "`omitempty`", "session.LatestMeta", "caps it at 128 bytes",
+		"clearing the agent never reaches the transcript", "`<profile> · <card> <title>`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/session-sync.md no longer says %q", want)
+		}
+	}
+	if _, ok := reflect.TypeOf(SessionInfo{}).FieldByName("ActiveProfile"); !ok {
+		t.Error("SessionInfo has no ActiveProfile, so the tail cannot carry it")
+	}
+}
+
+// A profile cleared on the host never reaches the website: the lines that name
+// none leave the registered one alone, and a re-activation of the same session
+// (a resume) keeps what the file said before.
+func TestActiveProfileSurvivesALineThatNamesNone(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	profile := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].ActiveProfile
+	}
+	s := startSyncer(t, srv, false)
+
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	appendLines(t, path, line("a", "session_meta", `{"schema":2,"activeProfile":"belai:scout"}`))
+	s.Nudge()
+	eventually(t, "the profile", func() bool { return profile() == "belai:scout" })
+
+	// ctrl+p cleared the agent: the transcript line omits the field.
+	appendLines(t, path, line("b", "session_meta", `{"schema":2,"cwd":"/src/x"}`), "not json\n")
+	s.Nudge()
+	eventually(t, "the cwd update", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].Cwd == "/src/x"
+	})
+	if got := profile(); got != "belai:scout" {
+		t.Fatalf("profile = %q after a line that names none", got)
+	}
+
+	// Activating the same session again (a resume) re-reads the whole file and keeps it.
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	s.Nudge()
+	time.Sleep(150 * time.Millisecond)
+	if got := profile(); got != "belai:scout" {
+		t.Fatalf("profile = %q after the session was activated again", got)
 	}
 }
