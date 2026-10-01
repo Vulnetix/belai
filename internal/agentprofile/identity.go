@@ -178,9 +178,9 @@ func (p AgentProfile) personalityBlock() string {
 }
 
 // Persona is the profile section of a worker's system block: identity, the
-// system prompt, then the personality's style hints.
+// system prompt, the personality's style hints, then the declared facts.
 func (p AgentProfile) Persona() string {
-	parts := []string{strings.TrimSpace(p.Identity), strings.TrimSpace(p.SystemPrompt), p.personalityBlock()}
+	parts := []string{strings.TrimSpace(p.Identity), strings.TrimSpace(p.SystemPrompt), p.personalityBlock(), p.factsBlock()}
 	out := make([]string, 0, len(parts))
 	for _, s := range parts {
 		if s != "" {

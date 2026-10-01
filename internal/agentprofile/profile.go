@@ -56,6 +56,11 @@ type AgentProfile struct {
 	// Read (see knowledge.go and docs/knowledge.md). Any mode may use it. It
 	// is local to the host: a web install is refused if it carries it.
 	Knowledge *KnowledgeSpec `json:"knowledge,omitempty"`
+	// Facts are structured key/value pairs about the environment the agent
+	// works in: an AWS role, a Kubernetes context, a Terraform directory.
+	// Any key is accepted and shown to the model; a well-known key is also
+	// read by the tool it names (see facts.go and internal/factspec).
+	Facts Facts `json:"facts,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
@@ -153,6 +158,23 @@ var extraToolNames = map[string]bool{
 	"Glab":           true,
 	"PublishBranch":  true,
 	"Git":            true,
+}
+
+// nativeToolNames are the native catalogue's tools (tools.CatalogueNames): the
+// cloud and SaaS CLIs, the local read-only commands, and the repository tools.
+// A session offers one only when its binary is installed, and an allowlist
+// naming one that is absent narrows rather than fails.
+var nativeToolNames = []string{
+	"Cat", "Head", "Tail", "File", "Strings", "LS", "Find", "JQ", "YQ", "Sed", "Awk", "Cut",
+	"Sort", "Uniq", "WC", "Tr", "Paste", "Join", "Echo", "Date", "Pwd", "Env", "Diff", "Cmp",
+	"AWS", "AZ", "GCloud", "Kubectl", "Terraform", "Pulumi", "Heroku", "Fly", "Vercel",
+	"Netlify", "Doctl", "Stripe", "OnePassword", "Bitwarden",
+}
+
+func init() {
+	for _, n := range nativeToolNames {
+		extraToolNames[n] = true
+	}
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -270,6 +292,9 @@ func (p AgentProfile) Validate() error {
 		return err
 	}
 	if err := p.validateKnowledge(); err != nil {
+		return err
+	}
+	if err := p.validateFacts(); err != nil {
 		return err
 	}
 	return p.validateWorker()
