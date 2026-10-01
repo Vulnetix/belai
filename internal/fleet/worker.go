@@ -14,12 +14,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -241,6 +243,17 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 	}
 	w.logf("worker %s (%s) started in %s", w.Record.ID, p.Name, w.Repo)
+	if w.Sync != nil {
+		// The audit log goes where sync goes (docs/audit.md). Best effort: a
+		// worker that cannot open its stream still works.
+		if dir, err := config.GlobalDir(); err == nil {
+			aud := sessionsync.StartAudit(context.Background(), w.Sync, headless.HostID(),
+				sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}, dir)
+			defer aud.Close(5 * time.Second)
+		}
+	}
+	// A no-op unless a Recorder is installed (sync on, or a test's).
+	w.auditWorker(audit.WorkerStarted, "started")
 	if w.Sync != nil && w.Sessions != nil {
 		w.mirror = sessionsync.New(sessionsync.Options{
 			Client: w.Sync, HostID: headless.HostID(),
@@ -258,6 +271,11 @@ func (w *Worker) Run(ctx context.Context) error {
 		w.notify("worker_failed")
 	}
 	w.save()
+	if runErr != nil {
+		w.auditWorker(audit.WorkerStopped, "failed")
+	} else {
+		w.auditWorker(audit.WorkerStopped, "stopped")
+	}
 	w.logf("worker %s stopped: %s", w.Record.ID, w.Record.Reason)
 	return runErr
 }
@@ -303,6 +321,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if w.Registry != nil && w.Registry.Paused(w.Record.ID) {
 			if w.Record.State != StatePaused {
 				w.logf("paused: claiming nothing until resumed")
+				w.auditWorker(audit.WorkerState, "paused")
 			}
 			w.Record.State = StatePaused
 			w.save()
@@ -314,6 +333,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		if w.Record.State == StatePaused {
 			w.logf("resumed")
+			w.auditWorker(audit.WorkerState, "resumed")
 		}
 		w.Record.State = StateIdle
 		w.save()
@@ -416,6 +436,7 @@ func (w *Worker) survey(project string) (kanban.Item, bool) {
 		w.logf("survey %s not claimed: %v", it.Short(), err)
 		return kanban.Item{}, false
 	}
+	w.auditClaimed(got)
 	if stamp != "" {
 		now := w.clock()
 		if os.MkdirAll(filepath.Dir(stamp), 0o700) == nil && os.WriteFile(stamp, nil, 0o600) == nil {
@@ -529,10 +550,17 @@ func (w *Worker) wants(project string) string {
 
 func (w *Worker) claim(project string) (kanban.Item, error) {
 	r := w.claimRequest(project)
+	var it kanban.Item
+	var err error
 	if w.Item != "" {
-		return w.Store.ClaimID(w.Item, r)
+		it, err = w.Store.ClaimID(w.Item, r)
+	} else {
+		it, err = w.Store.Claim(r)
 	}
-	return w.Store.Claim(r)
+	if err == nil {
+		w.auditClaimed(it)
+	}
+	return it, err
 }
 
 // errLeaseLost cancels an item whose claim was taken back.
@@ -694,6 +722,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			}
 		} else {
 			o.files = ws.FilesChanged(context.WithoutCancel(ctx))
+			w.auditCommit(context.WithoutCancel(ctx), it, ws, o.files, "committed")
 		}
 		o.branch = ws.Branch
 	}
@@ -737,10 +766,14 @@ func (w *Worker) stopped(ctx, itemCtx context.Context, it kanban.Item, ws *Works
 			if n, err := ws.Commit(bg, fmt.Sprintf("belai: work in progress on %s (agent stopped)", it.Short())); err == nil && n > 0 {
 				out.Note += fmt.Sprintf("; %d files of work in progress on %s", n, ws.Branch)
 				out.Branch = ws.Branch
+				w.auditCommit(bg, it, ws, n, "wip")
 			}
 		}
-		if _, err := w.Store.Release(it.ID, w.Record.ID, out); err != nil {
+		if released, err := w.Store.Release(it.ID, w.Record.ID, out); err != nil {
 			w.logf("%s: release on stop: %v", it.Short(), err)
+		} else {
+			w.auditItem(audit.CardReleased, released, audit.Fact{SessionID: w.Record.Session, Branch: out.Branch, Outcome: "stopped",
+				Data: map[string]string{"list": string(released.List), "attempt": strconv.Itoa(released.Attempts)}})
 		}
 		w.Record.Item = ""
 		return true
@@ -914,6 +947,12 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		return it
 	}
 	w.logf("%s → %s: %s", it.Short(), released.List, out.Note)
+	result := "completed"
+	if o.failed {
+		result = "failed"
+	}
+	w.auditItem(audit.CardReleased, released, audit.Fact{SessionID: w.Record.Session, Branch: released.Branch, Verdict: string(o.verdict), Outcome: result,
+		Data: map[string]string{"list": string(released.List), "attempt": strconv.Itoa(released.Attempts)}})
 	otel.Add("belai.worker.items", 1, otel.S(otel.AttrAgentProfile, p.Name), otel.S(otel.AttrOutcome, string(released.List)), otel.S(otel.AttrStopReason, string(o.stop)))
 	if released.List == kanban.Blocked {
 		w.notify("worker_blocked")
@@ -940,6 +979,7 @@ func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item, fil
 		w.logf("%s: record PR: %v", it.Short(), err)
 	}
 	w.logf("%s: draft pull request %s", it.Short(), url)
+	w.auditPublish(it, ws, url)
 }
 
 // memory returns the profile's lessons, gated like any agent-store read.

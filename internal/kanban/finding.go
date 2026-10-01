@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/session"
 )
 
@@ -202,6 +203,9 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 	if errors.Is(err, errNoWrite) {
 		return out, change, nil
 	}
+	if err == nil && out.ID != "" && (change == FindingCreated || change == FindingReopened) {
+		auditFinding(audit.FindingCarded, out, string(change))
+	}
 	return out, change, err
 }
 
@@ -251,6 +255,11 @@ func (s *Store) Reconcile(prov Provenance, present map[string]bool, ref string, 
 	})
 	if errors.Is(err, errNoWrite) {
 		return nil, nil
+	}
+	if err == nil {
+		for _, it := range out {
+			auditFinding(audit.FindingReconciled, it, "gone")
+		}
 	}
 	return out, err
 }
@@ -320,6 +329,11 @@ func (s *Store) CloseAbsent(prov Provenance, prefix string, present map[string]b
 	})
 	if errors.Is(err, errNoWrite) {
 		return nil, nil
+	}
+	if err == nil {
+		for _, it := range out {
+			auditFinding(audit.FindingReconciled, it, "closed")
+		}
 	}
 	return out, err
 }

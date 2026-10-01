@@ -8,8 +8,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -21,8 +23,10 @@ const maxTaskPaths = 1000
 // autoCommitMsg carries the result of an auto-commit back to the UI loop.
 type autoCommitMsg struct {
 	sha string
-	msg string
-	err error
+	// full is the whole commit id, read off the UI loop for the audit log.
+	full string
+	msg  string
+	err  error
 }
 
 // observeTaskDiff feeds one tool's observed file changes to the auto-commit
@@ -82,7 +86,11 @@ func (a *App) flushAutoCommit(res run.Result) tea.Cmd {
 
 	return func() tea.Msg {
 		sha, err := forge.CommitPaths(context.Background(), runner, workdir, paths, msg)
-		return autoCommitMsg{sha: sha, msg: msg, err: err}
+		full := ""
+		if err == nil && sha != "" && audit.Enabled() {
+			full = forge.HeadCommit(context.Background(), runner, workdir)
+		}
+		return autoCommitMsg{sha: sha, full: full, msg: msg, err: err}
 	}
 }
 
@@ -94,6 +102,11 @@ func (a *App) handleAutoCommit(m autoCommitMsg) tea.Cmd {
 		a.addSystem("auto-commit: " + forge.CleanErr(m.err))
 	case m.sha != "":
 		a.addSystem(fmt.Sprintf("auto-commit %s %s", m.sha, m.msg))
+		// The audit log names the commit and the session that made it, not the
+		// message, which is text from the goal's objective.
+		project, _ := kanban.ProjectFor(a.workdir)
+		audit.Emit(audit.Fact{Kind: audit.RepoCommit, ActorKind: audit.ActorAgent, Actor: "belai",
+			SessionID: a.sessionID, Repo: project, Commit: m.full, Outcome: "auto_commit"})
 	}
 	return a.refreshForge(true)
 }
