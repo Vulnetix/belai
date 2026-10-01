@@ -30,7 +30,7 @@ just check      # gofmt + go vet + go test -race, exactly what CI runs
 
 `make` cannot forward arbitrary arguments to a target, so `go run ./cmd/belai -provider … -prompt "…"` was impossible from a Makefile. The workaround was to build into `dist/` or `bin/` and run the artefact — which silently goes stale the moment you edit source, and produces confusing failures like `flag provided but not defined: -provider` from a binary built before that flag existed.
 
-`just` takes recipe parameters, so **everything you run during development runs from source**. There is no build artefact to keep in sync. `bin/` is produced only by `just build-all`, which exists to verify release cross-compilation, and it is gitignored.
+`just` takes recipe parameters, so **everything you run during development runs from source**. There is no build artefact to keep in sync. `bin/` is produced only by `just build-all` and `just build-jailbreak-bin`, which build every release variant for this host's OS and arch, and it is gitignored. The full target matrix is built by the release workflow, and `just cross` checks that the other targets compile.
 
 ## Running from source
 
@@ -647,7 +647,7 @@ the repository (`cd ..` past the root) is refused without moving. Change the
 model or toggle a mode to force a session rebuild and confirm the footer
 returns to the session root.
 
-**Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
+**Release parity.** `just build-all` builds every release variant for this host's OS and arch into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. The release workflow builds the other five targets. Run the host binary and check `-version` reports the git description.
 
 **Model variants.** `just modelprep` downloads, converts and golden-verifies the embedded classifier models. When `uv` is on `PATH` it provisions `torch`, `safetensors` and `numpy` itself (`uv run --with …`, CPU wheels), so no prepared Python is needed; otherwise set `MODELPREP_PYTHON` to a python with `torch`+`safetensors` (default `python3`). `just build-bert` builds `./belai` with only the phase-1 model embedded; `just build-jailbreak` builds it with both phase-1 and phase-2 embedded (~485 MB). The assets are gitignored and never committed; `internal/mlclassify/assets_meta.go` records the golden-verified attack-label orientation.
 
@@ -863,7 +863,7 @@ Local recipes: `just site-dev` (dev server), `just site-build` (build `site/dist
 (regenerate the deterministic TUI captures). `just check` stays Go-only and does
 not gain a Node dependency.
 
-Belai is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one Linux host. There is no goreleaser step; the release workflow builds directly and is mirrored locally by `just build-all`.
+Belai is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one Linux host. There is no goreleaser step; the release workflow builds the full matrix directly, and `just build-all` mirrors it locally for the host's OS and arch.
 
 ## Layout
 
