@@ -444,6 +444,33 @@ reviewer have the file tools (`Edit`, `Write`) and `Bash`, `Git`, `GH` and
 server's tools (`mcp__vulnetix__*`, available once `/vulnetix mcp` has added the
 server), so they can find and patch source and research a fix, not only read.
 
+#### Rules and edge cases
+
+Every row names the tests that hold it. `internal/fleet/sync_docs_test.go` fails
+when a test named here does not exist, when a test in the sync test files is not
+named here, and when a limit in this section differs from the code.
+
+| ID | Rule | Tests |
+| --- | --- | --- |
+| S1 | A profile lists up to 8 repository-relative paths in `workspace.sync`, written with forward slashes and plain characters (letters, digits and `. _ - /`), with no `..`, never the repository itself and never two that overlap; `access` is `read` (default) or `write`; it needs `workspace.isolation: worktree`. Any such path may be listed, not only `.vulnetix/crews` | `TestSyncAcceptsAnyPathTheProfileDefines`, `TestSyncRefusesWhatItCannotCopySafely` |
+| S2 | Whoever wrote the profile, `.git`, `.vulnetix/belai`, `.vulnetix/settings.json` and `.vulnetix/credentials.json` are never synced, and the scanner evidence in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`) is read only | `TestSyncRefusesProtectedPathsAndSymlinks`, `TestSyncAcceptsAnyProfileDefinedPathAndRefusesTheProtectedFloor` |
+| S3 | Each listed file is copied from the repository into the worktree before each turn; a file that does not exist yet is not an error, and a worker with write access creates it | `TestSyncCopiesInAndMergesBackAWriteEntry`, `TestSyncCreatesAFileTheWorkerWritesFirst` |
+| S4 | After the turn a write-access file the worker changed is merged back under a lock: its version when nobody else changed the file, otherwise the lines it added appended, a line a teammate already wrote not added twice, and its deletions and edits of existing lines dropped | `TestSyncMergesConcurrentEditsWithoutLosingATeammatesLines`, `TestSyncDeletionsApplyOnlyWhenNobodyElseChangedTheFile`, `TestMergeLinesCases` |
+| S5 | A `read` entry is copied in and never written back | `TestSyncAReadEntryIsNeverWrittenBack` |
+| S6 | A directory entry copies every file under it, and a file the worker adds there is merged back; a `.part` file is never synced | `TestSyncDirectoryEntriesCopyEveryFileAndTakeNewOnesBack` |
+| S7 | Text is sanitised (delimiter markup, control characters) before it reaches the repository | `TestSyncSanitisesWhatItWritesToTheRepository` |
+| S8 | A file is at most 256 KiB, an entry at most 64 files and 1 MiB, and a merge that would pass the file limit is not applied | `TestSyncBoundsFileSizeAndMergedSize` |
+| S9 | The harness's commit leaves placed files out, and a branch that commits one anyway is reported | `TestSyncedFilesAreNeverCommittedByTheHarness` |
+| S10 | A `write` entry lifts the worker's deny on `Write` and `Edit` for exactly its path, matching the subjects the real file tools give, and nothing else under `.vulnetix` | `TestSyncPermitsLiftOnlyTheWriteEntries`, `TestSyncPermitsMatchTheFileToolsSubjects`, `TestHarnessDenyBlocksUnlessPermitted` |
+| S11 | A `Deny` or `Block` rule of the user's still wins, a permit never exempts a shell line, and neither the harness rules nor the permits are read from a settings file | `TestPermitNeverOverridesAUsersDeny`, `TestPermitDoesNotExemptAShellLine`, `TestHarnessAndPermitAreNotReadFromSettingsFiles` |
+| S12 | A file Git tracks outside `.vulnetix` is never written back into the checkout | `TestSyncWriteBackNeverOverwritesATrackedFile` |
+| S13 | The documents in `knowledge.paths` are copied read only (a relative path in place, an outside path under `.vulnetix/knowledge/<label>/`), refreshed when the source changes, and never over a file the harness did not place | `TestReferenceDocumentsAreCopiedIntoTheWorktreeReadOnly`, `TestReferenceDocumentsRefreshAndNeverClobberTheBranch` |
+| S14 | The workspace note names the files the worker may edit, even in a read-only workspace, and says never to commit them | `TestWorkspaceNoteNamesTheCrewFilesAndTheCommitRule` |
+| S15 | The block survives the markdown form, rejects unknown keys, restarts a running worker when it changes, installs from the library with a profile, is carried by a backup, and a replace keeps this host's entries when the copy has none | `TestSyncSurvivesMarkdownRejectsUnknownKeysAndIsBehavioural`, `TestInstallKeepsTheFilesAProfileSyncs`, `TestBackupCarriesSyncAndAReplaceKeepsLocalSyncWhenTheCopyHasNone` |
+| S16 | Every member of the delivery crew shares `.vulnetix/crews/delivery.md` with write access and is told how to use it; the scout and reviewer can research and patch | `TestDeliveryCrewMembersShareTheCrewNotesFile`, `TestScoutAndReviewerCanResearchAndPatch` |
+| X1 | A symlink the worker plants in place of a synced file, or a symlinked directory in the repository, is refused and reported, and the repository file is left as it was | `TestSyncOutRefusesASymlinkTheWorkerPlanted` |
+| X2 | A reference document under a credential store, under `.git`, through a symlink out of the repository, or the home directory itself is never listed or copied | `TestReferenceDocumentsNeverReachAProtectedPlaceOrCrossASymlink` |
+
 ### Acceptance gates
 
 A gate is one observable outcome a card must show before it is done. The scout
