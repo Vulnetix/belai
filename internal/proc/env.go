@@ -9,8 +9,13 @@ import (
 // Belai config stripped so subprocess output cannot accidentally exfiltrate
 // them to a model.
 func ScrubbedEnv() []string {
+	return ScrubEnvOf(os.Environ())
+}
+
+// ScrubEnvOf is ScrubbedEnv over an explicit environment.
+func ScrubEnvOf(env []string) []string {
 	var out []string
-	for _, e := range os.Environ() {
+	for _, e := range env {
 		key, _, _ := strings.Cut(e, "=")
 		upper := strings.ToUpper(key)
 		if strings.HasPrefix(upper, "OPENAI_") || strings.HasPrefix(upper, "ANTHROPIC_") ||
