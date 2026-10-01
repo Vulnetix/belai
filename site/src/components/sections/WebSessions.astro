@@ -53,11 +53,13 @@ const audit = [
   ['host.rc_online · rc_offline', 'belai rc started or stopped'],
   ['host.dispatch', 'a request from the website (start, stop, worker, crew, pause, resume, profile_backup, profile_install, avatar) and whether the host carried it out'],
   ['host.schedule', 'belai rc fired a stored schedule, skipped or was refused a run, or turned a schedule off'],
+  ['worker.started · state · stopped', 'a worker started, was paused or resumed, and stopped'],
   ['card.claimed · released', 'a worker took a card and handed it back, with the list it went to'],
   ['card.lease_lapsed', 'a claim ran out of lease and the card went back to its list'],
   ['repo.commit', 'the commit id Belai read from git, the base the branch started at and how many files changed'],
+  ['repo.publish', 'a draft pull request was opened for the branch of an item'],
   ['gate.verified', 'a gate and the exit code that decided it, or a regression against the base'],
-  ['vex.written · finding.carded', 'the VEX for a verdict, and the card a scan filed for a finding'],
+  ['vex.written · finding.carded · finding.reconciled', 'the VEX for a verdict, the card a scan filed for a finding, and a finding found gone or closed'],
 ];
 
 const limits = [
