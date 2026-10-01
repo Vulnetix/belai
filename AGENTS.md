@@ -153,6 +153,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     beside the passages is composed by the harness from those tables and the
     vocabulary, holds none of the document's text, and is sanitise-only for that
     reason. Never add document text to it, and never let a model name a label.
+  - **`/knowledge` is the user's view.** It opens indexes read-only through
+    the catalogue (`knowledge.LoadProject`, `LoadProfile`: a corrupt file is listed
+    and left alone, nothing is written), has no model-facing tool, and sends nothing to a model, a
+    transcript, telemetry, audit or sync. Its search calls the same helpers as
+    `Grep`, `Glob` and `Read` (`tools.PreviewGrep`, `PreviewGlob`,
+    `PreviewRead`) so it can never show more than a model would be shown from the
+    same store. The project scope applies the `Read` deny rules; the global and
+    agents scopes show what the user's own host stored.
   - **The index is facts the user's host owns.** One file per profile and per
     project in the state directory (hidden from the sandbox), mode 0600, with a
     magic, a version and a SHA-256 trailer; a file that fails the check is used

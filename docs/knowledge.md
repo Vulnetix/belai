@@ -225,7 +225,9 @@ needs an id, which `belai agent import -force` gives it.
 
 ## Labels and topics
 
-Every document is tagged when it is indexed, so a search can find it by what it is and what it is about.
+Every document is tagged when it is indexed, so a search and the
+[screen below](#the-knowledge-screen) can find it by what it is and what it is
+about.
 
 - **Labels** come from the path, the size and the structure through fixed
   tables, never from free text. They are written `key:value`: `type:` (source,
@@ -265,6 +267,34 @@ the words of its path, indexed beside its passages. A `Grep` or `Glob` for
 row at line 0. The line is composed by the harness from the tag tables and the
 vocabulary, holds nothing from the document's own text, and is not counted in
 its passages.
+
+## The knowledge screen
+
+`/knowledge` (or `n` in the screen switcher) browses what the indexes hold. It is
+a view for you: nothing it shows goes to a model, a transcript, telemetry or sync.
+
+| Scope | Shows |
+| --- | --- |
+| project | What a model in this directory can search: the engaged agent's documents, this project's `.vulnetix` output and your `@` files. Your `Read` deny rules apply, as they do to the model |
+| global | Every project on this host that has an index, this one first. `enter` picks one and lists its documents; `esc` shows every project again. A project the registry does not know is listed as an unknown project |
+| agents | The agent profiles that list documents or have an index. `enter` picks one and lists its documents |
+
+`/knowledge global` and `/knowledge agents` open on that scope; `1`, `2`, `3` and
+`tab` switch. A document row shows its address, type, language and best topics,
+and the pane below shows its labels, its topics with their scores and who decided
+them, its size and its passages. `enter` shows the indexed text. `/` filters by
+words or labels (`type:test`, `lang:go`, `topic:jwt`, `kind:sarif`, `tool:semgrep`).
+
+`s` searches the scope the way a model does. `tab` or `m` picks the tool:
+`grep` prints the rows an unscoped `Grep` appends, `glob` the documents a
+`Glob` lists, and `read` the related passages a `Read` of the document you name
+would carry. They run the same code as the tools, so the rows, headers, clipping,
+token cap and similarity floor are the model's. `enter` on a result opens its
+document. The global and agents scopes show every stored passage: only the
+project scope has deny rules to apply.
+
+The screen opens indexes read-only. A file that fails its integrity check is
+listed as unreadable and left as it is, and nothing here writes an index.
 
 ## How it works
 
@@ -379,7 +409,12 @@ test files is not named here, so this table and the code move together.
 | K49 | A failed request is neither retried nor split; after three failures in a refresh the backend is left alone until the next, `knowledge.topic_budget_docs` bounds the documents sent per refresh, and the call stays out of the score cache | `TestRateTopicsMakesNoSecondRequestAfterAFailure`, `TestTaggerFallsBackToPatternsWhenTheBackendFails`, `TestTaggerStopsAfterRepeatedFailuresUntilTheNextRefresh`, `TestTaggerBudgetIsPerRefresh`, `TestTaggerRefreshWantsAJevPassOnlyWhileItCanGiveOne`, `TestRateTopicsStaysOutOfTheScoreCache` |
 | K50 | With no decision backend, the job switched off or a budget of 0, the deterministic tagger runs and nothing is sent | `TestNewTaggerIsDeterministicWithoutABackendOrBudget` |
 | K51 | The two topic settings have defaults and ranges and name the key when out of range | `TestKnowledgeTopicsDefaultAndOverride`, `TestValidateKnowledgeTopicBoundsNameTheKey` |
+| K52 | The catalogue loads an index read-only, lists the project keys on disk and refuses a key that is not one | `TestCatalogLoadsProjectAndProfileIndexesReadOnly`, `TestCatalogRefusesKeysThatAreNotKeys`, `TestCatalogMissingIndexIsEmptyNotAnError` |
 | K53 | A document's indexed text is its passages joined with the overlap removed, and a scanner record keeps its own line | `TestDocumentJoinsChunksWithoutTheOverlap`, `TestDocumentOfRecordsKeepsEachRecord` |
+| K54 | The previews are the tools' own knowledge sections: same rows, headers, clipping and similarity floor | `TestPreviewsAreTheToolsOwnKnowledgeSections`, `TestPreviewsOfNothingAreEmpty` |
+| K55 | `/knowledge` opens on a scope, lists documents or indexes with their tags, filters by words and labels, picks one project or agent, and closes its layers in order | `TestKnowledgeCommandOpensTheScreenOnAScope`, `TestKnowledgeProjectTabListsDocumentsWithTheirTags`, `TestKnowledgeFilterMatchesWordsAndLabels`, `TestKnowledgeGlobalListsEveryProjectAndPicksOne`, `TestKnowledgeAgentsTabListsProfilesWithDocuments`, `TestKnowledgeResultOpensItsDocumentAndEscClosesLayersInOrder` |
+| K56 | Its search runs grep, glob and read as the tools do, finds documents by label, and the project scope applies `Read` deny rules | `TestKnowledgeSearchRunsTheModelToolsOverTheScope`, `TestKnowledgeSearchFindsDocumentsByLabel`, `TestKnowledgeProjectScopeAppliesReadDenyRules` |
+| K57 | The screen only reads: it never writes an index, lists a corrupt one as unreadable and leaves it, drops a stale load and fits a small terminal | `TestKnowledgeScreenOnlyReadsIndexes`, `TestCatalogReportsACorruptIndexAndLeavesIt`, `TestKnowledgeCorruptIndexIsListedAndLeftAlone`, `TestKnowledgeStaleLoadIsDropped`, `TestKnowledgeScreenFitsASmallTerminal` |
 | K58 | The topic cut-off cannot be set below 0.5, and the job is a switch like the others | `TestTopicAtDefaultAndFloor` |
 | K59 | `belai agent knowledge` reports each document's type, language, topic ids and who decided them (`patterns` or `jev`), as ids only | `TestAgentKnowledgeReportsTagsAsIdsOnly` |
 
@@ -399,3 +434,4 @@ test files is not named here, so this table and the code move together.
 | E10 | A profile is swapped mid-session | The store follows the engaged agent at the next turn | `TestSetFollowsASwappedProfile` |
 | E11 | A profile lists `.vulnetix` and the project index holds the same artifacts | A search and a glob show each passage and each document once | `TestAPassageInTheProfileAndTheProjectIsShownOnce` |
 | E12 | The decision backend answers nothing for a document | The pattern topics stand and the document is offered again at a later refresh while the budget lasts | `TestTaggerFallsBackToPatternsWhenTheBackendFails` |
+| E13 | A project or agent has no index file yet | The screen lists it as empty rather than failing, and writes nothing | `TestCatalogMissingIndexIsEmptyNotAnError` |
