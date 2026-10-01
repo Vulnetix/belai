@@ -2,6 +2,7 @@ package rc
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
@@ -44,10 +45,16 @@ func (d *Daemon) startAvatar(ctx context.Context, r sessionsync.Dispatch, ack fu
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		defer func() { <-d.avatarSlot }()
+		// The slot is free the moment the drawing is done, before the website
+		// is told: a request sent right after the acknowledgement must not be
+		// refused for a drawing that has already finished.
+		var free sync.Once
+		release := func() { free.Do(func() { <-d.avatarSlot }) }
+		defer release()
 		dctx, cancel := context.WithTimeout(ctx, avatarTimeout)
 		defer cancel()
 		why := d.drawAvatar(dctx, r)
+		release()
 		// The acknowledgement outlives the drawing's own deadline.
 		actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 		defer acancel()
