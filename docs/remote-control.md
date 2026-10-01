@@ -229,6 +229,15 @@ dispatch queue and both carrying identifiers only:
   Replacing a profile stops a worker running on the old one, because a worker
   pins its definition (see [fleet.md](fleet.md)); restart it to use the new one.
 
+  A profile's `knowledge` and `workspace.sync` blocks are part of it: a backup
+  carries them, an install keeps them, and a replace takes the library copy, or
+  keeps the entries already on this host when that copy lists none. The paths are
+  only paths. What they name is indexed, classified and copied on the host that
+  runs the agent, under a fixed floor that holds whoever wrote the profile (see
+  [knowledge.md](knowledge.md#profile-knowledge) and
+  [fleet.md](fleet.md#files-placed-in-a-worktree)), so retrieval works for an
+  installed profile as it does for one written here.
+
 Both are `host.dispatch` audit events with the request kind and outcome (see
 [audit.md](audit.md)).
 
