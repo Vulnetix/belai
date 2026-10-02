@@ -763,3 +763,89 @@ func TestAutoSyncPushesARepositoryAndInventoryListsIt(t *testing.T) {
 		t.Fatalf("items = %+v", inv.Items)
 	}
 }
+
+// ── Budgets and the rewrite table ────────────────────────────────────────
+
+func TestItemInstallWritesTokenBudgetsAndNamesTheSet(t *testing.T) {
+	h := newItemHarness(t)
+	h.serve("team", map[string]any{"name": "team", "budgets": []map[string]any{{"provider": "anthropic", "model": "claude-sonnet-5-5", "scope": "day", "tokens": 1000000}}, "cycle_seconds": 15, "warn": true})
+	status, why := h.install(libitem.Budget, false)
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("install: %s %s", status, why)
+	}
+	s, _ := config.LoadGlobal()
+	if len(s.TokenBudgets) != 1 || s.UI == nil || *s.UI.BudgetCycleSeconds != 15 {
+		t.Fatalf("settings = %+v %+v", s.TokenBudgets, s.UI)
+	}
+	it, _ := libstore.Get(libitem.Budget, "team")
+	if h.d.libsync.due(localItem{kind: "budget", id: "team", name: "team", data: it.Doc}, time.Now()) {
+		t.Error("an installed budget set is due for a sync")
+	}
+	// A second set over the host's own is refused unless replace is on, in words that
+	// say it is the whole configuration.
+	h.serve("other", map[string]any{"name": "other", "budgets": []map[string]any{{"provider": "b", "model": "n", "scope": "month", "tokens": 7}}})
+	status, why = h.install(libitem.Budget, false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "already has its own budget (named team)") || !strings.Contains(why, "whole configuration") {
+		t.Fatalf("second: %s %q", status, why)
+	}
+	if status, why = h.install(libitem.Budget, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("replace: %s %s", status, why)
+	}
+	// A backup names the host's set; another name is answered with the real one.
+	status, why = h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "budget", Name: "team"})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "named other, not team") {
+		t.Fatalf("backup by the old name: %s %q", status, why)
+	}
+}
+
+func TestItemBackupOfTheRewriteTableAndOfNothing(t *testing.T) {
+	h := newItemHarness(t)
+	status, why := h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "rewrite", Name: "bash_rewrite"})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "no rewrite configured") {
+		t.Fatalf("nothing configured: %s %q", status, why)
+	}
+	if _, err := libstore.Install(libitem.Rewrite, []byte(`{"name":"bash_rewrite","rules":[{"match":"npm","replace":"pnpm"}]}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	status, why = h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "rewrite", Name: "bash_rewrite"})
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("backup: %s %s", status, why)
+	}
+	if string(h.site.backups[0]["body"]) != `{"name":"bash_rewrite","rules":[{"match":"npm","replace":"pnpm"}]}` {
+		t.Errorf("body = %s", h.site.backups[0]["body"])
+	}
+	status, why = h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "rewrite", Name: "rewrite"})
+	if status != sessionsync.DispatchRefused {
+		t.Fatalf("a wrong rewrite name: %s %q", status, why)
+	}
+}
+
+func TestBudgetAndRewriteRequestsAreRefusedWhileTheirSwitchesAreOff(t *testing.T) {
+	h := newItemHarness(t)
+	h.on[libitem.Budget], h.on[libitem.Rewrite] = false, false
+	for _, k := range []libitem.Kind{libitem.Budget, libitem.Rewrite} {
+		status, why := h.install(k, true)
+		if status != sessionsync.DispatchRefused || !strings.Contains(why, "sync."+k.Segment()+" is off") {
+			t.Errorf("%s: %s %q", k, status, why)
+		}
+	}
+}
+
+func TestAutoSyncPushesBudgetsAndRewritesAndInventoryListsThem(t *testing.T) {
+	h := newItemSync(t)
+	h.on = false
+	if _, err := libstore.Install(libitem.Budget, []byte(`{"name":"team","budgets":[{"provider":"a","model":"m","scope":"day","tokens":5}]}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := libstore.Install(libitem.Rewrite, []byte(`{"name":"bash_rewrite","rules":[{"match":"npm","replace":"pnpm"}]}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	h.tick()
+	if got := sorted(h.remote.pushed); strings.Join(got, ",") != "budget/team,rewrite/bash_rewrite" {
+		t.Fatalf("pushed %v", got)
+	}
+	inv := LocalInventory()
+	if len(inv.Items) != 2 {
+		t.Fatalf("items = %+v", inv.Items)
+	}
+}

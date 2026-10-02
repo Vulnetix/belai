@@ -18,6 +18,8 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Prompts](#prompts)
 - [Processes](#processes)
 - [Repositories](#repositories)
+- [Budgets](#budgets)
+- [Rewrites](#rewrites)
 - [How a document travels](#how-a-document-travels)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -33,6 +35,8 @@ offline; the library is a copy, never the thing that is read at run time.
 | `prompt` | `belai prompt` | Markdown with front matter | `~/.vulnetix/belai/prompts/<NNN>-<name>.md` | `sync.prompts` |
 | `process` | `belai process` | JSON object | `~/.vulnetix/belai/processes/<NNN>-<name>.json` (or a legacy `.sh`) | `sync.processes` |
 | `repo` | `belai repo` | JSON object | the `repos` list of `~/.vulnetix/belai/settings.json`; clones under `~/.vulnetix/belai/repos/<dir>` | `sync.repos` |
+| `budget` | `belai budget` | JSON object | `token_budgets` and the footer settings in `~/.vulnetix/belai/settings.json` | `sync.budgets` |
+| `rewrite` | `belai rewrite` | JSON object | `bash_rewrite` in `~/.vulnetix/belai/settings.json` | `sync.rewrites` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -302,6 +306,71 @@ without touching the network: `not cloned`, `current`, `behind N`, `ahead N`,
 `diverged`, `other ref` (the checkout is on something other than the first ref),
 `not fetched`, `disabled` or `invalid`, and whether a tracked file has local changes.
 
+## Budgets
+
+A budget item is a set of token budgets: the `token_budgets` setting
+([token-budgets.md](token-budgets.md)) plus the two footer settings that go with it.
+Budgets are global on the host, so only the user's own settings are read or written.
+
+```json
+{"name": "team", "budgets": [{"provider": "anthropic", "model": "claude-sonnet-5-5",
+  "scope": "day", "tokens": 1000000}], "cycle_seconds": 10, "warn": true}
+```
+
+| Key | Rule |
+| --- | --- |
+| `name` | the name rule above |
+| `budgets` | required, 0 to 100 entries (an empty set is valid) |
+| `budgets[].provider`, `budgets[].model` | not empty after trimming, at most 128 bytes, no control character |
+| `budgets[].scope` | `session`, `day` or `month` |
+| `budgets[].tokens` | whole number 1 to 2^53 - 1; a fraction or an exponent (`1e6`) is refused |
+| `cycle_seconds` | optional whole number 0 to 86400: seconds the footer shows each budget (`ui.budget_cycle_seconds`). Belai treats 0 as its default of 10 and raises 1 to its minimum of 2; the value is stored as written |
+| `warn` | optional **boolean**: print a warning line on each call while a budget is amber or red (`ui.budget_warn`). It is not a threshold |
+
+No two entries may share provider, model and scope; Belai compares them as
+`provider/model@scope`, so `a/b` with `c` and `a` with `b/c` count as the same budget.
+Belai's own `ValidateTokenBudgets` also runs on the result.
+
+**On the host** there is one budget configuration, not a list, so there is at most one
+local budget item: it exists while any of `token_budgets`, `ui.budget_cycle_seconds`
+or `ui.budget_warn` is set. Its library name is the name the host last installed or
+exported it under, remembered in `~/.vulnetix/belai/library/names.json` (`default`
+until then). A backup request names that set, and a request for another name is
+refused. An install **replaces the whole configuration**, including a footer setting
+the new document leaves out, so it is refused unless the request says replace
+whenever any budget setting exists. `belai budget export NAME` writes the host's set
+under whatever `NAME` you give it.
+
+## Rewrites
+
+A rewrite item is the Bash rewrite table ([bash-rewrite.md](bash-rewrite.md)): rules
+that change the command word of a model's `Bash` line before permission matching,
+such as `npm` to `pnpm`. It is the user's layer only: a project settings file may
+switch the table off and never supplies a rule, and is never read or written. There is
+one table per user, so the item's name is always `bash_rewrite`.
+
+```json
+{"name": "bash_rewrite", "enabled": true,
+ "rules": [{"match": "npm install", "replace": "pnpm add"}, {"match": "npm", "replace": "pnpm"}]}
+```
+
+| Key | Rule |
+| --- | --- |
+| `name` | must be `bash_rewrite` |
+| `enabled` | optional boolean; `false` keeps the table and turns it off |
+| `rules` | required, ordered, 0 to 64 entries; the first rule that matches a command wins on the host |
+| `rules[].match`, `rules[].replace` | required strings, each 1 to 8 words |
+
+A word is 1 to 128 bytes of ASCII letters, digits and `. _ - / @ + : = ,`, so a
+replacement can never carry shell syntax. The first word of a side is a command name:
+it does not start with `-` and holds no `=`. The two sides must differ once split
+into words. Words are separated by spaces; a tab or newline is refused. Belai's own
+`ValidateBashRewrite` also runs on the result.
+
+On the host the item exists while the table has a rule or names `enabled`; an empty
+table says nothing and is not synced. An install replaces the table, so it is refused
+unless the request says replace whenever a table exists.
+
 ## How a document travels
 
 Three things move a document between a host and the library. All of them need
@@ -366,6 +435,9 @@ is off. A project settings file may turn one off, never on.
   skills, and take `item_backup` and `item_install` requests for skills.
 - **`sync.prompts`**: the same for the global prompt library.
 - **`sync.repos`**: the same for the `repos` list.
+- **`sync.budgets`**: the same for the token-budget configuration (`token_budgets`,
+  `ui.budget_cycle_seconds`, `ui.budget_warn`).
+- **`sync.rewrites`**: the same for the Bash rewrite table (`bash_rewrite`).
 - **`sync.processes`**: the same for the global process library. A synced process
   is a command Belai runs, so this is the switch that keeps the website out of
   what runs on the host: with it off nothing is advertised, pushed or installed.
@@ -381,7 +453,7 @@ advertised.
 
 ## Commands
 
-`belai skill`, `belai prompt`, `belai process` and `belai repo` read and write items by hand, with the same
+`belai skill`, `belai prompt`, `belai process`, `belai repo`, `belai budget` and `belai rewrite` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -391,9 +463,12 @@ belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
 
-`belai prompt`, `belai process` and `belai repo` take the same four commands. `belai repo`
+`belai prompt`, `belai process`, `belai repo`, `belai budget` and `belai rewrite` take the same four commands. `belai repo`
 also has `sync` and `status` (see [Repositories](#repositories)), and its `list` shows
-each repository's url, first ref and dir.
+each repository's url, first ref and dir. For a budget or a
+rewrite there is one local item (the host's whole configuration of that kind), so
+`list` shows one row, and `belai budget export NAME` writes it under any name you
+give; `belai rewrite export` always writes `bash_rewrite`.
 
 `FILE` of `-` is standard input (and, for `export`, standard output, which is also
 the default). `list` shows each item's name, size and the first 12 digits of the
@@ -430,6 +505,12 @@ item of that name.
   refuses a literal under a secret-looking `env` name, a start refuses an unset
   `env:OTHER`, `user` is honoured only as root and never falls back to the current
   user, redirect files are `0600` and never opened through a link, and the OS
+- **A setting-backed install replaces a whole configuration only when told to.** A
+  budget set, a provider set and the rewrite table are the host's one configuration of
+  their kind, so an install over an existing one is refused without the request's
+  replace flag, writes only the user's global settings file (atomically, keeping every
+  other key), and is validated by Belai's own settings validators first, so a
+  document the library accepts is never written as a setting Belai refuses to load.
 - **A repository never carries a credential, and git never runs a hook or a prompt.**
   The library refuses a url with userinfo, a query or a fragment and a `private`
   document with a plain token; the sync runs git as an argv with hooks off, only the

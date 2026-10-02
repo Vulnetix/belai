@@ -21,6 +21,17 @@ A rule table in your own settings that changes the command a model sends to
 | `bash_rewrite.rules` | Ordered list of `match` and `replace`, each one or more space-separated plain words. At most 64 rules. The first rule that matches a command wins for that command. |
 | `bash_rewrite.enabled` | `false` keeps the table but turns it off. Default on. |
 
+## The library
+
+With the Vulnetix CLI signed in and `belai rc` running, the table is kept in the
+website's library as one item named `bash_rewrite`: a change here is pushed as a new
+version, and a table saved on the website can be installed on any connected host.
+`sync.rewrites` (default on) switches all of it off. An install replaces the table, so
+it is refused unless the request says replace, and Belai's own validation of the
+table runs on it first, so a rule that could carry shell syntax never lands.
+`belai rewrite list`, `validate`, `import` and `export` do the same by hand; a
+project settings file still cannot supply a rule. See [library-items.md](library-items.md#rewrites).
+
 ## How a command is matched
 
 The line is parsed with a shell grammar (`internal/shellsafe`), never searched

@@ -204,3 +204,49 @@ func TestLibraryCLIProcess(t *testing.T) {
 		t.Errorf("a refused import wrote files: %v", des)
 	}
 }
+
+func TestLibraryCLIBudgetAndRewrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BELAI_HOME", home)
+	budget := `{"name":"team","budgets":[{"provider":"anthropic","model":"claude-sonnet-5-5","scope":"day","tokens":1000000}],"cycle_seconds":10,"warn":false}`
+	if code, out, errOut := runLib(t, libitem.Budget, budget, "import", "-"); code != 0 || !strings.Contains(out, "token_budgets") {
+		t.Fatalf("import budget: %d %q %q", code, out, errOut)
+	}
+	// One configuration: a second import is refused without -force.
+	if code, _, errOut := runLib(t, libitem.Budget, `{"name":"x","budgets":[]}`, "import", "-"); code != 1 || !strings.Contains(errOut, "-force") {
+		t.Fatalf("second budget import: %d %q", code, errOut)
+	}
+	code, out, _ := runLib(t, libitem.Budget, "", "list")
+	if code != 0 || !strings.Contains(out, "team") {
+		t.Fatalf("list: %d %q", code, out)
+	}
+	// Exported under the host's name, or under one the person gives.
+	want, _ := libitem.Validate(libitem.Budget, []byte(budget))
+	if code, out, _ := runLib(t, libitem.Budget, "", "export", "team"); code != 0 || out != string(want.Doc) {
+		t.Fatalf("export team: %d %q", code, out)
+	}
+	if code, out, _ := runLib(t, libitem.Budget, "", "export", "renamed"); code != 0 || !strings.Contains(out, `"name":"renamed"`) {
+		t.Fatalf("export renamed: %d %q", code, out)
+	}
+	if code, _, errOut := runLib(t, libitem.Budget, "", "export", "Bad Name"); code != 1 || !strings.Contains(errOut, "not valid") {
+		t.Fatalf("export bad name: %d %q", code, errOut)
+	}
+
+	if code, _, errOut := runLib(t, libitem.Rewrite, "", "export", "bash_rewrite"); code != 1 || !strings.Contains(errOut, "no rewrite configured") {
+		t.Fatalf("export with nothing: %d %q", code, errOut)
+	}
+	rw := `{"name":"bash_rewrite","rules":[{"match":"npm install","replace":"pnpm add"},{"match":"npm","replace":"pnpm"}]}`
+	if code, out, errOut := runLib(t, libitem.Rewrite, rw, "import", "-"); code != 0 || !strings.Contains(out, "bash_rewrite") {
+		t.Fatalf("import rewrite: %d %q %q", code, out, errOut)
+	}
+	code, out, _ = runLib(t, libitem.Rewrite, "", "export", "bash_rewrite")
+	if code != 0 || out != rw+"\n" {
+		t.Fatalf("export rewrite: %d %q", code, out)
+	}
+	if code, _, errOut := runLib(t, libitem.Rewrite, `{"name":"bash_rewrite","rules":[{"match":"a","replace":"b;c"}]}`, "import", "-force", "-"); code != 1 || !strings.Contains(errOut, "must be plain") {
+		t.Fatalf("a rule with shell syntax: %d %q", code, errOut)
+	}
+	if code, _, errOut := runLib(t, libitem.Rewrite, "", "export", "other"); code != 1 || !strings.Contains(errOut, "always named bash_rewrite") {
+		t.Fatalf("export other: %d %q", code, errOut)
+	}
+}

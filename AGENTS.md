@@ -1155,7 +1155,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   through the GitHub CLI's credential helper or fails with that reason), moves a
   branch by fast-forward only, refuses a dirty tracked tree or a diverged branch
   instead of resetting, never touches an untracked file, and never follows a
-  symbolic link in the checkout path; the project layer's `repos` is dropped.
+  symbolic link in the checkout path; the project layer's `repos` is dropped. A budget set and the Bash rewrite table are the host's one
+  configuration of their kind: an install over an existing one needs the request's
+  replace flag, writes only the user's global settings file (atomically, keeping
+  every other key), and runs Belai's own validators (`ValidateTokenBudgets`,
+  `ValidateBashRewrite`) before anything is written, so a document the library
+  accepts is never written as a setting Belai refuses to load.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The
