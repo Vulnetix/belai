@@ -46,6 +46,15 @@ func repos(t *testing.T) (work, other string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
+	// The sync's own git calls read the process environment, so the test
+	// pins it: no machine or user config, and one known identity. A runner
+	// with no identity at all is its own test below.
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	for _, who := range []string{"AUTHOR", "COMMITTER"} {
+		t.Setenv("GIT_"+who+"_NAME", "t")
+		t.Setenv("GIT_"+who+"_EMAIL", "t@example.com")
+	}
 	root := t.TempDir()
 	origin := filepath.Join(root, "origin.git")
 	g(t, root, "init", "--bare", "-b", "main", origin)
@@ -122,7 +131,7 @@ func TestSyncAbortsAConflictAndLeavesTheBranchAlone(t *testing.T) {
 	g(t, other, "push", "origin", "main")
 
 	res := newHygiene(work).Sync(context.Background())
-	if res.Outcome != OutcomeConflict {
+	if res.Outcome != OutcomeConflict || res.Reason != "1 file conflict: a.txt" {
 		t.Fatalf("result = %+v", res)
 	}
 	if after := g(t, work, "rev-parse", "HEAD"); after != before {
@@ -329,5 +338,30 @@ func TestWatchPushesOnChangeOnly(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the switch change was never pushed")
+	}
+}
+
+// A machine with no git identity (a fresh VM, a CI runner) cannot rebase: git
+// stops on the first commit. That is a skip with the reason, not a conflict,
+// and the branch is left exactly where it was.
+func TestSyncSkipsWhenGitHasNoIdentity(t *testing.T) {
+	work, other := repos(t)
+	g(t, work, "checkout", "-b", "feature")
+	commit(t, work, "f.txt", "f\n", "feature work")
+	before := g(t, work, "rev-parse", "HEAD")
+	commit(t, other, "b.txt", "b\n", "upstream work")
+	g(t, other, "push", "origin", "main")
+
+	t.Setenv("GIT_COMMITTER_NAME", "")
+	t.Setenv("GIT_COMMITTER_EMAIL", "")
+	res := newHygiene(work).Sync(context.Background())
+	if res.Outcome != OutcomeSkipped || !strings.Contains(res.Reason, "user.name and user.email") {
+		t.Fatalf("result = %+v", res)
+	}
+	if after := g(t, work, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("HEAD moved from %s to %s", before, after)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".git", "rebase-merge")); err == nil {
+		t.Fatal("rebase left in progress")
 	}
 }

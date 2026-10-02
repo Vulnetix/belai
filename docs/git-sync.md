@@ -31,6 +31,7 @@ It acts only on a quiet repository, and otherwise skips and tells you once:
 | a rebase, merge, cherry-pick, revert or bisect is in progress | `a rebase in progress`, ... |
 | HEAD is detached | `detached HEAD` |
 | there is no `origin` remote | `no origin remote` |
+| git has no `user.name` and `user.email` (a fresh machine, a CI runner), which a rebase needs to write its commits | `git has no user.name and user.email set...` |
 | origin's default branch cannot be found | `cannot tell origin's default branch` |
 
 Untracked files do not block it: git itself refuses to overwrite one. A skip does not use up the first turn; the next turn start tries again.

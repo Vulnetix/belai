@@ -224,6 +224,12 @@ func (h *Hygiene) Sync(ctx context.Context) Result {
 	if _, err := h.git(ctx, forge.ReadTimeout, "remote", "get-url", "origin"); err != nil {
 		return skip("no origin remote")
 	}
+	// A rebase writes commits, so git needs a committer identity. Without one
+	// (a fresh machine, a CI runner) it stops on the first commit. Belai does
+	// not invent one: its name would end up in the user's history.
+	if _, err := h.git(ctx, forge.ReadTimeout, "var", "GIT_COMMITTER_IDENT"); err != nil {
+		return skip("git has no user.name and user.email set, which a rebase needs")
+	}
 	if _, err := h.git(ctx, forge.WriteTimeout, "fetch", "--prune", "origin"); err != nil {
 		return fail(OutcomeError, "fetch origin: "+err.Error())
 	}
@@ -249,10 +255,17 @@ func (h *Hygiene) Sync(ctx context.Context) Result {
 	if _, err := h.git(ctx, forge.WriteTimeout, "-c", "rebase.autoStash=false", "rebase", "--rebase-merges", base); err != nil {
 		reason := err.Error()
 		if inProgress(gitDir) != "" {
+			// A rebase that stopped is a conflict only when files are unmerged;
+			// otherwise something else stopped it, and saying "conflict" would
+			// send the reader looking in the wrong place.
+			unmerged, _ := h.git(ctx, forge.ReadTimeout, "diff", "--name-only", "--diff-filter=U")
 			if _, aerr := h.git(ctx, forge.WriteTimeout, "rebase", "--abort"); aerr != nil {
 				return fail(OutcomeError, "rebase stopped and could not be aborted, run git rebase --abort: "+aerr.Error())
 			}
-			return fail(OutcomeConflict, reason)
+			if unmerged != "" {
+				return fail(OutcomeConflict, conflictReason(unmerged))
+			}
+			return fail(OutcomeError, "rebase stopped and was aborted, branch unchanged: "+reason)
 		}
 		return fail(OutcomeError, reason)
 	}
@@ -372,6 +385,20 @@ func inProgress(gitDir string) string {
 		}
 	}
 	return ""
+}
+
+// conflictReason names the files a stopped rebase left unmerged, at most three.
+func conflictReason(unmerged string) string {
+	files := strings.Fields(unmerged)
+	shown := files
+	if len(shown) > 3 {
+		shown = shown[:3]
+	}
+	s := plural(len(files), "file") + " conflict: " + forge.Clean(strings.Join(shown, ", "))
+	if len(files) > len(shown) {
+		s += " and more"
+	}
+	return s
 }
 
 func short(sha string) string {
