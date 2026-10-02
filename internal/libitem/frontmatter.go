@@ -1,99 +1,100 @@
 package libitem
 
 import (
-	"strconv"
 	"strings"
 )
 
-// A front-matter document is the dialect the skill loader reads: a "---" line,
-// one "key: value" per line, a "---" line, then the body. There is no YAML
-// beyond that: no nesting, no multi-line value, no anchors. A key that is not
-// declared, a key given twice and a line that is not "key: value" are all
-// refusals.
+// A front-matter document is the dialect the skill loader reads (and the server
+// validates the same way): a "---" line, one "key: value" per line, a closing
+// "---" line (trailing spaces and tabs allowed), then the body. Lines are
+// trimmed, blank lines and "#" comments are skipped, and there is no YAML beyond
+// that: no nesting, no multi-line value. A key that is not declared, a key given
+// twice and a line that is not "key: value" are refusals.
 
 type fmField struct {
 	key, val string
 }
 
-// splitFrontMatter separates a canonical document into its front-matter lines
-// and its body. The body has its leading newlines removed and nothing else.
-func splitFrontMatter(doc string) (fields []fmField, body string, err error) {
-	if !strings.HasPrefix(doc, "---\n") {
-		return nil, "", refuse("the document must start with a --- front-matter line")
+// splitFrontMatter separates a canonical document into its front-matter fields
+// and its body, which is everything after the closing line.
+func splitFrontMatter(doc string, allowed map[string]bool) ([]fmField, string, error) {
+	rest, ok := strings.CutPrefix(doc, "---\n")
+	if !ok {
+		return nil, "", refuse("the document must open with a --- front matter line")
 	}
-	rest := doc[len("---\n"):]
-	var fmLines []string
-	closed := false
-	for {
-		line, after, found := strings.Cut(rest, "\n")
-		if line == "---" {
-			rest, closed = after, true
-			break
-		}
-		if !found {
-			break
-		}
-		fmLines = append(fmLines, line)
-		rest = after
-	}
-	if !closed {
-		return nil, "", refuse("the front matter is not closed by a --- line")
-	}
+	var fields []fmField
 	seen := map[string]bool{}
-	for _, line := range fmLines {
-		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "#") {
+	for {
+		line, tail, more := strings.Cut(rest, "\n")
+		if strings.TrimRight(line, " \t") == "---" {
+			return fields, tail, nil
+		}
+		if !more {
+			return nil, "", refuse("the front matter is not closed by a --- line")
+		}
+		rest = tail
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.HasPrefix(t, "---") {
-			return nil, "", refuse("the front matter has a stray --- line")
+		key, val, found := strings.Cut(line, ":")
+		if !found {
+			return nil, "", refuse("malformed front matter line %q", cleanForMessage(line))
 		}
-		if line != strings.TrimLeft(line, " \t") {
-			return nil, "", refuse("front-matter line %q is indented; nested values are not supported", clip(t, 40))
-		}
-		key, val, ok := strings.Cut(t, ":")
-		if !ok {
-			return nil, "", refuse("malformed front-matter line %q", clip(t, 40))
-		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return nil, "", refuse("malformed front-matter line %q", clip(t, 40))
+		key, val = strings.TrimSpace(key), strings.TrimSpace(val)
+		if !allowed[key] {
+			return nil, "", refuse("unknown front matter field %q", cleanForMessage(key))
 		}
 		if seen[key] {
-			return nil, "", refuse("front-matter key %q is given twice", clip(key, 40))
+			return nil, "", refuse("front matter field %q appears twice", key)
 		}
 		seen[key] = true
-		fields = append(fields, fmField{key: key, val: strings.TrimSpace(val)})
+		fields = append(fields, fmField{key, val})
 	}
-	return fields, strings.TrimLeft(rest, "\n"), nil
 }
 
-// fmString reads a scalar the way the skill loader does: one pair of matching
-// quotes is removed.
+// fmString reads a front-matter string the way the loader does: one pair of
+// matching quotes is removed and nothing else is interpreted.
 func fmString(v string) string {
-	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
-		return v[1 : len(v)-1]
+	s := strings.TrimSpace(v)
+	if len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		s = s[1 : len(s)-1]
 	}
-	return v
+	return s
 }
 
+// fmBool reads true or false, any case.
 func fmBool(key, v string) (bool, error) {
-	switch strings.ToLower(v) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "true":
 		return true, nil
 	case "false":
 		return false, nil
 	}
-	return false, refuse("%s must be true or false, not %q", key, clip(v, 20))
+	return false, refuse("front matter %q must be true or false", key)
 }
 
-func fmInt(key, v string, lo, hi int) (int, error) {
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, refuse("%s must be a whole number, not %q", key, clip(v, 20))
+// fmList reads a one-line list `[a, b]` the way the loader does: items are split
+// on commas, an item may be double-quoted, and an empty item is refused.
+func fmList(key, v string) ([]string, error) {
+	v = strings.TrimSpace(v)
+	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
+		return nil, refuse("front matter %q must be a list like [a, b]", key)
 	}
-	if n < lo || n > hi {
-		return 0, refuse("%s must be between %d and %d", key, lo, hi)
+	inner := strings.TrimSpace(v[1 : len(v)-1])
+	if inner == "" {
+		return nil, nil
 	}
-	return n, nil
+	var out []string
+	for _, p := range strings.Split(inner, ",") {
+		p = strings.TrimSpace(p)
+		if len(p) >= 2 && p[0] == '"' && p[len(p)-1] == '"' {
+			p = p[1 : len(p)-1]
+		}
+		if p == "" {
+			return nil, refuse("front matter %q has an empty list item", key)
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }

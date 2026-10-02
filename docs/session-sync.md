@@ -272,7 +272,7 @@ and the inbox run on the syncer's own goroutines.
 ## Settings
 
 ```json
-{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true, "skills": true, "prompts": true } }
+{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true, "skills": true, "prompts": true, "processes": true } }
 ```
 
 - **`sync.enabled`** — mirror sessions. Default on whenever a Vulnetix CLI
@@ -288,12 +288,13 @@ and the inbox run on the syncer's own goroutines.
   [Automatic sync](remote-control.md#automatic-sync-of-profiles-and-crews)).
   Default on; `false` leaves backups to requests from the website. File
   contents never travel this way.
-- **`sync.skills`**, **`sync.prompts`** - the same switch for one kind of
+- **`sync.skills`**, **`sync.prompts`**, **`sync.processes`** - the same switch for one kind of
   [library item](library-items.md): keep that library current by itself,
   advertise the host's items of the kind (name and hash only) and take the
   website's backup and install requests for it. Default on; `false` removes the
-  kind from all three. Only the global prompt library is ever synced, never a
-  project prompt.
+  kind from all three. Only the global prompt and process libraries are ever synced,
+  never a project one. `sync.processes` is the switch that keeps the website out of
+  what runs on the host.
 - **Project layer:** a project settings file may turn any of these off, never
   on.
   The guardrails switch does not change sync; it is a data-egress setting,

@@ -124,6 +124,10 @@ movement, edit and back always stay.
   `budget cycle`, `test command`, `test fix passes`, `test timeout`, `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`) opens the
   editor below the list, and the body shrinks by its height. `enter` saves,
   `esc` cancels; a refused value stays open with the reason.
+- **Settings with no row.** Some keys are edited in `settings.json` only: the
+  library sync switches (`sync.skills`, `sync.prompts`, `sync.processes`; see
+  [session-sync.md](session-sync.md#settings) and [library-items.md](library-items.md))
+  have no row here. A project layer may switch one off and never on.
 
 ## Edge cases
 

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 )
 
 // Kind is one kind of library item, spelled the way the contract spells it.
@@ -181,14 +180,4 @@ func clip(s string, n int) string {
 		cut--
 	}
 	return s[:cut] + "..."
-}
-
-// sortedKeys returns a map's keys in order, so messages and walks are stable.
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

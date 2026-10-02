@@ -75,10 +75,29 @@ func (a *App) processAllowed(cmd string) bool {
 // live tool row and runs-panel activity. Every start path goes through the
 // plan-mode gate here, so a library entry cannot start what `!!` could not.
 func (a *App) startSupervised(name, cmd string) (bgproc.Process, tea.Cmd, bool) {
+	return a.startSupervisedWith(cmd, func() (bgproc.Process, error) { return a.procManager.Start(name, cmd) })
+}
+
+// startSupervisedEntry is startSupervised for a library entry, which may be a
+// structured process (run as an argv, no shell) rather than a shell string. The
+// plan-mode gate sees the command line it would run, rendered for display.
+func (a *App) startSupervisedEntry(e processlib.Entry) (bgproc.Process, tea.Cmd, bool) {
+	return a.startSupervisedWith(e.Command, func() (bgproc.Process, error) { return a.startEntry(e) })
+}
+
+// startEntry starts a library entry under the manager, in its own form.
+func (a *App) startEntry(e processlib.Entry) (bgproc.Process, error) {
+	if e.Spec != nil {
+		return a.procManager.StartSpec(e.Name, *e.Spec)
+	}
+	return a.procManager.Start(e.Name, e.Command)
+}
+
+func (a *App) startSupervisedWith(cmd string, start func() (bgproc.Process, error)) (bgproc.Process, tea.Cmd, bool) {
 	if !a.processAllowed(cmd) {
 		return bgproc.Process{}, nil, false
 	}
-	proc, err := a.procManager.Start(name, cmd)
+	proc, err := start()
 	if err != nil {
 		a.addSystem(fmt.Sprintf("process start failed: %v", err))
 		return bgproc.Process{}, nil, false
@@ -178,8 +197,13 @@ func (a *App) autoStartProcesses() {
 	global, _ := processlib.Load(config.ScopeGlobal, a.workdir)
 	project, _ := processlib.Load(config.ScopeProject, a.workdir)
 	for _, e := range processlib.Enabled(processlib.Merge(global.Entries, project.Entries)) {
-		if _, err := a.procManager.Start(e.Name, e.Command); err != nil {
-			// Already running or lock conflict; keep going.
+		if _, err := a.startEntry(e); err != nil {
+			// Already running or a lock conflict is the normal case and says nothing;
+			// a structured process that cannot start (a variable it copies is unset, a
+			// user it needs cannot be honoured) says why. Either way, keep going.
+			if e.Spec != nil && !strings.Contains(err.Error(), "already running") {
+				a.addSystem(fmt.Sprintf("process %s did not start: %v", e.Name, err))
+			}
 			continue
 		}
 	}

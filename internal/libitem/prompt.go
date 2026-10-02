@@ -2,17 +2,21 @@ package libitem
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
-// Prompt limits, shared with the website.
-const (
-	// MaxPromptOrder is the highest prompt order; 0 means "no position of its own".
-	MaxPromptOrder = 999
+// MaxPromptOrder is the highest prompt order; 0 means "no position of its own".
+const MaxPromptOrder = 999
+
+var (
+	promptFields = map[string]bool{"name": true, "description": true, "order": true, "enabled": true}
+	promptOrder  = regexp.MustCompile(`^[0-9]{1,3}$`)
 )
 
 func init() {
-	register(Prompt, func(c []byte) (string, error) { d, err := ParsePrompt(c); return d.Name, err })
+	register(Prompt, func(c []byte) (string, error) { d, err := ParsePrompt(c); return d.Name, err }, nil)
 }
 
 // PromptDoc is a validated prompt. Order is 0 when the document gives none, in
@@ -26,47 +30,50 @@ type PromptDoc struct {
 	Body        string
 }
 
-var promptKeys = []string{"name", "description", "order", "enabled"}
-
-// ParsePrompt validates a canonical prompt document.
+// ParsePrompt validates a canonical prompt document: front matter with a required
+// name and an optional description, order (0 to 999, one to three digits) and
+// enabled, then the prompt text, which must not be empty.
 func ParsePrompt(canonical []byte) (PromptDoc, error) {
-	fields, body, err := splitFrontMatter(string(canonical))
+	fields, body, err := splitFrontMatter(string(canonical), promptFields)
 	if err != nil {
 		return PromptDoc{}, err
 	}
 	d := PromptDoc{Enabled: true}
-	gotName := false
+	haveName := false
 	for _, f := range fields {
 		switch f.key {
 		case "name":
-			d.Name, gotName = fmString(f.val), true
+			d.Name, haveName = fmString(f.val), true
+			if d.Name == "" {
+				return d, refuse("name is required")
+			}
+			if !ValidName(Prompt, d.Name) {
+				return d, refuse("name %q is not valid: %s", cleanForMessage(d.Name), nameRule)
+			}
 		case "description":
 			d.Description = fmString(f.val)
+			if len(d.Description) > MaxDescriptionBytes {
+				return d, refuse("description is %d bytes; the most is %d", len(d.Description), MaxDescriptionBytes)
+			}
 		case "order":
-			if d.Order, err = fmInt("order", f.val, 0, MaxPromptOrder); err != nil {
-				return PromptDoc{}, err
+			s := fmString(f.val)
+			if !promptOrder.MatchString(s) {
+				return d, refuse("order must be a whole number from 0 to %d", MaxPromptOrder)
 			}
+			d.Order, _ = strconv.Atoi(s)
 		case "enabled":
-			if d.Enabled, err = fmBool("enabled", f.val); err != nil {
-				return PromptDoc{}, err
+			if d.Enabled, err = fmBool(f.key, f.val); err != nil {
+				return d, err
 			}
-		default:
-			return PromptDoc{}, refuse("unknown front-matter field %q (a prompt has %s)", clip(f.key, 40), strings.Join(promptKeys, ", "))
 		}
 	}
-	if !gotName {
-		return PromptDoc{}, refuse("required front-matter field %q is missing", "name")
-	}
-	if !ValidName(Prompt, d.Name) {
-		return PromptDoc{}, nameError(Prompt, d.Name)
-	}
-	if err := checkDescription(d.Description, false); err != nil {
-		return PromptDoc{}, err
+	if !haveName {
+		return d, refuse("name is required")
 	}
 	if strings.TrimSpace(body) == "" {
-		return PromptDoc{}, refuse("the prompt body is empty")
+		return d, refuse("the prompt has no text after the front matter")
 	}
-	d.Body = body
+	d.Body = strings.TrimLeft(body, "\n")
 	return d, nil
 }
 
