@@ -95,7 +95,15 @@ func ReadBody(e Entry) (string, error) {
 	rest := doc[len("---\n"):]
 	idx := strings.Index(rest, "\n---")
 	body := rest[idx+len("\n---"):]
-	return strings.TrimLeft(body, "-\r\n"), nil
+	// The rest of the closing delimiter line goes with it. Only line breaks are
+	// trimmed from the start of the body, so a body that opens with a list
+	// marker or a rule keeps it.
+	if nl := strings.IndexByte(body, '\n'); nl >= 0 {
+		body = body[nl+1:]
+	} else {
+		body = ""
+	}
+	return strings.TrimLeft(body, "\r\n"), nil
 }
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)

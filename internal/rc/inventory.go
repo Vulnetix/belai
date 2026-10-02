@@ -15,6 +15,8 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
+	"github.com/vulnetix/belai/internal/libitem"
+	"github.com/vulnetix/belai/internal/libstore"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -26,6 +28,9 @@ type Inventory struct {
 	Profiles   []sessionsync.RCProfile
 	Crews      []sessionsync.RCCrew
 	Workers    []sessionsync.RCWorker
+	// Items are the library items this host holds, for the kinds whose sync
+	// switch is on: kind, name and hash, never a document.
+	Items []sessionsync.RCItem
 }
 
 // Caps on what one host reports; the server applies the same caps.
@@ -42,7 +47,8 @@ func (i Inventory) catalogueHash() string {
 		M int
 		P []sessionsync.RCProfile
 		C []sessionsync.RCCrew
-	}{i.MaxWorkers, i.Profiles, i.Crews})
+		I []sessionsync.RCItem
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -75,8 +81,32 @@ func LocalInventory() Inventory {
 		}
 		inv.Crews = append(inv.Crews, rc)
 	}
+	inv.Items = localInventoryItems()
 	inv.Workers = localWorkers()
 	return inv
+}
+
+// localInventoryItems lists the library items this host holds for the kinds whose
+// sync switch is on, at most sessionsync.MaxRCItems of them.
+func localInventoryItems() []sessionsync.RCItem {
+	s, err := config.LoadGlobal()
+	if err != nil {
+		return nil
+	}
+	var kinds []libitem.Kind
+	for _, k := range libstore.Kinds() {
+		if s.SyncItemEnabled(string(k)) {
+			kinds = append(kinds, k)
+		}
+	}
+	var out []sessionsync.RCItem
+	for _, it := range localLibraryItems(kinds) {
+		if len(out) >= sessionsync.MaxRCItems {
+			break
+		}
+		out = append(out, sessionsync.RCItem{Kind: it.kind, Name: it.name, SHA256: hashOf(it.data)})
+	}
+	return out
 }
 
 // RecentWorkers is how long a stopped or failed worker stays on the

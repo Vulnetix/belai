@@ -124,6 +124,17 @@ func Create(scope config.Scope, workdir, name, prompt string) (Entry, error) {
 	return fromFilelib(e), nil
 }
 
+// Put writes a prompt at an explicit order and enabled state, replacing the
+// entry of that slug wherever it is now. An order of 0 keeps an existing
+// entry's order and puts a new one last. The name must already be a slug.
+func Put(scope config.Scope, workdir, name, prompt string, order int, enabled bool) (Entry, error) {
+	e, err := spec.Put(scope, workdir, name, prompt, order, enabled)
+	if err != nil {
+		return Entry{}, err
+	}
+	return fromFilelib(e), nil
+}
+
 // Update overwrites an entry's body in place, preserving its identity.
 func Update(e Entry, prompt string) (Entry, error) {
 	updated, err := spec.Update(toFilelib(e), prompt)

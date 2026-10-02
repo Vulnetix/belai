@@ -515,3 +515,95 @@ func TestMatchAgainstBody(t *testing.T) {
 		t.Fatalf("expected no match")
 	}
 }
+
+func TestPut(t *testing.T) {
+	for name, s := range specs() {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			load := func() []Entry {
+				l, err := s.Load(config.ScopeProject, dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return l.Entries
+			}
+			// A new entry with no order goes after the last, like Create.
+			a, err := s.Put(config.ScopeProject, dir, "alpha", "one", 0, true)
+			if err != nil || a.Order != 10 || !a.Enabled {
+				t.Fatalf("new, no order: %+v, %v", a, err)
+			}
+			// A new disabled entry with no order is disabled at the next slot.
+			b, err := s.Put(config.ScopeProject, dir, "beta", "two", 0, false)
+			if err != nil || b.Order != 20 || b.Enabled {
+				t.Fatalf("new disabled: %+v, %v", b, err)
+			}
+			// An explicit order is taken as given, even if it shares a number.
+			c, err := s.Put(config.ScopeProject, dir, "gamma", "three", 10, true)
+			if err != nil || c.Order != 10 {
+				t.Fatalf("explicit order: %+v, %v", c, err)
+			}
+			// A replace with order 0 keeps the entry's order and its place.
+			a2, err := s.Put(config.ScopeProject, dir, "alpha", "ONE", 0, true)
+			if err != nil || a2.Order != 10 || a2.Path != a.Path {
+				t.Fatalf("replace keeps order: %+v (was %+v), %v", a2, a, err)
+			}
+			// A replace that changes order and enabled moves the file: one file per name.
+			a3, err := s.Put(config.ScopeProject, dir, "alpha", "uno", 300, false)
+			if err != nil || a3.Order != 300 || a3.Enabled || a3.Path == a.Path {
+				t.Fatalf("replace moves: %+v, %v", a3, err)
+			}
+			if _, err := os.Stat(a.Path); !os.IsNotExist(err) {
+				t.Errorf("the replaced file is still there: %v", err)
+			}
+			var names []string
+			for _, e := range load() {
+				names = append(names, fmt.Sprintf("%s:%d:%v:%s", e.Name, e.Order, e.Enabled, e.Body))
+			}
+			want := []string{"gamma:10:true:three", "beta:20:false:two", "alpha:300:false:uno"}
+			if fmt.Sprint(names) != fmt.Sprint(want) {
+				t.Fatalf("library = %v, want %v", names, want)
+			}
+			// No temp file is left behind.
+			des, _ := os.ReadDir(libDir(t, s, dir))
+			for _, de := range des {
+				if _, _, _, ok := s.ParseFileName(de.Name()); !ok {
+					t.Errorf("stray %s after Put", de.Name())
+				}
+			}
+		})
+	}
+}
+
+func TestPutRefusesWhatItCannotPlace(t *testing.T) {
+	s := specs()["prompt"]
+	dir := t.TempDir()
+	for _, name := range []string{"Upper", "a b", "a_b", ""} {
+		if _, err := s.Put(config.ScopeProject, dir, name, "x", 0, true); err == nil {
+			t.Errorf("name %q was put", name)
+		}
+	}
+	for _, order := range []int{-1, 1000} {
+		if _, err := s.Put(config.ScopeProject, dir, "ok", "x", order, true); err == nil {
+			t.Errorf("order %d was put", order)
+		}
+	}
+	d := filepath.Join(dir, ".vulnetix", "prompts")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 999; i++ {
+		if err := os.WriteFile(filepath.Join(d, fmt.Sprintf("%03d-p%d.md", i, i)), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Put(config.ScopeProject, dir, "extra", "x", 5, true); !errors.Is(err, ErrLibraryFull) {
+		t.Errorf("a full library took another: %v", err)
+	}
+	if _, err := s.Put(config.ScopeProject, dir, "extra", "x", 0, true); !errors.Is(err, ErrLibraryFull) {
+		t.Errorf("a full library took another at the end: %v", err)
+	}
+	// Replacing an entry of a full library is fine.
+	if _, err := s.Put(config.ScopeProject, dir, "p5", "new", 0, true); err != nil {
+		t.Errorf("replace in a full library: %v", err)
+	}
+}

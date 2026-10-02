@@ -31,6 +31,8 @@ the sanitiser sits in the tool-result pipeline.
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
 | Tool argument | `internal/tools` | `CheckArgs`, `CheckFormat` | Refuses |
 | Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
+| A skill or prompt document from the library, before it is written | `internal/libstore` | `untrustedGate` (with `sanitize.Sanitize`) | Refuses |
+| A library item document: shape, names, limits | `internal/libitem` | `Validate` | Refuses |
 
 Repairing is used for text whose content has value even when part of it is
 hostile (a tool result, a prompt): the dangerous part is cut and the rest
@@ -299,6 +301,25 @@ the flags a pinned fact would be overridden by. A flag matches in its `--flag=va
 form and as an abbreviation, since a CLI may read either, and a flag after a
 bare `--` is an argument to something else. A hidden fact (`aws_external_id`) is
 read by the harness and left out of the prompt.
+
+## Library items
+
+A skill or a prompt that the website's library installs on a host
+([library-items.md](library-items.md)) is text another party may have written, so it
+is refused rather than repaired: a repair would change the bytes and so the hash the
+library compares, and the stored document would no longer be the library's. Before
+anything is written, `libstore.untrustedGate` refuses a document in which
+`sanitize.Sanitize` would remove harness delimiter markup, or that holds a control
+character other than newline and tab, a terminal escape, a bidirectional override,
+a zero-width or line-separator rune, a byte order mark, or a character from the tag
+block. Joiners that spell real text (ZWJ, ZWNJ) and variation selectors are kept.
+The refusal names the rule and the code point, never the surrounding text.
+
+The gate is the write-time half. Reading is unchanged: a skill result is still
+`KindSkill`, always sanitised and classified, and a prompt is still admitted like
+any text the user submits. A library document is also validated whole by
+`internal/libitem` (a closed schema, bounded sizes, a name that cannot name a path),
+so no path or command comes from its text.
 
 ## Testing
 

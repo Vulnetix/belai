@@ -224,6 +224,12 @@ type SyncSettings struct {
 	// over a version the website saved since this host last synced. Default true;
 	// false leaves backups to requests from the website.
 	Profiles *bool `json:"profiles,omitempty"`
+	// Skills lets `belai rc` keep the website's skill library current by itself
+	// and lets the website back up or install a skill here
+	// (docs/library-items.md). Default true; false leaves skills out of both.
+	Skills *bool `json:"skills,omitempty"`
+	// Prompts is the same switch for the global prompt library.
+	Prompts *bool `json:"prompts,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -246,7 +252,37 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Profiles != nil && !*proj.Profiles {
 		out.Profiles = &f
 	}
+	if proj.Skills != nil && !*proj.Skills {
+		out.Skills = &f
+	}
+	if proj.Prompts != nil && !*proj.Prompts {
+		out.Prompts = &f
+	}
 	return out
+}
+
+// SyncItemEnabled reports whether the library of one kind of item (skill,
+// prompt, ...) is kept current by `belai rc` and open to the website's backup
+// and install requests: sync.<kinds>, default on, and never on while sync
+// itself is off. An unknown kind is off.
+func (s Settings) SyncItemEnabled(kind string) bool {
+	if !s.SyncEnabled() {
+		return false
+	}
+	var v *bool
+	switch kind {
+	case "skill":
+		if s.Sync != nil {
+			v = s.Sync.Skills
+		}
+	case "prompt":
+		if s.Sync != nil {
+			v = s.Sync.Prompts
+		}
+	default:
+		return false
+	}
+	return v == nil || *v
 }
 
 // SyncEnabled reports whether session sync is on. Default on; it still needs
