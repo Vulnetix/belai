@@ -311,6 +311,14 @@ func keySections() []keySection {
 			{"q, esc", "close the document or the results, then the filter, then the screen"},
 			{"r", "reload the indexes"},
 		}},
+		{"workspace changes (/diff)", []keyBinding{
+			{"left, right, p, n, tab", "previous or next changed file"},
+			{"up, down, k, j", "scroll the diff a line"},
+			{"pgup, pgdn, ctrl+u, ctrl+d, space", "scroll a page"},
+			{"home, end, g, G", "top and bottom of the diff"},
+			{"r", "reload from the repository"},
+			{"q, esc", "back"},
+		}},
 		{"trusted directories (/trusted)", []keyBinding{
 			{"up, down", "move (also k, j)"},
 			{"pgup, pgdn, ctrl+u, ctrl+d, space", "page up and down"},

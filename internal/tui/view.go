@@ -40,6 +40,7 @@ const (
 	viewIntel
 	viewVoiceDebug
 	viewKnowledge
+	viewDiff
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -85,6 +86,7 @@ func init() {
 	viewHandlers[viewIntel] = viewHandler{name: "intel", enter: (*App).enterIntel, key: (*App).handleIntelKey, render: (*App).intelView}
 	viewHandlers[viewVoiceDebug] = viewHandler{name: "voice-debug", key: (*App).handleVoiceDebugKey, render: (*App).voiceDebugView}
 	viewHandlers[viewKnowledge] = viewHandler{name: "knowledge", enter: (*App).enterKnowledge, key: (*App).handleKnowledgeKey, render: (*App).knowledgeView}
+	viewHandlers[viewDiff] = viewHandler{name: "diff", enter: (*App).enterDiff, key: (*App).handleDiffKey, render: (*App).diffView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

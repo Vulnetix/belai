@@ -425,6 +425,7 @@ type App struct {
 	rcState             rcViewState
 	trustedState        trustedViewState
 	knowledgeState      knowledgeViewState
+	diffState           diffViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -2266,6 +2267,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 	if cmd, ok := a.handleKnowledgeMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleDiffMsg(msg); ok {
 		return a, cmd
 	}
 	switch m := msg.(type) {

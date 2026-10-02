@@ -959,6 +959,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `vulnerability_id:` data line, never in its instance name. Do not add a second
   identifier recognizer or let any other text into the row. See
   [docs/vuln-row.md](docs/vuln-row.md).
+- **The `/diff` pane is the user's own view and shows no denied file.**
+  `internal/workdiff` collects the working tree's changes with read-only,
+  hardened git calls (hooks and fsmonitor off, no optional locks, the scrubbed
+  environment) and `internal/tui/diff_view.go` draws them. The text goes to the
+  screen only: never a model, transcript, telemetry, audit or sync, and there is
+  no model-facing tool. A path a `Read` deny rule covers is listed by name and
+  status and its content is never read; a symlink is never followed and sizes
+  are bounded. See [docs/diff.md](docs/diff.md).
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
