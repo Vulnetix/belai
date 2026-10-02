@@ -352,7 +352,7 @@ them, through the same queue and carrying identifiers only (see
   does not need `sync.remote_prompts`.
 
 Both are refused, before the library is asked for anything, while the kind's own
-switch is off (`sync.skills`, `sync.prompts`), and a kind this Belai predates is
+switch is off (`sync.skills`, `sync.prompts`, `sync.processes`), and a kind this Belai predates is
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
@@ -408,8 +408,8 @@ avatar id, so the website can draw the agent. They are presentation only.
   wrote for an agent (`rel/`, `home/` and `abs/` hold the three forms of listed
   path).
 - `~/.vulnetix/belai/profiles/crews/<name>.json`: a user crew.
-- `~/.vulnetix/belai/skills/<name>/SKILL.md`, `~/.vulnetix/belai/prompts/` and
-  `~/.vulnetix/belai/library/prompts.json`: what an item install writes (see
+- `~/.vulnetix/belai/skills/<name>/SKILL.md`, `~/.vulnetix/belai/prompts/`,
+  `~/.vulnetix/belai/processes/` and `~/.vulnetix/belai/library/prompts.json`: what an item install writes (see
   [library-items.md](library-items.md)).
 
 ## Server side

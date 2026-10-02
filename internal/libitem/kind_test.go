@@ -77,7 +77,7 @@ func TestValidateRefusesWhatItCannotCheck(t *testing.T) {
 	if _, err := Validate("nope", []byte("x")); err == nil {
 		t.Error("an unknown kind validated")
 	}
-	if _, err := Validate(Skill, []byte(strings.Repeat("x", 64<<10+1))); err == nil || !strings.Contains(err.Error(), "larger than 32768") {
+	if _, err := Validate(Skill, []byte(strings.Repeat("x", 64<<10+1))); err == nil || !strings.Contains(err.Error(), "the most is 32768") {
 		t.Errorf("an oversized raw document: %v", err)
 	}
 }
@@ -97,14 +97,16 @@ func TestLibraryItemsPageStatesTheLimits(t *testing.T) {
 		"A name is 1 to 64 characters",
 		"A skill or a prompt document is at most 32 KiB",
 		"(required) is at most 300 bytes",
-		"at most 32 keys",
 		"allowed-tools` holds at most 64",
+		"`license` is at most 128 bytes",
+		"`compatibility` at most 500",
+		"`metadata` is a one-line string of at most 1024 bytes",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/library-items.md does not say %q", want)
 		}
 	}
-	if MaxItemsPerKind != 200 || MaxNameBytes != 64 || MaxDescriptionBytes != 300 || MaxSkillMetadataKeys != 32 || MaxSkillAllowedTools != 64 {
+	if MaxItemsPerKind != 200 || MaxNameBytes != 64 || MaxDescriptionBytes != 300 || MaxSkillLicense != 128 || MaxSkillCompatibility != 500 || MaxSkillMetadata != 1024 || MaxSkillAllowedTools != 64 {
 		t.Error("a limit changed; update docs/library-items.md and this test")
 	}
 }

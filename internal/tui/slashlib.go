@@ -220,7 +220,7 @@ func (a *App) runProcessEntry(name string) tea.Cmd {
 		a.addSystem(processStatusLine(p, time.Now()))
 		return nil
 	}
-	p, cmd, ok := a.startSupervised(entry.Name, entry.Command)
+	p, cmd, ok := a.startSupervisedEntry(entry)
 	if !ok {
 		return nil
 	}

@@ -469,8 +469,7 @@ func (a *App) handleRunsProcessKey(m tea.KeyMsg) tea.Cmd {
 		if p.ID == "" {
 			return nil
 		}
-		_ = a.procManager.Stop(pid)
-		_, _ = a.procManager.Start(p.Name, p.Command)
+		_, _ = a.procManager.Relaunch(pid)
 	}
 	return nil
 }

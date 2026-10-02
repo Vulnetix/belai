@@ -26,6 +26,7 @@ var topCommands = []topCommand{
 	{"kanban", "read and edit the global kanban board"},
 	{"skill", "list, import and export skills (library items)"},
 	{"prompt", "list, import and export prompts (library items)"},
+	{"process", "list, import and export supervised processes (library items)"},
 	{"rc", "remote control: let the Vulnetix website start sessions here"},
 	{"plugin", "install and manage plugins"},
 	{"acp", "serve the Agent Client Protocol to an editor"},

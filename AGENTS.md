@@ -1143,7 +1143,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   turn it off, never on): off means nothing is hashed, advertised or sent for it
   and its requests are refused. A refusal reason is harness text and never the
   document, only the user's global layers are read or written, and a host never
-  advertises more than kind, name and hash.
+  advertises more than kind, name and hash. A structured process is an argv run
+  with no shell: a secret-looking `env` name takes only `env:OTHER` (the value is
+  copied from the host at start, an unset one refuses the start), `user` is
+  honoured only when Belai is root and never falls back to the current user, a
+  redirect file is `0600` and never opened through a link, the sandbox's writable
+  roots stay the project directory whatever `cwd` says, and the recovery subagent
+  restarts it exactly as defined, never amended.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

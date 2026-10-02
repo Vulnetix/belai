@@ -1,11 +1,5 @@
 package libitem
 
-import (
-	"fmt"
-	"reflect"
-	"strings"
-)
-
 // Item is a validated document: its kind and name, its canonical bytes and the
 // hash of them.
 type Item struct {
@@ -15,41 +9,60 @@ type Item struct {
 	SHA256 string
 }
 
-// validator checks one kind's canonical document and returns the item's name.
+// validator checks one kind's canonical document and returns the item's name. It
+// applies the library's rules, which are the server's (vdb-site
+// belai_items_validate*.go) and which the website mirrors for inline errors.
 type validator func(canonical []byte) (name string, err error)
 
-var validators = map[Kind]validator{}
+// hostCheck is a second pass for a kind whose document becomes part of Belai's
+// own settings: it applies Belai's own validators (internal/config), so a document
+// the library accepts is never written as a setting that Belai then refuses to
+// load. It can only make Validate stricter than the library, and only where
+// Belai itself would refuse the result.
+type hostCheck func(canonical []byte) error
 
-func register(k Kind, v validator) { validators[k] = v }
+type kindImpl struct {
+	validate validator
+	host     hostCheck
+}
+
+var impls = map[Kind]kindImpl{}
+
+func register(k Kind, v validator, h hostCheck) { impls[k] = kindImpl{validate: v, host: h} }
 
 // Supported reports whether this build validates the kind.
-func Supported(k Kind) bool { _, ok := validators[k]; return ok }
+func Supported(k Kind) bool { _, ok := impls[k]; return ok }
 
-// Validate canonicalises raw and checks it against the kind's schema and
-// limits. The first problem is returned as an *Error.
+// Validate canonicalises raw and checks it against the kind's rules and limits:
+// first the library's (the server's), then, for a kind that becomes a Belai
+// setting, Belai's own. The first problem is returned as an *Error.
 func Validate(kind Kind, raw []byte) (Item, error) {
 	if !kind.Valid() {
 		return Item{}, refuse("%q is not a library item kind", clip(string(kind), 40))
 	}
-	v, ok := validators[kind]
+	impl, ok := impls[kind]
 	if !ok {
 		return Item{}, refuse("this Belai does not take %s items", string(kind))
 	}
-	// A document is bounded before it is parsed, with room for the whitespace
-	// canonicalisation removes.
-	if len(raw) > kind.MaxBytes()*2 {
-		return Item{}, refuse("the document is larger than %d bytes", kind.MaxBytes())
+	// A document far over the limit is refused before it is parsed.
+	if len(raw) > kind.MaxBytes()*2+1024 {
+		return Item{}, refuse("the document is over %d bytes", kind.MaxBytes())
 	}
 	doc, err := Canonical(kind, raw)
 	if err != nil {
 		return Item{}, err
 	}
 	if len(doc) > kind.MaxBytes() {
-		return Item{}, refuse("the document is larger than %d bytes", kind.MaxBytes())
+		return Item{}, refuse("the document is %d bytes; the most is %d", len(doc), kind.MaxBytes())
 	}
-	name, err := v(doc)
+	name, err := impl.validate(doc)
 	if err != nil {
 		return Item{}, err
+	}
+	if impl.host != nil {
+		if err := impl.host(doc); err != nil {
+			return Item{}, err
+		}
 	}
 	return Item{Kind: kind, Name: name, Doc: doc, SHA256: Hash(doc)}, nil
 }
@@ -58,73 +71,4 @@ func Validate(kind Kind, raw []byte) (Item, error) {
 func Name(kind Kind, raw []byte) (string, error) {
 	it, err := Validate(kind, raw)
 	return it.Name, err
-}
-
-// checkSchema refuses any key of a decoded JSON value that the Go type t does
-// not declare. Go's decoder matches field names without regard to case, so the
-// strict check is made here, on the keys exactly as written.
-func checkSchema(v any, t reflect.Type, path string) error {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	switch t.Kind() {
-	case reflect.Struct:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return nil // a type error is reported by the decoder
-		}
-		fields := map[string]reflect.Type{}
-		for i := 0; i < t.NumField(); i++ {
-			f := t.Field(i)
-			tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-			if tag == "" || tag == "-" || !f.IsExported() {
-				continue
-			}
-			fields[tag] = f.Type
-		}
-		for _, k := range sortedKeys(obj) {
-			ft, ok := fields[k]
-			if !ok {
-				return refuse("unknown key %q%s", clip(k, 40), inPath(path))
-			}
-			if err := checkSchema(obj[k], ft, join(path, k)); err != nil {
-				return err
-			}
-		}
-	case reflect.Slice:
-		arr, ok := v.([]any)
-		if !ok {
-			return nil
-		}
-		for i, e := range arr {
-			if err := checkSchema(e, t.Elem(), fmt.Sprintf("%s[%d]", path, i)); err != nil {
-				return err
-			}
-		}
-	case reflect.Map:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return nil
-		}
-		for _, k := range sortedKeys(obj) {
-			if err := checkSchema(obj[k], t.Elem(), join(path, k)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func join(path, k string) string {
-	if path == "" {
-		return k
-	}
-	return path + "." + k
-}
-
-func inPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	return " in " + path
 }

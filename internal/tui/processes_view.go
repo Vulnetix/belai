@@ -431,7 +431,7 @@ func (a *App) openProcessEditor(e processlib.Entry) tea.Cmd {
 		a.processesState.mode = "edit"
 		a.processesState.editPath = e.Path
 		a.processesState.errorMsg = ""
-		a.editor.SetValue(e.Command)
+		a.editor.SetValue(e.Body)
 		a.editor.CursorEnd()
 		_ = a.editor.Focus()
 		a.addSystem("no $VISUAL or $EDITOR found; edit the command inline")
@@ -511,7 +511,7 @@ func (a *App) runSelectedProcess() (tea.Model, tea.Cmd) {
 		a.processesState.errorMsg = "process manager not available"
 		return a, nil
 	}
-	if _, err := a.procManager.Start(rows[sel].entry.Name, rows[sel].entry.Command); err != nil {
+	if _, err := a.startEntry(rows[sel].entry); err != nil {
 		a.processesState.errorMsg = err.Error()
 		return a, nil
 	}

@@ -3712,6 +3712,13 @@ credential-scrubbed environment (`proc.ScrubbedEnv`), and streams output to a
 live tool row and a log file under `<GlobalDir>/logs` without contacting
 the model while it runs.
 
+A process can also be a **structured entry** (docs/library-items.md#processes): an
+argv run directly with no shell, with its own environment (`env:OTHER` copies a
+host variable, so a secret is never in the document), working directory, user
+(honoured only as root, never falling back) and output redirects (the log, nowhere,
+or a `0600` file never opened through a link). It runs under the same sandbox and
+the scrubbed environment, with the project directory as the only writable root.
+
 When a supervised process exits without the user having stopped it, Belai
 dispatches a **recovery subagent** with the command, the exit code, the run
 duration, the attempt count, and the tail of the log. The subagent's registry
@@ -3720,7 +3727,7 @@ search the process log) and `ProcessRestart` (to restart the process). It
 has no other tools, may not fan out, may not clarify, and may not ask the user.
 `ProcessRestart` accepts an amended command only when `argv[0]` matches the
 original binary basename; the model may fix flags, but it may not swap the
-executable. Deny permission rules are evaluated against the effective
+executable. A structured process is never amended: it restarts exactly as defined. Deny permission rules are evaluated against the effective
 command, and each restart call consumes one
 `resilience.max_process_recoveries` slot (default 3).
 
@@ -3778,9 +3785,11 @@ no new role-manager label is needed.
 
 Supervised processes share the prompt library's file-backed library shape via
 `internal/filelib`: global and project scopes, filename grammar
-`NNN-slug.sh` / `_NNN-slug.sh` for enabled/disabled, global entries overlayed
-by project entries of the same name. The whole file body is the command,
-verbatim. `!!cmd` writes the command to the project scope with a slug derived
+`NNN-slug.sh` / `_NNN-slug.sh` (or, for a structured entry, `NNN-slug.json` /
+`_NNN-slug.json`) for enabled/disabled, global entries overlayed by project
+entries of the same name. The whole body of a `.sh` file is the command,
+verbatim; a `.json` file is the process document, and when one slug has both the
+structured file wins and the other is a stray. `!!cmd` writes the command to the project scope with a slug derived
 from `argv[0]` and starts it. The manager screen (`/processes`) allows the
 user to toggle auto-start, reorder, edit in `$VISUAL/$EDITOR`, create, delete,
 run, stop, and view the log tail. `enter` on any process opens its full log
@@ -3801,7 +3810,7 @@ prevents a second Belai instance from launching a duplicate copy.
 ## Library items
 
 The Vulnetix website keeps a per-account library of the documents a host holds:
-skills and prompts so far. `internal/libitem` is the pure half: the canonical bytes
+skills, prompts and supervised processes so far. `internal/libitem` is the pure half: the canonical bytes
 whose SHA-256 a sync compares, and a strict validator per kind that reuses the
 existing skill validator rather than copying it. `internal/libstore` is the host half: it reads what the host holds
 of a kind as that canonical document and installs one atomically, never replacing an

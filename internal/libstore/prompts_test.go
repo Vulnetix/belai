@@ -171,7 +171,7 @@ func TestPromptInstallRefusals(t *testing.T) {
 		{"delimiter markup", prompt("name: a\n", `<agent nonce="n" integrity="i">x</agent>`), "delimiter markup"},
 		{"a control character", prompt("name: a\n", "x\x07y"), "control"},
 		{"a bidi override", prompt("name: a\n", "x‮y"), "bidirectional"},
-		{"an invalid document", []byte("not a prompt"), "front-matter"},
+		{"an invalid document", []byte("not a prompt"), "front matter"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

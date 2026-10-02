@@ -1,4 +1,4 @@
-# Library items
+| `order` | optional whole number from 0 to 999, one to three digits (leading zeros allowed); 0 or absent means "after the last" |# Library items
 
 The Vulnetix website keeps a library for each account: the things worth keeping
 when a machine is wiped or a second one is set up. Agent profiles and crews were
@@ -16,6 +16,7 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Documents](#documents)
 - [Skills](#skills)
 - [Prompts](#prompts)
+- [Processes](#processes)
 - [How a document travels](#how-a-document-travels)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -29,6 +30,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | --- | --- | --- | --- | --- |
 | `skill` | `belai skill` | Markdown with front matter | `~/.vulnetix/belai/skills/<name>/SKILL.md` | `sync.skills` |
 | `prompt` | `belai prompt` | Markdown with front matter | `~/.vulnetix/belai/prompts/<NNN>-<name>.md` | `sync.prompts` |
+| `process` | `belai process` | JSON object | `~/.vulnetix/belai/processes/<NNN>-<name>.json` (or a legacy `.sh`) | `sync.processes` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -48,15 +50,20 @@ Two formats, one per kind.
 The library stores **canonical bytes**, and the SHA-256 of those bytes is what a
 sync compares, so the host and the server must agree on them exactly:
 
-- A Markdown document: `CRLF` becomes `LF`, every trailing whitespace character
+- A Markdown document: not empty, valid UTF-8, with no control character other
+  than tab and line feed (a NUL, a lone carriage return and a terminal escape are
+  refused). `CRLF` becomes `LF`, every trailing whitespace character
   (`unicode.IsSpace`) of the whole document is dropped, and exactly one `\n`
-  follows. It must be valid UTF-8 and hold no NUL byte.
-- A JSON document: decoded with numbers kept as written, then written again
-  compactly with HTML escaping off, object keys sorted, and one `\n` after it.
-  The top level must be an object.
+  follows.
+- A JSON document: valid UTF-8, with no key repeated inside one object and no
+  nesting past 8 levels. It is decoded with numbers kept as written, then written
+  again compactly with HTML escaping off, object keys sorted, and one `\n` after
+  it. The top level must be an object.
 
 So two spellings of one document have one hash, and a document is never altered
-beyond that: a refused document is refused whole, never repaired.
+beyond that: a refused document is refused whole, never repaired. The size limit
+below applies to the canonical bytes, and a document more than twice the limit
+(plus 1 KiB) is refused before it is parsed.
 
 **Names.** A name is 1 to 64 characters: lowercase letters, digits, `.`, `_` and
 `-`, starting with a letter or digit (`^[a-z0-9][a-z0-9._-]{0,63}$`). The Bash
@@ -67,11 +74,19 @@ budget or rewrite document is at most 16 KiB; a provider document is at most
 32 KiB. A document over its limit is refused before it is parsed further.
 
 **Strictness.** A key a kind does not declare is refused, spelled exactly (a key
-in the wrong case is unknown). So a document written for a newer Belai is refused
-by an older one rather than half applied.
+in the wrong case is unknown), and so is a field of the wrong type, `null`
+included. So a document written for a newer Belai is refused by an older one
+rather than half applied.
 
-The validators live in `internal/libitem`. They are pure, shared by the daemon
-and the `belai <kind>` commands, and held to the numbers on this page by tests.
+**One set of rules.** The validators in `internal/libitem` apply the rules the
+library's server applies (`vdb-site` `belai_items_validate*.go` is the reference)
+and the website mirrors for inline errors, so a document one accepts the others
+accept. A kind that becomes part of Belai's own settings is also checked by Belai's
+own validators (`internal/config`, `internal/skills`) before anything is written,
+so a document the library accepts is never written as a setting Belai then refuses
+to load; that can only make the host stricter, and only where Belai itself would
+refuse the result. The validators are pure, shared by the daemon and the
+`belai <kind>` commands, and held to the numbers on this page by tests.
 
 ## Skills
 
@@ -79,16 +94,19 @@ A skill document is a `SKILL.md`: the format [skills.md](skills.md#skill-files)
 describes, and the loader's own validator (`internal/skills`) is the source of
 truth for its front-matter fields. On top of it the library holds these rules:
 
-- The front matter is `key: value` lines between two `---` lines. A key given
-  twice, an indented line, a line that is not `key: value` and a stray `---` line
-  are refused: there is no nested YAML.
+- The front matter is `key: value` lines between two `---` lines (the closing
+  line may have trailing spaces or tabs; a longer line that merely starts with
+  `---` is not one). Lines are trimmed, and blank lines and `#` comments are
+  skipped. A key given twice and a line that is not `key: value` are refused:
+  there is no nested YAML.
 - `name` (required) follows the name rule above. `description` (required) is at
-  most 300 bytes, one line, with no control or invisible character.
-- `metadata` is a one-line map, `{team: platform, tier: 2}`, with at most 32 keys.
-  The loader reads one front-matter line per key, so a nested block map cannot be
-  expressed; a `metadata` that is not a one-line map is refused.
-- `allowed-tools` holds at most 64 names. `disable-model-invocation` is `true` or
-  `false`. `license` and `compatibility` are free text.
+  most 300 bytes and one line.
+- `license` is at most 128 bytes and `compatibility` at most 500. `metadata` is a
+  one-line string of at most 1024 bytes: the loader reads one front-matter line per
+  key, so a nested map cannot be expressed and an indented `key: value` under
+  `metadata:` would be an unknown key there.
+- `allowed-tools` holds at most 64 names of at most 128 bytes, as a one-line list
+  `[Bash, "Read"]`. `disable-model-invocation` is `true` or `false`, in any case.
 - The body (after the front matter) must not be empty.
 
 On the host a skill is `<skills dir>/<name>/SKILL.md` holding the canonical bytes
@@ -125,6 +143,79 @@ from looking like an edit on the next sync.
 
 An exported prompt writes `name`, then `description` when it has one, `order` when
 it is above 0, and `enabled: false` only when disabled.
+
+## Processes
+
+A process is a command the Belai daemon supervises, run as an argv with **no shell**:
+nothing is quoted, split or expanded, so an argument that holds a space or a
+semicolon is one argument. The document is a JSON object with exactly these keys:
+
+| Key | Rule |
+| --- | --- |
+| `name` | required; the name rule above |
+| `command` | required; 1 to 1024 bytes, no control character |
+| `args` | at most 64 strings of at most 1024 bytes; tab, line feed and carriage return are allowed (a script can be one argument), NUL and other control characters are not |
+| `options` | at most 64 of `{name, value?}`; `name` matches `^-{1,2}[A-Za-z0-9][A-Za-z0-9._-]*$` and is at most 128 bytes, `value` is a string of at most 1024 bytes |
+| `env` | at most 64 variables; a name matches `^[A-Za-z_][A-Za-z0-9_]*$` (at most 128 bytes), a value is at most 4096 bytes |
+| `cwd` | at most 1024 bytes: absolute, `~` or `~/…`, or relative to the project directory |
+| `user` | `""` or `^[a-z_][a-z0-9_-]{0,31}$` |
+| `stdout`, `stderr` | a redirect, below. Defaults: stdout `log`, stderr `stdout` |
+| `enabled` | boolean, default true; the file name carries it (`_NNN-`) |
+| `order` | whole number 0 to 999, default 0; the file name carries it (`NNN-`) |
+
+**Argv.** The host runs `command`, then each option's `name` and, when the key
+`value` is present (an empty string counts: one empty argument), the value as its
+own element, then `args`.
+
+**Redirects.** A redirect is `{"mode", "path"?}`. `mode` is `log` (the process log
+and the live tail), `discard`, `file` (truncated at each start), `append`, or
+`stdout` (stderr only: merged into stdout). `path` is required for `file` and
+`append` and refused for every other mode. A path is `~`, absolute, or relative to
+the project directory and may not climb out of it with `..`; the file is created
+`0600`, never through a symbolic link, and its directory must exist. Two streams
+naming one path share one file.
+
+The library accepts a relative `cwd` or redirect path that uses `..` (it cannot know
+the project directory); the host refuses it when the process starts, with the
+reason, rather than let a document climb out of the project directory.
+
+**Secrets are never synced as literals.** An `env` name that matches
+`(?i)(secret|token|password|passwd|api[_-]?key|credential|private)` must have a
+value of the form `env:OTHER`, which means "copy the host's variable `OTHER`" at
+start (from the real environment, which the scrubbed child environment would
+otherwise drop). A value that starts with `env:` must be exactly that form, for any
+name, and the prefix is case-sensitive. The check reads the variable name only:
+`args` and option values are stored as written, so a secret must never be put
+there. A start whose `env:OTHER` names an unset variable is refused, naming it.
+
+**`user`** is honoured only when Belai runs as root. Anywhere else the process is
+refused: it is never started as the account that runs Belai in its place, and no
+redirect file is opened for it. As root the process runs with that account's
+groups and its `HOME`, `USER` and `LOGNAME` (unless `env` sets them), and a
+redirect file is handed to that account.
+
+**The host.** The file is `<NNN>-<name>.json` in the global processes directory,
+holding the document (indented; the host re-canonicalises it to hash it). The file
+name is authoritative for what it can say: its slug is the name, a `_` prefix is
+`enabled: false` and its number is the order, so a hand-edited document that
+disagrees is exported with the file name's values. A name must be one a file name
+can hold (lowercase letters, digits, single hyphens); a library process named
+`my.web` is refused on install with that reason. A document with the same slug as
+a legacy file replaces it.
+
+**Legacy files.** `NNN-slug.sh` (the whole file is one `sh -c` string, written by
+`!!cmd`) still works. It syncs as `{name, command: "sh", args: ["-c", <body>],
+order, enabled}`; a body over 1024 bytes does not fit one argument and is skipped.
+When both a `.sh` and a `.json` hold one slug the structured one wins and the
+other is a stray. Only the global library is synced: a project process
+(`.vulnetix/processes`) is never listed, sent or written.
+
+**Recovery.** When a supervised process exits unexpectedly the recovery subagent may
+amend the flags of a shell command a user typed. A structured process restarts
+exactly as defined: its argv, environment, user and redirects are not the
+subagent's to change. A structured process is not wrapped in `sh`, but runs under
+the same OS sandbox as any supervised process, with the project directory as its
+only writable root whatever `cwd` says.
 
 ## How a document travels
 
@@ -189,6 +280,9 @@ is off. A project settings file may turn one off, never on.
 - **`sync.skills`**: keep the skill library current by itself, advertise the host's
   skills, and take `item_backup` and `item_install` requests for skills.
 - **`sync.prompts`**: the same for the global prompt library.
+- **`sync.processes`**: the same for the global process library. A synced process
+  is a command Belai runs, so this is the switch that keeps the website out of
+  what runs on the host: with it off nothing is advertised, pushed or installed.
 
 An off switch removes the kind from all three: nothing is hashed, advertised or
 sent, and a request for it is refused with a reason. The settings are described
@@ -201,7 +295,7 @@ advertised.
 
 ## Commands
 
-`belai skill` and `belai prompt` read and write items by hand, with the same
+`belai skill`, `belai prompt` and `belai process` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -210,6 +304,8 @@ belai skill validate FILE
 belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
+
+`belai prompt` and `belai process` take the same four commands.
 
 `FILE` of `-` is standard input (and, for `export`, standard output, which is also
 the default). `list` shows each item's name, size and the first 12 digits of the
@@ -238,8 +334,15 @@ item of that name.
 - **Only the user's layers.** The project layer is never read or written.
 - **Nothing in a refusal repeats the document.** Reasons are harness text and short
   cleaned excerpts.
-- **No path comes from a document.** A skill or prompt is written under its
-  validated name in a fixed directory, never at a path the document names.
+- **No path comes from a document.** An item is written under its validated name in a
+  fixed directory, never at a path the document names. (A process may name a
+  `cwd` or a redirect path to use when it runs, which is its own business and is
+  checked when it starts.)
+- **A process is an argv, never a shell string, and holds no secret.** The library
+  refuses a literal under a secret-looking `env` name, a start refuses an unset
+  `env:OTHER`, `user` is honoured only as root and never falls back to the current
+  user, redirect files are `0600` and never opened through a link, and the OS
+  sandbox's writable roots stay the project directory whatever `cwd` says.
 
 ## Edge cases
 

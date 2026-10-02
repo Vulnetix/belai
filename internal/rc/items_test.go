@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/docparity"
 	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/libstore"
+	"github.com/vulnetix/belai/internal/processlib"
 	"github.com/vulnetix/belai/internal/promptlib"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
@@ -589,5 +590,112 @@ func TestRemoteControlPageDocumentsTheItemRequests(t *testing.T) {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/remote-control.md does not mention %q", want)
 		}
+	}
+}
+
+// ── Processes ────────────────────────────────────────────────────────────
+
+func TestItemInstallWritesAProcessAndSettlesIt(t *testing.T) {
+	h := newItemHarness(t)
+	h.serve("web", map[string]any{"name": "web", "command": "python3", "args": []string{"-m", "http.server"}, "env": map[string]string{"TOKEN": "env:WEB_TOKEN"}, "order": 40})
+	status, why := h.install(libitem.Process, false)
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("install: %s %s", status, why)
+	}
+	b, err := os.ReadFile(filepath.Join(h.home, "processes", "040-web.json"))
+	if err != nil || !strings.Contains(string(b), `"command": "python3"`) {
+		t.Fatalf("file = %q, %v", b, err)
+	}
+	it, err := libstore.Get(libitem.Process, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.d.libsync.due(localItem{kind: "process", id: "web", name: "web", data: it.Doc}, time.Now()) {
+		t.Error("an installed process is due for a sync")
+	}
+	// The same install again is refused without replace, and does not touch the file.
+	status, why = h.install(libitem.Process, false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "replace turned on") {
+		t.Fatalf("again: %s %q", status, why)
+	}
+	// A secret literal never reaches a file.
+	h.serve("bad", map[string]any{"name": "bad", "command": "x", "env": map[string]string{"DB_PASSWORD": "hunter2"}})
+	status, why = h.install(libitem.Process, false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "looks like a secret") || strings.Contains(why, "hunter2") {
+		t.Fatalf("secret: %s %q", status, why)
+	}
+	if _, err := os.Stat(filepath.Join(h.home, "processes", "010-bad.json")); !os.IsNotExist(err) {
+		t.Error("a refused process was written")
+	}
+}
+
+func TestItemBackupUploadsAProcessAsAnObject(t *testing.T) {
+	h := newItemHarness(t)
+	if _, err := libstore.Install(libitem.Process, []byte(`{"name":"web","command":"x","args":["a"]}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	status, why := h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "process", Name: "web"})
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("%s %s", status, why)
+	}
+	up := h.site.backups[0]
+	if string(up["kind"]) != `"process"` || string(up["body"]) != `{"args":["a"],"command":"x","name":"web"}` {
+		t.Errorf("upload = %s", up)
+	}
+}
+
+func TestProcessRequestsAreRefusedWhileSyncProcessesIsOff(t *testing.T) {
+	h := newItemHarness(t)
+	h.on[libitem.Process] = false
+	h.serve("web", map[string]any{"name": "web", "command": "x"})
+	status, why := h.install(libitem.Process, false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "sync.processes is off") {
+		t.Fatalf("%s %q", status, why)
+	}
+	if h.site.fetches != 0 {
+		t.Error("the library was asked for a document the host will not take")
+	}
+}
+
+func TestAutoSyncPushesAProcessAndAShellFile(t *testing.T) {
+	h := newItemSync(t)
+	h.on = false
+	if _, err := libstore.Install(libitem.Process, []byte(`{"name":"web","command":"x"}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := processlib.CreateUnique(config.ScopeGlobal, "", "sleep 30"); err != nil {
+		t.Fatal(err)
+	}
+	h.tick()
+	if got := sorted(h.remote.pushed); strings.Join(got, ",") != "process/sleep,process/web" {
+		t.Fatalf("pushed %v", got)
+	}
+	if !strings.Contains(h.remote.pushedBody["process/sleep"], `"args":["-c","sleep 30"]`) {
+		t.Errorf("the shell file was pushed as %q", h.remote.pushedBody["process/sleep"])
+	}
+	h.tick()
+	if len(h.remote.asked) != 1 {
+		t.Fatalf("settled processes were asked about again: %v", h.remote.asked)
+	}
+}
+
+func TestInventoryListsProcesses(t *testing.T) {
+	home(t)
+	if _, err := libstore.Install(libitem.Process, []byte(`{"name":"web","command":"x"}`), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	inv := LocalInventory()
+	if len(inv.Items) != 1 || inv.Items[0].Kind != "process" || inv.Items[0].Name != "web" {
+		t.Fatalf("items = %+v", inv.Items)
+	}
+	off := false
+	if err := config.Mutate(config.ScopeGlobal, "", func(s *config.Settings) error {
+		s.Sync = &config.SyncSettings{Processes: &off}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := LocalInventory().Items; len(got) != 0 {
+		t.Fatalf("with sync.processes off: %+v", got)
 	}
 }

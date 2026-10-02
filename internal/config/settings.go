@@ -230,6 +230,8 @@ type SyncSettings struct {
 	Skills *bool `json:"skills,omitempty"`
 	// Prompts is the same switch for the global prompt library.
 	Prompts *bool `json:"prompts,omitempty"`
+	// Processes is the same switch for the global process library.
+	Processes *bool `json:"processes,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -258,6 +260,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Prompts != nil && !*proj.Prompts {
 		out.Prompts = &f
 	}
+	if proj.Processes != nil && !*proj.Processes {
+		out.Processes = &f
+	}
 	return out
 }
 
@@ -278,6 +283,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "prompt":
 		if s.Sync != nil {
 			v = s.Sync.Prompts
+		}
+	case "process":
+		if s.Sync != nil {
+			v = s.Sync.Processes
 		}
 	default:
 		return false

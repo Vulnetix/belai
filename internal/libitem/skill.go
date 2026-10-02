@@ -2,120 +2,118 @@ package libitem
 
 import (
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/skills"
 )
 
-// Skill limits, shared with the website.
+// Skill limits, shared with the website and the server.
 const (
 	// MaxDescriptionBytes is the longest skill or prompt description.
 	MaxDescriptionBytes = 300
-	// MaxSkillMetadataKeys is how many keys a skill's metadata map holds.
-	MaxSkillMetadataKeys = 32
-	// MaxSkillAllowedTools is how many tools a skill's allowed-tools list names.
+	// MaxSkillLicense, MaxSkillCompatibility and MaxSkillMetadata bound those
+	// front-matter values, in bytes. metadata is the one-line string the loader
+	// reads: its parser has no nesting, so a map cannot be expressed.
+	MaxSkillLicense       = 128
+	MaxSkillCompatibility = 500
+	MaxSkillMetadata      = 1024
+	// MaxSkillAllowedTools is how many tools a skill's allowed-tools list names,
+	// and MaxSkillTool the longest tool name.
 	MaxSkillAllowedTools = 64
+	MaxSkillTool         = 128
 )
 
-func init() {
-	register(Skill, func(c []byte) (string, error) { d, err := ParseSkill(c); return d.Name, err })
+var skillFields = map[string]bool{
+	"name": true, "description": true, "license": true, "compatibility": true, "metadata": true,
+	"allowed-tools": true, "disable-model-invocation": true,
 }
 
-// SkillDoc is a validated skill: the front-matter fields the host keeps beyond
-// the loader's own, and the body.
+func init() {
+	register(Skill,
+		func(c []byte) (string, error) { d, err := ParseSkill(c); return d.Name, err },
+		// The loader's own validator is the source of truth for the front matter; a
+		// skill it would not load is never written.
+		func(c []byte) error {
+			if _, err := skills.ValidateSkill(string(c)); err != nil {
+				return refuse("%s", clip(err.Error(), 200))
+			}
+			return nil
+		})
+}
+
+// SkillDoc is a validated skill: its name and description, and the instructions
+// after the front matter.
 type SkillDoc struct {
 	Name        string
 	Description string
 	Body        string
 }
 
-// ParseSkill validates a canonical skill document. The loader's own validator
-// (internal/skills) runs first and is the source of truth for the front-matter
-// fields and their shapes; this adds the library's limits on top of it.
+// ParseSkill validates a canonical SKILL.md document against the library's rules.
 func ParseSkill(canonical []byte) (SkillDoc, error) {
-	doc := string(canonical)
-	fields, body, err := splitFrontMatter(doc)
+	fields, body, err := splitFrontMatter(string(canonical), skillFields)
 	if err != nil {
 		return SkillDoc{}, err
 	}
-	m, err := skills.ValidateSkill(doc)
-	if err != nil {
-		return SkillDoc{}, refuse("%s", clip(err.Error(), 200))
-	}
-	if !ValidName(Skill, m.Name) {
-		return SkillDoc{}, nameError(Skill, m.Name)
-	}
-	if err := checkDescription(m.Description, true); err != nil {
-		return SkillDoc{}, err
-	}
-	if len(m.AllowedTools) > MaxSkillAllowedTools {
-		return SkillDoc{}, refuse("allowed-tools names %d tools; at most %d", len(m.AllowedTools), MaxSkillAllowedTools)
-	}
-	for _, t := range m.AllowedTools {
-		if t == "" || len(t) > 128 || strings.ContainsFunc(t, unicode.IsControl) {
-			return SkillDoc{}, refuse("allowed-tools holds a name that is not a tool name")
-		}
-	}
+	var d SkillDoc
+	haveName, haveDesc := false, false
 	for _, f := range fields {
-		if f.key == "metadata" {
-			if err := checkMetadata(f.val); err != nil {
-				return SkillDoc{}, err
+		switch f.key {
+		case "name":
+			d.Name, haveName = fmString(f.val), true
+			if d.Name == "" {
+				return d, refuse("name is required")
+			}
+			if !ValidName(Skill, d.Name) {
+				return d, refuse("name %q is not valid: %s", cleanForMessage(d.Name), nameRule)
+			}
+		case "description":
+			d.Description, haveDesc = fmString(f.val), true
+			if d.Description == "" {
+				return d, refuse("description is required")
+			}
+			if len(d.Description) > MaxDescriptionBytes {
+				return d, refuse("description is %d bytes; the most is %d", len(d.Description), MaxDescriptionBytes)
+			}
+		case "license":
+			if len(fmString(f.val)) > MaxSkillLicense {
+				return d, refuse("license is over %d bytes", MaxSkillLicense)
+			}
+		case "compatibility":
+			if len(fmString(f.val)) > MaxSkillCompatibility {
+				return d, refuse("compatibility is over %d bytes", MaxSkillCompatibility)
+			}
+		case "metadata":
+			if len(fmString(f.val)) > MaxSkillMetadata {
+				return d, refuse("metadata is over %d bytes", MaxSkillMetadata)
+			}
+		case "allowed-tools":
+			tools, err := fmList(f.key, f.val)
+			if err != nil {
+				return d, err
+			}
+			if len(tools) > MaxSkillAllowedTools {
+				return d, refuse("allowed-tools has %d entries; the most is %d", len(tools), MaxSkillAllowedTools)
+			}
+			for _, t := range tools {
+				if len(t) > MaxSkillTool {
+					return d, refuse("an allowed-tools entry is over %d bytes", MaxSkillTool)
+				}
+			}
+		case "disable-model-invocation":
+			if _, err := fmBool(f.key, f.val); err != nil {
+				return d, err
 			}
 		}
 	}
+	if !haveName {
+		return d, refuse("name is required")
+	}
+	if !haveDesc {
+		return d, refuse("description is required")
+	}
 	if strings.TrimSpace(body) == "" {
-		return SkillDoc{}, refuse("the skill body is empty")
+		return d, refuse("the skill has no instructions after the front matter")
 	}
-	return SkillDoc{Name: m.Name, Description: m.Description, Body: body}, nil
-}
-
-// checkDescription applies the length and character rules of a description.
-func checkDescription(d string, required bool) error {
-	if d == "" {
-		if required {
-			return refuse("description is required")
-		}
-		return nil
-	}
-	if len(d) > MaxDescriptionBytes {
-		return refuse("description is %d bytes; at most %d", len(d), MaxDescriptionBytes)
-	}
-	if strings.ContainsAny(d, "\n\r") {
-		return refuse("description must be one line")
-	}
-	if !utf8.ValidString(d) || strings.ContainsFunc(d, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
-		return refuse("description holds a control or invisible character")
-	}
-	return nil
-}
-
-// checkMetadata accepts a skill's metadata as a one-line {key: value, ...} map
-// of at most MaxSkillMetadataKeys string pairs. The loader reads one front-matter
-// line per key, so a nested block map cannot be expressed and is refused.
-func checkMetadata(v string) error {
-	if !strings.HasPrefix(v, "{") || !strings.HasSuffix(v, "}") {
-		return refuse("metadata must be a one-line {key: value} map")
-	}
-	inner := strings.TrimSpace(v[1 : len(v)-1])
-	if inner == "" {
-		return nil
-	}
-	seen := map[string]bool{}
-	for _, part := range strings.Split(inner, ",") {
-		k, val, ok := strings.Cut(part, ":")
-		k, val = fmString(strings.TrimSpace(k)), fmString(strings.TrimSpace(val))
-		if !ok || k == "" {
-			return refuse("metadata entry %q is not key: value", clip(strings.TrimSpace(part), 40))
-		}
-		_ = val
-		if seen[k] {
-			return refuse("metadata key %q is given twice", clip(k, 40))
-		}
-		seen[k] = true
-	}
-	if len(seen) > MaxSkillMetadataKeys {
-		return refuse("metadata has %d keys; at most %d", len(seen), MaxSkillMetadataKeys)
-	}
-	return nil
+	d.Body = strings.TrimLeft(body, "\n")
+	return d, nil
 }

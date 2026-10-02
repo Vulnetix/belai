@@ -93,9 +93,10 @@ website's library like agents are: a skill you add or edit is pushed as a new
 version, a skill saved on the website can be installed on any connected host, and
 `sync.skills` (default on) switches all of it off. `belai skill list`, `validate`,
 `import` and `export` do the same by hand. The library applies rules the loader
-does not: a description is at most 300 bytes, `metadata` is a one-line
-`{key: value}` map of at most 32 keys, and the whole document is at most 32 KiB. A skill that fails them still loads
-here; it is only left out of the sync and reported as skipped. See
+does not: a description is at most 300 bytes, `license` at most 128, `compatibility`
+at most 500 and `metadata` at most 1024, a document holds no control character
+but tab and line feed, and the whole document is at most 32 KiB. A skill that fails
+them still loads here; it is only left out of the sync and reported as skipped. See
 [library-items.md](library-items.md).
 
 ## Security model
