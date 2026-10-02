@@ -57,6 +57,9 @@ type Options struct {
 	// Inventory reads the host's worker profiles, crews and live workers
 	// (LocalInventory unless a test replaces it).
 	Inventory func() Inventory
+	// Knowledge reads the knowledge catalogue for the offered directories
+	// (localKnowledge unless a test replaces it).
+	Knowledge func([]Dir) []sessionsync.RCKnowledge
 	// Models says which providers this host can run a web session on
 	// (LocalModels unless a test replaces it); a start request that names a
 	// provider outside it is refused.
@@ -189,6 +192,19 @@ func New(o Options) (*Daemon, error) {
 	if o.Models == nil {
 		o.Models = LocalModels
 	}
+	if o.Knowledge == nil {
+		o.Knowledge = localKnowledge
+	}
+	{
+		// The knowledge catalogue covers the offered directories, which only
+		// the daemon knows.
+		read, dirs, cat := o.Inventory, o.Dirs, o.Knowledge
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.Knowledge = cat(dirs)
+			return inv
+		}
+	}
 	if o.MaxWorkers > 0 {
 		read := o.Inventory
 		o.Inventory = func() Inventory {
@@ -280,7 +296,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models}
+		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge}
 	if h.RC.Items == nil {
 		h.RC.Items = []sessionsync.RCItem{}
 	}

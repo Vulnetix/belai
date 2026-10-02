@@ -203,7 +203,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     magic, a version and a SHA-256 trailer; a file that fails the check is used
     for nothing and never overwritten. `knowledge.*` sizes are read from the
     user's layers only, and no passage text reaches telemetry, the audit log,
-    session sync or the session record.
+    session sync or the session record. The `belai rc` advertisement carries the
+    catalogue of the host's profile and offered-directory indexes (each
+    document's knowledge address, size, SHA-256 and harness labels and topics,
+    `rc/knowledge.go`) for the Library's Documents view, and nothing else from
+    the store.
 - **The confinement boundary is a fixed root set unless the user widens it.**
   The primary working directory is the default confinement root. The only
   ways to add roots are an explicit `/add-dir` command confirmed by the user,
