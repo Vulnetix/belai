@@ -33,6 +33,9 @@ type Inventory struct {
 	Items []sessionsync.RCItem
 	// Models is what a web-started session can run on (models.go).
 	Models *sessionsync.RCModels
+	// Knowledge is the catalogue of this host's knowledge indexes: document
+	// facts only (knowledge.go).
+	Knowledge []sessionsync.RCKnowledge
 }
 
 // Caps on what one host reports; the server applies the same caps.
@@ -51,7 +54,8 @@ func (i Inventory) catalogueHash() string {
 		C []sessionsync.RCCrew
 		I []sessionsync.RCItem
 		D *sessionsync.RCModels
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models})
+		K []sessionsync.RCKnowledge
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models, i.Knowledge})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }

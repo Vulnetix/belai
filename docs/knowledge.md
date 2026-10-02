@@ -373,7 +373,11 @@ listed as unreadable and left as it is, and nothing here writes an index.
   credential stores, the system's directories or Belai's state, and a relative
   path never leaves the repository. The project's index is keyed by the trusted
   repository root, never a worktree. Telemetry, the audit log and session sync
-  carry no passage text.
+  carry no passage text. `belai rc` tells the website which documents each index
+  holds, so the Library's Documents view can show what a host's knowledge holds:
+  each document's knowledge address, size, SHA-256, and the labels and topics the
+  harness tagged it with, for the host's profiles and the directories it offers.
+  The text and the index file stay on the host.
 
 ## Business rules
 

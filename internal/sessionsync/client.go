@@ -137,6 +137,9 @@ type RCInfo struct {
 	// kind, name and the hash of their canonical document: facts only, no
 	// content, and only for the kinds whose sync switch is on.
 	Items []RCItem `json:"items"`
+	// Knowledge is the catalogue of this host's knowledge indexes: document
+	// facts only (rc knowledge.go), never passage text. Nil from an older daemon.
+	Knowledge []RCKnowledge `json:"knowledge,omitempty"`
 	// Models is what a web-started session can run on: the model a session
 	// gets when the request names none, and the providers this host has
 	// credentials for. Names only, never a key or an endpoint. Nil from an
@@ -184,6 +187,37 @@ type RCItem struct {
 // MaxRCItems is how many items one advertisement carries; the server applies
 // the same cap.
 const MaxRCItems = 1000
+
+// RCKnowledge is one knowledge index on the host, as the Library's Documents
+// view lists it: an agent profile's index (Scope "profile", Key its id) or the
+// index of a directory the daemon offers (Scope "project", Root its path).
+// Facts only: each document's knowledge address, size, SHA-256 and the labels
+// and topics the harness tagged it with. No passage text and no index file.
+type RCKnowledge struct {
+	Scope string           `json:"scope"`
+	Key   string           `json:"key,omitempty"`
+	Name  string           `json:"name"`
+	Root  string           `json:"root,omitempty"`
+	Docs  []RCKnowledgeDoc `json:"docs"`
+}
+
+// RCKnowledgeDoc is one indexed document's facts.
+type RCKnowledgeDoc struct {
+	Address string   `json:"address"`
+	Bytes   int64    `json:"bytes"`
+	SHA256  string   `json:"sha256"`
+	Kind    string   `json:"kind,omitempty"`
+	Lang    string   `json:"lang,omitempty"`
+	Labels  []string `json:"labels"`
+	Topics  []string `json:"topics"`
+}
+
+// Caps on the knowledge catalogue one advertisement carries; the server
+// applies the same caps.
+const (
+	MaxRCKnowledgeIndexes = 32
+	MaxRCKnowledgeDocs    = 256
+)
 
 // RCProfile is one worker profile's routing, as the website shows it.
 type RCProfile struct {
