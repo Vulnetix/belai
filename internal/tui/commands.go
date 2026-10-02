@@ -274,6 +274,11 @@ func NewRegistry(workdir string) *Registry {
 	}, func(a *App, arg string) tea.Cmd {
 		return a.syncCommand(arg)
 	})
+	r.Register("gitsync", "rebase the branch onto origin's default branch before turns: on, off, or global on|off", func() []string {
+		return []string{"status", "on", "off", "global on", "global off"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.gitSyncCommand(arg)
+	})
 	r.Register("budgets", "manage token budgets per provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.openBudgets()
 	})

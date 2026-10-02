@@ -31,6 +31,8 @@ type Inventory struct {
 	// Items are the library items this host holds, for the kinds whose sync
 	// switch is on: kind, name and hash, never a document.
 	Items []sessionsync.RCItem
+	// Models is what a web-started session can run on (models.go).
+	Models *sessionsync.RCModels
 }
 
 // Caps on what one host reports; the server applies the same caps.
@@ -48,7 +50,8 @@ func (i Inventory) catalogueHash() string {
 		P []sessionsync.RCProfile
 		C []sessionsync.RCCrew
 		I []sessionsync.RCItem
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items})
+		D *sessionsync.RCModels
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -82,6 +85,7 @@ func LocalInventory() Inventory {
 		inv.Crews = append(inv.Crews, rc)
 	}
 	inv.Items = localInventoryItems()
+	inv.Models = LocalModels()
 	inv.Workers = localWorkers()
 	return inv
 }

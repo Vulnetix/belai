@@ -105,6 +105,17 @@ a model: the conversation is still rebuilt from paired calls and results.
   - The host's name, reduced to identifier characters.
   - Its OS and the Belai version.
   - A random host id kept in `~/.vulnetix/belai/sync/host-id`.
+- **Repository state:** for a session in a git repository, the branch, whether it
+  is a linked worktree, the short HEAD and its subject, `owner/repo`, how far
+  the branch is from its upstream and from origin's default branch, whether
+  tracked files are dirty, the pull or merge request for the branch with its
+  checks (through `gh` or `glab`), and the git sync switch with its last result
+  (see [Git sync](git-sync.md)). It is read every 30 seconds and after each
+  turn, and travels with the session's registration. No file contents.
+  - The website can send one control back, the git sync switch, with the
+    registration and heartbeat responses. It reaches only a live session that
+    takes web prompts, and the host applies it and confirms it in its next
+    repository state.
 - **Destination:** requests go to `https://www.vulnetix.com/api/site/v1/belai/*`.
   - `$VULNETIX_WEB_URL` overrides the origin.
   - The credential is only sent to `https://*.vulnetix.com` or a loopback

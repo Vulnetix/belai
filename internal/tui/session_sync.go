@@ -91,6 +91,8 @@ func (a *App) startSessionSync() {
 		Host:          host,
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
 		RemoteAnswers: a.settings.SyncRemoteAnswersEnabled(),
+		Git:           a.gitSyncRaw(),
+		OnControls:    a.gitSyncControls(),
 	})
 	a.syncer.Start(context.Background())
 	// The audit log goes where session sync goes: its own hash-chained facts

@@ -747,18 +747,7 @@ func workerModel(flagProvider, flagModel string, s config.Settings, loadState fu
 	if flagProvider != "" || flagModel != "" {
 		return flagProvider, flagModel
 	}
-	provider, model = s.Provider, s.Model
-	if provider == "" || model == "" {
-		if st, err := loadState(); err == nil {
-			if provider == "" {
-				provider = st.Provider
-			}
-			if model == "" {
-				model = st.Model
-			}
-		}
-	}
-	return provider, model
+	return config.SelectedModel(s, loadState)
 }
 
 // agentPause asks the workers a ref names to pause or resume. A paused worker

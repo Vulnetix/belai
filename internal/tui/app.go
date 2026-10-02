@@ -42,6 +42,7 @@ import (
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/httpclient"
@@ -679,6 +680,11 @@ type App struct {
 	// whose per-turn status carries its facts. nil until Start creates it,
 	// so a bare New never probes; every forge.Cache method is nil-safe.
 	forgeCache *forge.Cache
+	// gitSync keeps the session's branch current with origin's default branch
+	// before turns (internal/gitsync, git_sync.go). nil until Start creates it,
+	// so a bare New never execs git; every use is nil-checked.
+	gitSync   *gitsync.Hygiene
+	gitCancel context.CancelFunc
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
 	// behind one settings-backed FIFO queue. The Role Manager owns it through
@@ -2048,6 +2054,8 @@ type sessionBuildParams struct {
 	// knowledge is the App's retrieval store; nil leaves the file tools
 	// filesystem-only.
 	knowledge *knowledge.Store
+	// gitSync is the App's git sync; nil runs no sync before turns.
+	gitSync *gitsync.Hygiene
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2084,6 +2092,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		kanban:        kanbanStoreOf(a),
 		kanbanSrc:     kanbanSourceOf(a),
 		knowledge:     a.knowledgeStoreForBuild(),
+		gitSync:       a.gitSync,
 	}
 }
 
@@ -2158,6 +2167,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	return agent.NewSession(agent.Options{
 		Knowledge:     p.knowledge,
+		GitSync:       p.gitSync,
 		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           cfg,
 		Client:        p.client,

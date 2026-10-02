@@ -130,7 +130,8 @@ func buildACPSessionWith(ctx context.Context, cwd, sessionID, providerName, mode
 	if err != nil {
 		return nil, err
 	}
-	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true)
+	// No git sync: an editor owns this working copy and its open buffers.
+	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true, nil)
 }
 
 // acpConfig resolves the model config, merged settings and effective posture

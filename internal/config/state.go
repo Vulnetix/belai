@@ -74,3 +74,22 @@ func SaveState(st State) error {
 	}
 	return nil
 }
+
+// SelectedModel is the provider and model a session runs on when nothing
+// names them: the settings file, then the saved TUI selection (state.json),
+// the order the TUI uses. Either may be empty; the caller falls back to the
+// environment and the provider's default.
+func SelectedModel(s Settings, loadState func() (State, error)) (provider, model string) {
+	provider, model = s.Provider, s.Model
+	if provider == "" || model == "" {
+		if st, err := loadState(); err == nil {
+			if provider == "" {
+				provider = st.Provider
+			}
+			if model == "" {
+				model = st.Model
+			}
+		}
+	}
+	return provider, model
+}

@@ -45,6 +45,9 @@ type fakeServer struct {
 	acks           map[string]string
 	gzipped        int // entry posts that arrived gzip-encoded
 	failPost       int // fail this many entry posts with 500
+	// controls is what the website holds for the session and sends back with
+	// a registration and with every heartbeat.
+	controls *Controls
 }
 
 func newFake() *fakeServer {
@@ -85,7 +88,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&m)
 		f.sessions[parts[1]] = m
 		delete(f.ended, parts[1])
-		writeJSON(map[string]int64{"lastSeq": f.lastSeq(parts[1])})
+		writeJSON(map[string]any{"lastSeq": f.lastSeq(parts[1]), "controls": f.controls})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "entries":
 		if f.failPost > 0 {
 			f.failPost--
@@ -115,7 +118,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(map[string]int64{"lastSeq": f.lastSeq(parts[1])})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "heartbeat":
 		f.beats++
-		writeJSON(map[string]bool{"ok": true})
+		writeJSON(map[string]any{"ok": true, "controls": f.controls})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "end":
 		f.ended[parts[1]] = true
 		writeJSON(map[string]bool{"ok": true})
@@ -709,4 +712,62 @@ func TestSessionSyncDocNamesTheLifecycleRules(t *testing.T) {
 			t.Errorf("docs/session-sync.md names %s, which sessionsync_test.go does not define", name[1])
 		}
 	}
+}
+
+// The host's repository reading rides the registration and a changed reading
+// re-registers; a switch the website holds for the session comes back with the
+// registration and the heartbeats, and only when the server sends one.
+func TestGitReadingGoesUpAndTheWebSwitchComesBack(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	reading := json.RawMessage(`{"branch":"main"}`)
+	var got []bool
+	s := New(Options{Client: c, HostID: testHost, Host: Host{Hostname: "box"},
+		TickEvery: 20 * time.Millisecond, HeartbeatEvery: 40 * time.Millisecond, InboxWait: time.Second,
+		Git: func() json.RawMessage { mu.Lock(); defer mu.Unlock(); return reading },
+		OnControls: func(id string, ctl Controls) {
+			if id == testSess && ctl.GitSync != nil {
+				mu.Lock()
+				got = append(got, *ctl.GitSync)
+				mu.Unlock()
+			}
+		}})
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Close(time.Second) })
+
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	s.Activate(SessionInfo{ID: testSess, Path: path, ProjectName: "belai"})
+	appendLines(t, path, line("a", "user", "hello"))
+	s.Nudge()
+
+	gitOf := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return string(fake.sessions[testSess].Git)
+	}
+	eventually(t, "the first reading", func() bool { return gitOf() == `{"branch":"main"}` })
+
+	mu.Lock()
+	reading = json.RawMessage(`{"branch":"feature"}`)
+	mu.Unlock()
+	eventually(t, "the changed reading", func() bool { return gitOf() == `{"branch":"feature"}` })
+
+	mu.Lock()
+	if len(got) != 0 {
+		t.Fatalf("no switch was held, yet OnControls saw %v", got)
+	}
+	mu.Unlock()
+
+	off := false
+	fake.mu.Lock()
+	fake.controls = &Controls{GitSync: &off}
+	fake.mu.Unlock()
+	eventually(t, "the website's switch", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) > 0 && !got[0] })
 }

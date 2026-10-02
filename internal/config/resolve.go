@@ -299,6 +299,20 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Origin["sync"] = src
 	}
+	if s.Git != nil {
+		// The git sync changes the repository: a repo-visible project layer
+		// may opt out of it, never switch it on over the user's choice.
+		if src == SourceProject {
+			e.Settings.Git = mergeGitOffOnly(e.Settings.Git, s.Git)
+		} else {
+			t := *s.Git
+			if t.Sync == nil && e.Settings.Git != nil {
+				t.Sync = e.Settings.Git.Sync
+			}
+			e.Settings.Git = &t
+		}
+		e.Origin["git"] = src
+	}
 	if s.Notifications != nil && src != SourceProject {
 		// Notifications are a per-user preference: a repository has no say
 		// in whether, or how, the desktop is interrupted.

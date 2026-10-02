@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,11 +33,25 @@ type LookPath func(name string) (string, error)
 // process group so a timeout kills any children, and no stdin so a CLI that
 // wants to prompt fails instead of hanging.
 func ExecRunner(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+	return execRun(ctx, dir, nil, argv)
+}
+
+// NonInteractiveRunner is ExecRunner for git work nobody is watching: git may
+// not prompt for credentials or open an editor, so a call that would wait for
+// a person fails at once instead of hanging until its timeout.
+func NonInteractiveRunner(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+	return execRun(ctx, dir, []string{"GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "GCM_INTERACTIVE=never"}, argv)
+}
+
+func execRun(ctx context.Context, dir string, env []string, argv []string) ([]byte, error) {
 	if len(argv) == 0 {
 		return nil, errors.New("forge: empty command")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	proc.SetProcessGroup(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

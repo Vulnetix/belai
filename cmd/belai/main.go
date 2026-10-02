@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -109,6 +110,7 @@ func main() {
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")
+	noGitSync := flag.Bool("no-git-sync", false, "do not rebase the branch onto origin's default branch before a turn (git.sync in settings; /gitsync in the TUI)")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
 	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, or a custom name from settings.json")
@@ -240,6 +242,10 @@ func main() {
 	}
 	if *effort != "" {
 		settings.Effort = *effort
+	}
+	if *noGitSync {
+		off := false
+		settings.Git = &config.GitSettings{Sync: &off}
 	}
 	if *classifierProvider != "" || *classifierModel != "" || *classifierEffort != "" || *classifierKind != "" ||
 		*classifierPhase1Model != "" || *classifierPhase1Source != "" || *classifierPhase1Threshold != 0 ||
@@ -593,7 +599,13 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 }
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string, tlog *turnlog.Log) (run.Result, error) {
-	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false)
+	// A headless prompt starts from a branch that is current with origin's
+	// default branch, unless git.sync (or -no-git-sync) says not to.
+	var gs *gitsync.Hygiene
+	if settings.GitSyncEnabled() {
+		gs = gitsync.New(workdir, true, nil)
+	}
+	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, gs)
 	if err != nil {
 		return run.Result{}, err
 	}
@@ -639,12 +651,12 @@ func postEndTests(ctx context.Context, cfg run.Config, client *http.Client, pol 
 // newCLISession builds a top-level agent session outside the TUI: the
 // headless -prompt run (no asks: allowAsk false) and each ACP session (the
 // editor answers asks: allowAsk true).
-func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool) (*agent.Session, error) {
+func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool, gs *gitsync.Hygiene) (*agent.Session, error) {
 	store, src := cliKanban(workdir, sessionID, settings)
 	return headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
 		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk,
-		MCP: mcp.Active(), Kanban: store, KanbanSource: src,
+		MCP: mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
 	})
 }
 

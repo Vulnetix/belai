@@ -80,16 +80,29 @@ directory with the prompt on stdin. It is an ordinary Belai session:
 - **Asks are off.** Nobody is at the terminal, so a tool call that would ask
   is decided by the posture and permission rules, exactly as for
   `belai -prompt`. Web answers are off too.
-- Model and provider are the host's own settings. The website picks only the
-  directory, the prompt and optionally the mode (agent, plan or goal).
+- Model and provider are the host's own, resolved the way `belai agent start`
+  resolves them: `provider` and `model` in settings, then the model last chosen
+  in the TUI (`state.json`), then the built-in default. When `routing.kind` is
+  `routed` the routing table picks the model per turn, as in the TUI. The
+  website picks the directory, the prompt and optionally the mode (agent, plan
+  or goal), and may name a provider, a model and an effort for that one session
+  (see below). A model named on the web overrides routing for the session.
+- **What the website can offer.** The daemon advertises the model a session gets
+  by default, whether it is routed, and the providers this host holds
+  credentials for with the models each lists (the compiled-in catalogue plus
+  the model last chosen here). Names only, never a key or an endpoint. The New
+  session dialog shows them; a request that names a provider the host has no
+  credentials for is refused, by the website and again by the daemon. An older
+  daemon advertises nothing, and the dialog then offers no model choice.
 - Web prompts sent while a turn runs wait their turn and show as queued.
 - It ends after `--idle` (default 30 minutes) without a prompt, when you press
   **Stop session** on the website, or when remote control stops.
 - **The command is the daemon's, not yours.** `belai rc-session` needs
   `-session-id` (the id the daemon minted for the session) and `-dispatch` (the
   website request it answers) and refuses to start without both, with `-mode`
-  (`agent`, `plan` or `goal`, otherwise classified from the prompt) and `-idle`
-  optional. Typing it yourself starts nothing the website knows about. The
+  (`agent`, `plan` or `goal`, otherwise classified from the prompt), `-idle`,
+  `-provider`, `-model` and `-effort`, and `-git-sync on|off` (the daemon passes
+  them only when the web request named them) optional. Typing it yourself starts nothing the website knows about. The
   prompt is read from stdin, cleaned like a web prompt and capped, and an empty
   prompt is refused.
 
@@ -352,17 +365,10 @@ them, through the same queue and carrying identifiers only (see
   does not need `sync.remote_prompts`.
 
 Both are refused, before the library is asked for anything, while the kind's own
-switch is off (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`, `sync.providers`), and a kind this Belai predates is
+switch is off (`sync.skills`, `sync.prompts`, `sync.processes`), and a kind this Belai predates is
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
-
-A third request, **`provider_keys_install`**, puts the organisation's stored provider
-keys on this host. It names catalogue slugs (`providers`) and nothing else; the daemon
-then reads the keys from the library over TLS, once, and stores each in the credentials
-resolver under the provider's own name, never in `settings.json`, a log or an
-acknowledgement (see [library-items.md](library-items.md#provider-keys)). It is gated by
-`sync.providers`.
 
 Every request in this section is a `host.dispatch` audit event with the request kind and outcome (see
 [audit.md](audit.md)).

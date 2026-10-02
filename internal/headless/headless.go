@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/knowledge"
@@ -74,7 +75,10 @@ type Params struct {
 	Extra []tools.Tool
 	// SandboxMounts: agent.Options.SandboxMounts (a worker's git paths).
 	SandboxMounts []sandbox.Mount
-	SandboxEnv    []string
+	// GitSync: agent.Options.GitSync. nil for a fleet worker, which manages
+	// its own branch.
+	GitSync    *gitsync.Hygiene
+	SandboxEnv []string
 	// MaxIterations is the per-pass round budget; zero is the default.
 	MaxIterations int
 	// KnowledgeRoot is the trusted repository root whose .vulnetix output is
@@ -189,6 +193,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		SandboxMounts: p.SandboxMounts,
 		SandboxEnv:    p.SandboxEnv,
 		MaxIterations: p.MaxIterations,
+		GitSync:       p.GitSync,
 	})
 }
 
