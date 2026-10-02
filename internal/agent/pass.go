@@ -241,6 +241,9 @@ type callUnit struct {
 	// swap is set when the harness runs a builtin tool in place of this Bash
 	// call; tool, args and decision then describe the builtin.
 	swap *bashSwap
+	// rewriteNote is the harness note that tells the model its Bash command
+	// was changed by the user's bash_rewrite rules; args holds what ran.
+	rewriteNote string
 }
 
 // execCall is the call that actually runs: the model's call, or the builtin
@@ -269,9 +272,9 @@ func (u callUnit) ranAs() string { return u.execCall().Name }
 // when the harness ran another tool.
 func (u callUnit) turnContent(result string) string {
 	if u.swap == nil {
-		return result
+		return u.rewriteNote + result
 	}
-	return u.swap.note() + result
+	return u.rewriteNote + u.swap.note() + result
 }
 
 // execCtx marks the context of a swapped call so its result is classified as
@@ -388,6 +391,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			if parseErr == nil {
 				if tool, ok := s.findCallable(call.Name); ok {
 					u.tool = tool
+					if call.Name == "Bash" {
+						u.args, u.rewriteNote = s.rewriteBashArgs(args)
+						args = u.args
+					}
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
 					if call.Name == "Bash" {
 						// A builtin tool that fully replaces the command runs

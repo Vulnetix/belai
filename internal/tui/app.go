@@ -225,6 +225,12 @@ const (
 
 // App is the Bubble Tea model for the Belai TUI.
 type App struct {
+	// swap is the session-only fast/main toggle (model_swap.go); lastPrompt is
+	// the prompt the latest turn started from, which an interrupting swap
+	// retries.
+	swap       modelSwap
+	lastPrompt *promptRec
+
 	registry     *Registry
 	messages     []components.Message
 	editor       components.Editor
@@ -256,6 +262,7 @@ type App struct {
 	classifier rolemanager.Classifier
 	voice      voiceState      // speech input to the composer (docs/voice.md)
 	tts        ttsState        // reading replies aloud (docs/tts.md)
+	vulns      vulnState       // vulnerability rows (docs/vuln-row.md)
 	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
@@ -418,6 +425,7 @@ type App struct {
 	rcState             rcViewState
 	trustedState        trustedViewState
 	knowledgeState      knowledgeViewState
+	diffState           diffViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -1461,6 +1469,9 @@ func (a *App) sendPending() tea.Cmd {
 
 // send starts a streaming request with the given conversation turns.
 func (a *App) send(turns []run.Turn) tea.Cmd {
+	// A model switch scheduled with the swap key lands here, as the next turn
+	// starts.
+	a.applyModelSwap()
 	// A scan since the last turn is searchable on this one (throttled).
 	a.syncKnowledge()
 	if !a.status.Configured {
@@ -1683,6 +1694,7 @@ func (a *App) echoUserMessage(m components.Message) {
 // validated attachments are folded into it rather than appending a duplicate
 // turn.
 func (a *App) sendTurnNoEcho(input string, atts []run.Attachment, directive string) tea.Cmd {
+	a.lastPrompt = &promptRec{input: input, atts: atts, directive: directive}
 	turns := a.buildTurns()
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		turns[n-1].Attachments = atts
@@ -2146,6 +2158,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	return agent.NewSession(agent.Options{
 		Knowledge:     p.knowledge,
+		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           cfg,
 		Client:        p.client,
 		Registry:      reg,
@@ -2255,6 +2268,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 	if cmd, ok := a.handleKnowledgeMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleDiffMsg(msg); ok {
 		return a, cmd
 	}
 	switch m := msg.(type) {
@@ -2566,6 +2582,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						vpCmd = hcmd
 						break
 					}
+					if hit, hcmd := a.vulnMouse(p); hit {
+						vpCmd = hcmd
+						break
+					}
 					a.sel.anchor = p
 					a.sel.cursor = p
 					a.sel.dragging = true
@@ -2653,6 +2673,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
 			a.addSystem("reasoning display: " + showLabel(a.reasoningVisible()))
 			return a, nil
+		case modelSwapKey:
+			// Fast/main toggle: scheduled for the next turn, or, mid-turn,
+			// the turn is interrupted and retried on the other model.
+			if a.view == viewChat {
+				return a, a.toggleModelSwap()
+			}
 		case "ctrl+t":
 			a.toolDisplay = (a.toolDisplay + 1) % 4
 			a.addSystem(a.toolDisplayNotice())
@@ -3761,6 +3787,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// suites on top of a turn that errored.
 		a.testPass.fixing = false
 		// Edits made before the failure are on disk all the same.
+		a.flushVulnRows()
 		return a.flushDepWatch()
 	case agent.EventTextKind:
 		a.setPhaseWorking()
@@ -3921,6 +3948,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		a.setPhaseWorking()
+		a.observeVulnText(m.ToolResult)
 		// Key by ToolCallID: concurrent read-only tools may complete out of
 		// order, so the result must land on its own row rather than the last
 		// tool row.
@@ -4141,6 +4169,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.GoalSentinel == "" {
 			notifyDone = a.notifyTurnDone(elapsed)
 		}
+		a.observeVulnText(m.Result.Reply)
+		a.flushVulnRows()
 		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply))
 	}
 	return nil
@@ -4882,8 +4912,7 @@ func (a *App) saveMode() {
 }
 
 func (a *App) saveState() {
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -4894,8 +4923,7 @@ func (a *App) saveState() {
 // first — the reload was redundant disk I/O per mode keypress.
 func (a *App) saveSession() {
 	a.state.ActiveSession = a.sessionID
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -5385,6 +5413,7 @@ func (a *App) refreshFooter() {
 	a.footer.Tokens = est.Tokens
 	a.footer.Estimated = est.LastUsageIndex < 0
 	a.footer.ContextStale = a.usageStale
+	a.footer.Tools, _ = turnToolCounts(a.messages)
 	if limit, ok := modelinfo.ResolveWith(a.cfg.Model, a.settings.ContextWindows, a.selectedModelWindow()); ok {
 		a.footer.ContextLimit = limit
 	} else {

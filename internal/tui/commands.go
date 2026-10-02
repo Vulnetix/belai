@@ -284,6 +284,9 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.openIntel()
 	})
+	r.Register("diff", "read-only pane of the working tree's changes: staged, unstaged and untracked, per-file hunks", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewDiff)
+	})
 	r.Register("locate", "list the files explore locate may look at and where it would send its questions (/locate --dry-run)", func() []string {
 		return []string{"--dry-run"}
 	}, func(a *App, arg string) tea.Cmd {

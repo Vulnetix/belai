@@ -145,6 +145,7 @@ var extraToolNames = map[string]bool{
 	"KanbanContract": true,
 	"Vulnetix":       true,
 	"ToolSearch":     true,
+	"SearchFetched":  true,
 	"SubAgentLog":    true,
 	"ProcessRestart": true,
 	"BashOutput":     true,

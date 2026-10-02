@@ -31,6 +31,7 @@ func keySections() []keySection {
 			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, shown, hidden"},
 			{"ctrl+t", "cycle tool-call display: auto → all → edits only → none"},
+			{"ctrl+q", "toggle between the main and fast model for this session (chat): the next turn uses the other one; press again to cancel; during a turn it interrupts and retries on the other model"},
 			{"f2", "toggle caveman voice rewrite"},
 			{"f3", "toggle guardrails"},
 			{"f4", "toggle ask permission"},
@@ -309,6 +310,14 @@ func keySections() []keySection {
 			{"enter", "in search results: open the document on the highlighted line"},
 			{"q, esc", "close the document or the results, then the filter, then the screen"},
 			{"r", "reload the indexes"},
+		}},
+		{"workspace changes (/diff)", []keyBinding{
+			{"left, right, p, n, tab", "previous or next changed file"},
+			{"up, down, k, j", "scroll the diff a line"},
+			{"pgup, pgdn, ctrl+u, ctrl+d, space", "scroll a page"},
+			{"home, end, g, G", "top and bottom of the diff"},
+			{"r", "reload from the repository"},
+			{"q, esc", "back"},
 		}},
 		{"trusted directories (/trusted)", []keyBinding{
 			{"up, down", "move (also k, j)"},

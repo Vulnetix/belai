@@ -521,6 +521,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `caches` to `false`, never the reverse, and its `extra_writable` is
   dropped. `required` with no working backend refuses the command; it never
   falls back to running it bare.
+- **Bash rewrite rules are the user's, and permissions judge what runs.**
+  `bash_rewrite` (`internal/config/bashrewrite.go`, docs/bash-rewrite.md) is
+  read from the user's own settings layers only; the project layer may switch it
+  off, never on and never add a rule. A rule is plain words on both sides
+  (`shellsafe.ValidRewriteRule`) and `shellsafe.Rewrite` changes only the
+  program words of commands written in command position, found by parsing, never
+  by substring, and not those held by a wrapper. The result is re-parsed and
+  must keep the line's flags and command count, else the line runs as sent. It
+  runs once, before permission matching (`agent.rewriteBashArgs`): an explicit
+  deny or block rule on the model's own line stops the call before any rewrite,
+  and the rewritten line is then judged against every rule like any other line.
+  The result begins with a harness-composed note (`tools.RewriteBash`). No model
+  is asked.
 - **MCP servers are the user's, and their text classifies.** `mcp.servers`
   is read from the user's own settings layers only; `resolve.go` drops the
   project layer's `mcp` key outright. Servers start only after the trust
@@ -880,6 +893,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   goes through the classifier like the page would; the page never reaches the
   conversation. Any role failure falls back to the page itself. Guardrails off
   skips only the classification, never the role or sanitising.
+- **The WebFetch cache and fetched-page index hold admitted text only, and a
+  hit or a search never skips classification.** `tools.WebPages`
+  (`internal/tools/webpages.go`, docs/web-fetch.md) stages a fresh page with its
+  `WebFetch` result, sanitised; `Session.promoteResult` settles it only after the
+  gate: admitted (classifier proceed, or guardrails off) moves it into an
+  in-memory, bounded, TTL'd cache and hands it to the index, withheld drops the
+  staged page and evicts anything held for that URL from both. A hit is returned
+  as an ordinary `KindWebFetch` result, so it is sanitised and classified like a
+  fresh one (with a `prompt`, the answer is classified); the URL policy runs
+  before the lookup and a miss runs every redirect and address check. Only 2xx
+  pages are held and nothing is written to disk. The index
+  (`internal/agent/webindex.go`) reuses `internal/knowledge`: each chunk is
+  sanitised and admitted by `kbgate.New(…, KindWebFetch)` at ingestion, a flagged
+  chunk is never stored, a gate error stores nothing, and a search calls no model
+  or network. `SearchFetched` is path- and URL-free and its `KindFetched` result
+  is sanitise-only only because of that ingestion rule: never put text in that
+  kind that did not come from the index. A page indexed while guardrails were off
+  is never served once they are on and is re-classified on re-fetch; a `WebFetch`
+  deny rule hides a page. A registry built for a subagent has a page store that
+  is off, and only a top-level session (`agent.Options.WebPages`) switches it on.
+  `web_fetch` settings may be set by any layer, are clamped to fixed ceilings, and
+  never change what is admitted.
 - **Telemetry carries facts, never content.** `internal/otel` exports only
   attribute keys on its fixed allowlist, and reduces every string value to
   identifier characters, capped. Never add a key that can hold a prompt,
@@ -929,6 +964,31 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   SHA-256 hex string is refused. A spoken "stop" stops playback before it
   touches a turn, and a transcript that mostly repeats the words being read is
   dropped as echo (`ttsEcho`), never matched or dictated.
+- **The vulnerability row is composed from one validated identifier.**
+  `internal/vulnid` is the one recognizer of prefixed advisory identifiers
+  (CVE, GHSA, OSV, PYSEC, RUSTSEC, GO, GSD, EUVD, VND and the distribution
+  advisories): strict ASCII shapes, bounded on both sides, nothing matched
+  across a control, bidi or zero-width rune. The TUI scans the tool results and
+  the reply it already shows (`internal/tui/vulnwatch.go`, no model call) and adds
+  one `Ephemeral` row per identifier per session, so it is never a session
+  entry, never in sync, telemetry, audit or a notification, and never promoted
+  to a model. Its link (a fixed https host with the identifier as one escaped
+  path component), its `vdb` hint and its `belai:triage` launch take only
+  `vulnid.Valid`'s canonical string, never the text around it; the click handler
+  validates again. `belai:triage` is read-only (`Vulnetix`, `Read`, `Grep`,
+  `Glob`), starts through `bgagent.Manager.StartTask` under the ordinary
+  permissions, trust gate and sandbox, and receives the identifier as one
+  `vulnerability_id:` data line, never in its instance name. Do not add a second
+  identifier recognizer or let any other text into the row. See
+  [docs/vuln-row.md](docs/vuln-row.md).
+- **The `/diff` pane is the user's own view and shows no denied file.**
+  `internal/workdiff` collects the working tree's changes with read-only,
+  hardened git calls (hooks and fsmonitor off, no optional locks, the scrubbed
+  environment) and `internal/tui/diff_view.go` draws them. The text goes to the
+  screen only: never a model, transcript, telemetry, audit or sync, and there is
+  no model-facing tool. A path a `Read` deny rule covers is listed by name and
+  status and its content is never read; a symlink is never followed and sizes
+  are bounded. See [docs/diff.md](docs/diff.md).
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths

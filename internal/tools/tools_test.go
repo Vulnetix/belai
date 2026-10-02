@@ -396,6 +396,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindToolSearch: true,
 		KindPublish:    false,
 		KindOffload:    true,
+		// SearchFetched is a lookup over the session's own index.
+		KindFetched: true,
 		// A screenshot observes the desktop, so it is mutating: it asks and
 		// runs on the sequential path.
 		KindScreenshot: false,

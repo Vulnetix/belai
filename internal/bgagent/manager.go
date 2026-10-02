@@ -677,6 +677,7 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 
 	return agent.NewSession(agent.Options{
 		Knowledge:     kbgate.Open(kbCtx, setup, true),
+		WebPages:      true, // a background agent is a top-level session of its own
 		Cfg:           cfg,
 		Client:        m.client,
 		Registry:      reg,

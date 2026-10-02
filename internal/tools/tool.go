@@ -60,6 +60,11 @@ type Registry struct {
 	// cloud holds the profile's facts and an assumed role's credentials for the
 	// cloud tools. It rides on the registry for the same reason hub does.
 	cloud *CloudHub
+	// pages is the session's WebFetch cache and fetched-page index
+	// (docs/web-fetch.md). It rides on the registry like hub does, so a
+	// narrowed registry keeps the one store; a registry built for a subagent
+	// has its own, switched off.
+	pages *WebPages
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -81,6 +86,7 @@ func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.cwd = r.cwd
 	reg.hub = r.hub
 	reg.cloud = r.cloud
+	reg.pages = r.pages
 	return reg
 }
 

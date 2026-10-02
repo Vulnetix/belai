@@ -20,6 +20,7 @@ behaviour, and implementation details.
 | Token budgets per provider and model, and session intelligence (plan limits, pace, trend, runway) | [Token budgets](token-budgets.md) | [Settings](token-budgets.md#settings), [Business rules](token-budgets.md#business-rules), [Edge cases](token-budgets.md#edge-cases), [Session intelligence](token-budgets.md#session-intelligence) |
 | Test-suite detection, what the model is told about them, and the post-end test pass (report on a pass, diagnose and fix on a failure) | [Testing](testing.md) | [Detection](testing.md#detection), [Settings](testing.md#settings), [When the pass runs](testing.md#when-the-pass-runs), [Failure: diagnose and fix](testing.md#failure-diagnose-and-fix), [Surfaces](testing.md#surfaces), [Edge cases](testing.md#edge-cases) |
 | Keeping tool output out of the context window | [Context offload](context-offload.md) | [Offloading oversized results](context-offload.md#offloading-oversized-results), [WebFetch answers the question](context-offload.md#webfetch-answers-the-question), [Settings](context-offload.md#settings) |
+| Caching fetched web pages and searching them later without fetching again | [WebFetch cache and search](web-fetch.md) | [The cache](web-fetch.md#the-cache), [Searching what was fetched](web-fetch.md#searching-what-was-fetched), [Settings](web-fetch.md#settings) |
 | Measuring token cost and accuracy | [Benchmarks](benchmarks.md) | [What a run records](benchmarks.md#what-a-run-records), [Running a benchmark](benchmarks.md#running-a-benchmark), [Method](benchmarks.md#method) |
 
 ## Agents
@@ -88,7 +89,10 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 | Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
+| Rewriting a model's Bash command word before permission matching | [Bash rewrite](bash-rewrite.md) | alpha-20261002 |
 | Searching profile documents and project scanner output by meaning | [Knowledge](knowledge.md) | alpha-20261001 |
+| A row for each vulnerability identifier, with a console link and a triage launch | [Vulnerability row](vuln-row.md) | alpha-20261002 |
+| Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
 
 ## Analysis
 

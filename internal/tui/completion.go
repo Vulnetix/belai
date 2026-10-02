@@ -35,6 +35,19 @@ func agentTurnCompleted(res run.Result, planMode bool) bool {
 // non-steering user prompt. Subagent rows are someone else's work and are not
 // counted. Every figure is a harness observation, never model text.
 func completionSummary(msgs []components.Message, elapsed time.Duration) string {
+	tools, edits := turnToolCounts(msgs)
+	parts := []string{"agent turn complete", countNoun(tools, "tool call"), countNoun(edits, "edit")}
+	if elapsed > 0 {
+		parts = append(parts, elapsed.Round(100*time.Millisecond).String())
+	}
+	return strings.Join(parts, " · ")
+}
+
+// turnToolCounts is the one tool-call counter of the main thread: the tool
+// rows after the last non-steering user prompt, and how many of them are
+// edits. The completion panel and the footer both read it, so the two figures
+// can never disagree. Subagent rows are skipped.
+func turnToolCounts(msgs []components.Message) (tools, edits int) {
 	start := 0
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == "user" && !msgs[i].Steering {
@@ -42,7 +55,6 @@ func completionSummary(msgs []components.Message, elapsed time.Duration) string 
 			break
 		}
 	}
-	tools, edits := 0, 0
 	for _, m := range msgs[start:] {
 		if m.Role != "tool" || m.SubagentID != "" {
 			continue
@@ -52,11 +64,7 @@ func completionSummary(msgs []components.Message, elapsed time.Duration) string 
 			edits++
 		}
 	}
-	parts := []string{"agent turn complete", countNoun(tools, "tool call"), countNoun(edits, "edit")}
-	if elapsed > 0 {
-		parts = append(parts, elapsed.Round(100*time.Millisecond).String())
-	}
-	return strings.Join(parts, " · ")
+	return tools, edits
 }
 
 func countNoun(n int, noun string) string {

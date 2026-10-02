@@ -24,7 +24,8 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024, Cwd: cwd, Reads: reads, Knowledge: hub})
 	list = append(list, &Write{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &Edit{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
-	list = append(list, &WebFetch{})
+	pages := &WebPages{}
+	list = append(list, &WebFetch{Pages: pages})
 	ws := &WebSearch{}
 	if ws.Available() {
 		list = append(list, ws)
@@ -49,6 +50,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	base.cwd = cwd
 	base.hub = hub
 	base.cloud = cloud
+	base.pages = pages
 	if readOnly {
 		return base.ReadOnly()
 	}
