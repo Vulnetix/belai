@@ -57,6 +57,10 @@ type Options struct {
 	// Inventory reads the host's worker profiles, crews and live workers
 	// (LocalInventory unless a test replaces it).
 	Inventory func() Inventory
+	// Models says which providers this host can run a web session on
+	// (LocalModels unless a test replaces it); a start request that names a
+	// provider outside it is refused.
+	Models func() *sessionsync.RCModels
 	// StartWorkers runs `belai agent start` for a worker or crew request
 	// (runAgentStart unless a test replaces it). It returns the command's
 	// report, or an error whose text is the refusal reason.
@@ -125,7 +129,13 @@ type WorkerStart struct {
 // Child is one session to start.
 type Child struct {
 	Exe, Cwd, Dispatch, SessionID, Mode, Prompt, LogPath string
-	Idle                                                 time.Duration
+	// Provider, Model and Effort are the request's override; empty means the
+	// host's own default (or its routing table).
+	Provider, Model, Effort string
+	// GitSync is the request's switch for the git sync before turns; nil
+	// leaves it to git.sync in the host's settings.
+	GitSync *bool
+	Idle    time.Duration
 }
 
 // Daemon is a running `belai rc`.
@@ -175,6 +185,9 @@ func New(o Options) (*Daemon, error) {
 	}
 	if o.Inventory == nil {
 		o.Inventory = LocalInventory
+	}
+	if o.Models == nil {
+		o.Models = LocalModels
 	}
 	if o.MaxWorkers > 0 {
 		read := o.Inventory
@@ -267,7 +280,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items}
+		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models}
 	if h.RC.Items == nil {
 		h.RC.Items = []sessionsync.RCItem{}
 	}
@@ -490,6 +503,9 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	if prompt == "" {
 		return "", "the prompt was empty after cleaning"
 	}
+	if why := checkOverride(r.Provider, r.Model, r.Effort, d.o.Models); why != "" {
+		return "", why
+	}
 	d.mu.Lock()
 	if len(d.sessions) >= d.o.Max {
 		n := len(d.sessions)
@@ -504,6 +520,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	}
 	c := Child{
 		Exe: d.o.Exe, Cwd: cwd, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
+		Provider: r.Provider, Model: r.Model, Effort: r.Effort, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 	}
 	pid, wait, err := d.o.Start(c)
@@ -622,6 +639,14 @@ func startChild(c Child) (int, func() error, error) {
 	args := []string{"rc-session", "-dispatch", c.Dispatch, "-session-id", c.SessionID, "-idle", c.Idle.String()}
 	if c.Mode != "" {
 		args = append(args, "-mode", c.Mode)
+	}
+	for _, f := range [][2]string{{"-provider", c.Provider}, {"-model", c.Model}, {"-effort", c.Effort}} {
+		if f[1] != "" {
+			args = append(args, f[0], f[1])
+		}
+	}
+	if c.GitSync != nil {
+		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])
 	}
 	cmd := exec.Command(c.Exe, args...)
 	cmd.Dir = c.Cwd

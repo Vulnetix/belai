@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -350,6 +351,10 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	sessionID := fs.String("session-id", "", "the session id the daemon minted")
 	modeFlag := fs.String("mode", "", "agent, plan or goal (default: classified)")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end after this long without a prompt")
+	providerFlag := fs.String("provider", "", "provider for this session (default: the host's own)")
+	modelFlag := fs.String("model", "", "model for this session (default: the host's own)")
+	effortFlag := fs.String("effort", "", "effort for this session (default: the host's own)")
+	gitSyncFlag := fs.String("git-sync", "", "on or off: sync the branch with origin's default branch before turns (default: git.sync in settings)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -374,14 +379,32 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		fmt.Fprintln(stderr, "belai rc-session: empty prompt")
 		return 1
 	}
-	if err := runRCSession(ctx, *dispatch, *sessionID, mode, prompt, *idle, stderr); err != nil {
+	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag}
+	switch *gitSyncFlag {
+	case "":
+	case "on", "off":
+		on := *gitSyncFlag == "on"
+		pick.GitSync = &on
+	default:
+		fmt.Fprintf(stderr, "belai rc-session: -git-sync must be on or off, not %q\n", *gitSyncFlag)
+		return 2
+	}
+	if err := runRCSession(ctx, *dispatch, *sessionID, mode, prompt, *idle, pick, stderr); err != nil {
 		fmt.Fprintln(stderr, "belai rc-session:", err)
 		return 1
 	}
 	return 0
 }
 
-func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mode, prompt string, idle time.Duration, stderr io.Writer) error {
+// rcModelPick is what a web request chose for the session: provider, model
+// and effort (empty means the host's own default) and the git sync switch
+// (nil means git.sync in settings).
+type rcModelPick struct {
+	Provider, Model, Effort string
+	GitSync                 *bool
+}
+
+func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mode, prompt string, idle time.Duration, pick rcModelPick, stderr io.Writer) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -411,7 +434,24 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if err != nil {
 		return err
 	}
-	cfg, err := run.ResolveWithSource("", "", os.Getenv, resolver)
+	// The host's own choice, as every other headless entry point resolves it:
+	// settings, then the saved TUI selection. Without this an empty provider
+	// falls through to the built-in openai default.
+	if pick.Effort != "" {
+		settings.Effort = pick.Effort
+	}
+	// A model named on the web is the user's explicit choice for the whole
+	// session, so the host's routing table does not second-guess it.
+	if pick.Provider != "" || pick.Model != "" {
+		settings.Routing = nil
+	}
+	wantProvider, wantModel := workerModel(pick.Provider, pick.Model, settings, config.LoadState)
+	// A model alone belongs to the host's default provider, not to openai.
+	if pick.Provider == "" && pick.Model != "" {
+		wantProvider, _ = workerModel("", "", settings, config.LoadState)
+		wantModel = pick.Model
+	}
+	cfg, err := run.ResolveWithSource(wantModel, wantProvider, os.Getenv, resolver)
 	if err != nil {
 		return err
 	}
@@ -455,12 +495,30 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if err != nil {
 		return err
 	}
+	// Git hygiene: the session's branch is brought up to date with origin's
+	// default branch before its first turn and after each commit. The request
+	// (or git.sync in settings) says whether; the website can switch it for the
+	// running session, and what it reads of the repository flows back with the
+	// session's registration.
+	gitOn := settings.GitSyncEnabled()
+	if pick.GitSync != nil {
+		gitOn = *pick.GitSync
+	}
+	gs := gitsync.New(cwd, gitOn, nil)
+	go gs.Watch(ctx, gitsync.InfoEvery, nil)
 	syncer := sessionsync.New(sessionsync.Options{
 		Client: client, HostID: headless.HostID(),
 		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		RemotePrompts: settings.SyncRemotePromptsEnabled(),
 		// Nobody answers asks in a remote session: they are off.
 		RemoteAnswers: false,
+		Git:           gs.Raw,
+		OnControls: func(_ string, c sessionsync.Controls) {
+			if c.GitSync != nil && gs.Enabled() != *c.GitSync {
+				gs.SetEnabled(*c.GitSync)
+				gs.Kick()
+			}
+		},
 	})
 	// The mirror outlives ctx (a stop cancels it) long enough to upload the
 	// last lines and end the session on the website.
@@ -479,7 +537,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	sess, err := headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 		PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
-		MCP: mcp.Active(), Kanban: board, KanbanSource: src,
+		MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 	})
 	if err != nil {
 		w.System("remote session could not start: " + err.Error())
@@ -495,7 +553,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		Prompt: prompt, Mode: mode, Idle: idle, Out: stderr,
 		Facts: map[string]any{
 			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
-			"guardrails": true,
+			"guardrails": true, "routing": cfg.Routing.Kind,
 		},
 	})
 }

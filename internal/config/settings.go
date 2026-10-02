@@ -127,6 +127,9 @@ type Settings struct {
 	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
 	// layer may turn it off, never on.
 	Sync *SyncSettings `json:"sync,omitempty"`
+	// Git configures what Belai does to the repository around a session
+	// (docs/git-sync.md). The project layer may turn it off, never on.
+	Git *GitSettings `json:"git,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -245,6 +248,36 @@ type SyncSettings struct {
 	// Providers is the same switch for the provider set (`providers` and
 	// `firewall`) and for the website's provider key requests.
 	Providers *bool `json:"providers,omitempty"`
+}
+
+// GitSettings configures the repository hygiene a session does before a turn.
+type GitSettings struct {
+	// Sync fetches origin and rebases the session's branch onto origin's
+	// default branch before the first turn and before the first turn after a
+	// commit, when the tree is clean. Default true; false leaves the repository
+	// alone. A session can switch it off for itself (/gitsync off, or the
+	// website's session page) without changing this.
+	Sync *bool `json:"sync,omitempty"`
+}
+
+// GitSyncEnabled reports whether sessions sync their branch with origin's
+// default branch before a turn. Default on.
+func (s Settings) GitSyncEnabled() bool {
+	return s.Git == nil || s.Git.Sync == nil || *s.Git.Sync
+}
+
+// mergeGitOffOnly applies a project layer's git keys over base, honouring only
+// false: a repository may opt out of the sync, and cannot opt a user back in.
+func mergeGitOffOnly(base, proj *GitSettings) *GitSettings {
+	out := &GitSettings{}
+	if base != nil {
+		*out = *base
+	}
+	if proj.Sync != nil && !*proj.Sync {
+		f := false
+		out.Sync = &f
+	}
+	return out
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -1658,6 +1691,9 @@ func (s Settings) Override(proj Settings) Settings {
 	// it (or its web prompts) off, never on.
 	if proj.Sync != nil {
 		out.Sync = mergeSyncOffOnly(out.Sync, proj.Sync)
+	}
+	if proj.Git != nil {
+		out.Git = mergeGitOffOnly(out.Git, proj.Git)
 	}
 	if proj.DeferTools != nil {
 		out.DeferTools = proj.DeferTools

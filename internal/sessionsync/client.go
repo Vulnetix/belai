@@ -137,7 +137,40 @@ type RCInfo struct {
 	// kind, name and the hash of their canonical document: facts only, no
 	// content, and only for the kinds whose sync switch is on.
 	Items []RCItem `json:"items"`
+	// Models is what a web-started session can run on: the model a session
+	// gets when the request names none, and the providers this host has
+	// credentials for. Names only, never a key or an endpoint. Nil from an
+	// older daemon.
+	Models *RCModels `json:"models,omitempty"`
 }
+
+// RCModels is a host's model advertisement.
+type RCModels struct {
+	Default   RCModelDefault `json:"default"`
+	Providers []RCProvider   `json:"providers"`
+}
+
+// RCModelDefault is the provider and model a web session runs on with no
+// override. Routed means routing.kind is "routed": the use-case table picks
+// the model per turn, and Provider and Model are the main model it falls
+// back to.
+type RCModelDefault struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Routed   bool   `json:"routed"`
+}
+
+// RCProvider is a configured provider and the models it offers a session.
+type RCProvider struct {
+	Name   string   `json:"name"`
+	Models []string `json:"models"`
+}
+
+// Caps on one advertisement's model list; the server applies the same caps.
+const (
+	MaxRCProviders         = 32
+	MaxRCModelsPerProvider = 64
+)
 
 // RCItem is one library item on the host, as the website lists where an item
 // lives: its kind (skill, prompt, ...), its name and the SHA-256 of the
@@ -299,7 +332,15 @@ type Dispatch struct {
 	// whose stored keys the host is to take. Slugs only: a key is fetched over TLS,
 	// once, never carried.
 	Providers []string `json:"providers,omitempty"`
-	CreatedAt int64    `json:"createdAt"`
+	// A "start" request may name the provider, model and effort the session
+	// runs on. Empty means the host's own default (or its routing table).
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	// GitSync, when set on a "start" request, switches the new session's git
+	// sync on or off; nil leaves it to the host's settings.
+	GitSync   *bool `json:"gitSync,omitempty"`
+	CreatedAt int64 `json:"createdAt"`
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:
@@ -338,6 +379,10 @@ type SessionMeta struct {
 	// DispatchID is the website request that started this session on an rc
 	// daemon; empty for a session someone started at the terminal.
 	DispatchID string `json:"dispatchId,omitempty"`
+	// Git is the session's repository as internal/gitsync.Info (branch,
+	// worktree, distance from main, pull request, last sync). Opaque here;
+	// the server validates it. Empty outside a repository.
+	Git json.RawMessage `json:"git,omitempty"`
 }
 
 // Entry is one JSONL line as uploaded: the session.Entry fields plus seq.
@@ -471,11 +516,28 @@ func (c *Client) PutHost(ctx context.Context, hostID string, h Host) error {
 // PutSession registers the session as live and returns the server's lastSeq
 // (-1 when it holds no lines yet).
 func (c *Client) PutSession(ctx context.Context, sessionID string, m SessionMeta) (int64, error) {
+	last, _, err := c.PutSessionControls(ctx, sessionID, m)
+	return last, err
+}
+
+// Controls are the per-session settings the website changed and the host has
+// not yet confirmed. Nil fields are untouched. The server sends one only until
+// the host's next report shows it applied, so a later local change is not
+// overridden by an old web one.
+type Controls struct {
+	// GitSync switches the session's git sync (internal/gitsync) on or off.
+	GitSync *bool `json:"gitSync,omitempty"`
+}
+
+// PutSessionControls is PutSession that also returns the website's pending
+// controls for the session.
+func (c *Client) PutSessionControls(ctx context.Context, sessionID string, m SessionMeta) (int64, Controls, error) {
 	var out struct {
-		LastSeq int64 `json:"lastSeq"`
+		LastSeq  int64    `json:"lastSeq"`
+		Controls Controls `json:"controls"`
 	}
 	err := c.do(ctx, http.MethodPut, "/sessions/"+url.PathEscape(sessionID), m, &out, requestTimeout)
-	return out.LastSeq, err
+	return out.LastSeq, out.Controls, err
 }
 
 // PostEntries uploads lines; repeats are ignored server-side.
@@ -490,7 +552,18 @@ func (c *Client) PostEntries(ctx context.Context, sessionID string, entries []En
 
 // Heartbeat keeps the session live.
 func (c *Client) Heartbeat(ctx context.Context, sessionID string) error {
-	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/heartbeat", nil, nil, requestTimeout)
+	_, err := c.HeartbeatControls(ctx, sessionID)
+	return err
+}
+
+// HeartbeatControls is Heartbeat that also returns the website's pending
+// controls for the session.
+func (c *Client) HeartbeatControls(ctx context.Context, sessionID string) (Controls, error) {
+	var out struct {
+		Controls Controls `json:"controls"`
+	}
+	err := c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/heartbeat", nil, &out, requestTimeout)
+	return out.Controls, err
 }
 
 // End moves the session into History.

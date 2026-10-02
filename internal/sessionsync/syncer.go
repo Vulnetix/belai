@@ -31,6 +31,14 @@ type Options struct {
 	RemotePrompts bool
 	// RemoteAnswers delivers web answers to the host's open asks.
 	RemoteAnswers bool
+	// OnControls is called, on the syncer's goroutine, with the website's
+	// pending controls for the live session each time the server returns some
+	// (registration and every heartbeat). It must not block. nil ignores them.
+	OnControls func(sessionID string, c Controls)
+	// Git returns the live session's repository reading (internal/gitsync.Info
+	// as JSON), or nil when there is none. It is polled on every tick, so it
+	// must return a cached value and never block. nil sends no git state.
+	Git func() json.RawMessage
 
 	TickEvery      time.Duration // how often the file is re-read without a nudge (2s)
 	HeartbeatEvery time.Duration // liveness beat (15s; the server's window is 45s)
@@ -57,6 +65,9 @@ type SessionInfo struct {
 	ResumedFromID   string
 	// DispatchID: the rc request that started this session (see Dispatch).
 	DispatchID string
+	// Git is the session's repository (internal/gitsync.Info as JSON), kept
+	// current from Options.Git. Empty outside a repository.
+	Git json.RawMessage
 }
 
 // Status is a snapshot for /sync status.
@@ -165,6 +176,18 @@ func (s *Syncer) UpdateMeta(sessionID, model, provider, mode string) {
 	select {
 	case s.meta <- metaUpdate{id: sessionID, model: model, provider: provider, mode: mode}:
 	default:
+	}
+}
+
+// pollGit takes the host's current git reading for the live session; a change
+// is sent with the next registration refresh.
+func (s *Syncer) pollGit(t *tail) {
+	if s.opts.Git == nil || t == nil {
+		return
+	}
+	if g := s.opts.Git(); len(g) > 0 && string(g) != string(t.info.Git) {
+		t.info.Git = g
+		t.dirty = true
 	}
 }
 
@@ -363,6 +386,7 @@ func (s *Syncer) run(ctx context.Context) {
 			s.coalesce(ctx)
 		case <-tick.C:
 		}
+		s.pollGit(cur)
 		if cur == nil {
 			s.sendAcks(ctx, &pendingAcks)
 			continue
@@ -450,12 +474,15 @@ func (s *Syncer) step(ctx context.Context, t *tail, hostOK *bool, live bool) err
 		// Read the file once first so name/cwd/model are known at
 		// registration; nothing is uploaded until the server's mark is known.
 		s.scanMeta(t)
-		last, err := s.opts.Client.PutSession(ctx, t.info.ID, s.metaFor(t))
+		last, ctl, err := s.opts.Client.PutSessionControls(ctx, t.info.ID, s.metaFor(t))
 		if err != nil {
 			return err
 		}
 		t.registered, t.serverLast, t.offset, t.seq, t.dirty = true, last, 0, 0, false
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 		if live {
 			s.setLive(t.info.ID, Status{SessionID: t.info.ID, Registered: true, LastSeq: last})
 		}
@@ -464,17 +491,25 @@ func (s *Syncer) step(ctx context.Context, t *tail, hostOK *bool, live bool) err
 		return err
 	}
 	if t.dirty {
-		if _, err := s.opts.Client.PutSession(ctx, t.info.ID, s.metaFor(t)); err != nil {
+		_, ctl, err := s.opts.Client.PutSessionControls(ctx, t.info.ID, s.metaFor(t))
+		if err != nil {
 			return err
 		}
 		t.dirty = false
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 	}
 	if time.Since(t.lastBeat) >= s.opts.HeartbeatEvery {
-		if err := s.opts.Client.Heartbeat(ctx, t.info.ID); err != nil {
+		ctl, err := s.opts.Client.HeartbeatControls(ctx, t.info.ID)
+		if err != nil {
 			return err
 		}
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 	}
 	if live {
 		s.mu.Lock()
@@ -507,7 +542,15 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode, ActiveProfile: i.ActiveProfile,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
 		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
-		DispatchID: i.DispatchID,
+		DispatchID: i.DispatchID, Git: i.Git,
+	}
+}
+
+// applyControls hands the website's pending controls for the live session to
+// the host.
+func (s *Syncer) applyControls(id string, c Controls) {
+	if s.opts.OnControls != nil && c.GitSync != nil {
+		s.opts.OnControls(id, c)
 	}
 }
 
@@ -667,6 +710,9 @@ func mergeInfo(old, n SessionInfo) SessionInfo {
 	n.ActiveProfile = orStr(n.ActiveProfile, old.ActiveProfile)
 	n.ParentSessionID = orStr(n.ParentSessionID, old.ParentSessionID)
 	n.ResumedFromID = orStr(n.ResumedFromID, old.ResumedFromID)
+	if len(n.Git) == 0 {
+		n.Git = old.Git
+	}
 	return n
 }
 

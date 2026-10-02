@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/imageguard"
@@ -174,6 +175,11 @@ type Options struct {
 	SandboxMounts []sandbox.Mount
 	// SandboxEnv is added to those commands' environment while sandboxed.
 	SandboxEnv []string
+	// GitSync, when set, runs before each turn: it fetches origin and rebases
+	// the checked-out branch onto origin's default branch when that is due
+	// and safe (internal/gitsync). Only a top-level session sets it; a fleet
+	// worker manages its own branch and a subagent shares its parent's.
+	GitSync *gitsync.Hygiene
 }
 
 // noteAskWithheld records a call withheld because it needed an ask nobody
@@ -387,6 +393,8 @@ type Session struct {
 	askWithheld     []string
 	// persona is a fleet worker's profile text (Options.Persona).
 	persona string
+	// gitSync: Options.GitSync.
+	gitSync *gitsync.Hygiene
 	// sandboxMounts: Options.SandboxMounts.
 	sandboxMounts []sandbox.Mount
 	sandboxEnv    []string
@@ -652,6 +660,7 @@ func NewSession(o Options) (*Session, error) {
 		settings:           o.Settings,
 		persona:            o.Persona,
 		sandboxMounts:      o.SandboxMounts,
+		gitSync:            o.GitSync,
 		sandboxEnv:         o.SandboxEnv,
 		pool:               pool,
 		openAITools:        openAITools,
@@ -866,6 +875,9 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 	return s.RunObserved(ctx, userPrompt, func(Event) {})
 }
 
+// GitSync is the session's git sync, or nil when it has none.
+func (s *Session) GitSync() *gitsync.Hygiene { return s.gitSync }
+
 // RunInput is Run with a structured turn input, so a caller can carry an
 // explicit mode (the CLI's -mode) exactly as the TUI does. It discards every
 // event.
@@ -920,6 +932,14 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.askWithheld = nil
 	s.askMu.Unlock()
 	s.lastTurns = nil
+	// Before any model I/O, bring the branch up to date with upstream main
+	// when that is due and the tree is clean; what it did is a system line.
+	if s.gitSync != nil {
+		if res := s.gitSync.BeforeTurn(ctx); res != nil {
+			emit(Event{Kind: EventWarningKind, Warning: res.Line()})
+			s.gitSync.Kick()
+		}
+	}
 	// turnIntent is set when the mode decision is finalised below.
 
 	clean := sanitize.Sanitize(in.Prompt)
