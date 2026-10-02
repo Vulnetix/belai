@@ -521,6 +521,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `caches` to `false`, never the reverse, and its `extra_writable` is
   dropped. `required` with no working backend refuses the command; it never
   falls back to running it bare.
+- **Bash rewrite rules are the user's, and permissions judge what runs.**
+  `bash_rewrite` (`internal/config/bashrewrite.go`, docs/bash-rewrite.md) is
+  read from the user's own settings layers only; the project layer may switch it
+  off, never on and never add a rule. A rule is plain words on both sides
+  (`shellsafe.ValidRewriteRule`) and `shellsafe.Rewrite` changes only the
+  program words of commands written in command position, found by parsing, never
+  by substring, and not those held by a wrapper. The result is re-parsed and
+  must keep the line's flags and command count, else the line runs as sent. It
+  runs once, before permission matching (`agent.rewriteBashArgs`): an explicit
+  deny or block rule on the model's own line stops the call before any rewrite,
+  and the rewritten line is then judged against every rule like any other line.
+  The result begins with a harness-composed note (`tools.RewriteBash`). No model
+  is asked.
 - **MCP servers are the user's, and their text classifies.** `mcp.servers`
   is read from the user's own settings layers only; `resolve.go` drops the
   project layer's `mcp` key outright. Servers start only after the trust

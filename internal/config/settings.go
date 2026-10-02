@@ -171,6 +171,11 @@ type Settings struct {
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
 	Kanban *bool `json:"kanban,omitempty"`
+	// BashRewrite is the user's rule table that rewrites a model's Bash command
+	// word before permission matching (docs/bash-rewrite.md). Rules come from
+	// the user's own layers only; the project layer may turn the table off,
+	// never on and never add a rule.
+	BashRewrite *BashRewriteSettings `json:"bash_rewrite,omitempty"`
 	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
 	// project layer may turn it, or whole-screen capture, off; never on.
 	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
@@ -1575,6 +1580,8 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	// Screenshot capture: a project may turn it off, never on.
 	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
+	// The Bash rewrite table: a project may switch it off, never add or enable.
+	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
 	// Fleet workers run unattended: a project may only tighten them.
 	if proj.Agents != nil {
 		out.Agents = out.Agents.tighten(proj.Agents)

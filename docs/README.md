@@ -88,6 +88,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 | Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
+| Rewriting a model's Bash command word before permission matching | [Bash rewrite](bash-rewrite.md) | alpha-20261002 |
 | Searching profile documents and project scanner output by meaning | [Knowledge](knowledge.md) | alpha-20261001 |
 
 ## Analysis
