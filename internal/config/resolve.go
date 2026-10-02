@@ -170,6 +170,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateKnowledge(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateBashRewrite(eff.Settings); err != nil {
+		return eff, err
+	}
 	if err := ValidateVulnetix(eff.Settings); err != nil {
 		return eff, err
 	}
@@ -496,6 +499,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Offload = mergeOffload(e.Settings.Offload, s.Offload)
 		e.Origin["offload"] = src
 	}
+	if s.WebFetch != nil {
+		// The WebFetch cache and index change only what a session re-fetches;
+		// every hit and every chunk still takes the classify path, so any
+		// layer may set them.
+		e.Settings.WebFetch = mergeWebFetch(e.Settings.WebFetch, s.WebFetch)
+		e.Origin["web_fetch"] = src
+	}
 	if s.Jev != nil {
 		// Jev jobs narrow or reorder what a request carries and never approve
 		// anything, but a repository still may not switch one on or widen where
@@ -508,6 +518,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		// sessions: a repo-visible project layer may turn it off, never on.
 		e.Settings.Kanban = s.Kanban
 		e.Origin["kanban"] = src
+	}
+	if s.BashRewrite != nil {
+		// Rules rewrite what a model runs: only the user's layers may name
+		// them, and a project layer may only switch the table off.
+		before := e.Settings.BashRewrite
+		e.Settings.BashRewrite = mergeBashRewrite(before, s.BashRewrite, src == SourceProject)
+		if e.Settings.BashRewrite != before {
+			e.Origin["bash_rewrite"] = src
+		}
 	}
 	if s.Screenshot != nil {
 		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)

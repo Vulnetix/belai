@@ -14,8 +14,36 @@ func TestContextSegmentAnchoredFresh(t *testing.T) {
 	if !strings.Contains(s, "12.4k/200k") {
 		t.Fatalf("context = %q", s)
 	}
-	if !strings.Contains(s, "(93%)") {
+	if !strings.Contains(s, "(93% left)") {
 		t.Fatalf("expected coloured percent, got %q", s)
+	}
+}
+
+func TestFooterToolsAndContextSegments(t *testing.T) {
+	f := Footer{Tokens: 150000, ContextLimit: 200000, Tools: 7, Width: 160, Guardrails: true, Ask: true}
+	_, _, right, _, _, _ := f.line2Layout()
+	plain := ansi.Strip(right)
+	if !strings.Contains(plain, "tools: 7") || !strings.Contains(plain, "25% left") {
+		t.Fatalf("right group = %q", plain)
+	}
+	if got := ansi.Strip(f.contextSegmentShort()); got != "ctx 75%" {
+		t.Fatalf("short context = %q, want fullness", got)
+	}
+	if (&Footer{Tools: 0}).toolsSegment(0) != "" {
+		t.Fatal("no tool calls must render nothing")
+	}
+	if got := (&Footer{Tools: 3}).toolsSegment(line2ShedLevels); got != "3 tools" {
+		t.Fatalf("compact tools = %q", got)
+	}
+}
+
+func TestFooterToolsRespectNarrowWidths(t *testing.T) {
+	for w := 60; w <= 140; w += 5 {
+		f := Footer{Tokens: 150000, ContextLimit: 200000, Tools: 12, Width: w, Session: "abcdef12", Model: "gpt-5", Provider: "openai", Guardrails: true, Ask: true}
+		left, pad, right, _, _, _ := f.line2Layout()
+		if got := lipgloss.Width(left) + pad + lipgloss.Width(right); got > w {
+			t.Fatalf("width %d: line is %d cells", w, got)
+		}
 	}
 }
 

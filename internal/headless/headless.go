@@ -153,6 +153,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 
 	return agent.NewSession(agent.Options{
 		Knowledge:     kb,
+		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           p.Cfg,
 		Client:        p.Client,
 		Registry:      reg,

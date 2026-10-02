@@ -237,6 +237,14 @@ For git only the read subcommands (`status`, `log`, `diff`, `show`,
   core.pager=cat` is added, and `--no-ext-diff --no-textconv` for `diff`, `log`
   and `show`, so repository configuration cannot name a program to run.
 
+**Rewrite.** The user's `bash_rewrite` table ([Bash rewrite](bash-rewrite.md))
+is applied by `Rewrite`, which edits only the program words of commands the line
+writes in command position, found by parsing. `ValidRewriteRule` restricts both
+sides of a rule to plain words. The result is parsed again and must have the
+same flags and command count, or the line is left as sent; the permission rules
+then judge the rewritten line in full, and an explicit deny on the original
+line stops the call before any rewrite.
+
 Full-mode Bash still runs through `sh -c`; the OS sandbox is its boundary.
 `shellsafe` decides permission and the read-only classification, not what the
 shell may do once it is allowed.
