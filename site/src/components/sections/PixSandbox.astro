@@ -3,89 +3,177 @@ import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
 import Limits from '../ui/Limits.astro';
+import typesafeLogo from '../../assets/logos/typesafe-white.svg';
+import cloudflareLogo from '../../assets/logos/cloudflare.svg';
+import nixLogo from '../../assets/logos/nix.svg';
 
-// Belai around the clock: a Pix Sandbox is a machine Vulnetix runs for you
-// that does nothing but `belai rc`. Nothing in Belai changes for it. Every
-// promise below is a mechanism in this repository or in the harness that sets
-// the machine up, so a reader can check it. Nothing here describes another
-// product.
+// A Pix Sandbox is Belai on a machine Vulnetix runs: an unmodified belai rc on
+// a Cloudflare container, built from the Nix image in the website repository
+// (sandbox-worker/image). Every claim below comes from that image and the
+// Worker that launches it.
 
 const sealText =
-  'Pix Sandbox: a hosted machine that runs an unmodified belai rc around the clock on a Cloudflare container, bought as one subscription per machine from the Vulnetix console and managed only there. Nothing in Belai knows it is hosted: the machine is set up with the files and environment Belai already reads. Each repository the user chooses is cloned and passed as its own --dir, so the trusted directories are exactly the repositories and never a parent. Belai starts only once the first repository is ready. The image is built from a pinned Nix flake, Belai and the Vulnetix CLI are fetched by checksum, the SBOM is published, and the machine re-hashes its binaries on boot before Belai starts. Jev is the classifier on every call at no charge: the machine holds a placeholder and the real key is swapped in at the network edge for the Jev API alone. The Vulnetix AI Firewall and Package Firewall are configured on launch with the same credential belai rc signs in with. Egress is decided by hostname, every host is recorded with how often it was refused, and the user may deny everything except an allow list. Provider keys arrive through the ordinary sync and go to the firewall vault, never to a file on the machine. A relaunch replaces the machine from a fresh disk. Sessions, agents, crews and schedules are the same console pages as for any host.';
+  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on TypeSafe Jev, Cloudflare Sandbox and Nix. Every Jev feature on this page comes with a Pix Sandbox at no extra cost and is the classifier from the first session. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package.';
 
-// Each body is a mechanism, in Belai or in the harness around the machine.
-const promises: [string, string][] = [
-  [
-    'Belai is not told it is hosted',
-    'The machine runs the released binary with no flag, build tag or setting for the sandbox. It is seeded with a host id, a settings.json and an environment, all things a person could write by hand, and belai rc preflights, registers and syncs exactly as it does on a laptop.',
-  ],
-  [
-    'Every repository is a trusted root and nothing else is',
-    'The harness clones each repository into its own directory and passes each as its own --dir. The working directory is never offered, the parent that holds the clones is never trusted, and Belai starts only once the first repository is ready, so there is never a placeholder root.',
-  ],
-  [
-    'Jev on every call, with no key on the machine',
-    'TYPESAFE_API_KEY holds a placeholder derived from the sandbox id. A handler at the network edge accepts only POST /v1/systemone on the Jev host, checks the placeholder in constant time and swaps in the key for that one request. A dumped environment or a copied disk holds nothing worth having, and a capped day answers 429 so the agent-model classifier takes over.',
-  ],
-  [
-    'Both Vulnetix firewalls are on before the first session',
-    'The launch writes firewall.enabled and active: vulnetix into the global settings and runs vulnetix package-firewall for Go and for every installed language pack. Provider keys reach the AI Firewall vault through the ordinary sync; the Package Firewall credentials live in the files the CLI writes under the home directory, which survive the scrubbed tool environment.',
-  ],
-  [
-    'Egress you can read and refuse',
-    'The container starts with the internet off. Each request is decided by hostname: the sync, firewall and Jev hosts always, clone and cache hosts only during their step, and the rest by the mode the user chose and the Allow or Deny they set per host. Every host is recorded with how often it was refused.',
-  ],
-  [
-    'An image you can verify',
-    'A pinned Nix flake builds the image; Belai and the Vulnetix CLI are fetched by the checksums their releases publish, every package comes from the pinned nixpkgs, the build is repeated to prove the hash, and the SBOM is published. On boot the machine hashes its binaries against the pins and refuses to start Belai on a mismatch.',
-  ],
-  [
-    'A relaunch is a new machine, not a repair',
-    'Changing repositories, packs or egress makes a draft. Applying it destroys the container and launches again from a fresh disk with the whole configuration, so what is running is always what the console shows, and nothing accumulates between launches.',
-  ],
+const firewalls = [
+  {
+    title: 'AI Firewall and guardrails',
+    tag: 'model calls · provider keys',
+    body: "Every model call passes the Vulnetix AI Firewall, and your provider keys live in its vault. Belai's guardrails run in every session, with Jev reading each tool result before the model does.",
+  },
+  {
+    title: 'Package Firewall',
+    tag: 'npm · pypi · cargo · go · maven',
+    body: 'Each language you add points its package manager at the Vulnetix Package Firewall. Known malware and versions with exploitable vulnerabilities are refused before a byte downloads, whichever agent asked.',
+  },
+  {
+    title: 'Egress firewall',
+    tag: 'every other host',
+    body: 'The container starts offline and reaches only the hosts your policy allows. Log everything while you learn what a project needs, then deny all but your list.',
+  },
 ];
 
-const limits: [string, string][] = [
-  ['One container per purchase', 'The Durable Object is named by the sandbox id, so two callers racing to launch cannot make two machines.'],
-  ['Disk', '20 GB, with a fifth of what is left after the image reserved for temporary files. A clone or a pack that would cross into the reserve is refused before it starts.'],
-  ['Repositories', 'Public GitHub repositories, or private ones through the Vulnetix GitHub App with a one-hour token scoped to that repository and contents:read, passed to one clone process and never written to the clone.'],
-  ['Packs', 'Installed with `nix profile install --max-jobs 0`: only signed closures from the cache, nothing built on the machine.'],
-  ['What a user never gets', 'No shell, no ports, no SSH. The console is the only way in, and the Belai pages are the only way to work.'],
+// Illustrative rows for the console's egress list.
+const egress: [host: string, requests: string, refused: string, action: 'always' | 'Allow' | 'Deny'][] = [
+  ['api.typesafe.ai', '3,906', '0', 'always'],
+  ['guardrails.vulnetix.com', '1,284', '0', 'always'],
+  ['packages.vulnetix.com', '412', '0', 'always'],
+  ['api.github.com', '57', '0', 'Allow'],
+  ['metrics.sdk-vendor.io', '22', '22', 'Deny'],
+  ['api.example.net', '3', '3', 'Deny'],
+];
+
+const chain: [string, string][] = [
+  ['pinned flake', 'nixpkgs, Belai and the Vulnetix CLI are fixed by revision and SHA-256.'],
+  ['reproducible build', 'The image is built twice and ships when both builds give the same hash.'],
+  ['published SBOM', 'CycloneDX and SPDX for the whole image closure, published with every image.'],
+  ['checked at boot', 'The sandbox hashes its binaries against the pins before Belai starts.'],
+];
+
+const yours: [string, string][] = [
+  ['Your repositories', 'Public GitHub repositories, or private ones through the Vulnetix GitHub App with a short-lived, read-only token for each clone.'],
+  ['Your languages', 'Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any package from nixpkgs.'],
+  ['Your console', 'Sessions, agents, crews and schedules run from the Belai pages you already use. The console is the way in.'],
 ];
 ---
 
 <SealedSection id="pix" label="pix sandbox" sealText={sealText}>
   <SectionHead title="Belai around the clock">
-    A Pix Sandbox is a machine Vulnetix runs for you that does one thing: <code>belai rc</code>, all day, on your repositories. You buy one from the <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/pix-sandbox">Vulnetix console</a>, pick the repositories and the language packs, and work from the same sessions, agents and crews pages as for any other host. Nothing in Belai changes for it, and that is the point: the guarantees below come from the machine being set up the way Belai already expects.
+    A Pix Sandbox is Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the{' '}
+    <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/pix-sandbox">Vulnetix console</a>, then start
+    sessions, agents and crews from the same pages you use for your own hosts.
   </SectionHead>
 
-  <SubHead id="pix-promises" title="Seven promises, each with its mechanism">
-    What a hosted machine has to be true of before an agent is left alone on it.
+  <div class="mt-12 grid gap-5 @3xl:grid-cols-3">
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink bg-vx-ink p-6 text-vx-cream">
+      <div class="flex h-10 items-center justify-between gap-3">
+        <img src={typesafeLogo.src} alt="TypeSafe AI" class="h-7 w-auto" loading="lazy" />
+        <span class="mono rounded-full bg-vx-mint px-2.5 py-1 text-xs font-semibold text-vx-ink">included</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Jev included</h3>
+      <p class="text-sm text-vx-cream/80">
+        Every Jev feature on this page comes with a Pix Sandbox at no extra cost. It is the classifier from the first
+        session, with nothing to sign up for.{' '}
+        <a href="#jev" class="text-vx-mint underline">How Belai uses Jev</a>
+      </p>
+    </article>
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink p-6">
+      <div class="flex h-10 items-center gap-3">
+        <img src={cloudflareLogo.src} alt="" class="h-8 w-auto" loading="lazy" />
+        <span class="text-lg font-bold">Cloudflare</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Cloudflare Sandbox</h3>
+      <p class="text-sm text-vx-ink/80">
+        Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk. It stays on, so a web
+        session or a scheduled agent starts the moment you ask.
+      </p>
+    </article>
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink p-6">
+      <div class="flex h-10 items-center gap-3">
+        <img src={nixLogo.src} alt="" class="h-9 w-9" loading="lazy" />
+        <span class="text-lg font-bold">Nix</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Built with Nix</h3>
+      <p class="text-sm text-vx-ink/80">
+        The image comes from a pinned Nix flake and builds to the same hash every time. Language packs install as signed
+        closures from the binary cache.
+      </p>
+    </article>
+  </div>
+
+  <SubHead id="pix-firewalls" title="A firewall on every way out">
+    Model calls, package installs and every other connection leave the machine through a gate you set from the console.
+    All three are up before the first session starts.
   </SubHead>
-  <ol class="mt-head list-none p-0">
-    {promises.map(([q, a], i) => (
-      <li class="grid gap-x-10 gap-y-2 border-b border-vx-ink/20 py-6 first:border-t first:border-vx-ink/60 @3xl:grid-cols-[17rem_minmax(0,1fr)]">
-        <h4 class="text-lg font-bold leading-snug"><span class="mono mr-2 text-sm font-medium text-vx-mint-strong">{String(i + 1).padStart(2, '0')}</span>{q}</h4>
-        <p class="text-vx-ink/85">{a}</p>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {firewalls.map((f, i) => (
+      <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+        <h4 class="mt-3 text-xl font-bold">{f.title}</h4>
+        <p class={`mono mt-1 text-xs ${i === 2 ? 'text-vx-mint' : 'text-vx-ink/60'}`}>{f.tag}</p>
+        <p class={`mt-3 text-sm ${i === 2 ? 'text-vx-cream/80' : 'text-vx-ink/80'}`}>{f.body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="mono min-w-0 overflow-hidden rounded-xl border border-vx-ink text-xs md:text-sm @4xl:col-span-7" role="img" aria-label="The egress list as the console shows it">
+      <div class="flex flex-wrap justify-between gap-3 bg-vx-ink px-4 py-3 text-vx-cream">
+        <span>egress · sandbox-a31f</span>
+        <span class="text-vx-mint">deny all except allowed</span>
+      </div>
+      <div class="grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 px-4 py-2 text-[0.7rem] tracking-wider text-vx-ink/60 @xl:grid-cols-[minmax(0,1fr)_5rem_4rem_5rem]">
+        <span>HOST</span><span class="hidden text-right @xl:block">REQUESTS</span><span class="text-right">REFUSED</span><span class="text-right">ACTION</span>
+      </div>
+      {egress.map(([host, req, refused, action]) => (
+        <div class={`grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 border-t border-vx-ink/10 px-4 py-2 @xl:grid-cols-[minmax(0,1fr)_5rem_4rem_5rem] ${action === 'Deny' ? 'bg-vx-sand-amber/10' : ''}`}>
+          <span class="truncate">{host}</span>
+          <span class="hidden text-right @xl:block">{req}</span>
+          <span class={`text-right ${action === 'Deny' ? 'text-vx-amber-deep' : ''}`}>{refused}</span>
+          <span class={`text-right ${action === 'Deny' ? 'font-semibold text-vx-red-deep' : action === 'Allow' ? 'font-semibold text-vx-mint-strong' : 'text-vx-ink/60'}`}>{action}</span>
+        </div>
+      ))}
+    </div>
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Every host, counted</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The console lists each hostname the sandbox tried to reach, how often, and how often it was refused. One click allows
+        or denies it for the next launch.
+      </p>
+      <p class="mt-3 text-vx-ink/80">
+        Jev, the AI Firewall and the Package Firewall stay reachable in either mode, so guardrails and installs keep working
+        while you tighten the list.
+      </p>
+    </div>
+  </div>
+
+  <SubHead id="pix-supply-chain" title="A supply chain you can verify">
+    Every binary on a sandbox traces back to a published hash, from the flake that builds the image to the moment Belai
+    starts.
+  </SubHead>
+  <ol class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
+    {chain.map(([step, what], i) => (
+      <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 0 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class={`mono text-xs ${i === 0 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
+        <p class={`mono mt-2 text-lg font-semibold ${i === 0 ? 'text-vx-mint' : ''}`}>{step}</p>
+        <p class={`mt-1 text-sm ${i === 0 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
+        {i < chain.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @4xl:block" aria-hidden="true">▸</span>}
       </li>
     ))}
   </ol>
 
-  <SubHead id="pix-limits" title="The shape of the machine">
-    The numbers and the lines a sandbox does not cross.
-  </SubHead>
-  <Limits items={limits} cols={2} class="mt-head" />
+  <Limits items={yours} />
 
   <div class="mt-sub grid gap-4 @3xl:grid-cols-2">
-    <a href="https://www.vulnetix.com/features/pix-sandbox" class="flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)] bg-vx-mint">
+    <a href="https://www.vulnetix.com/features/pix-sandbox" class="flex flex-col gap-2 rounded-xl border border-vx-ink bg-vx-mint p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
       <span class="mono text-xs">features/pix-sandbox</span>
-      <span class="font-bold">What a Pix Sandbox is ↗</span>
-      <span class="text-vx-ink/85">Cloudflare Sandbox, Nix, filtered egress and free Jev, with the price and what the machine cannot do.</span>
+      <span class="font-bold">Take the tour ↗</span>
+      <span class="text-vx-ink/85">Jev, Cloudflare, Nix, the three firewalls and the verified build, in detail.</span>
     </a>
-    <a href="https://www.vulnetix.com/pricing" class="flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
-      <span class="mono text-xs">pricing</span>
-      <span class="font-bold">One subscription per machine ↗</span>
-      <span class="text-vx-ink/85">Cloudflare cost plus a fixed margin, rounded to ten dollars. Jev is included.</span>
+    <a href="https://www.vulnetix.com/resolve/belai-hosts?tab=sandboxes&buy=1" class="flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
+      <span class="mono text-xs">console</span>
+      <span class="font-bold">Start a sandbox ↗</span>
+      <span class="text-vx-ink/85">Pick repositories and languages, launch, and work from the web.</span>
     </a>
   </div>
 </SealedSection>
