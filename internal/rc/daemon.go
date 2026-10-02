@@ -294,7 +294,7 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	d.catalog = inv.catalogueHash()
 	d.mu.Unlock()
 	for _, dir := range d.o.Dirs {
-		h.RC.Dirs = append(h.RC.Dirs, sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
+		h.RC.Dirs = append(h.RC.Dirs, dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source}))
 	}
 	backoff := time.Second
 	for {
@@ -373,7 +373,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install":
+			"item_backup", "item_install", "provider_keys_install", "library_sync":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -461,6 +461,16 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 			return
 		}
 		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "library_sync":
+		// Counts go in the acknowledgement; no item name or document does.
+		report, why := d.librarySyncNow(ctx)
+		if why != "" {
+			d.logf("refused library_sync: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("library_sync: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	case "provider_keys_install":
 		// Slugs go in the log and the acknowledgement; a key never does.

@@ -757,6 +757,60 @@ func TestAutoSyncPushesWhatTheServerSaysToPushAndThenLeavesItAlone(t *testing.T)
 	}
 }
 
+func TestLibrarySyncNowAsksAboutSettledItemsAndReportsCountsOnly(t *testing.T) {
+	h := newSyncHarness(t)
+	for name, id := range map[string]string{"first": libID, "second": libID2} {
+		if _, err := agentprofile.Save(distinct(name, id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.remote.answers[libID2] = sessionsync.SyncDiverged
+	h.tick()
+	if len(h.remote.asked) != 1 || len(h.remote.pushed) != 1 {
+		t.Fatalf("first pass: asked %v, pushed %v", h.remote.asked, h.remote.pushed)
+	}
+	// The timer leaves settled items alone; a request asks about all of them.
+	h.tick()
+	if len(h.remote.asked) != 1 {
+		t.Fatalf("the timer asked about settled items: %v", h.remote.asked)
+	}
+	h.remote.answers[libID] = sessionsync.SyncCurrent
+	report, why := h.d.librarySyncNow(context.Background())
+	if why != "" {
+		t.Fatalf("refused: %s", why)
+	}
+	if len(h.remote.asked) != 2 || len(h.remote.asked[1]) != 2 {
+		t.Fatalf("a request did not ask about every item: %v", h.remote.asked)
+	}
+	if report != "0 pushed, 1 already kept, 1 changed on the website since this host last installed it" {
+		t.Fatalf("report = %q", report)
+	}
+	for _, name := range []string{"first", "second", libID, libID2} {
+		if strings.Contains(report, name) {
+			t.Fatalf("the report names an item: %q", report)
+		}
+	}
+}
+
+func TestLibrarySyncNowRefusesWithEverySwitchOffAndSaysWhyOnError(t *testing.T) {
+	h := newSyncHarness(t)
+	h.on = false
+	itemsOn := h.d.o.SyncItem
+	h.d.o.SyncItem = func(libitem.Kind) bool { return false }
+	if _, why := h.d.librarySyncNow(context.Background()); !strings.Contains(why, "switched off") {
+		t.Fatalf("with sync off: %q", why)
+	}
+	h.on = true
+	h.d.o.SyncItem = itemsOn
+	if _, err := agentprofile.Save(installable("reviewer", libID)); err != nil {
+		t.Fatal(err)
+	}
+	h.remote.askErr = sessionsync.ErrNotFound
+	if _, why := h.d.librarySyncNow(context.Background()); !strings.Contains(why, "does not take library sync") {
+		t.Fatalf("not found: %q", why)
+	}
+}
+
 func TestAutoSyncNeverPushesOverAWebEditAndAsksAgainLater(t *testing.T) {
 	h := newSyncHarness(t)
 	if _, err := agentprofile.Save(installable("reviewer", libID)); err != nil {

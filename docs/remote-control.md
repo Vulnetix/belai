@@ -63,7 +63,13 @@ flag only: the next launch there asks again, and a session the daemon starts
 there fails its trust check. The daemon keeps listing it until you restart
 remote control.
 
-The daemon sends the list to the website, which offers only those. The daemon
+The daemon sends the list to the website, which offers only those. A directory
+that is a checkout of a forge repository also carries its git facts: `remote`
+(owner/repo), the forge `host` and `provider`, the checked-out `branch` and the
+`defaultBranch` the clone recorded. They are read from the repository's own files
+without running git, and only identifier-shaped values are sent, never a URL or a
+credential. The website uses them to show the directory under the same repository
+its scans, sandboxes and sessions name. The daemon
 checks each request against its own list again (an exact match after
 resolving symlinks, never a prefix), and the session checks trust once more
 where it runs.
@@ -369,6 +375,11 @@ switch is off (`sync.skills`, `sync.prompts`, `sync.processes`), and a kind this
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
+
+A **`library_sync`** request carries nothing but its id. The daemon runs one pass of
+the automatic sync above at once, asking about every profile, crew and item whose
+switch is on, settled or not, and acknowledges with counts only ("2 pushed, 14
+already kept"), never a name. With every switch off it is refused and says so.
 
 Every request in this section is a `host.dispatch` audit event with the request kind and outcome (see
 [audit.md](audit.md)).

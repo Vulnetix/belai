@@ -1090,7 +1090,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   fleet log directory (never a path from a record), cleaned with
   `sessionsync.CleanLogLine` and capped per line, per worker and in total.
   That log holds harness lines and the worker process's stderr only; nothing
-  may write model output or item text to it. A website `pause` or `resume`
+  may write model output or item text to it. An offered directory carries only
+  identifier-shaped git facts read from its files (`rc/dirgit.go`: owner/repo,
+  forge host and kind, branch, default branch), never a URL or a credential. A
+  `library_sync` request runs one pass of the automatic library sync and is
+  acknowledged with counts only. A website `pause` or `resume`
   request names a worker id only: the daemon accepts it when it has the shape
   of an id (`fleet.ValidID`) and the worker is live in the host's own
   registry, and otherwise refuses it with a reason. It sets or clears the

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,6 +68,9 @@ type syncRecord struct {
 }
 
 type libSyncState struct {
+	// run serialises passes, so a library_sync request and the timer never
+	// push the same item twice.
+	run     sync.Mutex
 	mu      sync.Mutex
 	records map[string]syncRecord
 	lastErr string
@@ -209,15 +214,83 @@ func (d *Daemon) librarySync(ctx context.Context) {
 	}
 }
 
-// syncLibrary checks the host's profiles, crews and items once.
+// syncTally counts what one pass did, for a library_sync acknowledgement.
+type syncTally struct {
+	pushed, current, diverged, skipped int
+}
+
+func (t *syncTally) add(action string) {
+	if t == nil {
+		return
+	}
+	switch action {
+	case sessionsync.SyncPush:
+		t.pushed++
+	case sessionsync.SyncCurrent:
+		t.current++
+	case sessionsync.SyncDiverged:
+		t.diverged++
+	default:
+		t.skipped++
+	}
+}
+
+// report is the acknowledgement text: counts only, never a name.
+func (t syncTally) report() string {
+	parts := []string{fmt.Sprintf("%d pushed", t.pushed), fmt.Sprintf("%d already kept", t.current)}
+	if t.diverged > 0 {
+		parts = append(parts, fmt.Sprintf("%d changed on the website since this host last installed it", t.diverged))
+	}
+	if t.skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d not taken", t.skipped))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// syncLibrary checks the host's profiles, crews and items once, on the timer.
 func (d *Daemon) syncLibrary(ctx context.Context) {
+	if d.libsync.paused(d.now()) {
+		return
+	}
+	err := d.runLibrarySync(ctx, false, nil)
+	switch {
+	case err == nil:
+		d.syncRecovered()
+	case ctx.Err() != nil, errors.Is(err, errSyncOff):
+	case errors.Is(err, sessionsync.ErrNotFound):
+		d.syncUnsupported(d.now())
+	default:
+		d.syncFailed(err)
+	}
+}
+
+// errSyncOff is a pass with every sync switch off.
+var errSyncOff = errors.New("library sync is switched off on this host (sync.profiles and the sync.<kind> settings)")
+
+// librarySyncNow answers a library_sync request: one pass that asks about every
+// item, settled or not, and reports counts. The switches still decide which kinds
+// take part.
+func (d *Daemon) librarySyncNow(ctx context.Context) (report, why string) {
+	var t syncTally
+	if err := d.runLibrarySync(ctx, true, &t); err != nil {
+		if errors.Is(err, sessionsync.ErrNotFound) {
+			return "", "the website does not take library sync from this host"
+		}
+		return "", clip(reason(err.Error()))
+	}
+	d.syncRecovered()
+	return t.report(), ""
+}
+
+// runLibrarySync is one pass. force asks about every item, including those a
+// recent answer settled; the timer passes only what changed or went stale.
+func (d *Daemon) runLibrarySync(ctx context.Context, force bool, t *syncTally) error {
+	d.libsync.run.Lock()
+	defer d.libsync.run.Unlock()
 	agents := d.o.SyncProfiles()
 	kinds := d.itemKindsOn()
 	if !agents && len(kinds) == 0 {
-		return
-	}
-	if d.libsync.paused(d.now()) {
-		return
+		return errSyncOff
 	}
 	if agents {
 		// A profile or crew file written by hand has no id until it is given one.
@@ -228,30 +301,21 @@ func (d *Daemon) syncLibrary(ctx context.Context) {
 	now := d.now()
 	var due []localItem
 	for _, it := range localItems(agents, kinds) {
-		if d.libsync.due(it, now) {
+		if force || d.libsync.due(it, now) {
 			due = append(due, it)
 		}
 	}
 	for len(due) > 0 {
 		n := min(len(due), syncBatch)
-		if err := d.syncBatch(ctx, due[:n], now); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			if errors.Is(err, sessionsync.ErrNotFound) {
-				d.syncUnsupported(now)
-
-				return
-			}
-			d.syncFailed(err)
-			return
+		if err := d.syncBatch(ctx, due[:n], now, t); err != nil {
+			return err
 		}
 		due = due[n:]
 	}
-	d.syncRecovered()
+	return nil
 }
 
-func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time) error {
+func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time, t *syncTally) error {
 	byKey := map[string]localItem{}
 	var agents, crews []sessionsync.SyncItem
 	var items []sessionsync.SyncItemRef
@@ -279,15 +343,18 @@ func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time
 		answered[syncKey(kind, id)] = true
 		switch action {
 		case sessionsync.SyncPush:
-			return d.syncPush(ctx, it, now)
+			return d.syncPush(ctx, it, now, t)
 		case sessionsync.SyncCurrent:
 			d.libsync.set(it, sessionsync.SyncCurrent, now)
+			t.add(sessionsync.SyncCurrent)
 		case sessionsync.SyncDiverged:
+			t.add(sessionsync.SyncDiverged)
 			if d.libsync.set(it, sessionsync.SyncDiverged, now) {
 				d.logf("library: %s %s differs from the website's copy, which is newer; back it up or install it from the website to settle it", kind, sanitize.Ident(it.name, 64))
 			}
 		default:
 			d.libsync.set(it, sessionsync.SyncSkip, now)
+			t.add(sessionsync.SyncSkip)
 		}
 		return nil
 	}
@@ -311,6 +378,7 @@ func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time
 	for k, it := range byKey {
 		if it.isLibraryItem() && !answered[k] {
 			d.libsync.set(it, sessionsync.SyncSkip, now)
+			t.add(sessionsync.SyncSkip)
 		}
 	}
 	return nil
@@ -318,7 +386,7 @@ func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time
 
 // syncPush pushes one item the server said to push. A library that moved in the
 // meantime answers a conflict, which settles the item as diverged.
-func (d *Daemon) syncPush(ctx context.Context, it localItem, now time.Time) error {
+func (d *Daemon) syncPush(ctx context.Context, it localItem, now time.Time, t *syncTally) error {
 	var version string
 	var err error
 	switch {
@@ -332,6 +400,7 @@ func (d *Daemon) syncPush(ctx context.Context, it localItem, now time.Time) erro
 	switch {
 	case errors.Is(err, sessionsync.ErrConflict):
 		d.libsync.set(it, sessionsync.SyncDiverged, now)
+		t.add(sessionsync.SyncDiverged)
 		return nil
 	case err != nil:
 		// This item is refused (a crew the library will not take); the rest go on.
@@ -339,11 +408,13 @@ func (d *Daemon) syncPush(ctx context.Context, it localItem, now time.Time) erro
 			if d.libsync.set(it, sessionsync.SyncSkip, now) {
 				d.logf("library: %s %s was not taken: %s", it.kind, sanitize.Ident(it.name, 64), reason(err.Error()))
 			}
+			t.add(sessionsync.SyncSkip)
 			return nil
 		}
 		return err
 	}
 	d.libsync.set(it, sessionsync.SyncCurrent, now)
+	t.add(sessionsync.SyncPush)
 	d.logf("library: synced %s %s as version %s", it.kind, sanitize.Ident(it.name, 64), sanitize.Ident(version, 12))
 	return nil
 }

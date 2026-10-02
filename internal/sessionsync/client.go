@@ -288,6 +288,15 @@ type RCDir struct {
 	Path   string `json:"path"`
 	Name   string `json:"name"`
 	Source string `json:"source"`
+	// The directory's git facts, when it is a checkout of a forge repository:
+	// owner/repo, the forge host, its kind, the checked-out branch and the
+	// default branch the clone recorded. Identifier-shaped values only, read
+	// from the repository's files (rc dirgit.go); never a URL or a credential.
+	Remote        string `json:"remote,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
 
 // Dispatch is a website request to an rc daemon: start a session in Cwd with
