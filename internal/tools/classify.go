@@ -35,6 +35,12 @@ package tools
 //     same arbitrary bytes read back, so it classifies again rather than
 //     trading on the earlier verdict.
 //
+// KindFetched (a SearchFetched result) is the one place arbitrary web text
+// rides in a sanitise-only kind, and it is safe only because the session's
+// index classified each chunk when the page was indexed (docs/web-fetch.md),
+// the same rule as the knowledge store's kb+ rows. Never put text in that kind
+// that did not come from that index.
+//
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
 // and Edit return a terse confirmation the harness wrote itself (optionally

@@ -2158,6 +2158,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	return agent.NewSession(agent.Options{
 		Knowledge:     p.knowledge,
+		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           cfg,
 		Client:        p.client,
 		Registry:      reg,

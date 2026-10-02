@@ -75,6 +75,9 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// A screenshot's text is harness-composed. Its pixels are admitted by
 		// internal/imageguard, because a text classifier cannot read an image.
 		KindScreenshot: false,
+		// A SearchFetched result is lookup over chunks classified when the
+		// page was indexed (docs/web-fetch.md).
+		KindFetched: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

@@ -499,6 +499,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Offload = mergeOffload(e.Settings.Offload, s.Offload)
 		e.Origin["offload"] = src
 	}
+	if s.WebFetch != nil {
+		// The WebFetch cache and index change only what a session re-fetches;
+		// every hit and every chunk still takes the classify path, so any
+		// layer may set them.
+		e.Settings.WebFetch = mergeWebFetch(e.Settings.WebFetch, s.WebFetch)
+		e.Origin["web_fetch"] = src
+	}
 	if s.Jev != nil {
 		// Jev jobs narrow or reorder what a request carries and never approve
 		// anything, but a repository still may not switch one on or widen where

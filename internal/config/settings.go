@@ -192,6 +192,11 @@ type Settings struct {
 	// Default on. It changes what rides on a request, never what is admitted,
 	// so any layer may set it.
 	Offload *OffloadSettings `json:"offload,omitempty"`
+	// WebFetch keeps the pages a session fetched: a short-lived in-memory
+	// cache and a search index over them (docs/web-fetch.md). Both default on.
+	// They change what a session re-fetches, never what is admitted, so any
+	// layer may set them.
+	WebFetch *WebFetchSettings `json:"web_fetch,omitempty"`
 	// Jev configures the relevance jobs that use a decision backend (bash swap,
 	// compaction pruning, tool selection and search, option order, LSP triage,
 	// explore locate; docs/jev-jobs.md). Every job defaults on and runs only
@@ -1572,6 +1577,7 @@ func (s Settings) Override(proj Settings) Settings {
 		out.DeferTools = proj.DeferTools
 	}
 	out.Offload = mergeOffload(out.Offload, proj.Offload)
+	out.WebFetch = mergeWebFetch(out.WebFetch, proj.WebFetch)
 	out.Jev = mergeJev(out.Jev, proj.Jev, true)
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {

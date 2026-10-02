@@ -80,7 +80,8 @@ other harnesses. With a prompt:
    told the page is untrusted data;
 3. its answer, not the page, becomes the `WebFetch` result and goes through
    the classifier;
-4. if the role fails or answers nothing, the page itself is used, and a long
+4. a page served from the session cache is answered the same way, and the answer is classified like any other (see [WebFetch cache and search](web-fetch.md));
+5. if the role fails or answers nothing, the page itself is used, and a long
    page is offloaded as above.
 
 The role routes like the other role-manager activities: set a model for

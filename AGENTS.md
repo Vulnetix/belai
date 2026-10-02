@@ -893,6 +893,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   goes through the classifier like the page would; the page never reaches the
   conversation. Any role failure falls back to the page itself. Guardrails off
   skips only the classification, never the role or sanitising.
+- **The WebFetch cache and fetched-page index hold admitted text only, and a
+  hit or a search never skips classification.** `tools.WebPages`
+  (`internal/tools/webpages.go`, docs/web-fetch.md) stages a fresh page with its
+  `WebFetch` result, sanitised; `Session.promoteResult` settles it only after the
+  gate: admitted (classifier proceed, or guardrails off) moves it into an
+  in-memory, bounded, TTL'd cache and hands it to the index, withheld drops the
+  staged page and evicts anything held for that URL from both. A hit is returned
+  as an ordinary `KindWebFetch` result, so it is sanitised and classified like a
+  fresh one (with a `prompt`, the answer is classified); the URL policy runs
+  before the lookup and a miss runs every redirect and address check. Only 2xx
+  pages are held and nothing is written to disk. The index
+  (`internal/agent/webindex.go`) reuses `internal/knowledge`: each chunk is
+  sanitised and admitted by `kbgate.New(…, KindWebFetch)` at ingestion, a flagged
+  chunk is never stored, a gate error stores nothing, and a search calls no model
+  or network. `SearchFetched` is path- and URL-free and its `KindFetched` result
+  is sanitise-only only because of that ingestion rule: never put text in that
+  kind that did not come from the index. A page indexed while guardrails were off
+  is never served once they are on and is re-classified on re-fetch; a `WebFetch`
+  deny rule hides a page. A registry built for a subagent has a page store that
+  is off, and only a top-level session (`agent.Options.WebPages`) switches it on.
+  `web_fetch` settings may be set by any layer, are clamped to fixed ceilings, and
+  never change what is admitted.
 - **Telemetry carries facts, never content.** `internal/otel` exports only
   attribute keys on its fixed allowlist, and reduces every string value to
   identifier characters, capped. Never add a key that can hold a prompt,

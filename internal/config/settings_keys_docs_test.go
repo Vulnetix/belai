@@ -59,6 +59,7 @@ var settingsPages = map[string][]string{
 	"voice":         {"docs/voice.md"},
 	"tts":           {"docs/tts.md"},
 	"knowledge":     {"docs/knowledge.md"},
+	"web_fetch":     {"docs/web-fetch.md"},
 	"sync":          {"docs/session-sync.md"},
 	"hooks":         {"docs/hooks.md"},
 	"tests":         {"docs/testing.md"},

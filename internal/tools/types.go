@@ -87,6 +87,11 @@ const (
 	// because it observes the desktop, so it asks and runs on the sequential
 	// path.
 	KindScreenshot Kind = "screenshot"
+	// KindFetched is a SearchFetched result: passages of pages this session
+	// fetched with WebFetch. Every chunk was classified when it was indexed
+	// (the same rule as the knowledge store's kb+ rows), so the result is
+	// read-only and sanitise-only; a search calls no model.
+	KindFetched Kind = "fetched"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -97,7 +102,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload, KindScreenshot,
+	KindOffload, KindScreenshot, KindFetched,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -122,6 +127,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindKanbanWrite: true,
 	KindToolSearch:  true,
 	KindOffload:     true,
+	KindFetched:     true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates
