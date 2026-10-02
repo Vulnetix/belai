@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/tui/components"
 	"github.com/vulnetix/belai/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/vulnid"
 )
 
 // linkPattern finds https links in rendered text. Only https is ever opened
@@ -52,6 +53,10 @@ func (a *App) hoverLink(line components.SourceLine, col int) string {
 	}
 	if line.Owner < 0 || line.Owner >= len(a.messages) {
 		return ""
+	}
+	// A vulnerability row's link is its card's, composed from the identifier.
+	if m := a.messages[line.Owner]; m.Role == components.VulnRole && m.Vuln != nil {
+		return vulnid.URL(m.Vuln.ID)
 	}
 	links := findLinks(a.messages[line.Owner].Text())
 	if len(links) == 1 {

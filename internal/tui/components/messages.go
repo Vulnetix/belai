@@ -157,6 +157,10 @@ type Message struct {
 	// render-only and never persisted.
 	Player *PlayerCard
 
+	// Vuln is the vulnerability row's content, set on a VulnRole row. It is
+	// render-only and never persisted.
+	Vuln *VulnCard
+
 	// Ephemeral marks a row whose durable record is written separately (an
 	// ask or its answer, see the TUI's web_asks.go): it shows in the
 	// transcript but never produces a session entry of its own.
@@ -228,6 +232,7 @@ type renderKey struct {
 	isAttachment bool
 	attachMeta   *FileMeta
 	player       string
+	vuln         string
 	// theme is ThemeGeneration: a rendered row is ANSI text with the persona's
 	// colours baked in, so a switch of agent must miss the cache.
 	theme uint64
@@ -278,6 +283,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		isAttachment: m.IsAttachment,
 		attachMeta:   m.AttachMeta,
 		player:       m.Player.Key(),
+		vuln:         m.Vuln.Key(),
 		theme:        ThemeGeneration(),
 	}
 }
@@ -507,8 +513,9 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
-		case PlayerRole:
-			// The card has no text: it is drawn from Message.Player.
+		case PlayerRole, VulnRole:
+			// The card has no text: it is drawn from Message.Player or
+			// Message.Vuln.
 			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
@@ -549,6 +556,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = reportPanel(*msg, width, m.ExpandAll)
 				case PlayerRole:
 					s, sub = playerPanel(*msg, width)
+				case VulnRole:
+					s, sub = vulnPanel(*msg, width)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}

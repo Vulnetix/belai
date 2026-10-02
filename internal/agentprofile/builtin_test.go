@@ -78,3 +78,29 @@ func TestBuiltinIntentProfilesLoadable(t *testing.T) {
 		}
 	}
 }
+
+// belai:triage is the agent the vulnerability row starts on one identifier. It
+// is read-only by construction: no Edit, Write, Bash or Git on its surface.
+func TestBuiltinTriageByIdentifierIsReadOnly(t *testing.T) {
+	resetDir(t)
+	p, err := Load("belai:triage")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !p.Builtin || p.Mode != ModeSingle || p.Autonomy != AutonomySupervised {
+		t.Fatalf("unexpected fields: builtin=%v mode=%q autonomy=%q", p.Builtin, p.Mode, p.Autonomy)
+	}
+	want := map[string]bool{"Vulnetix": true, "Read": true, "Grep": true, "Glob": true}
+	for _, tool := range p.Tools {
+		if !want[tool] {
+			t.Errorf("belai:triage lists %q: it must stay read-only", tool)
+		}
+		delete(want, tool)
+	}
+	if len(want) != 0 {
+		t.Errorf("belai:triage lacks %v", want)
+	}
+	if !strings.Contains(p.SystemPrompt, "vulnerability_id") || !strings.Contains(p.SystemPrompt, "data") {
+		t.Error("the prompt must name the vulnerability_id field and call it data")
+	}
+}

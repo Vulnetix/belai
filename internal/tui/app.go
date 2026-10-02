@@ -262,6 +262,7 @@ type App struct {
 	classifier rolemanager.Classifier
 	voice      voiceState      // speech input to the composer (docs/voice.md)
 	tts        ttsState        // reading replies aloud (docs/tts.md)
+	vulns      vulnState       // vulnerability rows (docs/vuln-row.md)
 	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
@@ -2576,6 +2577,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						vpCmd = hcmd
 						break
 					}
+					if hit, hcmd := a.vulnMouse(p); hit {
+						vpCmd = hcmd
+						break
+					}
 					a.sel.anchor = p
 					a.sel.cursor = p
 					a.sel.dragging = true
@@ -3777,6 +3782,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// suites on top of a turn that errored.
 		a.testPass.fixing = false
 		// Edits made before the failure are on disk all the same.
+		a.flushVulnRows()
 		return a.flushDepWatch()
 	case agent.EventTextKind:
 		a.setPhaseWorking()
@@ -3937,6 +3943,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		a.setPhaseWorking()
+		a.observeVulnText(m.ToolResult)
 		// Key by ToolCallID: concurrent read-only tools may complete out of
 		// order, so the result must land on its own row rather than the last
 		// tool row.
@@ -4157,6 +4164,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.GoalSentinel == "" {
 			notifyDone = a.notifyTurnDone(elapsed)
 		}
+		a.observeVulnText(m.Result.Reply)
+		a.flushVulnRows()
 		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply))
 	}
 	return nil

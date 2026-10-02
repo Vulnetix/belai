@@ -363,6 +363,11 @@ Bash call still goes through the permission rules. See
 - `belai:triage-vulns`: `t` on the artifacts screen or a runs-panel row
   starts it on that project, keyed per project. It reads the `.vulnetix/`
   artifacts, cites file and line, and proposes fixes without patching.
+- `belai:triage`: the button on a [vulnerability row](vuln-row.md) starts it on
+  one advisory identifier, keyed `belai:triage#<n>`. Its tools are `Vulnetix`,
+  `Read`, `Grep` and `Glob`. It looks the identifier up with `vdb`, checks
+  whether this repository is exposed and proposes the fix without patching.
+  The identifier arrives as data on the task's `vulnerability_id:` line.
 - `belai:deps-<ecosystem>`: the dependency hook's per-ecosystem agents:
   `belai:deps-go`, `belai:deps-javascript`, `belai:deps-python`,
   `belai:deps-rust`, `belai:deps-ruby`, `belai:deps-php`,

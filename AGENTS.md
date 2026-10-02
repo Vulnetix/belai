@@ -942,6 +942,23 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   SHA-256 hex string is refused. A spoken "stop" stops playback before it
   touches a turn, and a transcript that mostly repeats the words being read is
   dropped as echo (`ttsEcho`), never matched or dictated.
+- **The vulnerability row is composed from one validated identifier.**
+  `internal/vulnid` is the one recognizer of prefixed advisory identifiers
+  (CVE, GHSA, OSV, PYSEC, RUSTSEC, GO, GSD, EUVD, VND and the distribution
+  advisories): strict ASCII shapes, bounded on both sides, nothing matched
+  across a control, bidi or zero-width rune. The TUI scans the tool results and
+  the reply it already shows (`internal/tui/vulnwatch.go`, no model call) and adds
+  one `Ephemeral` row per identifier per session, so it is never a session
+  entry, never in sync, telemetry, audit or a notification, and never promoted
+  to a model. Its link (a fixed https host with the identifier as one escaped
+  path component), its `vdb` hint and its `belai:triage` launch take only
+  `vulnid.Valid`'s canonical string, never the text around it; the click handler
+  validates again. `belai:triage` is read-only (`Vulnetix`, `Read`, `Grep`,
+  `Glob`), starts through `bgagent.Manager.StartTask` under the ordinary
+  permissions, trust gate and sandbox, and receives the identifier as one
+  `vulnerability_id:` data line, never in its instance name. Do not add a second
+  identifier recognizer or let any other text into the row. See
+  [docs/vuln-row.md](docs/vuln-row.md).
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
