@@ -125,9 +125,10 @@ movement, edit and back always stay.
   editor below the list, and the body shrinks by its height. `enter` saves,
   `esc` cancels; a refused value stays open with the reason.
 - **Settings with no row.** Some keys are edited in `settings.json` only: the
-  library sync switches (`sync.skills`, `sync.prompts`, `sync.processes`; see
+  library sync switches (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`; see
   [session-sync.md](session-sync.md#settings) and [library-items.md](library-items.md))
-  have no row here. A project layer may switch one off and never on.
+  and the `repos` list have no row here. A project layer may switch a sync switch off
+  and never on, and its `repos` is dropped.
 
 ## Edge cases
 

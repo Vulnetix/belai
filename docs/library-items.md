@@ -17,6 +17,7 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Skills](#skills)
 - [Prompts](#prompts)
 - [Processes](#processes)
+- [Repositories](#repositories)
 - [How a document travels](#how-a-document-travels)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -31,6 +32,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | `skill` | `belai skill` | Markdown with front matter | `~/.vulnetix/belai/skills/<name>/SKILL.md` | `sync.skills` |
 | `prompt` | `belai prompt` | Markdown with front matter | `~/.vulnetix/belai/prompts/<NNN>-<name>.md` | `sync.prompts` |
 | `process` | `belai process` | JSON object | `~/.vulnetix/belai/processes/<NNN>-<name>.json` (or a legacy `.sh`) | `sync.processes` |
+| `repo` | `belai repo` | JSON object | the `repos` list of `~/.vulnetix/belai/settings.json`; clones under `~/.vulnetix/belai/repos/<dir>` | `sync.repos` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -217,6 +219,89 @@ subagent's to change. A structured process is not wrapped in `sh`, but runs unde
 the same OS sandbox as any supervised process, with the project directory as its
 only writable root whatever `cwd` says.
 
+## Repositories
+
+A repository item is **deployment configuration** for a git checkout the host keeps.
+The library never clones, fetches or contacts the repository, and it never stores a
+credential. The document is a JSON object; every key but `installation_id` is
+required, and any other key is refused:
+
+| Key | Rule |
+| --- | --- |
+| `name` | the name rule above |
+| `url` | `https://host[:port]/path[.git]` or `git@host:path.git`, at most 1024 bytes, see below |
+| `visibility` | `public` or `private` |
+| `auth` | `none` or `github_app`. `public` requires `none` and `private` requires `github_app`: a plain token has no place here |
+| `installation_id` | whole number 1 to 2^53 - 1; **required** when `visibility` is `private`, **refused** when it is `public` |
+| `refs` | 1 to 16 distinct `{kind, name}`; `kind` is `branch`, `tag` or `sha` |
+| `dir` | the checkout directory under the repos directory, at most 256 bytes |
+| `depth` | whole number 0 to 1000; 0 is the full history |
+| `submodules` | boolean |
+| `enabled` | boolean |
+
+**URL.** No space, control character or backslash. The `https` form has a host that
+starts with a letter or digit (so it cannot be read as an option), an optional port
+from 1 to 65535, and a path with at least one segment; it must not carry credentials
+(`user@`, `user:pass@`, `token@`), a query or a fragment. The scp form is exactly
+`git@host:path.git`. In both, no path segment is empty, `.`, `..` or starts with `-`.
+IPv6 literals, `http://`, `ssh://`, `git://`, `file://` and local paths are refused.
+
+**Refs.** A `sha` is 7 to 64 hex characters (either case). A `branch` or `tag` is given
+without `refs/heads/` or `refs/tags/`, at most 255 bytes, and follows
+`git check-ref-format`: no leading `-` or `/`, no trailing `/`, `.` or `.lock` on a
+path component, no component starting with `.`, no `..`, `//` or `@{`, no space or
+control character and none of `~ ^ : ? * [` or a backslash. The name `@` alone is
+refused. The same `kind` and `name` twice is refused; a branch and a tag of one name
+are two refs.
+
+**Dir.** Relative: no leading `/` or `~`, no `:` (a drive), no backslash, and no empty,
+`.` or `..` segment.
+
+**On the host** the entry lives in the `repos` list of the user's own
+`settings.json` (a project settings file's `repos` is dropped and never read or
+written), as the document's keys. A hand-written entry may leave `dir` (default: the
+name), `depth` (0), `submodules` (false) and `enabled` (true) out, and the host
+exports it with them spelled out, because the library requires them. An install adds
+the entry, or replaces the one of that name when told to, and refuses a `dir` another
+entry already uses. Nothing is cloned by an install: `belai repo sync` does that.
+
+**`belai repo sync [NAME]`** runs `git` as an argv, never a shell, for each enabled
+repository (or the one named), with hooks off, no prompts, the scrubbed environment
+and only the https and ssh transports:
+
+- A missing checkout is created at `<repos dir>/<dir>` (`0700`) with the url as
+  `origin`; an existing directory that is not a git checkout, or a checkout whose
+  `origin` is another url, is refused and left alone. A symbolic link anywhere in the
+  path is refused. A first sync that fails removes what it created.
+- Every listed ref is fetched. The **first** ref is the one checked out; the rest are
+  fetched and kept (`refs/remotes/origin/<branch>`, `refs/tags/<tag>`) but not
+  checked out.
+- A **branch** is moved by fast-forward only. A branch with local commits ahead of
+  origin is left as it is (and says so); a diverged branch is refused, never reset.
+- A **tag** or a **commit** is a detached checkout. A tag is fetched as it is and
+  never moved: a tag that moved upstream is refused. A commit not on origin is an
+  error.
+- A checkout with a change to a tracked file is refused before it is moved to another
+  ref or fast-forwarded. Untracked files never block a sync and are never touched.
+- With `submodules` on, submodules are initialised and updated recursively.
+- Two syncs of one repository never run at once (an advisory lock beside the clone).
+
+**Credentials.** A public repository is fetched with every credential helper switched
+off. A private repository over `ssh` uses the ssh agent and keys, in batch mode (your
+`GIT_SSH_COMMAND` is respected). A private repository over `https` is fetched through
+the GitHub CLI's credential helper (`gh auth git-credential`), scoped to that host:
+the CLI must be installed and signed in to the host (`gh auth login`), otherwise the
+sync fails with that reason, before git runs. Belai has no GitHub App flow of its own,
+so `installation_id` is the library's record of which installation the deployment
+uses; the host does not send it anywhere. A token is never put in a URL or an
+argument; the token variables the CLI reads (`GH_TOKEN`, `GITHUB_TOKEN`, ...) are
+passed to it only for a private repository.
+
+**`belai repo status [NAME]`** reports each repository from what the last sync left,
+without touching the network: `not cloned`, `current`, `behind N`, `ahead N`,
+`diverged`, `other ref` (the checkout is on something other than the first ref),
+`not fetched`, `disabled` or `invalid`, and whether a tracked file has local changes.
+
 ## How a document travels
 
 Three things move a document between a host and the library. All of them need
@@ -280,6 +365,7 @@ is off. A project settings file may turn one off, never on.
 - **`sync.skills`**: keep the skill library current by itself, advertise the host's
   skills, and take `item_backup` and `item_install` requests for skills.
 - **`sync.prompts`**: the same for the global prompt library.
+- **`sync.repos`**: the same for the `repos` list.
 - **`sync.processes`**: the same for the global process library. A synced process
   is a command Belai runs, so this is the switch that keeps the website out of
   what runs on the host: with it off nothing is advertised, pushed or installed.
@@ -295,7 +381,7 @@ advertised.
 
 ## Commands
 
-`belai skill`, `belai prompt` and `belai process` read and write items by hand, with the same
+`belai skill`, `belai prompt`, `belai process` and `belai repo` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -305,7 +391,9 @@ belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
 
-`belai prompt` and `belai process` take the same four commands.
+`belai prompt`, `belai process` and `belai repo` take the same four commands. `belai repo`
+also has `sync` and `status` (see [Repositories](#repositories)), and its `list` shows
+each repository's url, first ref and dir.
 
 `FILE` of `-` is standard input (and, for `export`, standard output, which is also
 the default). `list` shows each item's name, size and the first 12 digits of the
@@ -342,6 +430,11 @@ item of that name.
   refuses a literal under a secret-looking `env` name, a start refuses an unset
   `env:OTHER`, `user` is honoured only as root and never falls back to the current
   user, redirect files are `0600` and never opened through a link, and the OS
+- **A repository never carries a credential, and git never runs a hook or a prompt.**
+  The library refuses a url with userinfo, a query or a fragment and a `private`
+  document with a plain token; the sync runs git as an argv with hooks off, only the
+  https and ssh transports, no credential prompt, and a branch moved only by
+  fast-forward, so a dirty tree or a diverged branch is refused rather than reset.
   sandbox's writable roots stay the project directory whatever `cwd` says.
 
 ## Edge cases

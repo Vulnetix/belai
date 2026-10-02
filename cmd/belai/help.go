@@ -27,6 +27,7 @@ var topCommands = []topCommand{
 	{"skill", "list, import and export skills (library items)"},
 	{"prompt", "list, import and export prompts (library items)"},
 	{"process", "list, import and export supervised processes (library items)"},
+	{"repo", "list, sync, import and export git repositories to keep cloned"},
 	{"rc", "remote control: let the Vulnetix website start sessions here"},
 	{"plugin", "install and manage plugins"},
 	{"acp", "serve the Agent Client Protocol to an editor"},

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -26,6 +27,7 @@ var libraryCommands = map[string]libitem.Kind{
 	"skill":   libitem.Skill,
 	"prompt":  libitem.Prompt,
 	"process": libitem.Process,
+	"repo":    libitem.Repo,
 }
 
 // libraryNoun is the plural the usage text uses.
@@ -33,25 +35,30 @@ var libraryNoun = map[libitem.Kind]string{
 	libitem.Skill:   "skills",
 	libitem.Prompt:  "prompts",
 	libitem.Process: "processes",
+	libitem.Repo:    "repositories",
 }
 
 func libraryUsage(kind libitem.Kind) string {
 	word := string(kind)
+	extra, list := "", fmt.Sprintf("the %s this host holds, with the hash the library compares", libraryNoun[kind])
+	if kind == libitem.Repo {
+		extra, list = repoUsageExtra, "the repositories in the repos setting, with their first ref and dir"
+	}
 	return fmt.Sprintf(`usage: belai %[1]s <command> [flags] [args]
 
-  list [-json]              the %[2]s this host holds, with the hash the library compares
+  list [-json]              %[2]s
   validate FILE             check a %[1]s document without saving it
   import [-force] FILE      validate a %[1]s document and save it (-force replaces one of that name)
   export [-force] NAME [FILE]
                             write a %[1]s as the library keeps it (no FILE or - is standard output;
-                            -force replaces an existing FILE)
+                            -force replaces an existing FILE)%[3]s
 
 FILE - means standard input. See docs/library-items.md.
-`, word, libraryNoun[kind])
+`, word, list, extra)
 }
 
 // runLibraryCLI implements `belai <kind> …` and returns the exit code.
-func runLibraryCLI(kind libitem.Kind, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runLibraryCLI(ctx context.Context, kind libitem.Kind, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "-help" || args[0] == "--help" || args[0] == "help" {
 		fmt.Fprint(stderr, libraryUsage(kind))
 		if len(args) == 0 {
@@ -59,7 +66,7 @@ func runLibraryCLI(kind libitem.Kind, args []string, stdin io.Reader, stdout, st
 		}
 		return 0
 	}
-	code, err := libraryCommand(kind, args[0], args[1:], stdin, stdout, stderr)
+	code, err := libraryCommand(ctx, kind, args[0], args[1:], stdin, stdout, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, "belai:", err)
 		if code == 0 {
@@ -69,7 +76,12 @@ func runLibraryCLI(kind libitem.Kind, args []string, stdin io.Reader, stdout, st
 	return code
 }
 
-func libraryCommand(kind libitem.Kind, cmd string, rest []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+func libraryCommand(ctx context.Context, kind libitem.Kind, cmd string, rest []string, stdin io.Reader, stdout, stderr io.Writer) (int, error) {
+	if kind == libitem.Repo {
+		if code, handled, err := repoCommand(ctx, cmd, rest, stdout, stderr); handled {
+			return code, err
+		}
+	}
 	fs := flag.NewFlagSet(string(kind)+" "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	switch cmd {

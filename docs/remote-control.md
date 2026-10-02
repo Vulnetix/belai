@@ -352,7 +352,7 @@ them, through the same queue and carrying identifiers only (see
   does not need `sync.remote_prompts`.
 
 Both are refused, before the library is asked for anything, while the kind's own
-switch is off (`sync.skills`, `sync.prompts`, `sync.processes`), and a kind this Belai predates is
+switch is off (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`), and a kind this Belai predates is
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.

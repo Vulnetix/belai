@@ -11,6 +11,7 @@ func TestSyncItemEnabled(t *testing.T) {
 		"skill":   func(s *SyncSettings, v *bool) { s.Skills = v },
 		"prompt":  func(s *SyncSettings, v *bool) { s.Prompts = v },
 		"process": func(s *SyncSettings, v *bool) { s.Processes = v },
+		"repo":    func(s *SyncSettings, v *bool) { s.Repos = v },
 	}
 	for kind, set := range kinds {
 		if !(Settings{}).SyncItemEnabled(kind) {
