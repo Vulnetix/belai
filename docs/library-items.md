@@ -496,6 +496,10 @@ same client as session sync (same origin allowlist, same credential).
 that item as its canonical document and uploads it; the website stores it as a new
 version. A backup writes nothing here.
 
+**Sync now (`library_sync`).** The website asks; the host runs one pass of the
+automatic sync for every item whose kind is switched on, including items a recent
+answer settled, and replies with counts. It is the Library page's "Sync from hosts".
+
 **Install (`item_install`).** The website names a library item, one of its
 versions, a kind, and whether it may replace the host's item. The host fetches that
 version (the server serves it only while the request is delivered to this host)
