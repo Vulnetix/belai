@@ -64,7 +64,7 @@ func (rewriteStore) install(it libitem.Item, o InstallOptions) (Result, error) {
 		if t.Enabled == nil && len(t.Rules) == 0 {
 			s.BashRewrite = nil // an empty table says nothing
 		}
-		return nil
+		return validateWritten(*s)
 	})
 	if err != nil {
 		return Result{}, err

@@ -24,22 +24,24 @@ import (
 
 // libraryCommands are the kinds that have a command, by the word the user types.
 var libraryCommands = map[string]libitem.Kind{
-	"skill":   libitem.Skill,
-	"prompt":  libitem.Prompt,
-	"process": libitem.Process,
-	"repo":    libitem.Repo,
-	"budget":  libitem.Budget,
-	"rewrite": libitem.Rewrite,
+	"skill":    libitem.Skill,
+	"prompt":   libitem.Prompt,
+	"process":  libitem.Process,
+	"repo":     libitem.Repo,
+	"budget":   libitem.Budget,
+	"rewrite":  libitem.Rewrite,
+	"provider": libitem.Provider,
 }
 
 // libraryNoun is the plural the usage text uses.
 var libraryNoun = map[libitem.Kind]string{
-	libitem.Skill:   "skills",
-	libitem.Prompt:  "prompts",
-	libitem.Process: "processes",
-	libitem.Repo:    "repositories",
-	libitem.Budget:  "budget sets",
-	libitem.Rewrite: "rewrite tables",
+	libitem.Skill:    "skills",
+	libitem.Prompt:   "prompts",
+	libitem.Process:  "processes",
+	libitem.Repo:     "repositories",
+	libitem.Budget:   "budget sets",
+	libitem.Rewrite:  "rewrite tables",
+	libitem.Provider: "provider sets",
 }
 
 func libraryUsage(kind libitem.Kind) string {

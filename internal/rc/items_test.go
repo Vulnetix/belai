@@ -40,6 +40,11 @@ type itemSite struct {
 	overwrite bool
 	fetches   int
 	fail      bool
+	// The provider-keys route: the status and body it answers, and what it was asked.
+	keysStatus int
+	keysBody   string
+	keysCalls  int
+	keysQuery  string
 }
 
 func (s *itemSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +60,14 @@ func (s *itemSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		s.backups = append(s.backups, in)
 		w.Write([]byte(`{"item":{"id":"` + itemID + `"},"version":"` + itemVer + `","created":true}`))
+	case r.Method == http.MethodGet && p == h+"/library/provider-keys":
+		s.keysCalls++
+		s.keysQuery = r.URL.RawQuery
+		w.Header().Set("Cache-Control", "no-store")
+		if s.keysStatus != 0 {
+			w.WriteHeader(s.keysStatus)
+		}
+		w.Write([]byte(s.keysBody))
 	case r.Method == http.MethodGet && strings.HasPrefix(p, h+"/library/items/"):
 		s.fetches++
 		json.NewEncoder(w).Encode(map[string]any{"version": itemVer, "name": s.name, "body": s.body, "overwrite": s.overwrite})

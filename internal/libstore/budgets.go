@@ -69,7 +69,7 @@ func (budgetStore) install(it libitem.Item, o InstallOptions) (Result, error) {
 			}
 			s.UI.BudgetCycleSeconds, s.UI.BudgetWarn = d.CycleSeconds, d.Warn
 		}
-		return nil
+		return validateWritten(*s)
 	})
 	if err != nil {
 		return Result{}, err
