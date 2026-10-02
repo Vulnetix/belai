@@ -89,9 +89,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "kanban" {
 		exitProcess(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
-	// `belai skill|prompt|process|repo …` read and write library items, the documents the
+	// `belai skill|prompt|process|repo|budget|rewrite …` read and write library items, the documents the
 	// website's library keeps (docs/library-items.md).
-	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "process" || os.Args[1] == "repo") {
+	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "process" || os.Args[1] == "repo" || os.Args[1] == "budget" || os.Args[1] == "rewrite") {
 		exitProcess(runLibraryCLI(ctx, libraryCommands[os.Args[1]], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	// `belai rc` runs remote control; `belai rc-session` is one session it

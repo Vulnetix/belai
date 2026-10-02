@@ -272,7 +272,7 @@ and the inbox run on the syncer's own goroutines.
 ## Settings
 
 ```json
-{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true, "skills": true, "prompts": true, "processes": true, "repos": true } }
+{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true, "skills": true, "prompts": true, "processes": true, "repos": true, "budgets": true, "rewrites": true } }
 ```
 
 - **`sync.enabled`** — mirror sessions. Default on whenever a Vulnetix CLI
@@ -288,12 +288,13 @@ and the inbox run on the syncer's own goroutines.
   [Automatic sync](remote-control.md#automatic-sync-of-profiles-and-crews)).
   Default on; `false` leaves backups to requests from the website. File
   contents never travel this way.
-- **`sync.skills`**, **`sync.prompts`**, **`sync.processes`**, **`sync.repos`** - the same switch for one kind of
+- **`sync.skills`**, **`sync.prompts`**, **`sync.processes`**, **`sync.repos`**, **`sync.budgets`**, **`sync.rewrites`** - the same switch for one kind of
   [library item](library-items.md): keep that library current by itself,
   advertise the host's items of the kind (name and hash only) and take the
   website's backup and install requests for it. Default on; `false` removes the
   kind from all three. Only the global prompt and process libraries and the user's own
-  `repos` list are ever synced, never a project one. `sync.processes` is the switch that keeps the website out of
+  `repos`, `token_budgets` and `bash_rewrite` settings are ever synced, never a
+  project one. `sync.processes` is the switch that keeps the website out of
   what runs on the host.
 - **Project layer:** a project settings file may turn any of these off, never
   on.

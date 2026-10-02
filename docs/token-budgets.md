@@ -30,6 +30,18 @@ after it — `TestBudgetRule7_…`, `TestBudgetEdge3_…` — and
 `TestBudgetDocParity` fails when an ID here has no test or a test names an ID
 that is not here.
 
+## The library
+
+With the Vulnetix CLI signed in and `belai rc` running, the host's token-budget
+configuration (`token_budgets`, `ui.budget_cycle_seconds` and `ui.budget_warn`) is
+kept in the website's library as one budget set: a change here is pushed as a new
+version, a set saved on the website can be installed on any connected host, and
+`sync.budgets` (default on) switches all of it off. An install replaces the whole
+configuration, so it is refused unless the request says replace, and Belai's own
+`ValidateTokenBudgets` runs on the result. `belai budget list`, `validate`, `import` and
+`export` do the same by hand; a project settings file still cannot set budgets. See
+[library-items.md](library-items.md#budgets).
+
 ## Settings
 
 | Key | Layer | Default | Meaning |

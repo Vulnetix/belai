@@ -238,6 +238,10 @@ type SyncSettings struct {
 	Processes *bool `json:"processes,omitempty"`
 	// Repos is the same switch for the repository list (`repos`).
 	Repos *bool `json:"repos,omitempty"`
+	// Budgets is the same switch for the token-budget configuration.
+	Budgets *bool `json:"budgets,omitempty"`
+	// Rewrites is the same switch for the Bash rewrite table.
+	Rewrites *bool `json:"rewrites,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -272,6 +276,12 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Repos != nil && !*proj.Repos {
 		out.Repos = &f
 	}
+	if proj.Budgets != nil && !*proj.Budgets {
+		out.Budgets = &f
+	}
+	if proj.Rewrites != nil && !*proj.Rewrites {
+		out.Rewrites = &f
+	}
 	return out
 }
 
@@ -300,6 +310,14 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "repo":
 		if s.Sync != nil {
 			v = s.Sync.Repos
+		}
+	case "budget":
+		if s.Sync != nil {
+			v = s.Sync.Budgets
+		}
+	case "rewrite":
+		if s.Sync != nil {
+			v = s.Sync.Rewrites
 		}
 	default:
 		return false

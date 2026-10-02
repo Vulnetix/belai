@@ -51,9 +51,10 @@ behaviour, and implementation details.
   (History and live Sessions) and prompting a live session from the browser.
 - [Remote control](remote-control.md): `belai rc`, which lets the website
   start and drive sessions on this machine.
-- [Library items](library-items.md): the skills, prompts, processes and repositories the
-  website's library keeps for an account: formats, canonical bytes, limits, install
-  and sync rules, and `belai skill|prompt|process|repo import|export`.
+- [Library items](library-items.md): the skills, prompts, processes, repositories, token
+  budgets and Bash rewrite table the website's library keeps for an account: formats,
+  canonical bytes, limits, install and sync rules, and
+  `belai skill|prompt|process|repo|budget|rewrite import|export`.
 - [Nonce endpoint spec](nonce-endpoint-spec.md): the provider/gateway
   `GET /v1/nonces` contract and verification semantics.
 - [Screenshots](screenshots.md): the `Screenshot` tool, which captures a
@@ -90,7 +91,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
-| Library items: skills, prompts, processes and repositories synced with the website | [Library items](library-items.md) | alpha-20261002 |
+| Library items: skills, prompts, processes, repositories, budgets and the rewrite table synced with the website | [Library items](library-items.md) | alpha-20261002 |
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 | Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
 | Rewriting a model's Bash command word before permission matching | [Bash rewrite](bash-rewrite.md) | alpha-20261002 |

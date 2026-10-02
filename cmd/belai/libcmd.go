@@ -28,6 +28,8 @@ var libraryCommands = map[string]libitem.Kind{
 	"prompt":  libitem.Prompt,
 	"process": libitem.Process,
 	"repo":    libitem.Repo,
+	"budget":  libitem.Budget,
+	"rewrite": libitem.Rewrite,
 }
 
 // libraryNoun is the plural the usage text uses.
@@ -36,6 +38,8 @@ var libraryNoun = map[libitem.Kind]string{
 	libitem.Prompt:  "prompts",
 	libitem.Process: "processes",
 	libitem.Repo:    "repositories",
+	libitem.Budget:  "budget sets",
+	libitem.Rewrite: "rewrite tables",
 }
 
 func libraryUsage(kind libitem.Kind) string {
@@ -131,8 +135,17 @@ func libraryCommand(ctx context.Context, kind libitem.Kind, cmd string, rest []s
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() < 1 || fs.NArg() > 2 {
 			return 2, fmt.Errorf("usage: belai %s export [-force] NAME [FILE]", kind)
 		}
-		it, err := libstore.Get(kind, fs.Arg(0))
+		var it libstore.Local
+		var err error
+		if kind.Singleton() {
+			it, err = libstore.ExportAs(kind, fs.Arg(0))
+		} else {
+			it, err = libstore.Get(kind, fs.Arg(0))
+		}
 		if errors.Is(err, libstore.ErrNotFound) {
+			if kind.Singleton() {
+				return 1, fmt.Errorf("this host has no %s configured (see `belai %s list`)", kind, kind)
+			}
 			return 1, fmt.Errorf("this host has no %s named %q (see `belai %s list`)", kind, fs.Arg(0), kind)
 		}
 		if err != nil {

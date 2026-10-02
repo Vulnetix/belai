@@ -66,6 +66,12 @@ func (d *Daemon) backupItem(ctx context.Context, r sessionsync.Dispatch) (string
 	}
 	it, err := libstore.Get(kind, name)
 	if errors.Is(err, libstore.ErrNotFound) {
+		if kind.Singleton() {
+			if held, _, lerr := libstore.List(kind); lerr == nil && len(held) == 1 {
+				return "", fmt.Sprintf("this host's %s is named %s, not %s", kind, sanitize.Line(held[0].Name, 64), sanitize.Line(name, 64))
+			}
+			return "", fmt.Sprintf("this host has no %s configured", kind)
+		}
 		return "", fmt.Sprintf("this host has no %s %s", kind, sanitize.Line(name, 64))
 	}
 	if err != nil {
@@ -100,6 +106,9 @@ func (d *Daemon) installItem(ctx context.Context, r sessionsync.Dispatch) (strin
 	res, err := libstore.Install(kind, got.Body, libstore.InstallOptions{Overwrite: r.Overwrite, Name: name})
 	switch {
 	case errors.Is(err, libstore.ErrExists):
+		if kind.Singleton() {
+			return "", fmt.Sprintf("this host already has its own %s (named %s); install it again with replace turned on to overwrite the whole configuration", kind, sanitize.Line(libstore.LocalName(kind), 64))
+		}
 		return "", fmt.Sprintf("this host already has a %s named %s; install it again with replace turned on to overwrite it", kind, sanitize.Line(name, 64))
 	case libstore.IsRefusal(err):
 		return "", "refused: " + reason(err.Error())
