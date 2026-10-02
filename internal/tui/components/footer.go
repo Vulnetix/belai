@@ -41,6 +41,11 @@ type Footer struct {
 	ContextStale bool // usage predates a compaction
 	Estimated    bool // no provider usage anchor yet; Tokens is an estimate
 
+	// Tools is the main thread's tool-call count for the turn (the transcript's
+	// own tool rows, the same figure the completion panel reports). Zero renders
+	// nothing. It is a number only and never reaches a prompt or directive.
+	Tools int
+
 	// Guardrails reports whether the posture gates are at their defaults.
 	// Ask reports whether the permission-ask gate is on. Both off renders one
 	// golden YOLO chip; otherwise the two chips render individually.
@@ -415,7 +420,7 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 	sep := MutedStyle.Render("  ·  ")
 	sepW := visibleLen("  ·  ")
 
-	var ctxSeg string
+	var ctxSeg, toolSeg string
 	var budget int
 	for level := 0; level <= line2ShedLevels; level++ {
 		left = f.line2Left(level)
@@ -423,7 +428,11 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 		if level >= 3 {
 			ctxSeg = f.contextSegmentShort()
 		}
+		toolSeg = f.toolsSegment(level)
 		budget = f.Width - visibleLen(left) - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
+		if toolSeg != "" {
+			budget -= sepW + visibleLen(toolSeg)
+		}
 		if budget >= minSessionBudget {
 			break
 		}
@@ -432,6 +441,9 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 		// Nothing left to shed: cut the left group so the right one fits.
 		budget = minSessionBudget
 		room := f.Width - budget - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
+		if toolSeg != "" {
+			room -= sepW + visibleLen(toolSeg)
+		}
 		left = ansi.Truncate(left, max(room, 0), "…")
 	}
 	sessionPlain := f.sessionSegment(budget)
@@ -443,6 +455,9 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 	}
 	if ctxSeg != "" {
 		rightParts = append(rightParts, ctxSeg)
+	}
+	if toolSeg != "" {
+		rightParts = append(rightParts, MutedStyle.Render(toolSeg))
 	}
 	rightParts = append(rightParts, ctxBar)
 	right = strings.Join(rightParts, sep)
@@ -500,12 +515,25 @@ func (f *Footer) line2Left(level int) string {
 	return strings.Join(parts, MutedStyle.Render(" · "))
 }
 
+// toolsSegment is the tool-call count: "tools: 12" in full, "12 tools" at the
+// last shedding level (where the context segment is already short). Empty when
+// no tool ran.
+func (f *Footer) toolsSegment(level int) string {
+	if f.Tools <= 0 {
+		return ""
+	}
+	if level >= line2ShedLevels {
+		return fmt.Sprintf("%d tools", f.Tools)
+	}
+	return fmt.Sprintf("tools: %d", f.Tools)
+}
+
 // contextSegmentShort is the context segment reduced to what matters most
 // when the line is tight: the coloured remaining percentage, or the token
 // count when no percentage is known.
 func (f *Footer) contextSegmentShort() string {
-	if pct, ok := f.percentRemaining(); ok {
-		return f.colourPct(pct)
+	if rem, ok := f.percentRemaining(); ok {
+		return f.colourPct(rem, 100-rem, "ctx %d%%")
 	}
 	return f.contextSegment()
 }
@@ -602,7 +630,7 @@ func (f *Footer) contextSegment() string {
 		if !ok {
 			return fmt.Sprintf("tokens: %s%s/%s (?)", prefix, tokens, limit)
 		}
-		return fmt.Sprintf("tokens: %s%s/%s (%s)", prefix, tokens, limit, f.colourPct(pct))
+		return fmt.Sprintf("tokens: %s%s/%s (%s)", prefix, tokens, limit, f.colourPct(pct, pct, "%d%% left"))
 	}
 	if f.Estimated {
 		return fmt.Sprintf("tokens: ~%s / unknown", tokens)
@@ -654,8 +682,10 @@ func (f *Footer) percentRemaining() (int, bool) {
 	return int(float64(f.ContextLimit-f.Tokens) / float64(f.ContextLimit) * 100), true
 }
 
-func (f *Footer) colourPct(pct int) string {
-	return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(fmt.Sprintf("%d%%", pct))
+// colourPct renders a context percentage (shown, through format) coloured by
+// the remaining share.
+func (f *Footer) colourPct(remaining, shown int, format string) string {
+	return lipgloss.NewStyle().Foreground(f.barColour(remaining)).Render(fmt.Sprintf(format, shown))
 }
 
 // FormatTokens renders an integer token count as a compact human-readable

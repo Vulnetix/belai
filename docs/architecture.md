@@ -2076,7 +2076,17 @@ Context usage has three degraded renderings:
 - `(?)` instead of a percentage — the window is unknown, or the anchor predates
   a `/compact` (stale), so the context bar is empty and muted.
 - a coloured bar and percentage — only when anchored and fresh; `<20%`
-  remaining reads red, `<50%` remaining reads amber, otherwise teal.
+  remaining reads red, `<50%` remaining reads amber, otherwise teal. The full
+  segment labels the figure (`tokens: 150k/200k (25% left)`); the shed form on
+  a tight line states fullness (`ctx 75%`), coloured by the same remaining-share
+  rule.
+
+A tool-call count (`tools: 12`, shed to `12 tools` on the tightest line, absent
+at zero) sits between the context segment and the bar. It is the main thread's
+tool rows for the current turn: `turnToolCounts` in `internal/tui/completion.go`,
+the same counter the completion panel reports, so the two cannot disagree. Like
+the rest of the footer it is a number drawn from session state and never
+reaches a prompt, a directive or telemetry (the session-intelligence rule).
 
 Progress-bar business rules: the bar is 10 cells, filled by
 `tokens / context window` clamped to [0, 1] at eighth-cell resolution
@@ -2760,6 +2770,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer; with a loaded library prompt, open the overwrite/delete action bar; otherwise save the prompt to the library |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | `ctrl+r` toggles the reasoning panel for the session (`shown`/`hidden`); `ctrl+t` cycles tool-row display auto → all → edits only → none |
+| `ctrl+q` | Toggle the session between its main model and its fast tier (chat). The press schedules the switch and writes an ephemeral thread line, `next turn will use fast|main model (provider/model)`; the model changes as the next turn starts (`App.send`), never mid-turn. A second press before then cancels it. Pressed during a running turn it interrupts that turn exactly as `esc` does (partial rows flushed, `request cancelled`) and re-dispatches the same prompt, attachments and directive on the other model without echoing the prompt again. Session-only: it goes through `applyModelProvider` like the `/model` session scope, writes no settings, and the saved last-used selection keeps the main model while the fast one is borrowed (`App.persistedModel`). Only the already-resolved fast tier (`routing.fast_model`, else the provider's registry fast model) is offered, so no `modeltest` run is needed; with none configured it says so. A model picked by hand meanwhile ends the swap. The security guard's `main` tier follows the session model while the fast one is borrowed |
 | `f2` | Toggle the caveman voice rewrite, persisting to the per-project preference file; the footer `caveman:` slot updates in the same frame |
 | `f3` | Toggle guardrails (the posture gates), from any screen |
 | `f4` | Toggle the permission-ask gate, from any screen |

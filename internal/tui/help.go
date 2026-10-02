@@ -31,6 +31,7 @@ func keySections() []keySection {
 			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, shown, hidden"},
 			{"ctrl+t", "cycle tool-call display: auto → all → edits only → none"},
+			{"ctrl+q", "toggle between the main and fast model for this session (chat): the next turn uses the other one; press again to cancel; during a turn it interrupts and retries on the other model"},
 			{"f2", "toggle caveman voice rewrite"},
 			{"f3", "toggle guardrails"},
 			{"f4", "toggle ask permission"},

@@ -225,6 +225,12 @@ const (
 
 // App is the Bubble Tea model for the Belai TUI.
 type App struct {
+	// swap is the session-only fast/main toggle (model_swap.go); lastPrompt is
+	// the prompt the latest turn started from, which an interrupting swap
+	// retries.
+	swap       modelSwap
+	lastPrompt *promptRec
+
 	registry     *Registry
 	messages     []components.Message
 	editor       components.Editor
@@ -1461,6 +1467,9 @@ func (a *App) sendPending() tea.Cmd {
 
 // send starts a streaming request with the given conversation turns.
 func (a *App) send(turns []run.Turn) tea.Cmd {
+	// A model switch scheduled with the swap key lands here, as the next turn
+	// starts.
+	a.applyModelSwap()
 	// A scan since the last turn is searchable on this one (throttled).
 	a.syncKnowledge()
 	if !a.status.Configured {
@@ -1683,6 +1692,7 @@ func (a *App) echoUserMessage(m components.Message) {
 // validated attachments are folded into it rather than appending a duplicate
 // turn.
 func (a *App) sendTurnNoEcho(input string, atts []run.Attachment, directive string) tea.Cmd {
+	a.lastPrompt = &promptRec{input: input, atts: atts, directive: directive}
 	turns := a.buildTurns()
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		turns[n-1].Attachments = atts
@@ -2653,6 +2663,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
 			a.addSystem("reasoning display: " + showLabel(a.reasoningVisible()))
 			return a, nil
+		case modelSwapKey:
+			// Fast/main toggle: scheduled for the next turn, or, mid-turn,
+			// the turn is interrupted and retried on the other model.
+			if a.view == viewChat {
+				return a, a.toggleModelSwap()
+			}
 		case "ctrl+t":
 			a.toolDisplay = (a.toolDisplay + 1) % 4
 			a.addSystem(a.toolDisplayNotice())
@@ -4882,8 +4898,7 @@ func (a *App) saveMode() {
 }
 
 func (a *App) saveState() {
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -4894,8 +4909,7 @@ func (a *App) saveState() {
 // first — the reload was redundant disk I/O per mode keypress.
 func (a *App) saveSession() {
 	a.state.ActiveSession = a.sessionID
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -5385,6 +5399,7 @@ func (a *App) refreshFooter() {
 	a.footer.Tokens = est.Tokens
 	a.footer.Estimated = est.LastUsageIndex < 0
 	a.footer.ContextStale = a.usageStale
+	a.footer.Tools, _ = turnToolCounts(a.messages)
 	if limit, ok := modelinfo.ResolveWith(a.cfg.Model, a.settings.ContextWindows, a.selectedModelWindow()); ok {
 		a.footer.ContextLimit = limit
 	} else {
