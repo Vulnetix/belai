@@ -8,12 +8,13 @@ func bp(v bool) *bool { return &v }
 // never on while sync itself is off.
 func TestSyncItemEnabled(t *testing.T) {
 	kinds := map[string]func(*SyncSettings, *bool){
-		"skill":   func(s *SyncSettings, v *bool) { s.Skills = v },
-		"prompt":  func(s *SyncSettings, v *bool) { s.Prompts = v },
-		"process": func(s *SyncSettings, v *bool) { s.Processes = v },
-		"repo":    func(s *SyncSettings, v *bool) { s.Repos = v },
-		"budget":  func(s *SyncSettings, v *bool) { s.Budgets = v },
-		"rewrite": func(s *SyncSettings, v *bool) { s.Rewrites = v },
+		"skill":    func(s *SyncSettings, v *bool) { s.Skills = v },
+		"prompt":   func(s *SyncSettings, v *bool) { s.Prompts = v },
+		"process":  func(s *SyncSettings, v *bool) { s.Processes = v },
+		"repo":     func(s *SyncSettings, v *bool) { s.Repos = v },
+		"budget":   func(s *SyncSettings, v *bool) { s.Budgets = v },
+		"rewrite":  func(s *SyncSettings, v *bool) { s.Rewrites = v },
+		"provider": func(s *SyncSettings, v *bool) { s.Providers = v },
 	}
 	for kind, set := range kinds {
 		if !(Settings{}).SyncItemEnabled(kind) {

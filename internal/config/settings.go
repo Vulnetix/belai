@@ -242,6 +242,9 @@ type SyncSettings struct {
 	Budgets *bool `json:"budgets,omitempty"`
 	// Rewrites is the same switch for the Bash rewrite table.
 	Rewrites *bool `json:"rewrites,omitempty"`
+	// Providers is the same switch for the provider set (`providers` and
+	// `firewall`) and for the website's provider key requests.
+	Providers *bool `json:"providers,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -282,6 +285,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Rewrites != nil && !*proj.Rewrites {
 		out.Rewrites = &f
 	}
+	if proj.Providers != nil && !*proj.Providers {
+		out.Providers = &f
+	}
 	return out
 }
 
@@ -318,6 +324,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "rewrite":
 		if s.Sync != nil {
 			v = s.Sync.Rewrites
+		}
+	case "provider":
+		if s.Sync != nil {
+			v = s.Sync.Providers
 		}
 	default:
 		return false

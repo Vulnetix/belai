@@ -1160,7 +1160,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   replace flag, writes only the user's global settings file (atomically, keeping
   every other key), and runs Belai's own validators (`ValidateTokenBudgets`,
   `ValidateBashRewrite`) before anything is written, so a document the library
-  accepts is never written as a setting Belai refuses to load.
+  accepts is never written as a setting Belai refuses to load. A provider set holds no key (the schema refuses one):
+  keys reach a host only through `provider_keys_install`, which the library answers
+  once, over TLS, for the slugs the request names; the host checks each key (not
+  empty, at most 4096 bytes, no control character), stores it only in the credentials
+  resolver under the provider's own name (`credentials.NewGlobalResolver`), never in
+  settings, a log, an acknowledgement, an audit event, a session record or an error,
+  and `sessionsync.ProviderKey` redacts itself through every `fmt` verb and JSON.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

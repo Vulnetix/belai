@@ -152,42 +152,28 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	// 5. CLI flags.
 	eff.apply(flags, SourceFlag)
 
-	if err := ValidateProviders(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateLSP(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateTokenBudgets(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateRouting(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateJev(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateVoice(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateTTS(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateKnowledge(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateBashRewrite(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateVulnetix(eff.Settings); err != nil {
+	if err := ValidateSettings(eff.Settings); err != nil {
 		return eff, err
 	}
 	SetActiveJevThresholds(eff.Settings.JevThresholds())
-	if err := ValidateFirewall(eff.Settings); err != nil {
-		return eff, err
-	}
 
 	return eff, nil
+}
+
+// ValidateSettings runs every validator Resolve applies to the merged settings, in
+// the same order, so a settings value that would make Belai refuse to start can be
+// caught before it is written. It is what the library install runs on the user's
+// settings it is about to save.
+func ValidateSettings(s Settings) error {
+	for _, v := range []func(Settings) error{
+		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateJev, ValidateVoice,
+		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall,
+	} {
+		if err := v(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // vulnetix returns the effective vulnetix block, creating it on first use.

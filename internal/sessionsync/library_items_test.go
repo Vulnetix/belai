@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -240,6 +241,104 @@ func TestRCInfoCarriesItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	if d.Kind != "item_install" || d.ItemKind != "skill" || d.Name != "a" || !d.Overwrite {
+		t.Fatalf("dispatch = %+v", d)
+	}
+}
+
+// ── Provider keys ────────────────────────────────────────────────────────
+
+func TestProviderKeysReadsTheKeysAndTheMissing(t *testing.T) {
+	s := &itemSite{t: t, respond: `{"keys":[{"provider":"anthropic","key":"sk-ant-SECRET"},{"provider":"openai","key":"sk-SECRET2"}],"missing":["groq"]}`}
+	c, stop := s.start()
+	defer stop()
+	keys, missing, err := c.ProviderKeys(context.Background(), testHost, "d1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys[0].Provider != "anthropic" || keys[0].Reveal() != "sk-ant-SECRET" || keys[1].Reveal() != "sk-SECRET2" || strings.Join(missing, ",") != "groq" {
+		t.Fatalf("keys %v missing %v", keys, missing)
+	}
+	if s.method != "GET" || s.path != "/hosts/"+testHost+"/library/provider-keys" || s.query != "dispatch=d1" {
+		t.Errorf("%s %s ?%s", s.method, s.path, s.query)
+	}
+}
+
+// A key is a secret: no fmt verb, no JSON encoder and no error text carries it.
+func TestProviderKeyNeverPrintsItself(t *testing.T) {
+	k := ProviderKey{Provider: "openai", key: "sk-SECRETVALUE"}
+	outputs := []string{
+		k.String(), k.GoString(), fmt.Sprint(k), fmt.Sprintf("%v", k), fmt.Sprintf("%+v", k), fmt.Sprintf("%#v", k), fmt.Sprintf("%s", k),
+		fmt.Sprint([]ProviderKey{k}), fmt.Sprintf("%v", &k), fmt.Sprintf("%+v", struct{ K ProviderKey }{k}), fmt.Sprintf("%v", map[string]ProviderKey{"a": k}),
+	}
+	b, err := json.Marshal([]ProviderKey{k})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs = append(outputs, string(b))
+	for _, o := range outputs {
+		if strings.Contains(o, "SECRETVALUE") {
+			t.Errorf("a key was printed: %q", o)
+		}
+		if !strings.Contains(o, "redacted") && !strings.Contains(o, "openai") {
+			t.Errorf("%q says nothing about the key", o)
+		}
+	}
+	if k.Reveal() != "sk-SECRETVALUE" {
+		t.Error("Reveal changed the key")
+	}
+}
+
+func TestProviderKeysMapsTheServersRefusals(t *testing.T) {
+	for status, want := range map[int]error{404: ErrNotFound, 409: ErrConflict, 401: ErrUnauthorized, 403: ErrKeysNotOverTLS, 502: ErrKeysUnavailable, 503: ErrKeysUnavailable} {
+		s := &itemSite{t: t, status: status, respond: `{"error":"x","keys":[{"provider":"a","key":"sk-LEAK"}]}`}
+		c, stop := s.start()
+		keys, _, err := c.ProviderKeys(context.Background(), testHost, "d1")
+		stop()
+		if !errors.Is(err, want) || keys != nil {
+			t.Errorf("%d: %v %v, want %v", status, keys, err, want)
+		}
+		if err != nil && strings.Contains(err.Error(), "LEAK") {
+			t.Errorf("%d: the error carries a key: %v", status, err)
+		}
+	}
+	s := &itemSite{t: t, status: 500, respond: `boom`}
+	c, stop := s.start()
+	defer stop()
+	if _, _, err := c.ProviderKeys(context.Background(), testHost, "d1"); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Errorf("500: %v", err)
+	}
+}
+
+func TestProviderKeysBoundsWhatItReads(t *testing.T) {
+	many := make([]string, MaxProviderKeys+1)
+	for i := range many {
+		many[i] = fmt.Sprintf(`{"provider":"p%d","key":"k"}`, i)
+	}
+	s := &itemSite{t: t, respond: `{"keys":[` + strings.Join(many, ",") + `]}`}
+	c, stop := s.start()
+	if _, _, err := c.ProviderKeys(context.Background(), testHost, "d"); err == nil || !strings.Contains(err.Error(), "more than 16") {
+		t.Errorf("too many keys: %v", err)
+	}
+	stop()
+	s = &itemSite{t: t, respond: `{"keys":[{"provider":"a","key":"` + strings.Repeat("k", MaxProviderKeyBytes+1) + `"}]}`}
+	c, stop = s.start()
+	defer stop()
+	if _, _, err := c.ProviderKeys(context.Background(), testHost, "d"); err == nil || !strings.Contains(err.Error(), "longer than 4096") {
+		t.Errorf("an oversized key: %v", err)
+	}
+	// At the limit is fine.
+	s.respond = `{"keys":[{"provider":"a","key":"` + strings.Repeat("k", MaxProviderKeyBytes) + `"}]}`
+	if keys, _, err := c.ProviderKeys(context.Background(), testHost, "d"); err != nil || len(keys) != 1 {
+		t.Errorf("a key at the limit: %v %v", keys, err)
+	}
+}
+
+func TestDispatchCarriesProviders(t *testing.T) {
+	var d Dispatch
+	if err := json.Unmarshal([]byte(`{"id":"d","kind":"provider_keys_install","providers":["anthropic","openai"]}`), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Kind != "provider_keys_install" || strings.Join(d.Providers, ",") != "anthropic,openai" {
 		t.Fatalf("dispatch = %+v", d)
 	}
 }

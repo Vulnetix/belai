@@ -250,3 +250,32 @@ func TestLibraryCLIBudgetAndRewrite(t *testing.T) {
 		t.Fatalf("export other: %d %q", code, errOut)
 	}
 }
+
+func TestLibraryCLIProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BELAI_HOME", home)
+	doc := `{"name":"mine","providers":{"my-llm":{"base_url":"https://llm.example.com/v1","api":"openai-chat","api_key_env":"MY_LLM_KEY"}}}`
+	if code, out, errOut := runLib(t, libitem.Provider, doc, "import", "-"); code != 0 || !strings.Contains(out, "providers") {
+		t.Fatalf("import: %d %q %q", code, out, errOut)
+	}
+	if code, _, errOut := runLib(t, libitem.Provider, doc, "import", "-"); code != 1 || !strings.Contains(errOut, "-force") {
+		t.Fatalf("second import: %d %q", code, errOut)
+	}
+	if code, out, _ := runLib(t, libitem.Provider, "", "list"); code != 0 || !strings.Contains(out, "mine") {
+		t.Fatalf("list: %d %q", code, out)
+	}
+	want, _ := libitem.Validate(libitem.Provider, []byte(doc))
+	if code, out, _ := runLib(t, libitem.Provider, "", "export", "mine"); code != 0 || out != string(want.Doc) {
+		t.Fatalf("export: %d %q", code, out)
+	}
+	// A key is refused wherever it is put, and nothing is written for it.
+	bad := `{"name":"x","providers":{"a":{"base_url":"https://x.example.com","api":"openai-chat","api_key":"sk-live-123"}}}`
+	code, out, errOut := runLib(t, libitem.Provider, bad, "import", "-force", "-")
+	if code != 1 || strings.Contains(out+errOut, "sk-live-123") {
+		t.Fatalf("a document with a key: %d %q %q", code, out, errOut)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, "settings.json"))
+	if strings.Contains(string(b), "sk-live") || !strings.Contains(string(b), "MY_LLM_KEY") {
+		t.Fatalf("settings.json = %s", b)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/vulnetix/belai/internal/libitem"
 )
@@ -198,4 +199,88 @@ func (c *Client) LibrarySyncItem(ctx context.Context, hostID string, kind libite
 	err = c.do(ctx, http.MethodPut, "/hosts/"+url.PathEscape(hostID)+"/library/sync/items",
 		map[string]any{"kind": string(kind), "name": name, "body": doc}, &out, requestTimeout)
 	return versionOf(out.Version), err
+}
+
+// ── Provider keys ────────────────────────────────────────────────────────
+
+// Provider key bounds, equal to the server's (belaiProviderKeysMax and
+// validateProviderKey).
+const (
+	// MaxProviderKeys is how many providers one provider_keys_install request names.
+	MaxProviderKeys = 16
+	// MaxProviderKeyBytes is the longest key.
+	MaxProviderKeyBytes = 4096
+)
+
+// Why the library would not release a request's keys, beyond not found (404) and
+// already delivered (ErrConflict, 409).
+var (
+	// ErrKeysNotOverTLS is a 403: the library only sends a key over TLS, and it did
+	// not see this connection as TLS.
+	ErrKeysNotOverTLS = errors.New("sessionsync: the library only sends provider keys over TLS")
+	// ErrKeysUnavailable is a 502 or 503: the library has no key storage, or could
+	// not read a stored key.
+	ErrKeysUnavailable = errors.New("sessionsync: the library could not release the provider keys")
+)
+
+// ProviderKey is one key the library released for a host. It is a secret: it prints
+// as <redacted> through every fmt verb, marshals as <redacted>, and its value is
+// read only with Reveal, at the one place that stores it.
+type ProviderKey struct {
+	// Provider is the catalogue slug.
+	Provider string
+	key      string
+}
+
+// Reveal returns the key itself.
+func (k ProviderKey) Reveal() string { return k.key }
+
+func (k ProviderKey) String() string { return k.Provider + ":<redacted>" }
+func (k ProviderKey) GoString() string {
+	return "sessionsync.ProviderKey{" + k.Provider + ":<redacted>}"
+}
+
+// Format makes every verb, %v, %+v, %#v and %s included, print the redacted form.
+func (k ProviderKey) Format(f fmt.State, _ rune) { _, _ = f.Write([]byte(k.String())) }
+
+// MarshalJSON never writes the key.
+func (k ProviderKey) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]string{"provider": k.Provider, "key": "<redacted>"})
+}
+
+// ProviderKeys reads the provider keys the provider_keys_install request
+// dispatchID names. The server answers only while that request is delivered to this
+// host, once, over TLS, and only for the slugs the request names; missing lists the
+// ones it holds no usable key for. The response is read into memory and nowhere else:
+// no key is written to a file, a log or an error here.
+func (c *Client) ProviderKeys(ctx context.Context, hostID, dispatchID string) (keys []ProviderKey, missing []string, err error) {
+	var out struct {
+		Keys []struct {
+			Provider string `json:"provider"`
+			Key      string `json:"key"`
+		} `json:"keys"`
+		Missing []string `json:"missing"`
+	}
+	path := fmt.Sprintf("/hosts/%s/library/provider-keys?dispatch=%s", url.PathEscape(hostID), url.QueryEscape(dispatchID))
+	if err := c.do(ctx, http.MethodGet, path, nil, &out, requestTimeout); err != nil {
+		switch msg := err.Error(); {
+		case strings.Contains(msg, "HTTP 403"):
+			return nil, nil, ErrKeysNotOverTLS
+		case strings.Contains(msg, "HTTP 502"), strings.Contains(msg, "HTTP 503"):
+			return nil, nil, ErrKeysUnavailable
+		}
+		// A 404, a 409, a 401 or anything else: the text names a route and a status,
+		// never a value.
+		return nil, nil, err
+	}
+	if len(out.Keys) > MaxProviderKeys || len(out.Missing) > MaxProviderKeys {
+		return nil, nil, fmt.Errorf("sessionsync: the library sent more than %d provider keys", MaxProviderKeys)
+	}
+	for _, k := range out.Keys {
+		if len(k.Key) > MaxProviderKeyBytes {
+			return nil, nil, fmt.Errorf("sessionsync: the library sent a key longer than %d bytes", MaxProviderKeyBytes)
+		}
+		keys = append(keys, ProviderKey{Provider: k.Provider, key: k.Key})
+	}
+	return keys, out.Missing, nil
 }

@@ -20,6 +20,8 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Repositories](#repositories)
 - [Budgets](#budgets)
 - [Rewrites](#rewrites)
+- [Providers](#providers)
+- [Provider keys](#provider-keys)
 - [How a document travels](#how-a-document-travels)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -37,6 +39,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | `repo` | `belai repo` | JSON object | the `repos` list of `~/.vulnetix/belai/settings.json`; clones under `~/.vulnetix/belai/repos/<dir>` | `sync.repos` |
 | `budget` | `belai budget` | JSON object | `token_budgets` and the footer settings in `~/.vulnetix/belai/settings.json` | `sync.budgets` |
 | `rewrite` | `belai rewrite` | JSON object | `bash_rewrite` in `~/.vulnetix/belai/settings.json` | `sync.rewrites` |
+| `provider` | `belai provider` | JSON object | `providers` and `firewall` in `~/.vulnetix/belai/settings.json`; keys in the credentials resolver | `sync.providers` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -371,6 +374,118 @@ On the host the item exists while the table has a rule or names `enabled`; an em
 table says nothing and is not synced. An install replaces the table, so it is refused
 unless the request says replace whenever a table exists.
 
+## Providers
+
+A provider item is a set of the custom model providers and the AI Firewall instances a
+host uses: the `providers` and `firewall` settings
+([firewall.md](firewall.md), [Custom providers](architecture.md#custom-providers)).
+
+**It never holds an API key.** `api_key_env` is the *name* of an environment variable
+and must match `^[A-Z_][A-Z0-9_]*$` (at most 128 bytes), so a pasted key (`sk-ant-...`,
+lower case, a dash) is refused; a firewall instance names the header that carries its
+key and never the key; a URL with credentials is refused; and any key the schema does
+not name (`api_key`, `key`, `headers`, `token`) is refused. A key reaches a host only
+through [a provider key request](#provider-keys).
+
+```json
+{"name": "mine",
+ "providers": {"my-llm": {"base_url": "https://llm.example.com/v1", "api": "openai-chat",
+    "auth": "bearer", "api_key_env": "MY_LLM_KEY",
+    "models": [{"id": "m1", "name": "M one", "context_window": 128000, "max_tokens": 4096, "images": true}]}},
+ "firewall": {"enabled": true, "active": "gw",
+    "instances": {"gw": {"adapter": "custom", "url": "https://gw.example.com/{provider}",
+    "mode": "header", "header": "X-Gw-Key", "providers": ["my-llm"]}}}}
+```
+
+**Top level**: `name` (the name rule above), `providers` (required object, 0 to 32
+entries) and `firewall` (optional object). Any other key is refused.
+
+**Each provider** is keyed by its name: lowercase letters, digits, `.`, `_`, `-`,
+starting with a letter or digit, at most 64 bytes, and not one of Belai's built-in
+names (openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter,
+google-gemini, ollama, llama-server, groq, deepseek, fireworks, mistral, together,
+xai, moonshot, minimax, alibaba, github-copilot, kiro, huggingface, openai-compatible)
+or `typesafe`. Belai's own validator also refuses a built-in added since, and a name
+that starts with a digit.
+
+| Field | Rule |
+| --- | --- |
+| `base_url` | required, at most 1024 bytes; an absolute `http` or `https` URL with a host, no credentials, no fragment, no space, control character or backslash, a port from 1 to 65535 |
+| `api` | `openai-chat`, `openai-responses` or `anthropic-messages`; **required unless `kind` is `jev`**, and checked whenever it is present |
+| `auth` | `bearer`, `x-api-key` or `cf-aig`, or absent |
+| `api_key_env` | an environment variable name, see above |
+| `kind` | `ollama`, `llama-server`, `openai-compatible`, `jev` or absent |
+| `protocol` | `http`, `https` or absent |
+| `port` | a string of 1 to 5 digits, 1 to 65535, or absent |
+| `host` | a host name of at most 253 bytes (letters, digits, `.`, `:`, `-`, starting and ending with a letter or digit), or absent |
+| `decision_path` | absent, or an absolute path of printable ASCII, at most 128 bytes, with no `..`, `?`, `#`, `\` or space |
+| `models` | at most 256 of `{id, name?, context_window?, max_tokens?, images?}`; `id` required, at most 128 bytes, no control character, listed once; `name` at most 128 bytes; the two token counts whole numbers 0 to 10000000; `images` a boolean; no other key |
+
+A `jev` provider (a self-hosted Jev decision server) must use `https`, or `http` only to
+a loopback host (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`), because tool output
+is sent to it. Any other provider may use plain `http`, as Belai allows.
+
+**Firewall** keys are `enabled` (boolean), `active` (string) and `instances` (object of
+0 to 16). An instance name matches `^[a-z0-9][a-z0-9-]{0,39}$`.
+
+| Instance field | Rule |
+| --- | --- |
+| `adapter` | required: `vulnetix`, `fastly`, `kong`, `aisg` or `custom`. The `vulnetix` adapter exists only as the instance named `vulnetix`, and that name takes only that adapter |
+| `url` | at most 1024 bytes; `https`, or `http` only to a loopback host; no credentials, query or fragment; `{provider}` may appear in the path. Required unless the adapter is `vulnetix` or `aisg` |
+| `mode` | `transparent`, `authorization` or `header`, or absent. The `vulnetix` adapter takes no mode or header |
+| `header` | only in `header` mode, where it is required: an HTTP token of at most 64 bytes that is none of `Host`, `Connection`, `Keep-Alive`, `Proxy-Authorization`, `Proxy-Connection`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Content-Type`, `Content-Length`, `Content-Encoding`, `Accept`, `Accept-Encoding`, `User-Agent`, `Cookie`, `Traceparent` (case-insensitive) and does not start with `X-Belai-` |
+| `providers` | at most 64 provider names, each `^[a-z0-9][a-z0-9._-]{0,63}$` |
+
+`active`, when set, must name a configured instance, or `vulnetix`, which always exists.
+
+**On the host** there is one provider configuration, not a list, so there is at most
+one local provider item: it exists while `providers` or any firewall setting is
+configured. Its library name is the name the host last installed or exported it under
+(`~/.vulnetix/belai/library/names.json`, `default` until then); a backup request names
+that set. An install **replaces the whole configuration**: the `providers` map and the
+`firewall` block, including a firewall the new document leaves out. It is refused unless
+the request says replace whenever either exists, and Belai's own validators
+(`ValidateProviders`, `ValidateFirewall`, and the rest of `config.ValidateSettings` over
+the file about to be written) run first. Display labels (`provider_labels`) are not part
+of the document and are left alone. Only the user's own settings are read or written.
+
+## Provider keys
+
+A website user stores a key per provider with the AI Firewall (bring your own key). The
+library keeps it encrypted under a key bound to the organisation and the provider, and no
+endpoint returns it. To put keys on a host, the website sends a `provider_keys_install`
+request that names catalogue slugs (1 to 16, each `^[a-z0-9][a-z0-9._-]{0,63}$`) and
+nothing else. The daemon then calls `GET /hosts/{id}/library/provider-keys?dispatch=` and
+gets `{"keys": [{"provider": slug, "key": key}], "missing": [slug]}`.
+
+The library answers only while that request is delivered to this host, unexpired, owned
+by the same principal and over TLS, and only once: a second call is a 409 and a new
+request is needed. Every answer is `Cache-Control: no-store`. The host handles the answer
+under these rules:
+
+- **A key goes to the credentials resolver and nowhere else.** It is stored under the
+  provider's own name, field `api_key`, in the keychain when there is one and otherwise
+  the user's credentials file (`0600`). That is where the provider's `api_key_env` or its
+  built-in variable already resolves, with the environment first: if a variable of that
+  name is set it still wins, and the report says so. It is never written to
+  `settings.json`, a log, an acknowledgement, an audit event, the session record or an
+  error, and the client type prints and marshals as `<redacted>` through every `fmt` verb.
+- **Only what the request named is stored**, for a provider this host knows (a built-in
+  or one in its `providers` setting). A key for any other slug, or for a slug the
+  library marked missing, is not stored and is reported by slug.
+- **A key is checked first**, by the library's own rule: trimmed, not empty, at most 4096
+  bytes, no control character. One that is not is refused and reported by slug. A
+  response holding a key over 4096 bytes, or more than 16 keys, is refused whole.
+- **The acknowledgement names slugs and reasons only**: `stored keys for a, b; not
+  stored: c (the library holds no usable key for it)`. When nothing is stored the request
+  is refused with those reasons.
+- **The switch is `sync.providers`.** With it off the request is refused before the
+  library is asked for anything. A refused request, an unreachable library, a 403 (not
+  TLS), a 409 (already delivered), a 502 or 503 (key storage unavailable) and a 404 each
+  have their own reason, and none stores anything.
+
+The library logs the host, the request and the slugs of each release, never a key.
+
 ## How a document travels
 
 Three things move a document between a host and the library. All of them need
@@ -438,6 +553,8 @@ is off. A project settings file may turn one off, never on.
 - **`sync.budgets`**: the same for the token-budget configuration (`token_budgets`,
   `ui.budget_cycle_seconds`, `ui.budget_warn`).
 - **`sync.rewrites`**: the same for the Bash rewrite table (`bash_rewrite`).
+- **`sync.providers`**: the same for the provider set (`providers`, `firewall`), and
+  for the website's provider key requests.
 - **`sync.processes`**: the same for the global process library. A synced process
   is a command Belai runs, so this is the switch that keeps the website out of
   what runs on the host: with it off nothing is advertised, pushed or installed.
@@ -453,7 +570,7 @@ advertised.
 
 ## Commands
 
-`belai skill`, `belai prompt`, `belai process`, `belai repo`, `belai budget` and `belai rewrite` read and write items by hand, with the same
+`belai skill`, `belai prompt`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -463,12 +580,13 @@ belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
 
-`belai prompt`, `belai process`, `belai repo`, `belai budget` and `belai rewrite` take the same four commands. `belai repo`
+`belai prompt`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` take the same four commands. `belai repo`
 also has `sync` and `status` (see [Repositories](#repositories)), and its `list` shows
 each repository's url, first ref and dir. For a budget or a
 rewrite there is one local item (the host's whole configuration of that kind), so
 `list` shows one row, and `belai budget export NAME` writes it under any name you
-give; `belai rewrite export` always writes `bash_rewrite`.
+give; `belai rewrite export` always writes `bash_rewrite`. `belai provider` works like `belai budget`; none of these commands
+ever reads or writes a key.
 
 `FILE` of `-` is standard input (and, for `export`, standard output, which is also
 the default). `list` shows each item's name, size and the first 12 digits of the
@@ -511,6 +629,11 @@ item of that name.
   replace flag, writes only the user's global settings file (atomically, keeping every
   other key), and is validated by Belai's own settings validators first, so a
   document the library accepts is never written as a setting Belai refuses to load.
+- **A provider key never rests anywhere but the credentials resolver.** A provider
+  document holds no key (the schema refuses one, and an `api_key_env` that is not a
+  variable name). A key the library releases is held in memory, checked, stored under
+  the provider's own name in the keychain or the user's credentials file (`0600`), and
+  absent from settings, logs, acknowledgements, audit events and errors, which redact it.
 - **A repository never carries a credential, and git never runs a hook or a prompt.**
   The library refuses a url with userinfo, a query or a fragment and a `private`
   document with a plain token; the sync runs git as an argv with hooks off, only the

@@ -293,9 +293,13 @@ type Dispatch struct {
 	// Overwrite whether it may replace the host's item. ItemKind is not "kind":
 	// that field already names the request. Identifiers only: a document is
 	// fetched, never carried.
-	ItemKind  string `json:"itemKind,omitempty"`
-	Name      string `json:"name,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	ItemKind string `json:"itemKind,omitempty"`
+	Name     string `json:"name,omitempty"`
+	// A "provider_keys_install" request names the catalogue slugs of the providers
+	// whose stored keys the host is to take. Slugs only: a key is fetched over TLS,
+	// once, never carried.
+	Providers []string `json:"providers,omitempty"`
+	CreatedAt int64    `json:"createdAt"`
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:

@@ -3810,18 +3810,23 @@ prevents a second Belai instance from launching a duplicate copy.
 ## Library items
 
 The Vulnetix website keeps a per-account library of the documents a host holds:
-skills, prompts, supervised processes, git repositories, token budgets and the Bash
-rewrite table so far. `internal/libitem` is the pure half: the canonical bytes
-whose SHA-256 a sync compares, and a strict validator per kind that reuses the
-existing skill validator and Belai's own budget and rewrite validators rather than
-copying them. `internal/repos` clones and updates the `repos` setting with git as an argv (`belai repo sync`). `internal/libstore` is the host half: it reads what the host holds
-of a kind as that canonical document and installs one atomically, never replacing an
-item without being told and never writing through a link. The `belai rc` daemon
-(`internal/rc`: `item_backup`, `item_install` and the automatic sync) and the
-`belai <kind> import|export` commands both go through it, so a document means one
-thing however it arrives. A project-layer file is never read or written, and a
-`sync.<kinds>` setting per kind lets the user shut the website out of it. The
-formats, limits, sync states and security rules are in
+skills, prompts, supervised processes, git repositories, token budgets, the Bash
+rewrite table and provider sets. `internal/libitem` is the pure half: the canonical
+bytes whose SHA-256 a sync compares, and a strict validator per kind that applies the
+library's rules and then Belai's own (the skill loader, `ValidateTokenBudgets`,
+`ValidateBashRewrite`, `ValidateProviders`, `ValidateFirewall`) rather than copying
+them. `internal/libstore` is the host half: it reads what the host holds of a kind as
+that canonical document and installs one atomically, never replacing an item without
+being told, never writing through a link, and validating the whole settings file it is
+about to write. `internal/repos` clones and updates the `repos` setting with git as an
+argv (`belai repo sync`). The `belai rc` daemon (`internal/rc`: `item_backup`,
+`item_install`, `provider_keys_install` and the automatic sync) and the
+`belai <kind> import|export` commands both go through it, so a document means one thing
+however it arrives. Provider keys never travel in a document: a `provider_keys_install`
+request fetches them once, over TLS, and `internal/rc` hands each to the credentials
+resolver (`credentials.NewGlobalResolver`) and nowhere else. A project-layer file is
+never read or written, and a `sync.<kinds>` setting per kind lets the user shut the
+website out of it. The formats, limits, sync states and security rules are in
 [library-items.md](library-items.md).
 
 ## Performance

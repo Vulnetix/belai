@@ -352,10 +352,17 @@ them, through the same queue and carrying identifiers only (see
   does not need `sync.remote_prompts`.
 
 Both are refused, before the library is asked for anything, while the kind's own
-switch is off (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`), and a kind this Belai predates is
+switch is off (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`, `sync.providers`), and a kind this Belai predates is
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
+
+A third request, **`provider_keys_install`**, puts the organisation's stored provider
+keys on this host. It names catalogue slugs (`providers`) and nothing else; the daemon
+then reads the keys from the library over TLS, once, and stores each in the credentials
+resolver under the provider's own name, never in `settings.json`, a log or an
+acknowledgement (see [library-items.md](library-items.md#provider-keys)). It is gated by
+`sync.providers`.
 
 Every request in this section is a `host.dispatch` audit event with the request kind and outcome (see
 [audit.md](audit.md)).
