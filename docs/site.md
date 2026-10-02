@@ -21,7 +21,7 @@ Section order:
 
 hero · beliefs · trust · classifier · sealed · labs · modes · tools · diagnostics · permissions · agents & crews ·
 memory · processes · budgets · session intelligence · providers · routing · vulnetix ·
-kanban · web sessions · extend · cli · qol · start · faq
+kanban · web sessions · pix sandbox · extend · cli · qol · start · faq
 
 ## Reading rules
 
@@ -85,6 +85,21 @@ covers following and answering a session on the Vulnetix website. Its audit
 block (`#audit`) says what the History page's Hosts and Agents tabs show and
 lists the events in the `audit` array; keep that list in step with the kinds in
 `internal/audit` and [docs/audit.md](audit.md).
+
+The pix sandbox section (`site/src/components/sections/PixSandbox.astro`, id
+`pix`) follows web sessions. It describes the hosted machine Vulnetix sells
+(one subscription per machine, bought and managed on the Vulnetix console) as
+seven promises in the agents section's style, each backed by a mechanism in
+Belai or in the harness that sets the machine up: Belai is not told it is
+hosted, every repository is a trusted root and nothing else is, Jev on every
+call with the key swapped in at the network edge, both Vulnetix firewalls on
+before the first session, egress decided by hostname, an image built from a
+pinned Nix flake and re-hashed on boot, and a relaunch that is a new machine.
+Nothing in the Go code changes for it; the section states only what the
+released binary already does when given a host id, a settings file and
+`--dir` per repository. Its two cards link to the feature page and the
+pricing page on vulnetix.com. The classifier section's Jev article carries
+`id="jev"` so the feature page can deep-link to it.
 
 The extend section, with its integrations and editors blocks, lives in
 `site/src/components/sections/Extend.astro`; the sandbox block is part of the
