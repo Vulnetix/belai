@@ -65,7 +65,7 @@ func TestEveryAuditKindIsDocumentedOnThePageAndTheSite(t *testing.T) {
 // accepts.
 func TestDispatchKindsMatchTheDaemon(t *testing.T) {
 	daemon := docparity.Read(t, "internal/rc/daemon.go")
-	line := regexp.MustCompile(`case ("start", [^:]*"avatar"):`).FindStringSubmatch(daemon)
+	line := regexp.MustCompile(`case ("start", [^:]*):`).FindStringSubmatch(daemon)
 	if line == nil {
 		t.Fatal("the dispatch case list moved in internal/rc/daemon.go")
 	}

@@ -3798,6 +3798,21 @@ still running. Enabled entries
 auto-start when Belai opens the workdir; a lock file per `(workdir-hash, slug)`
 prevents a second Belai instance from launching a duplicate copy.
 
+## Library items
+
+The Vulnetix website keeps a per-account library of the documents a host holds:
+skills and prompts so far. `internal/libitem` is the pure half: the canonical bytes
+whose SHA-256 a sync compares, and a strict validator per kind that reuses the
+existing skill validator rather than copying it. `internal/libstore` is the host half: it reads what the host holds
+of a kind as that canonical document and installs one atomically, never replacing an
+item without being told and never writing through a link. The `belai rc` daemon
+(`internal/rc`: `item_backup`, `item_install` and the automatic sync) and the
+`belai <kind> import|export` commands both go through it, so a document means one
+thing however it arrives. A project-layer file is never read or written, and a
+`sync.<kinds>` setting per kind lets the user shut the website out of it. The
+formats, limits, sync states and security rules are in
+[library-items.md](library-items.md).
+
 ## Performance
 
 The TUI's perceived-latency path is tuned at several layers:

@@ -49,6 +49,27 @@ func TestReadBodyRevalidates(t *testing.T) {
 	}
 }
 
+// A body that opens with a list marker or a rule keeps it: only the line
+// breaks after the closing delimiter are trimmed.
+func TestReadBodyKeepsALeadingMarker(t *testing.T) {
+	for name, tc := range map[string]struct{ doc, want string }{
+		"list marker":      {"---\nname: x\ndescription: d\n---\n\n- one\n- two\n", "- one\n- two\n"},
+		"rule":             {"---\nname: x\ndescription: d\n---\n\n---\nabove\n", "---\nabove\n"},
+		"no blank line":    {"---\nname: x\ndescription: d\n---\n- one\n", "- one\n"},
+		"longer delimiter": {"---\nname: x\ndescription: d\n----\n\nbody\n", "body\n"},
+		"crlf":             {"---\nname: x\ndescription: d\n---\r\n\r\nbody\r\n", "body\r\n"},
+		"nothing after":    {"---\nname: x\ndescription: d\n---", ""},
+	} {
+		root := t.TempDir()
+		putSkill(t, root, "x", tc.doc)
+		e := Discover([]Root{{Dir: root}}, posture.Defaults())[0]
+		body, err := ReadBody(e)
+		if err != nil || body != tc.want {
+			t.Errorf("%s: body = %q, err = %v, want %q", name, body, err, tc.want)
+		}
+	}
+}
+
 func TestCompose(t *testing.T) {
 	doc, err := Compose("cut-release", "Cut a release\nname: injected", "1. tag\n2. push")
 	if err != nil {

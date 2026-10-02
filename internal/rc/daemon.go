@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/avatar"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/schedule"
@@ -97,10 +98,15 @@ type Options struct {
 	// library current by itself: the user's own sync.profiles, read from the
 	// global settings each check and failing closed unless a test replaces it.
 	SyncProfiles func() bool
+	// SyncItem reports whether the host keeps the website's library of one kind of
+	// item (skill, prompt, ...) current by itself and takes backup and install
+	// requests for it: the user's own sync.<kinds>, read from the global settings
+	// each time and failing closed unless a test replaces it.
+	SyncItem func(kind libitem.Kind) bool
 	// LibraryRemote is the server half of that sync (the sync client unless a
 	// test replaces it).
 	LibraryRemote LibraryRemote
-	// LibrarySyncEvery is how often profiles and crews are checked (30s).
+	// LibrarySyncEvery is how often profiles, crews and items are checked (30s).
 	LibrarySyncEvery time.Duration
 }
 
@@ -202,6 +208,9 @@ func New(o Options) (*Daemon, error) {
 	if o.SyncProfiles == nil {
 		o.SyncProfiles = syncProfilesOn
 	}
+	if o.SyncItem == nil {
+		o.SyncItem = syncItemOn
+	}
 	if o.LibraryRemote == nil {
 		o.LibraryRemote = o.Client
 	}
@@ -258,7 +267,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews}
+		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items}
+	if h.RC.Items == nil {
+		h.RC.Items = []sessionsync.RCItem{}
+	}
 	if h.RC.Profiles == nil {
 		h.RC.Profiles = []sessionsync.RCProfile{}
 	}
@@ -347,7 +359,8 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 	ack := func(ctx context.Context, id, status, sid, reason string) {
 		kind := "unknown"
 		switch r.Kind {
-		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar":
+		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
+			"item_backup", "item_install":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -417,6 +430,20 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		if why != "" {
 			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Crew), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "item_backup", "item_install":
+		var report, why string
+		if r.Kind == "item_backup" {
+			report, why = d.backupItem(ctx, r)
+		} else {
+			report, why = d.installItem(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s %s: %s", r.Kind, sanitizeName(r.ItemKind), sanitizeName(r.Name), why)
 			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
 			return
 		}

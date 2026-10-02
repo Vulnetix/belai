@@ -330,7 +330,34 @@ which agents have no files in their library copy. A diverged item is logged once
 the host asks again after ten minutes, in case it was resolved. Set
 `sync.profiles` to `false` to leave backups to requests from the website.
 
-Both are `host.dispatch` audit events with the request kind and outcome (see
+The same check carries the host's [library items](#library-items) (one switch per
+kind), in the same request, with the same answers and the same ten-minute rule for
+`diverged` and `skip`.
+
+### Library items
+
+The library also keeps the other documents a host holds. Two more requests reach
+them, through the same queue and carrying identifiers only (see
+[library-items.md](library-items.md) for the formats, limits and rules):
+
+- **`item_backup`** names a kind (`itemKind`, because `kind` already names the
+  request) and one of this host's items by `name`. The daemon exports it as its
+  canonical document and uploads it as a new version. A backup writes nothing here.
+- **`item_install`** names a library item (`library`), a version, a kind and
+  whether it may replace the host's item of the same name. The daemon fetches that
+  version while the request is delivered to this host and writes it only if the
+  document validates whole, carries the name the library item has, and either no
+  such item exists here or the request set replace. A skill or a prompt must also
+  pass the sanitisation gate. Like a profile install it is a person's action and
+  does not need `sync.remote_prompts`.
+
+Both are refused, before the library is asked for anything, while the kind's own
+switch is off (`sync.skills`, `sync.prompts`), and a kind this Belai predates is
+refused with "update Belai on the host". The host also reports which items it holds
+in its advertisement (`rc.items`: kind, name and hash, never a document) for the
+kinds whose switch is on, and advertises again when they change.
+
+Every request in this section is a `host.dispatch` audit event with the request kind and outcome (see
 [audit.md](audit.md)).
 
 ### Avatars
@@ -381,6 +408,9 @@ avatar id, so the website can draw the agent. They are presentation only.
   wrote for an agent (`rel/`, `home/` and `abs/` hold the three forms of listed
   path).
 - `~/.vulnetix/belai/profiles/crews/<name>.json`: a user crew.
+- `~/.vulnetix/belai/skills/<name>/SKILL.md`, `~/.vulnetix/belai/prompts/` and
+  `~/.vulnetix/belai/library/prompts.json`: what an item install writes (see
+  [library-items.md](library-items.md)).
 
 ## Server side
 
@@ -417,6 +447,12 @@ avatar id, so the website can draw the agent. They are presentation only.
     `PUT /hosts/{id}/library/sync/profiles|crews/{id}` takes a push the server
     decides on again. `BelaiHostLibrarySync` remembers the version each host last
     held.
+  - Items (`belai_library_items*.go`): the same shape under `/library/items/{kind}`,
+    a host answers with `POST /hosts/{id}/library/item-backups` and
+    `GET /hosts/{id}/library/items/{kind}/{item}/versions/{version}?dispatch=`, and
+    the automatic sync carries `items` in `POST /hosts/{id}/library/sync` and a
+    push on `PUT /hosts/{id}/library/sync/items`. The host's advertisement carries
+    `rc.items`. See [library-items.md](library-items.md#server-side).
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
   `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,

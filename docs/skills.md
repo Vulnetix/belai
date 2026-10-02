@@ -12,6 +12,7 @@ to save a new one with `SkillDraft`, which you approve.
 - [Skill files](#skill-files)
 - [Loading a skill](#loading-a-skill)
 - [Self-authored skills](#self-authored-skills)
+- [The library](#the-library)
 - [Security model](#security-model)
 - [Settings](#settings)
 - [TUI](#tui)
@@ -85,6 +86,18 @@ does turning the ask gate off. Where nobody can be asked (a headless run), the
 call is withheld. It is a writing tool, so it is not available in plan mode or
 in read-only sessions.
 
+## The library
+
+With the Vulnetix CLI signed in and `belai rc` running, your skills are kept in the
+website's library like agents are: a skill you add or edit is pushed as a new
+version, a skill saved on the website can be installed on any connected host, and
+`sync.skills` (default on) switches all of it off. `belai skill list`, `validate`,
+`import` and `export` do the same by hand. The library applies rules the loader
+does not: a description is at most 300 bytes, `metadata` is a one-line
+`{key: value}` map of at most 32 keys, and the whole document is at most 32 KiB. A skill that fails them still loads
+here; it is only left out of the sync and reported as skipped. See
+[library-items.md](library-items.md).
+
 ## Security model
 
 - A skill body is text that may come from someone else, so `Skill` results
@@ -129,3 +142,5 @@ directory.
 - A description that spans lines is flattened to one, so it cannot add a
   front-matter key.
 - A new skill is listed from the next turn, not the one that wrote it.
+- A skill body that opens with a list marker or a rule keeps it: only the line
+  breaks after the closing `---` are trimmed from the start of the body.

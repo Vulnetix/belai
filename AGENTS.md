@@ -1126,6 +1126,24 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   The reason sent back is harness text with a short cleaned excerpt, never the
   profile. The server checks shape and size only; the host's validation is the
   authority. Do not add a content rule here that a prompt would need.
+- **A library item is a document that validates whole, and is the user's to
+  switch off per kind.** The website keeps skills, prompts and the other
+  documents in [docs/library-items.md](docs/library-items.md) and asks a host
+  to back one up or install one through the dispatch queue (`item_backup`,
+  `item_install`), identifiers only. `internal/libitem` is the one validator:
+  canonical bytes, a closed schema (an unknown or wrongly cased key is refused),
+  bounded sizes and a name that cannot name a path, reusing the loader's and the
+  settings validators rather than copying them. `internal/libstore` is the one
+  writer: it never replaces an item without the request's say-so, never writes
+  through a symbolic link, and writes atomically at `0600`/`0700`. A skill or a
+  prompt is untrusted text and is refused, not repaired, when
+  `libstore.untrustedGate` finds delimiter markup, a control or escape character,
+  a bidirectional override or an invisible rune, so what is stored is what the
+  library holds. Each kind has its own `sync.<kinds>` switch (a project layer may
+  turn it off, never on): off means nothing is hashed, advertised or sent for it
+  and its requests are refused. A refusal reason is harness text and never the
+  document, only the user's global layers are read or written, and a host never
+  advertises more than kind, name and hash.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

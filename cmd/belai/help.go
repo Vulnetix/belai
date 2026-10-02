@@ -24,6 +24,8 @@ type topCommand struct {
 var topCommands = []topCommand{
 	{"agent", "list, run and manage background agents and fleet workers"},
 	{"kanban", "read and edit the global kanban board"},
+	{"skill", "list, import and export skills (library items)"},
+	{"prompt", "list, import and export prompts (library items)"},
 	{"rc", "remote control: let the Vulnetix website start sessions here"},
 	{"plugin", "install and manage plugins"},
 	{"acp", "serve the Agent Client Protocol to an editor"},
@@ -43,6 +45,7 @@ var helpExamples = []struct{ cmd, note string }{
 	{"belai -export 3f2a", "write a session as Markdown"},
 	{"belai agent list", "agent profiles"},
 	{`belai kanban add "fix the flaky test"`, "file a card"},
+	{"belai skill export release release.md", "write a skill to a file"},
 	{"belai rc --detach", "run remote control in the background"},
 	{"belai plugin install <git-url|dir>", "install a plugin"},
 }

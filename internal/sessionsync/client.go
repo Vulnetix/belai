@@ -133,7 +133,24 @@ type RCInfo struct {
 	MaxWorkers int         `json:"maxWorkers"`
 	Profiles   []RCProfile `json:"profiles"`
 	Crews      []RCCrew    `json:"crews"`
+	// Items are the library items (skills, prompts, ...) this host holds, by
+	// kind, name and the hash of their canonical document: facts only, no
+	// content, and only for the kinds whose sync switch is on.
+	Items []RCItem `json:"items"`
 }
+
+// RCItem is one library item on the host, as the website lists where an item
+// lives: its kind (skill, prompt, ...), its name and the SHA-256 of the
+// canonical document the library would store for it.
+type RCItem struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+}
+
+// MaxRCItems is how many items one advertisement carries; the server applies
+// the same cap.
+const MaxRCItems = 1000
 
 // RCProfile is one worker profile's routing, as the website shows it.
 type RCProfile struct {
@@ -269,8 +286,16 @@ type Dispatch struct {
 	// Version, and Members the library profile versions its members resolve to,
 	// which the host installs first. A "crew_backup" request names the host's
 	// crew in Crew. Identifiers only.
-	Members   []CrewMemberRef `json:"members,omitempty"`
-	CreatedAt int64           `json:"createdAt"`
+	Members []CrewMemberRef `json:"members,omitempty"`
+	// An "item_backup" request names the host's library item in ItemKind (skill,
+	// prompt, ...) and Name. An "item_install" request names a library item and
+	// one of its versions in Library and Version, its kind in ItemKind, and says in
+	// Overwrite whether it may replace the host's item. ItemKind is not "kind":
+	// that field already names the request. Identifiers only: a document is
+	// fetched, never carried.
+	ItemKind  string `json:"itemKind,omitempty"`
+	Name      string `json:"name,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:

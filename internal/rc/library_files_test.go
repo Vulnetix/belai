@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentfiles"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -318,7 +319,7 @@ func TestInstallWritesTheFilesIntoTheOwnedDirAndIndexesThem(t *testing.T) {
 		t.Fatal("an install wrote into the home directory")
 	}
 	// An install is settled, so the automatic sync does not ask about it.
-	for _, it := range localItems() {
+	for _, it := range localItems(true, nil) {
 		if it.id == libID && h.d.libsync.due(it, time.Now()) {
 			t.Fatal("a profile that was just installed is due for a sync check")
 		}
@@ -454,7 +455,7 @@ func TestCrewBackupUploadsTheCanonicalCrewAndGivesItAnId(t *testing.T) {
 		t.Fatal("the id was uploaded but not kept on the host")
 	}
 	// A crew the library takes is settled, so the sync does not ask again.
-	for _, it := range localItems() {
+	for _, it := range localItems(true, nil) {
 		if it.kind == "crew" && h.d.libsync.due(it, time.Now()) {
 			t.Fatal("a backed-up crew is due for a sync check")
 		}
@@ -626,13 +627,19 @@ type fakeRemote struct {
 	pushErr  map[string]error
 	askErr   error
 	versions int
+	// itemHashes is the hash each item was last asked about with, pushedBody the
+	// document each was pushed with, and noItems makes the server answer none (a
+	// website that predates items).
+	itemHashes map[string]string
+	pushedBody map[string]string
+	noItems    bool
 }
 
-func (f *fakeRemote) LibrarySync(_ context.Context, _ string, agents, crews []sessionsync.SyncItem) ([]sessionsync.SyncAnswer, []sessionsync.SyncAnswer, error) {
+func (f *fakeRemote) LibrarySyncAll(_ context.Context, _ string, agents, crews []sessionsync.SyncItem, items []sessionsync.SyncItemRef) ([]sessionsync.SyncAnswer, []sessionsync.SyncAnswer, []sessionsync.SyncItemAnswer, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.askErr != nil {
-		return nil, nil, f.askErr
+		return nil, nil, nil, f.askErr
 	}
 	var ids []string
 	answer := func(items []sessionsync.SyncItem) []sessionsync.SyncAnswer {
@@ -648,8 +655,35 @@ func (f *fakeRemote) LibrarySync(_ context.Context, _ string, agents, crews []se
 		return out
 	}
 	aa, ca := answer(agents), answer(crews)
+	var ia []sessionsync.SyncItemAnswer
+	for _, it := range items {
+		key := it.Kind + "/" + it.Name
+		ids = append(ids, key)
+		f.itemHashes[key] = it.SHA256
+		if f.noItems {
+			continue
+		}
+		a := f.answers[key]
+		if a == "" {
+			a = sessionsync.SyncPush
+		}
+		ia = append(ia, sessionsync.SyncItemAnswer{Kind: it.Kind, Name: it.Name, Action: a})
+	}
 	f.asked = append(f.asked, ids)
-	return aa, ca, nil
+	return aa, ca, ia, nil
+}
+
+func (f *fakeRemote) LibrarySyncItem(_ context.Context, _ string, kind libitem.Kind, name string, body []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := string(kind) + "/" + name
+	if err := f.pushErr[key]; err != nil {
+		return "", err
+	}
+	f.pushed = append(f.pushed, key)
+	f.pushedBody[key] = string(body)
+	f.versions++
+	return libVer, nil
 }
 
 func (f *fakeRemote) LibrarySyncProfile(_ context.Context, _, id, markdown string) (string, error) {
@@ -684,7 +718,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &syncHarness{t: t, remote: &fakeRemote{answers: map[string]string{}, pushErr: map[string]error{}}, on: true, now: time.Now()}
+	h := &syncHarness{t: t, remote: newFakeRemote(), on: true, now: time.Now()}
 	h.d, err = New(Options{
 		Client: client, HostID: testHost, Exe: "/bin/belai", LibraryRemote: h.remote, Out: &h.log,
 		SyncProfiles: func() bool { return h.on }, Now: func() time.Time { return h.now },
@@ -814,7 +848,7 @@ func TestAutoSyncSendsCrewsAndGivesThemIdsButNeverBuiltIns(t *testing.T) {
 	if !crewPushed || len(h.remote.pushed) != 2 {
 		t.Fatalf("pushed %v: the crew should have been given an id and pushed", h.remote.pushed)
 	}
-	for _, it := range localItems() {
+	for _, it := range localItems(true, nil) {
 		if strings.HasPrefix(it.name, "belai:") {
 			t.Fatalf("a built-in %s %s is synced", it.kind, it.name)
 		}
@@ -829,7 +863,7 @@ func TestAutoSyncRunsWithTheDefaultClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	var log strings.Builder
-	remote := &fakeRemote{answers: map[string]string{}, pushErr: map[string]error{}}
+	remote := newFakeRemote()
 	d, err := New(Options{Client: client, HostID: testHost, Exe: "/bin/belai", LibraryRemote: remote, Out: &log,
 		SyncProfiles: func() bool { return true }})
 	if err != nil {
@@ -907,4 +941,8 @@ func TestReplaceLeavesTheLibraryCopyAloneWhenTheSharedFilesCannotGoWithIt(t *tes
 	if err != nil || got.IsolationMode() != agentprofile.IsolationShared || len(got.SyncPaths()) != 0 {
 		t.Fatalf("installed = %+v %v", got.Workspace, err)
 	}
+}
+
+func newFakeRemote() *fakeRemote {
+	return &fakeRemote{answers: map[string]string{}, pushErr: map[string]error{}, itemHashes: map[string]string{}, pushedBody: map[string]string{}}
 }

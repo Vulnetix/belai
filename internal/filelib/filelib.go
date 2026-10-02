@@ -252,6 +252,67 @@ func (s Spec) Create(scope config.Scope, workdir, name, body string) (Entry, err
 	return Entry{Name: slug, Body: body, Order: order, Enabled: true, Scope: scope, Path: path}, nil
 }
 
+// Put writes an entry under name at the given order and enabled state, and
+// replaces the entry of that name in the scope wherever its file is now (at
+// another order, or disabled). The write is atomic: the new file is renamed into
+// place before the old one is removed, so a failure leaves the old entry whole.
+//
+// An order of 0 asks for no position of its own: an existing entry keeps the one
+// it has, and a new entry goes after the last one, as Create places it. The name
+// must already be a slug; Put never rewrites it.
+func (s Spec) Put(scope config.Scope, workdir, name, body string, order int, enabled bool) (Entry, error) {
+	slug, err := Slug(name)
+	if err != nil {
+		return Entry{}, err
+	}
+	if slug != name {
+		return Entry{}, fmt.Errorf("library name %q is not a slug (%q)", name, slug)
+	}
+	if order < 0 || order > 999 {
+		return Entry{}, fmt.Errorf("library order %d is outside 0..999", order)
+	}
+	listing, err := s.Load(scope, workdir)
+	if err != nil {
+		return Entry{}, err
+	}
+	var existing *Entry
+	for i := range listing.Entries {
+		if listing.Entries[i].Name == slug {
+			existing = &listing.Entries[i]
+		}
+	}
+	if existing == nil && order == 0 {
+		e, err := s.Create(scope, workdir, slug, body)
+		if err != nil {
+			return Entry{}, err
+		}
+		if !enabled {
+			return s.SetEnabled(e, false)
+		}
+		return e, nil
+	}
+	if existing == nil && len(listing.Entries) >= 999 {
+		return Entry{}, ErrLibraryFull
+	}
+	if order == 0 {
+		order = existing.Order
+	}
+	dir, err := s.Dir(scope, workdir)
+	if err != nil {
+		return Entry{}, err
+	}
+	path := filepath.Join(dir, s.FileName(order, slug, enabled))
+	if err := s.writeEntry(path, body, fileMode(scope)); err != nil {
+		return Entry{}, err
+	}
+	if existing != nil && existing.Path != path {
+		if err := os.Remove(existing.Path); err != nil && !os.IsNotExist(err) {
+			return Entry{}, fmt.Errorf("remove replaced entry: %w", err)
+		}
+	}
+	return Entry{Name: slug, Body: body, Order: order, Enabled: enabled, Scope: scope, Path: path}, nil
+}
+
 // Update overwrites an entry's body in place, preserving its path, order,
 // enabled state and scope.
 func (s Spec) Update(e Entry, body string) (Entry, error) {
