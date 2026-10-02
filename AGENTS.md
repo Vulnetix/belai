@@ -1149,7 +1149,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   honoured only when Belai is root and never falls back to the current user, a
   redirect file is `0600` and never opened through a link, the sandbox's writable
   roots stay the project directory whatever `cwd` says, and the recovery subagent
-  restarts it exactly as defined, never amended.
+  restarts it exactly as defined, never amended. A repository item is configuration only: `belai repo sync` runs
+  git as an argv with hooks off, no prompts and only the https and ssh transports,
+  never puts a token in a URL or an argument (a private https repository goes
+  through the GitHub CLI's credential helper or fails with that reason), moves a
+  branch by fast-forward only, refuses a dirty tracked tree or a diverged branch
+  instead of resetting, never touches an untracked file, and never follows a
+  symbolic link in the checkout path; the project layer's `repos` is dropped.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

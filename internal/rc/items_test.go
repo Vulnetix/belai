@@ -699,3 +699,67 @@ func TestInventoryListsProcesses(t *testing.T) {
 		t.Fatalf("with sync.processes off: %+v", got)
 	}
 }
+
+// ── Repositories ─────────────────────────────────────────────────────────
+
+const repoItem = `{"name":"app","url":"https://github.com/acme/app.git","visibility":"public","auth":"none","refs":[{"kind":"branch","name":"main"}],"dir":"app","depth":0,"submodules":false,"enabled":true}`
+
+func TestItemInstallAddsARepositoryToTheSettings(t *testing.T) {
+	h := newItemHarness(t)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(repoItem), &doc); err != nil {
+		t.Fatal(err)
+	}
+	h.serve("app", doc)
+	status, why := h.install(libitem.Repo, false)
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("install: %s %s", status, why)
+	}
+	s, err := config.LoadGlobal()
+	if err != nil || len(s.GitRepos) != 1 || s.GitRepos[0].URL != "https://github.com/acme/app.git" {
+		t.Fatalf("settings = %+v %v", s.GitRepos, err)
+	}
+	// Nothing was cloned: an install only configures.
+	if _, err := os.Stat(filepath.Join(h.home, "repos")); !os.IsNotExist(err) {
+		t.Errorf("an install cloned: %v", err)
+	}
+	it, _ := libstore.Get(libitem.Repo, "app")
+	if h.d.libsync.due(localItem{kind: "repo", id: "app", name: "app", data: it.Doc}, time.Now()) {
+		t.Error("an installed repository is due for a sync")
+	}
+	// A url that carries a token is refused, and the reason does not repeat it.
+	bad := strings.Replace(repoItem, "https://github.com", "https://ghp_SECRETTOKEN@github.com", 1)
+	var badDoc map[string]any
+	_ = json.Unmarshal([]byte(bad), &badDoc)
+	badDoc["name"], badDoc["dir"] = "bad", "bad"
+	h.serve("bad", badDoc)
+	status, why = h.install(libitem.Repo, false)
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "must not carry credentials") || strings.Contains(why, "SECRETTOKEN") {
+		t.Fatalf("token url: %s %q", status, why)
+	}
+}
+
+func TestRepoRequestsAreRefusedWhileSyncReposIsOff(t *testing.T) {
+	h := newItemHarness(t)
+	h.on[libitem.Repo] = false
+	status, why := h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "repo", Name: "app"})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "sync.repos is off") {
+		t.Fatalf("%s %q", status, why)
+	}
+}
+
+func TestAutoSyncPushesARepositoryAndInventoryListsIt(t *testing.T) {
+	h := newItemSync(t)
+	h.on = false
+	if _, err := libstore.Install(libitem.Repo, []byte(repoItem), libstore.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	h.tick()
+	if strings.Join(h.remote.pushed, ",") != "repo/app" {
+		t.Fatalf("pushed %v", h.remote.pushed)
+	}
+	inv := LocalInventory()
+	if len(inv.Items) != 1 || inv.Items[0].Kind != "repo" || inv.Items[0].Name != "app" {
+		t.Fatalf("items = %+v", inv.Items)
+	}
+}

@@ -162,6 +162,10 @@ type Settings struct {
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
+	// GitRepos are the repositories `belai repo sync` keeps cloned under the repos
+	// directory (docs/library-items.md). Global only: the project layer is dropped in
+	// Resolve, so a repository cannot make a host clone another.
+	GitRepos []GitRepo `json:"repos,omitempty"`
 	// Intel governs session intelligence's use of provider response headers
 	// (docs/token-budgets.md). Global only: the project layer is dropped in
 	// Resolve, so a repository cannot change what a user learns about their own
@@ -232,6 +236,8 @@ type SyncSettings struct {
 	Prompts *bool `json:"prompts,omitempty"`
 	// Processes is the same switch for the global process library.
 	Processes *bool `json:"processes,omitempty"`
+	// Repos is the same switch for the repository list (`repos`).
+	Repos *bool `json:"repos,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -263,6 +269,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Processes != nil && !*proj.Processes {
 		out.Processes = &f
 	}
+	if proj.Repos != nil && !*proj.Repos {
+		out.Repos = &f
+	}
 	return out
 }
 
@@ -287,6 +296,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "process":
 		if s.Sync != nil {
 			v = s.Sync.Processes
+		}
+	case "repo":
+		if s.Sync != nil {
+			v = s.Sync.Repos
 		}
 	default:
 		return false

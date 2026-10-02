@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 func runLib(t *testing.T, kind libitem.Kind, stdin string, args ...string) (code int, out, errOut string) {
 	t.Helper()
 	var o, e bytes.Buffer
-	code = runLibraryCLI(kind, args, strings.NewReader(stdin), &o, &e)
+	code = runLibraryCLI(context.Background(), kind, args, strings.NewReader(stdin), &o, &e)
 	return code, o.String(), e.String()
 }
 

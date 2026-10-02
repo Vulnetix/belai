@@ -3810,9 +3810,9 @@ prevents a second Belai instance from launching a duplicate copy.
 ## Library items
 
 The Vulnetix website keeps a per-account library of the documents a host holds:
-skills, prompts and supervised processes so far. `internal/libitem` is the pure half: the canonical bytes
+skills, prompts, supervised processes and git repositories so far. `internal/libitem` is the pure half: the canonical bytes
 whose SHA-256 a sync compares, and a strict validator per kind that reuses the
-existing skill validator rather than copying it. `internal/libstore` is the host half: it reads what the host holds
+existing skill validator rather than copying it. `internal/repos` clones and updates the `repos` setting with git as an argv (`belai repo sync`). `internal/libstore` is the host half: it reads what the host holds
 of a kind as that canonical document and installs one atomically, never replacing an
 item without being told and never writing through a link. The `belai rc` daemon
 (`internal/rc`: `item_backup`, `item_install` and the automatic sync) and the

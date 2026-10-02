@@ -92,6 +92,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.TokenBudgets = nil
 		eff.Notes = append(eff.Notes, "project token_budgets ignored (budgets are global; set them in /budgets)")
 	}
+	// The repositories a host keeps cloned are the user's own: a repository must
+	// not be able to make a host clone another.
+	if len(proj.GitRepos) > 0 {
+		proj.GitRepos = nil
+		eff.Notes = append(eff.Notes, "project repos ignored (the list of repositories to keep is global; see belai repo)")
+	}
 	// Plan-limit parsing is global: what a user learns about their own account
 	// limits is theirs to decide, not a repository's.
 	if proj.Intel != nil {
@@ -578,6 +584,11 @@ func (e *Effective) apply(s Settings, src Source) {
 		// Replace, not append: the global list is the whole set.
 		e.Settings.TokenBudgets = s.TokenBudgets
 		e.Origin["token_budgets"] = src
+	}
+	if s.GitRepos != nil {
+		// Replace, not append: the global list is the whole set.
+		e.Settings.GitRepos = s.GitRepos
+		e.Origin["repos"] = src
 	}
 	if s.Intel != nil && s.Intel.PlanLimits != nil {
 		if e.Settings.Intel == nil {
