@@ -274,6 +274,7 @@ func (a *App) lspToggle(id string, on bool) {
 	// Reload settings into the running app.
 	merged, _ := config.LoadMerged(a.workdir)
 	a.settings = merged
+	a.applyCtlOverlay()
 }
 
 // runLSPInstall runs the install command in the background and invalidates the

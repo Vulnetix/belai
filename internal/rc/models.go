@@ -141,3 +141,10 @@ func buildModels(s config.Settings, loadState func() (config.State, error), env 
 	}
 	return out
 }
+
+// CheckModel refuses a provider, model or effort a web session's /model
+// control names that this host cannot honour, and returns the reason; ""
+// means go ahead. It is checkOverride against this host's own models.
+func CheckModel(prov, model, effort string) string {
+	return checkOverride(prov, model, effort, LocalModels)
+}

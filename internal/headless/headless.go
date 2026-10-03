@@ -93,6 +93,12 @@ type Params struct {
 	KnowledgeProfile *knowledge.Profile
 	// Knowledge is an already-open store; nil has the session open its own.
 	Knowledge *knowledge.Store
+	// Diagnostics, when set, replaces the session's diagnostics gate. Only a
+	// `belai rc --web-controls` session sets it, to run live language servers
+	// in a directory the host trusts when its web user turned them on, and to
+	// close them when the session is rebuilt. Every other headless session runs
+	// the fallback syntax checks alone.
+	Diagnostics *rolemanager.DiagnosticsGate
 }
 
 // NewSession builds the session.
@@ -186,9 +192,9 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		// The same settings-backed fan-out ceiling the TUI uses; without it
 		// max_agents had no effect on the CLI.
 		AgentPool: agentpool.New(p.Settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
-		// Headless: live language servers are off, but fallback syntax checks
-		// still run when enabled in settings.
-		Diagnostics:   rolemanager.DiagnosticsGateFromSettings(p.Settings, reg.Cwd().Roots(), false),
+		// Headless: live language servers are off (unless the caller built
+		// its own gate), but fallback syntax checks still run when enabled.
+		Diagnostics:   diagnostics(p, reg),
 		Persona:       p.Persona,
 		SandboxMounts: p.SandboxMounts,
 		SandboxEnv:    p.SandboxEnv,
@@ -287,4 +293,13 @@ func PullKanban(ctx context.Context, store *kanban.Store, settings config.Settin
 	defer cancel()
 	s := kanban.NewSyncer(store, client, kanban.SyncOptions{})
 	s.Sync(ctx)
+}
+
+// diagnostics is the caller's gate, or the headless one: fallback syntax
+// checks only.
+func diagnostics(p Params, reg *tools.Registry) rolemanager.DiagnosticsGate {
+	if p.Diagnostics != nil {
+		return *p.Diagnostics
+	}
+	return rolemanager.DiagnosticsGateFromSettings(p.Settings, reg.Cwd().Roots(), false)
 }

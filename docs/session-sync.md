@@ -196,6 +196,15 @@ Delivery mirrors web prompts: the answer is stored, the inbox hands it to the
 host (answers before prompts), the host acks it *accepted* once the
 `ask_answer` line is uploaded, or *refused* with a reason.
 
+A remote session started by `belai rc --web-controls` answers asks the same
+way while its ask control is on, and takes **session controls** on the inbox
+too (`commands`, after answers and before prompts): a slash line or a key the
+host parses with `internal/sessionctl`. The host acks each one *accepted* with
+the session's new controls, or *refused* with a reason, and re-registers the
+session with `controls` and `controlState` so the page's control strip stays
+current. A host that does not take controls refuses every command. See
+[remote-control.md](remote-control.md#session-controls-from-the-web).
+
 ## Web agent drafts
 
 The website's agent builder (`/resolve/belai-agent-creator`) asks a live

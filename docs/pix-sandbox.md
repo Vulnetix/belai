@@ -21,6 +21,8 @@ and each rule is pinned by `internal/rc/pixsandbox_test.go`.
 | `VULNETIX_API_TOKEN` | empty | no token login, which the website refuses for remote control |
 | `TYPESAFE_API_KEY` | a placeholder, never the real key | the Jev key; the real one is swapped in at the network edge and never enters the machine |
 | `--dir <path>` | one per cloned repository | the only offered and trusted directories |
+| `--web-controls`, `--web-project-settings` | on by default, set per sandbox in the console's Launch tab | web sessions take session controls, and each offered directory's project preferences are managed from the console ([remote-control.md](remote-control.md#session-controls-from-the-web)) |
+| `--web-allow-guardrails-off` | off by default; only with `--web-controls` | a web session may switch its guardrails off |
 
 ## Rules
 
@@ -46,6 +48,10 @@ and each rule is pinned by `internal/rc/pixsandbox_test.go`.
 - **The AI Firewall is on.** `firewall.enabled` with the `vulnetix` instance is
   the active firewall, which routes model calls through the Vulnetix gateway
   with the same credential.
+- **Web flags follow the image.** The launcher passes the web flags only to an
+  image whose Belai takes them, so an older pinned image starts `belai rc`
+  without them rather than with a flag it would refuse. A restart of `belai rc`
+  uses the flags of the launch that was applied, never an unsaved draft.
 - **Preflight passes with these inputs.** An ApiKey credential, sync on, remote
   prompts on, guardrails on and one directory is a passing preflight; a missing
   `vulnetix` CLI alone is a warning when the credential resolves anyway.

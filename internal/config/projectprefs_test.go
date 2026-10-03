@@ -118,3 +118,107 @@ func TestProjectPrefsToSettings(t *testing.T) {
 		t.Fatalf("caveman should be enabled")
 	}
 }
+
+func TestProjectPrefsSessionControlKeysResolve(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	on, off := true, false
+	all := "all"
+	simple := 0.85
+	if err := MutateProjectPrefs(workdir, func(p *ProjectPrefs) {
+		p.ShowReasoning = &on
+		p.ShowEdits = &off
+		p.ShowInternalWork = &all
+		p.AutoCommitPerTask = &on
+		p.Tests = &PrefsTests{PostEnd: "goal", OnFail: "diagnose"}
+		p.LSP = &PrefsLSP{Enabled: &on, Languages: map[string]bool{"go": false}}
+		p.Jev = &PrefsJev{Jobs: map[string]bool{string(JevBashSwap): false}, Thresholds: &JevThresholdSettings{SimpleAt: &simple}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := eff.Settings
+	switch {
+	case !s.ReasoningVisible(), s.EditsVisible(), s.InternalWorkLevel() != "all":
+		t.Fatal("display keys")
+	case !s.AutoCommitPerTaskEnabled():
+		t.Fatal("auto-commit")
+	case s.TestsPostEnd() != "goal", s.TestsOnFail() != "diagnose":
+		t.Fatal("tests")
+	case s.JevJobSet(JevBashSwap), s.JevThresholds().SimpleAt != 0.85:
+		t.Fatal("jev")
+	}
+	if on, explicit := s.LSPLanguageEnabled("go"); on || !explicit {
+		t.Fatal("lsp language")
+	}
+	if eff.Origin["auto_commit_per_task"] != SourceProjectPrefs {
+		t.Fatalf("origin = %q", eff.Origin["auto_commit_per_task"])
+	}
+}
+
+// A preference the validators refuse is left out with a note; it never stops
+// Belai from starting, and the gate preferences beside it still apply.
+func TestProjectPrefsInvalidKeysAreDropped(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	on := true
+	allow := 0.5
+	if err := MutateProjectPrefs(workdir, func(p *ProjectPrefs) {
+		p.Caveman = &on
+		p.AutoCommitPerTask = &on
+		// Valid alone, but closes the band against the default deny_at once
+		// moved past it.
+		p.Jev = &PrefsJev{Thresholds: &JevThresholdSettings{AllowAt: &allow, DenyAt: &allow}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve failed on a bad preference: %v", err)
+	}
+	if !eff.Settings.CavemanEnabled() || eff.Settings.AutoCommitPerTaskEnabled() {
+		t.Fatal("gate preferences kept, the rest dropped")
+	}
+	if len(eff.Notes) == 0 {
+		t.Fatal("no note")
+	}
+}
+
+func TestProjectPrefsFlatKeys(t *testing.T) {
+	var p ProjectPrefs
+	for k, v := range map[string]any{
+		"guardrails": false, "mode": "plan", "show_internal_work": "all", "tests.on_fail": "fix",
+		"lsp.enabled": true, "lsp.languages.rust": false, "jev.jobs.bash_swap": false, "jev.thresholds.keep_at": 0.456,
+	} {
+		if err := p.SetFlat(k, v); err != nil {
+			t.Fatalf("%s: %v", k, err)
+		}
+	}
+	f := p.Flat()
+	if f["jev.thresholds.keep_at"] != 0.46 || f["mode"] != "plan" || f["lsp.languages.rust"] != false {
+		t.Fatalf("flat = %v", f)
+	}
+	for _, k := range []string{"lsp.languages.rust", "lsp.enabled", "jev.jobs.bash_swap", "jev.thresholds.keep_at", "tests.on_fail"} {
+		if err := p.UnsetFlat(k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p.LSP != nil || p.Jev != nil || p.Tests != nil {
+		t.Fatalf("empty blocks kept: %+v", p)
+	}
+	for k, v := range map[string]any{
+		"providers": "x", "agent": "nightly", "tests.command": "rm", "mode": "yolo", "guardrails": "off",
+		"jev.thresholds.keep_at": 2.0, "jev.jobs.nope": true, "lsp.servers.go": "/bin/sh",
+	} {
+		if err := p.SetFlat(k, v); err == nil {
+			t.Fatalf("%s=%v accepted", k, v)
+		}
+	}
+	keys := PrefKeys()
+	if len(keys) < 13+len(KnownLSPLanguages)+len(JevJobs) {
+		t.Fatalf("keys = %d", len(keys))
+	}
+}

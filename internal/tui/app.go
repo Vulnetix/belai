@@ -374,7 +374,10 @@ type App struct {
 	guardrailsOverride *bool
 	askOverride        *bool
 	firewallOverride   *bool
-	lastPlanText       string
+	// ctlOverlay holds the session-only control lines (/autocommit,
+	// /decisions, /tests, /lsp, /jev) re-applied over every settings reload.
+	ctlOverlay   []string
+	lastPlanText string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
 	// the agent to load the plan as the execution carrier.
@@ -5319,6 +5322,7 @@ func (a *App) reloadSettings() error {
 	}
 	a.settings = eff.Settings
 	a.eff = eff
+	a.applyCtlOverlay()
 	if a.resolver != nil {
 		a.resolver.SetSettings(a.settings)
 		a.resolver.SetFirewallEnabled(a.firewallOverride)

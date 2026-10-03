@@ -38,6 +38,9 @@ type fakeServer struct {
 	inbox    []RemotePrompt
 	answers  []RemoteAnswer
 	drafts   []RemoteDraft
+	commands []RemoteCommand
+	// cmdState holds each command ack's state, by command id.
+	cmdState map[string]string
 	// results holds each posted draft result body, by draft id.
 	results map[string]map[string]any
 	// conflictDrafts answers a draft result with 409 (cancelled on the web).
@@ -53,7 +56,7 @@ type fakeServer struct {
 func newFake() *fakeServer {
 	return &fakeServer{hosts: map[string]Host{}, sessions: map[string]SessionMeta{},
 		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, acks: map[string]string{},
-		results: map[string]map[string]any{}}
+		results: map[string]map[string]any{}, cmdState: map[string]string{}}
 }
 
 func (f *fakeServer) lastSeq(id string) int64 {
@@ -80,9 +83,9 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.hosts[parts[1]] = h
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodGet && parts[0] == "hosts" && parts[2] == "inbox":
-		out, ans, drafts := f.inbox, f.answers, f.drafts
-		f.inbox, f.answers, f.drafts = nil, nil, nil
-		writeJSON(map[string]any{"prompts": out, "answers": ans, "drafts": drafts})
+		out, ans, drafts, cmds := f.inbox, f.answers, f.drafts, f.commands
+		f.inbox, f.answers, f.drafts, f.commands = nil, nil, nil, nil
+		writeJSON(map[string]any{"prompts": out, "answers": ans, "drafts": drafts, "commands": cmds})
 	case r.Method == http.MethodPut && parts[0] == "sessions":
 		var m SessionMeta
 		_ = json.NewDecoder(r.Body).Decode(&m)
@@ -130,6 +133,15 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var in map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.results[parts[1]] = in
+		writeJSON(map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && parts[0] == "commands":
+		var in struct {
+			Status string
+			State  json.RawMessage
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.acks["command:"+parts[1]] = in.Status
+		f.cmdState[parts[1]] = string(in.State)
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && parts[0] == "answers":
 		var in struct{ Status string }
@@ -770,4 +782,65 @@ func TestGitReadingGoesUpAndTheWebSwitchComesBack(t *testing.T) {
 	fake.controls = &Controls{GitSync: &off}
 	fake.mu.Unlock()
 	eventually(t, "the website's switch", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) > 0 && !got[0] })
+}
+
+// Session controls come through the inbox to a host that takes them, and a
+// change to the controls re-registers the session with the new state and the
+// new answers switch.
+func TestInboxDeliversCommandsAndControlState(t *testing.T) {
+	fake := newFake()
+	fake.commands = []RemoteCommand{{ID: "c1", SessionID: testSess, Key: "f4"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Client: c, HostID: testHost, RemoteCommands: true,
+		TickEvery: 20 * time.Millisecond, HeartbeatEvery: time.Second, InboxWait: time.Second})
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Close(time.Second) })
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	select {
+	case cmd := <-s.Commands():
+		if cmd.ID != "c1" || cmd.Key != "f4" {
+			t.Fatalf("command = %+v", cmd)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no command delivered")
+	}
+	eventually(t, "registered with controls", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		m := fake.sessions[testSess]
+		return m.Controls && !m.RemoteAnswers
+	})
+	s.SetSessionControls(json.RawMessage(`{"ask":true}`), true)
+	s.AckCommand("c1", AckAccepted, "", json.RawMessage(`{"ask":true}`))
+	eventually(t, "state re-registered", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		m := fake.sessions[testSess]
+		return m.RemoteAnswers && string(m.ControlState) == `{"ask":true}`
+	})
+	eventually(t, "command ack", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.acks["command:c1"] == AckAccepted && fake.cmdState["c1"] == `{"ask":true}`
+	})
+}
+
+// A host started without session controls refuses every command.
+func TestCommandsRefusedWhenOff(t *testing.T) {
+	fake := newFake()
+	fake.commands = []RemoteCommand{{ID: "c2", SessionID: testSess, Line: "/caveman on"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+	s := startSyncer(t, srv, true)
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	eventually(t, "refusal", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.acks["command:c2"] == AckRefused })
 }

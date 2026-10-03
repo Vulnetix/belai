@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tui/components"
+	"github.com/vulnetix/belai/internal/webask"
 )
 
 // Asks, turns and decisions as durable session records (docs/session-sync.md).
@@ -536,82 +537,12 @@ func (a *App) applyWebPlanChoice(ans sessionsync.RemoteAnswer, choice, notes str
 
 // ── Web answer payloads ──────────────────────────────────────────────────
 
-// wireAnswer is one group's answer as the website sends it and the record
-// stores it.
-type wireAnswer struct {
-	Group   int    `json:"group"`
-	Chosen  []int  `json:"chosen,omitempty"`
-	Note    string `json:"note,omitempty"`
-	Skipped bool   `json:"skipped,omitempty"`
-}
+// wireAnswer and the clarify helpers live in internal/webask, shared with
+// the rc session's ask bridge.
+type wireAnswer = webask.WireAnswer
 
-func wireAnswers(a clarify.Answers) []wireAnswer {
-	out := make([]wireAnswer, 0, len(a.Items))
-	for _, it := range a.Items {
-		out = append(out, wireAnswer{Group: it.GroupIndex, Chosen: it.Chosen, Note: it.Note, Skipped: it.Skipped})
-	}
-	return out
-}
+func wireAnswers(a clarify.Answers) []wireAnswer { return webask.WireAnswers(a) }
 
-// parseWebAnswers validates a web clarify payload against the open
-// questionnaire: every group index in range and answered at most once, every
-// chosen option in range and unique, a single-choice group given at most one,
-// notes cleaned and capped. A group the web left out is skipped. A decline
-// answers nothing, exactly as a host that dismisses the questions.
 func parseWebAnswers(q clarify.Questionnaire, raw json.RawMessage) (clarify.Answers, bool, error) {
-	var p struct {
-		Answers []wireAnswer `json:"answers"`
-		Decline bool         `json:"decline"`
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return clarify.Answers{}, false, fmt.Errorf("the answer could not be read")
-	}
-	if p.Decline {
-		return clarify.Answers{}, true, nil
-	}
-	seen := map[int]bool{}
-	byGroup := map[int]clarify.Answer{}
-	for _, w := range p.Answers {
-		if w.Group < 0 || w.Group >= len(q.Groups) {
-			return clarify.Answers{}, false, fmt.Errorf("answer for question %d, which was not asked", w.Group+1)
-		}
-		if seen[w.Group] {
-			return clarify.Answers{}, false, fmt.Errorf("question %d answered twice", w.Group+1)
-		}
-		seen[w.Group] = true
-		g := q.Groups[w.Group]
-		ans := clarify.Answer{GroupIndex: w.Group, Skipped: w.Skipped}
-		if !w.Skipped {
-			picked := map[int]bool{}
-			for _, c := range w.Chosen {
-				if c < 0 || c >= len(g.Options) {
-					return clarify.Answers{}, false, fmt.Errorf("question %d has no option %d", w.Group+1, c+1)
-				}
-				if picked[c] {
-					continue
-				}
-				picked[c] = true
-				ans.Chosen = append(ans.Chosen, c)
-			}
-			if !g.Multi && len(ans.Chosen) > 1 {
-				return clarify.Answers{}, false, fmt.Errorf("question %d takes one choice", w.Group+1)
-			}
-		}
-		if note := sessionsync.CleanPrompt(w.Note); note != "" {
-			if len(note) > maxAnswerNoteBytes {
-				note = truncateUTF8(note, maxAnswerNoteBytes)
-			}
-			ans.Note = note
-		}
-		byGroup[w.Group] = ans
-	}
-	out := clarify.Answers{}
-	for gi := range q.Groups {
-		if ans, ok := byGroup[gi]; ok {
-			out.Items = append(out.Items, ans)
-		} else {
-			out.Items = append(out.Items, clarify.Answer{GroupIndex: gi, Skipped: true})
-		}
-	}
-	return out, false, nil
+	return webask.ParseClarify(q, raw)
 }
