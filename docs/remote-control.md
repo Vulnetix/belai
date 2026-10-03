@@ -118,11 +118,14 @@ to keep a log file, `~/.vulnetix/belai/rc/rc.log`; set by hand it makes a
 foreground daemon log there too.
 
 At most `--max` sessions (default 3) run at once; the website refuses more.
-An explicit `--max N` is also the fleet worker cap for this host: the daemon
-advertises N instead of `agents.max_workers` and starts workers with
-`belai agent start -max-workers N`. A repository whose settings lower
-`agents.max_workers` still holds its own cap. Without `--max`,
-`agents.max_workers` (default 4) applies.
+`--max-workers N` sets the fleet worker cap for this host on its own: the
+daemon advertises N instead of `agents.max_workers` and starts workers with
+`belai agent start -max-workers N`. Use it to size sessions and workers
+separately, for example `belai rc --max 1 --max-workers 20` on a hosted
+sandbox. Without `--max-workers`, an explicit `--max N` is also the worker
+cap, as before. A repository whose settings lower `agents.max_workers` still
+holds its own cap. With neither flag, `agents.max_workers` (default 4)
+applies.
 
 ## Fleet workers
 

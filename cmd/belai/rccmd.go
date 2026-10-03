@@ -41,7 +41,7 @@ type dirList []string
 func (d *dirList) String() string     { return strings.Join(*d, ",") }
 func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 
-const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--idle DURATION] [--detach]
+const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
        belai rc --status
        belai rc --stop
 
@@ -60,7 +60,8 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	fs.Usage = func() { fmt.Fprint(stderr, rcUsage); fs.PrintDefaults() }
 	var dirs dirList
 	fs.Var(&dirs, "dir", "also offer this directory (repeatable); it is trusted, as with -trust-dir")
-	max := fs.Int("max", rc.DefaultMax, "sessions to run at once; when given, also the fleet worker cap in place of agents.max_workers")
+	max := fs.Int("max", rc.DefaultMax, "sessions to run at once; when given without --max-workers, also the fleet worker cap in place of agents.max_workers")
+	maxWorkers := fs.Int("max-workers", 0, "fleet workers to run at once, in place of agents.max_workers; sessions stay capped by --max")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end a session after this long without a prompt")
 	detach := fs.Bool("detach", false, "run in the background; logs go to ~/.vulnetix/belai/rc/rc.log")
 	status := fs.Bool("status", false, "show whether remote control is running")
@@ -77,6 +78,10 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return 0
 		}
 		fmt.Fprintf(stderr, "belai rc: unexpected argument %q\n", fs.Arg(0))
+		return 2
+	}
+	if flagGiven(fs, "max-workers") && *maxWorkers < 1 {
+		fmt.Fprintln(stderr, "belai rc: --max-workers must be at least 1")
 		return 2
 	}
 	url := rc.ManageURL(os.Getenv("VULNETIX_WEB_URL"))
@@ -193,7 +198,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
-		Max: *max, MaxWorkers: explicitMax(fs, *max), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
+		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd),
 	})
 	if err != nil {
@@ -207,16 +212,28 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	return 0
 }
 
-// explicitMax is --max when it was given, else 0: only an explicit --max
-// replaces agents.max_workers, so the session default never lowers it.
-func explicitMax(fs *flag.FlagSet, max int) int {
-	n := 0
+// workerOverride is the fleet worker cap passed to the daemon, or 0 to keep
+// agents.max_workers: --max-workers when given, else an explicit --max. The
+// session default never lowers the worker cap.
+func workerOverride(fs *flag.FlagSet, max, maxWorkers int) int {
+	switch {
+	case flagGiven(fs, "max-workers"):
+		return maxWorkers
+	case flagGiven(fs, "max"):
+		return max
+	}
+	return 0
+}
+
+// flagGiven reports whether the named flag was set on the command line.
+func flagGiven(fs *flag.FlagSet, name string) bool {
+	given := false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "max" {
-			n = max
+		if f.Name == name {
+			given = true
 		}
 	})
-	return n
+	return given
 }
 
 // rcClient builds the sync client with the Vulnetix CLI credential, re-read
