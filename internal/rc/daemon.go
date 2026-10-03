@@ -274,7 +274,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		Data: map[string]string{"version": d.o.Host.BelaiVersion}})
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
 	if d.o.MaxWorkers > 0 {
-		d.logf("up to %d fleet workers (--max overrides agents.max_workers)", d.o.MaxWorkers)
+		d.logf("up to %d fleet workers (overrides agents.max_workers)", d.o.MaxWorkers)
 	}
 	d.logf("start sessions at %s", d.o.URL)
 
