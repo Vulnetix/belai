@@ -34,6 +34,7 @@ var knowledgeTestFiles = []string{
 	"cmd/belai/knowledgecmd_test.go",
 	"e2e/knowledge_e2e_test.go",
 	"internal/scanartifacts/records_test.go",
+	"internal/rc/knowledge_test.go",
 }
 
 // TestKnowledgeDocParity keeps docs/knowledge.md and the tests in step: every
