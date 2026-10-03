@@ -487,6 +487,17 @@ under these rules:
 
 The library logs the host, the request and the slugs of each release, never a key.
 
+**Removing keys (`provider_keys_remove`).** The undo of an install, sent when a website
+user turns a provider off for a machine (a Pix sandbox's Models tab). It names the same
+slugs (1 to 16) and nothing else, and the library is not asked for anything. The daemon
+clears field `api_key` for each slug from the user's credentials file, and from the
+keychain when that is where keys go, then looks the key up again: a key still supplied by
+an environment variable is reported as cleared with that note, and one that comes from
+somewhere this request does not change (the project's own file, `~/.netrc`) is reported
+by slug as not cleared. When nothing is cleared the request is refused with the reasons.
+`sync.providers` off refuses it, as it does an install. The next heartbeat's model report
+no longer lists a provider that has no credentials left.
+
 ## How a document travels
 
 Three things move a document between a host and the library. All of them need

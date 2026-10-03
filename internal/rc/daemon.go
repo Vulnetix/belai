@@ -389,7 +389,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "library_sync":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -497,6 +497,16 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 			return
 		}
 		d.logf("provider_keys_install: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "provider_keys_remove":
+		// Slugs only, as for an install; nothing is fetched.
+		report, why := d.removeProviderKeys(r)
+		if why != "" {
+			d.logf("refused provider_keys_remove: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("provider_keys_remove: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	default:
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
