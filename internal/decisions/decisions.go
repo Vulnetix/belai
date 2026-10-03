@@ -36,6 +36,9 @@ const (
 	BackendSystemOne Backend = "systemone"
 	// BackendLocal is a local decision model behind llama-server.
 	BackendLocal Backend = "local"
+	// BackendChatLetters is a hosted decision model read from the answer
+	// letter's log-probabilities on chat completions (Tev1 on Together).
+	BackendChatLetters Backend = "chat-letters"
 )
 
 // LocalProvider is the built-in provider name of the local decision server.
@@ -86,6 +89,10 @@ func BackendOf(provider, kind, model string) (Backend, bool) {
 	case provider == TypeSafeProvider, provider == DeciderProvider:
 		return BackendSystemOne, true
 	case IsHostedClef(provider, model):
+		return BackendSystemOne, true
+	case IsHostedTev1(provider, model):
+		return BackendChatLetters, true
+	case IsOllamaTev1(provider, model):
 		return BackendSystemOne, true
 	case IsSystemOneKind(kind):
 		return BackendSystemOne, true

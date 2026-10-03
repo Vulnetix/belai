@@ -13,7 +13,9 @@ detection, routing and every relevance job are answered by a process on
 loopback: no API key, no network, and no state leaves the host. Clef-flash or
 Clef on llama-server (`classifier.provider: decision-local`) does the same.
 When speed matters more, Clef on Cloudflare Workers AI answers each job in tens
-of milliseconds of model time with the Cloudflare credentials already set up.
+of milliseconds of model time with the Cloudflare credentials already set up,
+and Tev1 answers on Together with a Together key, on Ollama, or on llama-server
+(`tev1-4b`).
 See [role manager](role-manager.md#decision-backends).
 
 ## The contract every job keeps

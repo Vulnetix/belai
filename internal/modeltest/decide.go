@@ -63,7 +63,7 @@ func intentStep(d func() decisions.Decider) Step {
 			Descriptions: map[string]string{"agent": "make a direct code change now", "plan": "write a plan before changing code", "debug": "diagnose a failure"},
 		}
 		dec := d()
-		if dec.Backend() != decisions.BackendLocal {
+		if b := dec.Backend(); b != decisions.BackendLocal && b != decisions.BackendChatLetters {
 			// Hosted and self-hosted Jev score intents one noul each.
 			q = decisions.Noul("The user wants a read-only investigation that should first produce a step-by-step plan before any changes.")
 		}

@@ -275,11 +275,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   built-in classifier-only `strands-decider` provider: upstream's
   `strands-decider serve` on loopback, `internal/deciderserver`), Cloudflare's
   Clef on Workers AI (`@cf/cloudflare/clef` or `clef-flash` under the
-  `cloudflare-workers-ai` or `cloudflare-ai-gateway` provider), a server
+  `cloudflare-workers-ai` or `cloudflare-ai-gateway` provider), Together AI's
+  Tev1 (`together/Tev1-4B-experimental` under the `together` provider, read
+  from the answer letter's log-probabilities on chat completions, or a `tev1:`
+  tag on Ollama's own `/v1/systemone` under the `ollama` provider), a server
   speaking the `/v1/systemone` API (a provider profile of kind `systemone`;
   these four are `classifier.kind` `systemone`, and `jev`, the kind's name
   before, is read as `systemone` and never written), or the local decision
-  model (`decision-local`: Decider-4B or Plumb-4B read from letter
+  model (`decision-local`: Decider-4B, Plumb-4B or Tev1 4B read from letter
   log-probabilities, or Clef-flash and Clef on llama-server's own
   `/v1/systemone`, `internal/decisionserver`). The rules:
   - A `systemone` profile is a provider profile, so the project layer cannot
@@ -311,6 +314,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     a redirect is refused. Cloudflare's envelope error text is sanitised and
     capped. A Clef model is never offered or asked to chat (the agent, fast
     and routing pickers drop every decision model), and no image is sent.
+  - Tev1 on Together uses the user's own Together key, resolved from the
+    credentials store and never from a firewall route (`run.resolveTev1`
+    builds the request itself), sent only in the `Authorization` header to
+    the `together` provider's base URL (https, or loopback http, with no
+    credentials in it), and a redirect is refused. Each question is one
+    tool-less chat completion for one token at temperature 0 with thinking
+    off (`decisions.ChatLetters`), so the model is never asked to chat; the
+    state is JSON-escaped into the payload Tev1 was trained on, so it cannot
+    forge prompt structure. An answer is read only from the option letters'
+    log-probabilities: a reply without them, or one whose letters hold too
+    little of the probability, is unavailable and never read from its text.
+    A Tev1 id or tag is never offered or asked to chat, like Clef, and no
+    image is sent. Ollama's Tev1 is a `/v1/systemone` server on the
+    `ollama` provider's address, https or loopback http.
   - A local Clef runs on llama-server build 11371 or later (`Ensure` refuses
     an older build before launching) with the harness-fixed argv plus
     `--batch-size` and `--ubatch-size` equal to the context, so a decision

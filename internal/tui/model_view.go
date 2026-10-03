@@ -905,6 +905,14 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && decisions.IsCloudflareProvider(name) {
 		return name, filterModels(clefCatalog(), a.modelState.filter)
 	}
+	// Under the systemone kind Together offers Tev1, and Ollama the Tev1 tags
+	// it has pulled, and nothing else.
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && name == decisions.TogetherProvider {
+		return name, filterModels(tev1HostedCatalog(), a.modelState.filter)
+	}
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && name == decisions.OllamaProvider {
+		return name, filterModels(a.ollamaTev1Catalog(), a.modelState.filter)
+	}
 	catalog := a.catalogFor(name)
 	// The classifier-only filter (curated BERT ids on huggingface, Jev on
 	// openrouter) applies to the models path, where the picker offers
@@ -958,6 +966,34 @@ func clefCatalog() []models.Model {
 		out = append(out, models.Model{ID: m.ID, Label: m.Label + " · " + m.Blurb})
 	}
 	return out
+}
+
+// tev1HostedCatalog is the Tev1 picker of the together provider.
+func tev1HostedCatalog() []models.Model {
+	return []models.Model{{ID: decisions.Tev1HostedModel, Label: "Tev1 4B · Together AI · one token a check · $0.04/M input tokens · experimental"}}
+}
+
+// ollamaTev1Catalog is the Tev1 tags the ollama provider lists.
+func (a *App) ollamaTev1Catalog() []models.Model {
+	var out []models.Model
+	for _, m := range a.catalogFor(decisions.OllamaProvider) {
+		if decisions.IsOllamaTev1(decisions.OllamaProvider, m.ID) {
+			out = append(out, models.Model{ID: m.ID, Label: "Tev1 · Ollama /v1/systemone · experimental"})
+		}
+	}
+	return out
+}
+
+// tev1Ready reports whether a provider can run Tev1: together with a key,
+// or ollama listing a Tev1 tag.
+func (a *App) tev1Ready(name string) bool {
+	switch name {
+	case decisions.TogetherProvider:
+		return a.resolver != nil && a.resolver.Configured(name)
+	case decisions.OllamaProvider:
+		return len(a.ollamaTev1Catalog()) > 0
+	}
+	return false
 }
 
 // cloudflareClefReady reports whether a Cloudflare provider can run Clef:
@@ -1462,6 +1498,8 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 				c.Provider, c.Model = decisions.CloudflareWorkersAIProvider, decisions.ClefModels[0].ID
 			case a.cloudflareClefReady(decisions.CloudflareGatewayProvider):
 				c.Provider, c.Model = decisions.CloudflareGatewayProvider, decisions.ClefModels[0].ID
+			case a.tev1Ready(decisions.TogetherProvider):
+				c.Provider, c.Model = decisions.TogetherProvider, decisions.Tev1HostedModel
 			case a.deciderDetected():
 				c.Provider, c.Model = decisions.DeciderProvider, decisions.Decider2B.ID
 			default:
@@ -1480,7 +1518,8 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 // decision backend: the local decision model, a self-hosted Jev profile, or
 // OpenRouter's Jev model.
 func (a *App) classifierSelectsDecision(c *config.ClassifierSettings) bool {
-	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model) || decisions.IsHostedClef(c.Provider, c.Model))
+	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model) || decisions.IsHostedClef(c.Provider, c.Model) ||
+		decisions.IsHostedTev1(c.Provider, c.Model) || decisions.IsOllamaTev1(c.Provider, c.Model))
 }
 
 // cycleClassifierPhase advances one phase gate's source through the choices the
@@ -1774,8 +1813,10 @@ func (a *App) classifierPhase3Row() settingsRow {
 // current kind. The decision kinds offer only decision backends:
 // openrouter-decisions offers OpenRouter (always, since a missing key is
 // reported by the test with a way out, not hidden) and the local decision
-// model; systemone offers TypeSafe, Strands Decider-2B on this machine (first
-// when it is detected) and every provider profile of kind systemone. The
+// model; systemone offers hosted Clef and Tev1 (together with a key, ollama
+// with a Tev1 tag) when their providers are set up, then TypeSafe, Strands
+// Decider-2B on this machine (first of those when it is detected) and every
+// provider profile of kind systemone. The
 // other kinds offer
 // chat providers: custom profiles, the built-in local servers, openrouter when
 // it is configured, and huggingface when a token is configured. Other
@@ -1798,6 +1839,13 @@ func (a *App) classifierProviders() []string {
 		for _, cf := range []string{decisions.CloudflareWorkersAIProvider, decisions.CloudflareGatewayProvider} {
 			if a.cloudflareClefReady(cf) {
 				out = append(out, cf)
+			}
+		}
+		// Tev1 follows: on Together when it has a key, on Ollama when it has
+		// pulled a Tev1 tag.
+		for _, p := range []string{decisions.TogetherProvider, decisions.OllamaProvider} {
+			if a.tev1Ready(p) {
+				out = append(out, p)
 			}
 		}
 		if a.deciderDetected() {

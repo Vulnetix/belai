@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -32,7 +33,10 @@ const (
 	// missingMargin places a letter absent from the returned top-k at least
 	// this far below the lowest one returned (the jevk5 readout).
 	missingMargin = 2.0
-	letters       = "ABCDEFGHIJKLMNOP"
+	// letters are the option letters in order. Tev1 reads all 24; the other
+	// templates read the first maxLetters.
+	letters    = "ABCDEFGHIJKLMNOPQRSTUVWX"
+	maxLetters = 16
 )
 
 // Llama is a local decision model behind llama-server, read from the
@@ -121,36 +125,102 @@ func (l *Llama) Decide(ctx context.Context, r Request) (Result, error) {
 	if l.Model.Template == TemplateSystemOne {
 		return l.systemOne(ctx, r)
 	}
+	max := maxLetters
+	if l.Model.Template == TemplateTev1 {
+		max = Tev1MaxOptions
+	}
+	return decideByLetters(ctx, r, letterReader{
+		max:     max,
+		options: l.options,
+		temp:    l.temp,
+		ask:     l.letterLogprobs,
+	})
+}
 
+// letterReader is how one transport reads a question from the option
+// letters: the options it lays out, its calibration, and the call that
+// returns the next-token log-probabilities at the answer slot.
+type letterReader struct {
+	// max is the most options a question may carry.
+	max int
+	// parallel is how many questions are asked at once; zero or one asks
+	// them in turn.
+	parallel int
+	options  func(Question) (texts, keys []string)
+	temp     func(typ string) float64
+	ask      func(ctx context.Context, state string, q Question, texts, keys []string) (map[string]float64, string, error)
+}
+
+// decideByLetters asks each question once and reads the answer from the
+// letters' log-probabilities. An answer whose letters hold less than
+// MinLetterMass is unavailable, so the fallback answers instead.
+func decideByLetters(ctx context.Context, r Request, lr letterReader) (Result, error) {
+	state, err := stateText(r.State)
+	if err != nil {
+		return Result{}, &Error{Class: ClassSchema, Msg: "encode state", Err: err}
+	}
 	ids := make([]string, 0, len(r.Questions))
 	for id := range r.Questions {
 		ids = append(ids, id)
+		if q := r.Questions[id]; q.Type != TypeNoul && len(q.Options) > lr.max {
+			return Result{}, &Error{Class: ClassSchema, Msg: fmt.Sprintf("%s has %d options; at most %d", id, len(q.Options), lr.max)}
+		}
 	}
 	sort.Strings(ids)
 
+	type read struct {
+		answer Answer
+		mass   float64
+		path   string
+		err    error
+	}
 	start := time.Now()
+	reads := make([]read, len(ids))
+	one := func(i int) {
+		q := r.Questions[ids[i]]
+		texts, keys := lr.options(q)
+		lp, path, err := lr.ask(ctx, state, q, texts, keys)
+		if err != nil {
+			reads[i] = read{err: err}
+			return
+		}
+		probs, mass := readout(lp, len(texts), lr.temp(q.Type))
+		if mass < MinLetterMass {
+			reads[i] = read{mass: mass, err: &Error{Class: ClassUnavailable, Msg: fmt.Sprintf("answer for %s did not land on the option letters (mass %.2f)", ids[i], mass)}}
+			return
+		}
+		reads[i] = read{answer: answerOf(q, keys, probs), mass: mass, path: path}
+	}
+	if lr.parallel > 1 {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, lr.parallel)
+		for i := range ids {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int) {
+				defer func() { <-sem; wg.Done() }()
+				one(i)
+			}(i)
+		}
+		wg.Wait()
+	} else {
+		for i := range ids {
+			if one(i); reads[i].err != nil {
+				return Result{}, reads[i].err
+			}
+		}
+	}
+
 	answers := make(map[string]Answer, len(ids))
 	minMass := 1.0
 	path := ""
-	for _, id := range ids {
-		q := r.Questions[id]
-		opts, keys := l.options(q)
-		if len(opts) > len(letters) {
-			return Result{}, &Error{Class: ClassSchema, Msg: fmt.Sprintf("%s has %d options; at most %d", id, len(opts), len(letters))}
+	for i, id := range ids {
+		if reads[i].err != nil {
+			return Result{}, reads[i].err
 		}
-		lp, p, err := l.letterLogprobs(ctx, state, q, opts)
-		if err != nil {
-			return Result{}, err
-		}
-		path = p
-		probs, mass := readout(lp, len(opts), l.temp(q.Type))
-		if mass < minMass {
-			minMass = mass
-		}
-		if mass < MinLetterMass {
-			return Result{}, &Error{Class: ClassUnavailable, Msg: fmt.Sprintf("answer for %s did not land on the option letters (mass %.2f)", id, mass)}
-		}
-		answers[id] = l.answer(q, keys, probs)
+		answers[id] = reads[i].answer
+		minMass = math.Min(minMass, reads[i].mass)
+		path = reads[i].path
 	}
 	if err := validate(r.Questions, answers); err != nil {
 		return Result{}, err
@@ -173,6 +243,9 @@ func (l *Llama) temp(typ string) float64 {
 // each: for a noul question the keys are "true"/"false" in the order the
 // model's template was trained with.
 func (l *Llama) options(q Question) (texts, keys []string) {
+	if l.Model.Template == TemplateTev1 {
+		return tev1Options(q)
+	}
 	if q.Type == TypeNoul {
 		if l.Model.Template == TemplateJevK5 {
 			return []string{"true: The proposition is true.", "false: The proposition is false."}, []string{"true", "false"}
@@ -192,7 +265,7 @@ func (l *Llama) options(q Question) (texts, keys []string) {
 	return texts, keys
 }
 
-func (l *Llama) answer(q Question, keys []string, probs []float64) Answer {
+func answerOf(q Question, keys []string, probs []float64) Answer {
 	if q.Type == TypeNoul {
 		for i, k := range keys {
 			if k == "true" {
@@ -249,11 +322,14 @@ func readout(seen map[string]float64, n int, t float64) (probs []float64, mass f
 
 // letterLogprobs asks the server for the log-probabilities at the answer
 // position and returns them keyed by trimmed token text.
-func (l *Llama) letterLogprobs(ctx context.Context, state string, q Question, opts []string) (map[string]float64, string, error) {
+func (l *Llama) letterLogprobs(ctx context.Context, state string, q Question, opts, keys []string) (map[string]float64, string, error) {
 	var prompt any
 	switch l.Model.Template {
-	case TemplateJevK5:
+	case TemplateJevK5, TemplateTev1:
 		text := jevk5Prompt(state, neutralise(q.Instructions), opts)
+		if l.Model.Template == TemplateTev1 {
+			text = tev1Prompt(state, neutralise(q.Instructions), opts, keys)
+		}
 		toks, err := l.tokenize(ctx, text)
 		if err != nil {
 			return nil, "", err
@@ -353,7 +429,8 @@ func (l *Llama) completion(ctx context.Context, path string, body map[string]any
 // parseLogprobs reads the next-token distribution from a llama-server
 // response. It accepts the current shape (completion_probabilities[0]
 // .top_logprobs[{token, logprob}]), the older one (.probs[{tok_str, prob}])
-// and the OpenAI completions shape (choices[0].logprobs.top_logprobs[0]).
+// the OpenAI completions shape (choices[0].logprobs.top_logprobs[0]) and the
+// OpenAI chat shape (choices[0].logprobs.content[0].top_logprobs).
 // Tokens are trimmed, so " A" and "A" both count as the letter A.
 func parseLogprobs(data []byte) (map[string]float64, error) {
 	var out struct {
@@ -369,7 +446,13 @@ func parseLogprobs(data []byte) (map[string]float64, error) {
 		} `json:"completion_probabilities"`
 		Choices []struct {
 			Logprobs struct {
-				Top []map[string]float64 `json:"top_logprobs"`
+				Top     []map[string]float64 `json:"top_logprobs"`
+				Content []struct {
+					Top []struct {
+						Token   string  `json:"token"`
+						Logprob float64 `json:"logprob"`
+					} `json:"top_logprobs"`
+				} `json:"content"`
 			} `json:"logprobs"`
 		} `json:"choices"`
 	}
@@ -395,6 +478,10 @@ func parseLogprobs(data []byte) (map[string]float64, error) {
 			if t.Prob > 0 {
 				add(t.TokStr, math.Log(t.Prob))
 			}
+		}
+	case len(out.Choices) > 0 && len(out.Choices[0].Logprobs.Content) > 0:
+		for _, t := range out.Choices[0].Logprobs.Content[0].Top {
+			add(t.Token, t.Logprob)
 		}
 	case len(out.Choices) > 0 && len(out.Choices[0].Logprobs.Top) > 0:
 		for tok, v := range out.Choices[0].Logprobs.Top[0] {
