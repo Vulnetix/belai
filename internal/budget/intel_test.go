@@ -101,14 +101,24 @@ func TestBudgetRule18_RollupsReadDaysAndSparkReadsHours(t *testing.T) {
 // ledger recorded it live or imported it from a transcript.
 func TestBudgetRule18_SessionsCountByLastActivity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), LedgerFile)
+	// The other sessions are on disk before the recorder opens: AddCall wakes
+	// the flusher, which re-reads the file, so entries only in memory could
+	// vanish before Intel reads them.
+	seed := newLedgerData()
+	seed.Version = ledgerVersion
+	seed.Sessions["three-days-ago"] = &sessionEntry{Updated: at(22, 10, 0)}
+	seed.Sessions["earlier-today"] = &sessionEntry{Updated: at(25, 8, 0)}
+	seed.Imported["imported-week"] = "2026-09-20"
+	seed.Imported["imported-old"] = "2026-08-01"
+	buf, err := json.Marshal(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	r, c := openClock(t, path, "now", at(25, 12, 0))
-	r.mu.Lock()
-	r.disk.Sessions["three-days-ago"] = &sessionEntry{Updated: at(22, 10, 0)}
-	r.disk.Sessions["earlier-today"] = &sessionEntry{Updated: at(25, 8, 0)}
-	r.disk.Imported["imported-week"] = "2026-09-20"
-	r.disk.Imported["imported-old"] = "2026-08-01"
-	r.mu.Unlock()
-	r.AddCall("p", "m", "", 10) // this session, before its first flush reaches disk
+	r.AddCall("p", "m", "", 10) // this session, counted before or after its flush
 
 	in := r.Intel(c.now(), "p", nil)
 	got := [3]int{in.Rollups[0].Sessions, in.Rollups[1].Sessions, in.Rollups[2].Sessions}
