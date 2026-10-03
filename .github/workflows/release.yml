@@ -173,7 +173,9 @@ jobs:
   release:
     needs: [version, build]
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
-    timeout-minutes: 20
+    # The binaries artifact is about 3.4 GB; on a local podman runner its
+    # download alone ran past 20 minutes and v0.109.0's release was cancelled.
+    timeout-minutes: 60
     outputs:
       version: ${{ needs.version.outputs.version }}
     steps:
