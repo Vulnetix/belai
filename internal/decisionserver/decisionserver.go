@@ -90,7 +90,9 @@ type state struct {
 	PID   int    `json:"pid,omitempty"`
 }
 
-func runDir() (string, error) {
+// RunDir is where local decision servers keep their state, pid and lock
+// files: the global state directory's run directory.
+func RunDir() (string, error) {
 	dir, err := config.GlobalDir()
 	if err != nil {
 		return "", err
@@ -99,7 +101,7 @@ func runDir() (string, error) {
 }
 
 func readState() (state, bool) {
-	dir, err := runDir()
+	dir, err := RunDir()
 	if err != nil {
 		return state{}, false
 	}
@@ -115,7 +117,7 @@ func readState() (state, bool) {
 }
 
 func writeState(s state) {
-	dir, err := runDir()
+	dir, err := RunDir()
 	if err != nil {
 		return
 	}
@@ -199,7 +201,7 @@ func Ensure(ctx context.Context, m decisions.LocalModel, o Options) (*Handle, er
 		return nil, ErrNoBinary
 	}
 
-	dir, err := runDir()
+	dir, err := RunDir()
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +222,7 @@ func Ensure(ctx context.Context, m decisions.LocalModel, o Options) (*Handle, er
 	if s, ok := readState(); ok {
 		port = s.Port
 	}
-	if !portFree(port) {
+	if !PortFree(port) {
 		if port, err = localinfer.FreePort(); err != nil {
 			return nil, err
 		}
@@ -245,7 +247,8 @@ func Ensure(ctx context.Context, m decisions.LocalModel, o Options) (*Handle, er
 	return &Handle{BaseURL: rootURL(port), Port: port, Owned: true, stop: stop}, nil
 }
 
-func portFree(port int) bool {
+// PortFree reports whether a loopback port can be bound now.
+func PortFree(port int) bool {
 	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		return false

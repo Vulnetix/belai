@@ -20,9 +20,10 @@ const DefaultSystemOnePath = "/v1/systemone"
 // SystemOneTimeout bounds one call to a self-hosted Jev server.
 const SystemOneTimeout = 5 * time.Second
 
-// SystemOne is a self-hosted Jev-compatible server speaking TypeSafe's native
-// POST /v1/systemone API. The key, when set, rides only in the Authorization
-// header of requests to BaseURL; redirects are refused.
+// SystemOne is a server speaking the POST /v1/systemone decision API:
+// TypeSafe's hosted Jev, a self-hosted Jev server, or Strands Decider-2B. The
+// key, when set, rides only in the Authorization header of requests to
+// BaseURL; redirects are refused.
 type SystemOne struct {
 	// Name is the provider profile name, for Identity.
 	Name string
@@ -38,6 +39,29 @@ type SystemOne struct {
 	Client    *http.Client
 	// Timeout bounds one call; zero uses SystemOneTimeout.
 	Timeout time.Duration
+	// CriteriaObject sends a choice's criteria as an object of option to
+	// description (null when it has none) even without descriptions. Strands
+	// Decider's server takes only that form; TypeSafe's also takes a list.
+	CriteriaObject bool
+	// MaxOptions, when set, is the most options a question may carry; a
+	// request with more is never sent and fails as unavailable, so the
+	// caller's fallback answers instead of the server refusing it.
+	MaxOptions int
+	// Resolve, when set, supplies the base URL for each call (a local server
+	// whose port the supervisor records); BaseURL is then a fallback.
+	Resolve func() string
+	// OnConnRefused, when set, is called when nothing listens at the URL, so
+	// a local supervisor can start its server again.
+	OnConnRefused func()
+}
+
+func (s *SystemOne) baseURL() string {
+	if s.Resolve != nil {
+		if u := s.Resolve(); u != "" {
+			return u
+		}
+	}
+	return s.BaseURL
 }
 
 // Backend implements Decider.
@@ -102,9 +126,22 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 
 	questions := make(map[string]wireQuestion, len(r.Questions))
 	for id, q := range r.Questions {
+		if s.MaxOptions > 0 && len(q.Options) > s.MaxOptions {
+			return Result{}, &Error{Class: ClassUnavailable, Msg: "a question has more options than the model reads"}
+		}
 		wq := wireQuestion{Type: q.Type, Instructions: q.Instructions}
 		if q.Type == TypeChoice {
-			if len(q.Descriptions) > 0 {
+			if s.CriteriaObject {
+				crit := make(map[string]*string, len(q.Options))
+				for _, o := range q.Options {
+					var d *string
+					if v, ok := q.Descriptions[o]; ok && v != "" {
+						d = &v
+					}
+					crit[o] = d
+				}
+				wq.Criteria = crit
+			} else if len(q.Descriptions) > 0 {
 				crit := make(map[string]string, len(q.Options))
 				for _, o := range q.Options {
 					crit[o] = q.Descriptions[o]
@@ -125,7 +162,7 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		return Result{}, &Error{Class: ClassSchema, Msg: "encode request", Err: err}
 	}
 	start := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.BaseURL, "/")+s.path(), bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.baseURL(), "/")+s.path(), bytes.NewReader(raw))
 	if err != nil {
 		return Result{}, &Error{Class: ClassProtocol, Msg: "build request", Err: err}
 	}
@@ -141,6 +178,9 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 	}
 	resp, err := s.client().Do(req)
 	if err != nil {
+		if s.OnConnRefused != nil && IsConnRefused(err) {
+			s.OnConnRefused()
+		}
 		return Result{}, transportError(err)
 	}
 	defer resp.Body.Close()

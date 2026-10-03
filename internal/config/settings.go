@@ -925,7 +925,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 // main model's effort.
 type ClassifierSettings struct {
 	// Kind selects the security classifier stack: "llm" (the full five-token
-	// LLM sentinel), "jev" (a Jev decision backend, never a chat model) or "models" (local BERT gates plus an optional narrowed
+	// LLM sentinel), "systemone" (a /v1/systemone decision server, never a chat model; "jev" is read as it), "openrouter-decisions" (OpenRouter's Decisions API or the local decision model) or "models" (local BERT gates plus an optional narrowed
 	// phase-3 LLM sentinel). Empty derives from the build variant: "models"
 	// when the binary embeds a model, else "llm".
 	Kind string `json:"kind,omitempty"`
@@ -1108,7 +1108,7 @@ type ProviderProfile struct {
 	Protocol string `json:"protocol,omitempty"`
 	Host     string `json:"host,omitempty"`
 	Port     string `json:"port,omitempty"`
-	// DecisionPath is the decision endpoint of a kind "jev" profile, relative
+	// DecisionPath is the decision endpoint of a kind "systemone" profile, relative
 	// to BaseURL; empty means /v1/systemone. The /model test stores the path
 	// it found answering when the default did not.
 	DecisionPath string `json:"decision_path,omitempty"`
@@ -1958,6 +1958,7 @@ func loadSettings(path string) (Settings, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return Settings{}, fmt.Errorf("parse settings %s: %w", path, err)
 	}
+	NormalizeKinds(&s)
 	return s, nil
 }
 

@@ -127,6 +127,9 @@ func ProbeRunning(ctx context.Context, bases []string) string {
 type LaunchOptions struct {
 	Deadline time.Duration // health-check timeout; zero uses 30s
 	HFToken  string        // passed to the child environment, never argv
+	// Env is extra NAME=value entries the harness composes (never a model's
+	// text), appended after the scrubbed environment.
+	Env      []string
 	Registry *activity.Registry
 	Label    string // activity label; empty uses the binary name
 	Pidfile  string
@@ -243,6 +246,7 @@ func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, o
 	if opts.HFToken != "" {
 		cmd.Env = append(cmd.Env, "HF_TOKEN="+opts.HFToken)
 	}
+	cmd.Env = append(cmd.Env, opts.Env...)
 
 	tee := proc.NewLineTee(0, opts.OnLine)
 	cmd.Stdout = tee

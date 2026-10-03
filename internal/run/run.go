@@ -115,7 +115,7 @@ type ClassifierConfig struct {
 // fail-closed: no inheritance, and phase 3 only when a classifier provider
 // and model are both explicitly set.
 type SecurityClassifierConfig struct {
-	// Kind is "llm", "jev" or "models".
+	// Kind is "llm", "models", "openrouter-decisions" or "systemone".
 	Kind string
 	// Phase1 and Phase2 configure the two local gates; nil disables that gate.
 	Phase1 *mlclassify.ModelConfig
@@ -217,11 +217,11 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		return out, nil
 	}
 
-	// Kind "jev" is a Jev decision backend and nothing else: a provider and
+	// A decision kind is a decision backend and nothing else: a provider and
 	// model that would chat are refused rather than quietly classified by a
 	// model the user did not ask for.
-	if IsDecisionKind(cls.Kind) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
-		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, a Jev provider profile, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.LocalProvider)
+	if IsDecisionKind(config.CanonicalKind(cls.Kind)) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
+		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, %s, a provider profile of kind systemone, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.DeciderProvider, decisions.LocalProvider)
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -390,16 +390,18 @@ func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierS
 // "llm".
 const ClassifierKindOpenRouterDecisions = "openrouter-decisions"
 
-// ClassifierKindJev is the classifier kind that answers through a Jev server
-// speaking TypeSafe's native /v1/systemone API: the hosted typesafe provider
-// or a self-hosted Jev profile. Before the kinds were split, "jev" also named
-// the OpenRouter and local backends; ClassifierKind reads such a file as
-// ClassifierKindOpenRouterDecisions.
-const ClassifierKindJev = "jev"
+// ClassifierKindSystemOne is the classifier kind that answers through a
+// server speaking the /v1/systemone decision API: the hosted typesafe
+// provider, Strands Decider-2B, or a provider profile of kind systemone. It
+// was named "jev" before the protocol was named for itself, and
+// config.CanonicalKind still reads that name as this kind. Before the kinds
+// were split, "jev" also named the OpenRouter and local backends;
+// ClassifierKind reads such a file as ClassifierKindOpenRouterDecisions.
+const ClassifierKindSystemOne = "systemone"
 
 // IsDecisionKind reports whether a classifier kind is a decision backend.
 func IsDecisionKind(kind string) bool {
-	return kind == ClassifierKindOpenRouterDecisions || kind == ClassifierKindJev
+	return kind == ClassifierKindOpenRouterDecisions || kind == ClassifierKindSystemOne
 }
 
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
@@ -412,7 +414,7 @@ func IsDecisionKind(kind string) bool {
 func ClassifierKind(cls *config.ClassifierSettings) string {
 	kind := ""
 	if cls != nil {
-		kind = cls.Kind
+		kind = config.CanonicalKind(cls.Kind)
 	}
 	if kind == "" && mlclassify.Embedded() {
 		return "models"
@@ -422,15 +424,15 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 			switch {
 			case cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model):
 				return ClassifierKindOpenRouterDecisions
-			case cls.Provider == decisions.TypeSafeProvider:
-				return ClassifierKindJev
+			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider:
+				return ClassifierKindSystemOne
 			}
 		}
 		return "llm"
 	}
 	// Files written before the split say "jev" for the OpenRouter and local
 	// backends too.
-	if kind == ClassifierKindJev && cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
+	if kind == ClassifierKindSystemOne && cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
 		return ClassifierKindOpenRouterDecisions
 	}
 	return kind

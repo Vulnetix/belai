@@ -307,8 +307,8 @@ func TestModelClassifierKindJevIsItsOwnKind(t *testing.T) {
 	}
 
 	selectRow(t, a, roleClassifier, "kind")
-	if got := a.modelRows()[a.modelState.selected].opts; strings.Join(got, ",") != "llm,models,openrouter-decisions,jev" {
-		t.Fatalf("kind options = %v, want llm, models, openrouter-decisions, jev", got)
+	if got := a.modelRows()[a.modelState.selected].opts; strings.Join(got, ",") != "llm,models,openrouter-decisions,systemone" {
+		t.Fatalf("kind options = %v, want llm, models, openrouter-decisions, systemone", got)
 	}
 	_ = a.changeModelRow() // llm -> models
 	if k := projectClassifier(t, a).Kind; k != "models" {
@@ -339,13 +339,14 @@ func TestModelClassifierKindJevIsItsOwnKind(t *testing.T) {
 		}
 	}
 
-	// Jev is the native TypeSafe kind: it starts on the hosted provider and
-	// offers no OpenRouter.
+	// systemone is the /v1/systemone kind: with no Strands Decider found on
+	// this machine it starts on TypeSafe's hosted provider, and it offers no
+	// OpenRouter.
 	selectRow(t, a, roleClassifier, "kind")
-	_ = a.changeModelRow() // openrouter-decisions -> jev
+	_ = a.changeModelRow() // openrouter-decisions -> systemone
 	cls = projectClassifier(t, a)
-	if cls.Kind != "jev" || cls.Provider != "typesafe" || cls.Model != "jev-latest" {
-		t.Fatalf("after jev: %+v", cls)
+	if cls.Kind != "systemone" || cls.Provider != "typesafe" || cls.Model != "jev-latest" {
+		t.Fatalf("after systemone: %+v", cls)
 	}
 	if got := strings.Join(a.classifierProviders(), ","); !strings.HasPrefix(got, "typesafe") || strings.Contains(got, "openrouter") {
 		t.Fatalf("jev providers = %s", got)

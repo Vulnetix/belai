@@ -378,17 +378,22 @@ still load, but they fall back at runtime.
 ### Decision backends
 
 Every Jev job — the security guard, intent detection and routing — asks its
-questions through one transport (`internal/decisions`). There are four. The
-first and third are `classifier.kind: "openrouter-decisions"`; the second and
-the self-hosted profile are `classifier.kind: "jev"`. A file that says `"jev"`
-with the OpenRouter or local backend still loads (it reads as
-`openrouter-decisions`).
+questions through one transport (`internal/decisions`). There are five.
+OpenRouter Decisions and the local decision model are
+`classifier.kind: "openrouter-decisions"`; TypeSafe, Strands Decider-2B and a
+systemone profile all speak the `/v1/systemone` API and are
+`classifier.kind: "systemone"`. The kind was called `"jev"` before many
+servers spoke the API: a file that says `"jev"` (for `classifier.kind` or a
+provider profile's `kind`) loads as `"systemone"` and is saved that way, and
+one that names the OpenRouter or local backend with it reads as
+`openrouter-decisions`.
 
 | Backend | Selected by | Transport | Timeout |
 |---|---|---|---|
 | OpenRouter Decisions | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
 | TypeSafe | `classifier.provider: typesafe`, `classifier.model: jev-latest` or `jev-1.13.0` | `POST https://api.typesafe.ai/v1/systemone`, key from `TYPESAFE_API_KEY` | 5 s |
-| Self-hosted Jev | `classifier.provider` names a profile of kind `jev` | `POST {base_url}{decision_path}`, TypeSafe's native `/v1/systemone` | 5 s |
+| Strands Decider-2B | `classifier.provider: strands-decider`, `classifier.model: decider-2b` | `POST http://127.0.0.1:{port}/v1/systemone` to `strands-decider serve` on this machine | 5 s |
+| systemone profile | `classifier.provider` names a profile of kind `systemone` | `POST {base_url}{decision_path}`, the `/v1/systemone` API | 5 s |
 | Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b` or `plumb-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
 
 `classifier.decision.timeout_ms` overrides the timeout and
@@ -408,14 +413,61 @@ classifier only`) so its key can be set there like any provider's. It is never r
 role. Live check:
 `BELAI_TYPESAFE_LIVE=1 TYPESAFE_API_KEY=… go test ./internal/decisions -run TypeSafeLive -v`.
 
-**Self-hosted Jev.** Any server that speaks `/v1/systemone` works: laya-serve,
-decider.serve, jevk5-serve and others. The profile (kind `jev`) holds the base
+**Strands Decider-2B (local first).** A 2B decision model (Qwen3.5-2B-Base
+with a LoRA adapter and a pointer readout head) that answers every Jev
+question on this machine: the security guard, intent and mode detection,
+routing and every relevance job, with no API key, and the state never leaves
+the host. Selecting it is the whole configuration, the same as selecting
+TypeSafe; under `classifier.kind: systemone` it is listed first once Belai
+detects it, and moving to that kind starts on it.
+
+- **Runner.** Upstream's own server, `strands-decider serve`
+  (`uv tool install strands-decider` or `pip install strands-decider`). Belai
+  does not embed the weights or run inference itself.
+  `internal/deciderserver` first looks for a server already answering on
+  loopback (the port it recorded, `18098`, then upstream's default `8000`)
+  whose `/health` names a Strands Decider checkpoint, so a server you run
+  yourself, or another runtime (an ONNX Runtime build, say) that serves the
+  same API and identifies itself the same way, is used as it is. Otherwise it
+  launches the command from PATH with a fixed argv
+  (`serve <checkpoint> --host 127.0.0.1 --port N --model-name strands-decider-2b`),
+  the scrubbed environment, `HF_HOME` pointing at Belai's copy and
+  `HF_HUB_OFFLINE=1`, in its own process group. The device is the server's
+  choice: CUDA, then Apple's GPU, then the CPU. Stock llama.cpp cannot serve it
+  (the readout head is not a language-model head).
+- **Weights.** The checkpoint (`StrandsAgents/strands-decider-2B-hobson-v19`)
+  and the base model (`Qwen/Qwen3.5-2B-Base`) are pinned by revision and
+  SHA-256, about 4.6 GB together. They are downloaded only in the `/model`
+  test after you confirm the size, into `<user cache>/belai/models/strands-decider`
+  (`BELAI_MODELS_DIR` moves it), and an LFS file must also match the SHA-256
+  Hugging Face reports. The server reads them offline and never downloads.
+- **Requests.** The server takes a choice's options only as an object
+  (`{"agent": null, "plan": "write a plan"}`), so Belai always sends that
+  form to it. A question with more than 24 options is never sent; the job
+  falls back as for any unavailable answer.
+- **Detection.** `/providers` lists `strands-decider` with its status
+  (*running at 127.0.0.1:N on cuda*, *installed, starts on first use*,
+  *installed, weights not downloaded* or *not installed*); enter tests it and,
+  on a pass, sets it as the classifier. With a Hugging Face token, the
+  `/model` entry also says which Hugging Face inference providers serve it
+  (none today).
+- **Remote.** When OpenRouter's catalogue lists a Strands Decider model, the
+  `openrouter-decisions` picker offers it and it runs through the Decisions
+  API like Jev. Hugging Face's inference providers do not speak `/v1/systemone`,
+  so a hosted copy is a dedicated Inference Endpoint running
+  `strands-decider serve`, added as a systemone profile with the Hugging Face
+  token as its key; a profile whose model names the decider gets the same
+  request shape.
+
+**systemone profiles.** Any server that speaks `/v1/systemone` works:
+laya-serve, decider.serve, jevk5-serve, strands-decider and others. The
+profile (kind `systemone`) holds the base
 URL, an optional `decision_path` (default `/v1/systemone`) and an optional key
 stored under `<name>/api_key`. The URL must be https, or plain http only on a
 loopback host, and carries no credentials. The key rides only in the
 `Authorization` header of requests to that URL; redirects are refused. Answers
 are validated (a noul in [0,1], a choice among the offered options) before
-they are used. Add one from providers → `+ add new provider` → kind `jev`.
+they are used. Add one from providers → `+ add new provider` → kind `systemone`.
 
 **Local decision models.** Two 4-bit GGUF models are catalogued:
 
@@ -536,11 +588,14 @@ rows filter:
 - **`decision-local`** — always offered. Its picker lists Decider-4B and
   Plumb-4B with their size and whether they are on disk; picking one tests
   (and, after confirmation, downloads) everything it needs.
-- **`typesafe`** — offered only under `classifier.kind: jev`. Its picker lists
+- **`strands-decider`** — offered under `classifier.kind: systemone`, first
+  when detected. Its picker lists Strands Decider-2B with its status; picking
+  it tests (and, after confirmation, downloads) everything it needs.
+- **`typesafe`** — offered only under `classifier.kind: systemone`. Its picker lists
   `jev-latest` and `jev-1.13.0`; it never appears for the agent, fast or
   routing roles, and `openrouter-decisions` lists only OpenRouter and
   `decision-local`.
-- **custom `jev` profiles** — offered under `classifier.kind: jev` like other custom providers; like other custom providers; their
+- **custom `systemone` profiles** — offered under `classifier.kind: systemone` like other custom providers; their
   picker lists the profile's models, or the server's default. They are never
   offered to the agent, fast or routing roles.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,

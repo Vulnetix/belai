@@ -271,15 +271,32 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   exactly one decision backend: OpenRouter's Decisions API
   (`classifier.kind` `openrouter-decisions`), TypeSafe's hosted API (the
   built-in classifier-only `typesafe` provider, key `TYPESAFE_API_KEY`, sent
-  only to `https://api.typesafe.ai`), a self-hosted server speaking TypeSafe's
-  `/v1/systemone` (a provider profile of kind `jev`; the last two are
-  `classifier.kind` `jev`), or the local decision model (`decision-local`:
-  Decider-4B or Plumb-4B on llama-server, `internal/decisionserver`). The
-  rules:
-  - A `jev` profile is a provider profile, so the project layer cannot add
-    one; its URL is https or loopback http with no credentials in it, and its
-    key rides only in the `Authorization` header to that URL, never across a
-    redirect. No decision backend is firewall-routed or asked to chat.
+  only to `https://api.typesafe.ai`), Strands Decider-2B on this machine (the
+  built-in classifier-only `strands-decider` provider: upstream's
+  `strands-decider serve` on loopback, `internal/deciderserver`), a server
+  speaking the `/v1/systemone` API (a provider profile of kind `systemone`;
+  these three are `classifier.kind` `systemone`, and `jev`, the kind's name
+  before, is read as `systemone` and never written), or the local decision
+  model (`decision-local`: Decider-4B or Plumb-4B on llama-server,
+  `internal/decisionserver`). The rules:
+  - A `systemone` profile is a provider profile, so the project layer cannot
+    add one; its URL is https or loopback http with no credentials in it, and
+    its key rides only in the `Authorization` header to that URL, never across
+    a redirect. No decision backend is firewall-routed or asked to chat.
+  - The Strands Decider server is used only on a loopback address whose
+    `/health` names a Strands Decider checkpoint (`deciderserver.ParseHealth`,
+    identifiers only). When none answers, it is launched from PATH with a
+    harness-fixed argv (`deciderserver.Args`: the checkpoint directory, the
+    loopback host, the port and the served name), after the trust gate, with
+    the scrubbed environment plus `HF_HOME` pointing at Belai's own snapshot
+    and `HF_HUB_OFFLINE`, in its own process group; only the process that
+    launched it stops it. Its checkpoint and base model are pinned by revision
+    and SHA-256 (`decisions.Decider2B`), downloaded only in a `/model` test
+    after the user confirms the size, and an LFS file must also match the
+    SHA-256 Hugging Face reports. The server never downloads. A question with
+    more options than the head reads is never sent. OpenRouter and Hugging
+    Face are asked only whether they serve it; a remote decider is used only
+    through OpenRouter's Decisions API or a `systemone` profile.
   - The local server's binary comes from PATH and its argv is harness-fixed
     (`localinfer.DecisionArgs`: loopback host, `-m` path, alias). It starts
     only after the trust gate, with the scrubbed environment, in its own
@@ -294,7 +311,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     error and the pipeline fails closed.
 - **A model selection is saved only after its test passes.** A `/model` edit
   that selects a model (and the providers view's assign-as-classifier, and a
-  new `jev` provider) runs the `internal/modeltest` ladder first and writes
+  new `systemone` provider) runs the `internal/modeltest` ladder first and writes
   nothing when it fails. The ladder writes no settings itself; probes see
   only harness-built content, and every step detail is harness-composed or a
   cleaned, capped excerpt. Knobs that pick no model write at once.

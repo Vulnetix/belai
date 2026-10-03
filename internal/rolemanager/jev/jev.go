@@ -78,11 +78,12 @@ const DecisionsTimeout = 3 * time.Second
 var DefaultServerURL = decisionsServerURL
 
 // IsDecisionsModel reports whether a provider/model pair is a Jev Decisions
-// model: the openrouter provider serving a typesafe/jev* model. It is the
+// model: the openrouter provider serving a typesafe/jev* model, or Strands
+// Decider when OpenRouter's catalogue lists it. It is the
 // single predicate that routes Jev traffic to the Decisions API and keeps Jev
 // away from chat/completions.
 func IsDecisionsModel(provider, model string) bool {
-	return provider == "openrouter" && strings.HasPrefix(model, "typesafe/jev")
+	return provider == "openrouter" && (strings.HasPrefix(model, "typesafe/jev") || decisions.IsDeciderID(model))
 }
 
 // BuildPayload constructs the gate request for one tool call. Tools, Skills,

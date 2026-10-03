@@ -91,7 +91,8 @@ func TestPixSettingsLoadAsDocumented(t *testing.T) {
 	if !s.GuardrailsEnabled() {
 		t.Error("guardrails are off without being asked")
 	}
-	if c := s.Classifier; c == nil || c.Kind != "jev" || c.Provider != decisions.TypeSafeProvider || c.Model != decisions.TypeSafeDefaultModel {
+	// The sandbox writes the kind's old name, jev; it loads as systemone.
+	if c := s.Classifier; c == nil || c.Kind != config.SystemOneKind || c.Provider != decisions.TypeSafeProvider || c.Model != decisions.TypeSafeDefaultModel {
 		t.Errorf("classifier = %+v", c)
 	}
 	if err := config.ValidateFirewall(s); err != nil {

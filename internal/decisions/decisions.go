@@ -4,8 +4,9 @@
 //
 //   - OpenRouter's Decisions API (the hosted TypeSafe Jev model), implemented
 //     in internal/rolemanager/jev because it rides the OpenRouter SDK;
-//   - a self-hosted server speaking TypeSafe's native /v1/systemone API
-//     (laya-serve, decider.serve, jevk5-serve and others), in systemone.go;
+//   - a server speaking the /v1/systemone API (TypeSafe's hosted Jev, a
+//     self-hosted laya-serve, decider.serve or jevk5-serve, and Strands
+//     Decider-2B run by its own strands-decider server), in systemone.go;
 //   - a local decision model (Decider-4B or Plumb-4B) served by llama-server,
 //     read from the option-letter log-probabilities of one position, in
 //     llama.go.
@@ -58,8 +59,19 @@ var TypeSafeModels = []string{TypeSafeDefaultModel, "jev-1.13.0"}
 // TypeSafeKeyEnv is the environment variable holding the TypeSafe API key.
 const TypeSafeKeyEnv = "TYPESAFE_API_KEY"
 
-// JevKind is the provider-profile kind of a self-hosted Jev endpoint.
-const JevKind = "jev"
+// SystemOneKind is the provider-profile kind of a server speaking the
+// /v1/systemone decision API.
+const SystemOneKind = "systemone"
+
+// LegacySystemOneKind is SystemOneKind's name before the rename; it is read
+// as SystemOneKind and never written.
+const LegacySystemOneKind = "jev"
+
+// IsSystemOneKind reports whether a provider-profile kind names a
+// /v1/systemone server, under its current or its legacy name.
+func IsSystemOneKind(kind string) bool {
+	return kind == SystemOneKind || kind == LegacySystemOneKind
+}
 
 // BackendOf reports which decision backend a provider/model pair names, if
 // any. kind is the provider profile's kind for a custom provider ("" for a
@@ -67,13 +79,13 @@ const JevKind = "jev"
 // chat/completions.
 func BackendOf(provider, kind, model string) (Backend, bool) {
 	switch {
-	case provider == "openrouter" && strings.HasPrefix(model, "typesafe/jev"):
+	case provider == "openrouter" && (strings.HasPrefix(model, "typesafe/jev") || IsDeciderID(model)):
 		return BackendOpenRouter, true
 	case provider == LocalProvider:
 		return BackendLocal, true
-	case provider == TypeSafeProvider:
+	case provider == TypeSafeProvider, provider == DeciderProvider:
 		return BackendSystemOne, true
-	case kind == JevKind:
+	case IsSystemOneKind(kind):
 		return BackendSystemOne, true
 	}
 	return "", false

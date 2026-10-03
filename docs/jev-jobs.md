@@ -6,6 +6,13 @@ security guard, intent detection and routing; see [role manager](role-manager.md
 and for a set of **relevance jobs** that make a session faster or cheaper
 without approving anything. This page is the reference for the relevance jobs.
 
+**Local first.** Every job on this page runs on whichever decision backend is
+selected, and Strands Decider-2B can be that backend on your own machine
+(`classifier.provider: strands-decider`). Then the security guard, intent
+detection, routing and every relevance job are answered by a process on
+loopback: no API key, no network, and no state leaves the host. See
+[role manager](role-manager.md#decision-backends).
+
 ## The contract every job keeps
 
 - **A job narrows or reorders. It never approves.** It works inside the surface
@@ -23,7 +30,8 @@ without approving anything. This page is the reference for the relevance jobs.
   [knowledge topics](#knowledge-topics) sends a bounded sample of an indexed
   document's admitted text.
 - **It needs a backend.** With no decision backend configured (the local
-  decision model, the hosted `typesafe` provider, a self-hosted Jev provider, or OpenRouter's hosted Jev) no job
+  decision model, Strands Decider-2B on this machine, the hosted `typesafe`
+  provider, a `systemone` provider, or OpenRouter's hosted Jev) no job
   runs and none appears in `/settings`.
 
 ## Settings
@@ -44,7 +52,7 @@ classifier; the space key toggles a row and `x` returns it to its default.
 | Key | Meaning |
 | --- | --- |
 | `jev.jobs.<job>` | `true` or `false` for a job in the list below. A missing key means on. An unknown job name is an error. |
-| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
+| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model, Strands Decider-2B and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
 
 | `jev.thresholds.<key>` | A score cut-off, a number from 0 to 1, for a gate or job. A missing key keeps its default. The keys are in [Scores and thresholds](#scores-and-thresholds). An out-of-range value or an inverted pair is an error, and settings that fail to validate are never used. |
 

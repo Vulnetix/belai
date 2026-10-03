@@ -37,6 +37,7 @@ import (
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/firewall"
@@ -486,6 +487,8 @@ type App struct {
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
+	// decider is the Strands Decider-2B detection the pickers show.
+	decider deciderInfo
 	// lspDetect caches language-server PATH probes for the settings UI.
 	lspDetect lspDetectState
 
@@ -2363,6 +2366,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case availabilityMsg:
 		return a, a.handleAvailability(m)
+
+	case deciderProbedMsg:
+		return a, a.handleDeciderProbed(m)
 
 	case lspProbeMsg:
 		a.handleLSPProbe(m)
@@ -6087,8 +6093,9 @@ func (a *App) localModelStopCmd(portArg string) tea.Cmd {
 
 // stopLocalServers stops every managed llama-server on quit.
 func (a *App) stopLocalServers() {
-	// The decision server is stopped only if this process launched it.
+	// The decision servers are stopped only if this process launched them.
 	decisionserver.StopAll()
+	deciderserver.StopAll()
 	for _, act := range a.activity.List() {
 		if act.Kind == activity.KindShell && act.Label == "llama-server" {
 			_ = a.activity.Kill(act.ID)

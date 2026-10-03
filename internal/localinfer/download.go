@@ -120,7 +120,15 @@ type RemoteFile struct {
 // RemoteInfo asks the Hugging Face API for a file's size and SHA-256. The
 // token, when set, is sent only to HFBase; redirects are refused.
 func RemoteInfo(ctx context.Context, client *http.Client, repo, file, token string) (RemoteFile, error) {
+	return RemoteInfoAt(ctx, client, repo, "", file, token)
+}
+
+// RemoteInfoAt is RemoteInfo at a pinned revision ("" is the main branch).
+func RemoteInfoAt(ctx context.Context, client *http.Client, repo, revision, file, token string) (RemoteFile, error) {
 	u := HFBase + "/api/models/" + repo + "?blobs=true"
+	if revision != "" {
+		u = HFBase + "/api/models/" + repo + "/revision/" + url.PathEscape(revision) + "?blobs=true"
+	}
 	var body struct {
 		Siblings []struct {
 			Rfilename string `json:"rfilename"`
@@ -230,6 +238,13 @@ func DownloadFile(ctx context.Context, client *http.Client, repo, file, token st
 	if err != nil {
 		return "", err
 	}
+	return DownloadTo(ctx, client, repo, "", file, dest, token, want, progress)
+}
+
+// DownloadTo is DownloadFile at a pinned revision ("" is the main branch)
+// into dest, a path the caller composed. want.SHA256, when set, is checked
+// before the file is moved into place, whatever the Hub reports.
+func DownloadTo(ctx context.Context, client *http.Client, repo, revision, file, dest, token string, want RemoteFile, progress Progress) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", &DownloadError{Class: DownloadDisk, Msg: "create models directory", Err: err}
 	}
@@ -246,7 +261,11 @@ func DownloadFile(ctx context.Context, client *http.Client, repo, file, token st
 	if client == nil {
 		client = http.DefaultClient
 	}
-	u := HFBase + "/" + repo + "/resolve/main/" + escapePath(file)
+	ref := "main"
+	if revision != "" {
+		ref = url.PathEscape(revision)
+	}
+	u := HFBase + "/" + repo + "/resolve/" + ref + "/" + escapePath(file)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", err

@@ -1,19 +1,22 @@
 package run
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 )
 
 // DecisionsConfig is a resolved decision backend other than OpenRouter's
-// hosted Jev: the local decision model or a self-hosted Jev server. When set
+// hosted Jev: the local decision model, Strands Decider-2B on this machine,
+// or a server speaking /v1/systemone (TypeSafe or self-hosted). When set
 // on the classifier, it answers every Jev job (security, intent detection,
 // routing). The zero value means none.
 type DecisionsConfig struct {
@@ -30,6 +33,14 @@ type DecisionsConfig struct {
 	SendModel bool
 	Key       func() (string, error)
 	Local     decisions.LocalModel
+	// Decider is set for the strands-decider provider: the server is the one
+	// deciderserver finds or starts on loopback, and its URL is read from
+	// the supervisor on every call.
+	Decider *decisions.DeciderModel
+	// CriteriaObject and MaxOptions shape requests for a Strands Decider
+	// server (see decisions.SystemOne).
+	CriteriaObject bool
+	MaxOptions     int
 	// Timeout and MaxStateBytes come from classifier.decision; zero keeps
 	// the backend default.
 	Timeout       time.Duration
@@ -61,16 +72,24 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			OnConnRefused: sup.Recover,
 		}
 	case decisions.BackendSystemOne:
-		return &decisions.SystemOne{
-			Name:      d.Provider,
-			Model:     d.Model,
-			SendModel: d.SendModel,
-			BaseURL:   d.BaseURL,
-			Path:      d.Path,
-			Key:       d.Key,
-			Client:    client,
-			Timeout:   d.Timeout,
+		s := &decisions.SystemOne{
+			Name:           d.Provider,
+			Model:          d.Model,
+			SendModel:      d.SendModel,
+			BaseURL:        d.BaseURL,
+			Path:           d.Path,
+			Key:            d.Key,
+			Client:         client,
+			Timeout:        d.Timeout,
+			CriteriaObject: d.CriteriaObject,
+			MaxOptions:     d.MaxOptions,
 		}
+		if d.Decider != nil {
+			sup := deciderserver.Shared(*d.Decider)
+			s.Resolve = sup.URL
+			s.OnConnRefused = sup.Recover
+		}
+		return s
 	}
 	return nil
 }
@@ -88,7 +107,7 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		baseURL, path string
 		models        []string
 	}
-	if ps, ok := src.(ProviderSource); ok && cls.Provider != decisions.LocalProvider {
+	if ps, ok := src.(ProviderSource); ok && cls.Provider != decisions.LocalProvider && cls.Provider != decisions.DeciderProvider {
 		if p, ok := ps.Profile(cls.Provider); ok {
 			kind = p.Kind
 			prof.baseURL, prof.path, prof.models = p.BaseURL, p.DecisionPath, p.Models
@@ -113,6 +132,21 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 		out.Local = m
 	case decisions.BackendSystemOne:
+		if cls.Provider == decisions.DeciderProvider {
+			// Strands Decider-2B on this machine: a loopback server the
+			// supervisor finds or starts, no key, no profile.
+			m, ok := decisions.DeciderModelByID(cls.Model)
+			if !ok {
+				return DecisionsConfig{}, true, fmt.Errorf("classifier.model %q is not a Strands Decider model (want %s)", cls.Model, deciderModelIDs())
+			}
+			out.Model = m.ID
+			out.Decider = &m
+			out.BaseURL = deciderserver.BaseURL()
+			out.Path = decisions.DefaultSystemOnePath
+			out.CriteriaObject = true
+			out.MaxOptions = m.MaxOptions
+			return out, true, nil
+		}
 		if cls.Provider == decisions.TypeSafeProvider {
 			// TypeSafe's hosted API: a fixed origin and path, a model the
 			// service names, and a key that is required.
@@ -141,6 +175,11 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		if out.Model == "" && len(prof.models) > 0 {
 			out.Model = prof.models[0]
 		}
+		// A profile serving Strands Decider (on another host, or a Hugging
+		// Face Inference Endpoint) takes the decider's request shape.
+		if n := decisions.DeciderMaxOptions(out.Model); n > 0 {
+			out.CriteriaObject, out.MaxOptions = true, n
+		}
 		name := cls.Provider
 		out.Key = func() (string, error) {
 			if src == nil {
@@ -151,6 +190,14 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 	}
 	return out, true, nil
+}
+
+func deciderModelIDs() string {
+	ids := make([]string, 0, len(decisions.DeciderModels))
+	for _, m := range decisions.DeciderModels {
+		ids = append(ids, m.ID)
+	}
+	return strings.Join(ids, " or ")
 }
 
 func localModelIDs() string {
@@ -188,6 +235,19 @@ func isDecisionsTarget(provider, kind, model string) bool {
 // agent-model fallback.
 func WarmDecisions(cfg Config) string {
 	d := cfg.ClassifierOrDefault().Decisions
+	if d.Decider != nil {
+		root, err := deciderserver.Root()
+		if err != nil {
+			return ""
+		}
+		if !deciderserver.Present(root, *d.Decider) {
+			if _, _, ok := deciderserver.Running(context.Background(), deciderserver.Options{}); !ok {
+				return deciderserver.Describe(deciderserver.ErrWeightsMissing)
+			}
+		}
+		deciderserver.Shared(*d.Decider).Recover()
+		return ""
+	}
 	if d.Backend != decisions.BackendLocal {
 		return ""
 	}

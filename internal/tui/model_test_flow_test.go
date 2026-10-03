@@ -276,7 +276,7 @@ func TestPickerShowsLoadingAndErrors(t *testing.T) {
 func jevForm(t *testing.T, a *App) {
 	t.Helper()
 	a.openProviderNew()
-	a.applyProviderNewKind(config.JevKind)
+	a.applyProviderNewKind(config.SystemOneKind)
 	a.setProviderNewField("protocol", "http")
 	a.setProviderNewField("host", "127.0.0.1")
 	a.setProviderNewField("port", "8090")
@@ -318,7 +318,7 @@ func TestJevProviderSavedOnlyAfterItsTestPasses(t *testing.T) {
 	pump(t, a)
 	s := globalSettings(t, a)
 	p, ok := s.Providers["p-127-0-0-1-8090"]
-	if !ok || p.Kind != config.JevKind || p.BaseURL != "http://127.0.0.1:8090" {
+	if !ok || p.Kind != config.SystemOneKind || p.BaseURL != "http://127.0.0.1:8090" {
 		t.Fatalf("provider not saved after a pass: %+v", s.Providers)
 	}
 	if cls := a.settings.Classifier; cls == nil || cls.Provider != "p-127-0-0-1-8090" {
