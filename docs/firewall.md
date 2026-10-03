@@ -69,7 +69,8 @@ A provider set (the custom `providers` and the `firewall` block) can be kept in 
 website's library and installed on another host (see
 [library-items.md](library-items.md#providers)). The document never holds a key; the
 website's `provider_keys_install` request puts a provider's own key on a host through
-the credentials resolver, never into settings.
+the credentials resolver, never into settings, and `provider_keys_remove` clears it
+again (see [library-items.md](library-items.md#provider-keys)).
 
 A firewall's own key is never written to settings. The screen stores it with
 the credentials resolver under `firewall:<name>`: in the keychain when one is
