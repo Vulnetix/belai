@@ -379,7 +379,7 @@ var defaultModelEfforts = []string{"low", "medium", "high"}
 // classifierKindOptions are the classifier stacks the kind row cycles. The
 // decision kinds are their own: a decision backend is never a chat model, so
 // it is not an llm choice.
-var classifierKindOptions = []string{"llm", "models", run.ClassifierKindOpenRouterDecisions, run.ClassifierKindJev}
+var classifierKindOptions = []string{"llm", "models", run.ClassifierKindOpenRouterDecisions, run.ClassifierKindSystemOne}
 
 var classifierThresholdOptions = []string{"0.50", "0.60", "0.70", "0.75", "0.80", "0.85", "0.90", "0.95"}
 
@@ -916,8 +916,8 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 				return name, nil
 			}
 			catalog = a.classifierCatalogFor(name, catalog)
-		case run.ClassifierKindJev:
-			// Jev backends are decision providers, answered above.
+		case run.ClassifierKindSystemOne:
+			// systemone backends are decision providers, answered above.
 			return name, nil
 		default:
 			catalog = filterOutDecisionsModels(name, catalog)
@@ -1431,8 +1431,15 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 			// A decision kind needs a decision backend: start on OpenRouter's,
 			// the one most people have a key for. The provider row moves it.
 			c.Provider, c.Model = "openrouter", jev.DefaultModel
-		case next == run.ClassifierKindJev && !fits:
-			c.Provider, c.Model = decisions.TypeSafeProvider, decisions.TypeSafeDefaultModel
+		case next == run.ClassifierKindSystemOne && !fits:
+			// Local first: Strands Decider-2B on this machine when it is
+			// detected, so decisions stay on the host; TypeSafe's hosted API
+			// otherwise.
+			if a.deciderDetected() {
+				c.Provider, c.Model = decisions.DeciderProvider, decisions.Decider2B.ID
+			} else {
+				c.Provider, c.Model = decisions.TypeSafeProvider, decisions.TypeSafeDefaultModel
+			}
 		case !run.IsDecisionKind(next) && decision:
 			// A decision backend cannot chat, so leaving a decision kind hands
 			// the guard back to the main model instead of keeping a selection
@@ -1737,9 +1744,12 @@ func (a *App) classifierPhase3Row() settingsRow {
 }
 
 // classifierProviders are the providers the classifier page may offer for the
-// current kind. Kind jev offers only decision backends: OpenRouter (always,
-// since a missing key is reported by the test with a way out, not hidden),
-// self-hosted Jev profiles and the local decision model. The other kinds offer
+// current kind. The decision kinds offer only decision backends:
+// openrouter-decisions offers OpenRouter (always, since a missing key is
+// reported by the test with a way out, not hidden) and the local decision
+// model; systemone offers TypeSafe, Strands Decider-2B on this machine (first
+// when it is detected) and every provider profile of kind systemone. The
+// other kinds offer
 // chat providers: custom profiles, the built-in local servers, openrouter when
 // it is configured, and huggingface when a token is configured. Other
 // built-ins (openai, anthropic, …) are general-chat providers and are not
@@ -1752,10 +1762,15 @@ func (a *App) classifierProviders() []string {
 	if kind == run.ClassifierKindOpenRouterDecisions {
 		return []string{"openrouter", decisions.LocalProvider}
 	}
-	if kind == run.ClassifierKindJev {
-		out := []string{decisions.TypeSafeProvider}
+	if kind == run.ClassifierKindSystemOne {
+		// Strands Decider-2B on this machine leads when it is detected (local
+		// first); it is always offered, and its test says how to install it.
+		out := []string{decisions.TypeSafeProvider, decisions.DeciderProvider}
+		if a.deciderDetected() {
+			out = []string{decisions.DeciderProvider, decisions.TypeSafeProvider}
+		}
 		for _, name := range a.providerNames() {
-			if a.providerIsDecisions(name) && name != decisions.LocalProvider && name != decisions.TypeSafeProvider {
+			if a.providerIsDecisions(name) && name != decisions.LocalProvider && name != decisions.TypeSafeProvider && name != decisions.DeciderProvider {
 				out = append(out, name)
 			}
 		}

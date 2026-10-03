@@ -42,11 +42,11 @@ var (
 		"openai": true, "anthropic": true, "cloudflare-workers-ai": true, "cloudflare-ai-gateway": true, "openrouter": true,
 		"google-gemini": true, "ollama": true, "llama-server": true, "groq": true, "deepseek": true, "fireworks": true,
 		"mistral": true, "together": true, "xai": true, "moonshot": true, "minimax": true, "alibaba": true,
-		"github-copilot": true, "kiro": true, "huggingface": true, "openai-compatible": true, "typesafe": true,
+		"github-copilot": true, "kiro": true, "huggingface": true, "openai-compatible": true, "typesafe": true, "strands-decider": true,
 	}
 	surfaces         = map[string]bool{"openai-chat": true, "openai-responses": true, "anthropic-messages": true}
 	providerAuths    = map[string]bool{"bearer": true, "x-api-key": true, "cf-aig": true}
-	providerKinds    = map[string]bool{"": true, "ollama": true, "llama-server": true, "openai-compatible": true, "jev": true}
+	providerKinds    = map[string]bool{"": true, "ollama": true, "llama-server": true, "openai-compatible": true, "systemone": true, "jev": true}
 	firewallAdapters = []string{"vulnetix", "fastly", "kong", "aisg", "custom"}
 
 	customProviderRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -106,6 +106,8 @@ func ParseProvider(canonical []byte) (ProviderDoc, error) {
 	if d.Providers == nil {
 		d.Providers = map[string]config.ProviderProfile{}
 	}
+	s := config.Settings{Providers: d.Providers}
+	config.NormalizeKinds(&s)
 	return d, nil
 }
 
@@ -189,9 +191,13 @@ func validateProviderProfile(key string, p map[string]any) error {
 		return err
 	}
 	if !providerKinds[kind] {
-		return refuse(`%s.kind %q is unknown (want "ollama", "llama-server", "openai-compatible", "jev" or empty)`, where, cleanForMessage(kind))
+		return refuse(`%s.kind %q is unknown (want "ollama", "llama-server", "openai-compatible", "systemone" or empty)`, where, cleanForMessage(kind))
 	}
-	if kind == "jev" {
+	// "jev" is systemone's name before the rename: a document the library
+	// already holds keeps validating, and ParseProvider installs it as
+	// systemone.
+	decision := config.CanonicalKind(kind) == config.SystemOneKind
+	if decision {
 		if err := checkJevURL(baseURL, where+".base_url"); err != nil {
 			return err
 		}
@@ -205,7 +211,7 @@ func validateProviderProfile(key string, p map[string]any) error {
 	if api != "" && !surfaces[api] {
 		return refuse("%s.api %q is unknown (want openai-chat, openai-responses or anthropic-messages)", where, cleanForMessage(api))
 	}
-	if api == "" && kind != "jev" {
+	if api == "" && !decision {
 		return refuse("%s.api is required (openai-chat, openai-responses or anthropic-messages)", where)
 	}
 	auth, err := optStr(p, "auth", where, 32, false)

@@ -8,7 +8,7 @@ import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to a decision model on your own machine, or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to Strands Decider-2B or another decision model on your own machine, or to any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
@@ -37,6 +37,11 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
     setup: 'Jev as the whole classifier',
     how: 'kind: openrouter-decisions + typesafe/jev-1.13',
     cells: [J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel')],
+  },
+  {
+    setup: 'Strands Decider-2B as the whole classifier',
+    how: 'kind: systemone + strands-decider',
+    cells: [J('decider → sentinel'), J('decider → sentinel'), J('decider → sentinel'), J('decider → sentinel')],
   },
   {
     setup: 'Default download, phase 3 off',
@@ -178,8 +183,11 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         <p class="mt-4 text-vx-ink/80">
           Jev is not a chat model, so it is not this kind. It has two of its own:
           <code class="mono">classifier.kind: openrouter-decisions</code> for OpenRouter and the local decision model,
-          and <code class="mono">classifier.kind: jev</code> for TypeSafe's hosted API (<code class="mono">classifier.provider: typesafe</code>)
-          and self-hosted servers. <code class="mono">/model</code> lists both beside llm and models.
+          and <code class="mono">classifier.kind: systemone</code> for every server that speaks the systemone API:
+          TypeSafe's hosted API (<code class="mono">classifier.provider: typesafe</code>), Strands Decider-2B on your
+          machine (<code class="mono">classifier.provider: strands-decider</code>) and servers you add. <code class="mono">/model</code>
+          lists both beside llm and models. A settings file that says <code class="mono">jev</code>, the kind's
+          earlier name, loads as <code class="mono">systemone</code>.
         </p>
         <p class="mt-4 text-vx-ink/80">
           If <code class="mono">classifier.provider</code> and <code class="mono">classifier.model</code> are
@@ -434,7 +442,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     <header class="engine__head">
       <span class="engine__num mono">03b</span>
       <h3 id="engine-jev-local" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on your own machine</h3>
-      <code class="engine__tag mono">decision-local · jev</code>
+      <code class="engine__tag mono">decision-local · systemone</code>
     </header>
     <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
@@ -443,8 +451,9 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B or
           Plumb-4B. Belai asks before it downloads the 2.5 GB model, checks the file against the hash Hugging
           Face publishes, and starts one llama-server on localhost that every Belai process on the machine
-          shares. Or point Belai at a server you already run that speaks TypeSafe's{' '}
-          <code class="mono">/v1/systemone</code> API, such as laya-serve.
+          shares. Or point Belai at a server you already run that speaks the{' '}
+          <code class="mono">/v1/systemone</code> API, such as laya-serve, as a provider of kind{' '}
+          <code class="mono">systemone</code>.
         </p>
         <p class="mt-4 text-vx-ink/80">
           Whichever you pick answers every Jev question Belai has: the security check, the choice of mode for
@@ -467,7 +476,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         </div>
       </div>
       <dl class="facts">
-        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: decision-local</code> with <code class="mono">decider-4b</code> or <code class="mono">plumb-4b</code>, or, under <code class="mono">classifier.kind: jev</code>, the <code class="mono">typesafe</code> provider (key in <code class="mono">TYPESAFE_API_KEY</code>) or a provider of kind <code class="mono">jev</code></dd></div>
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: decision-local</code> with <code class="mono">decider-4b</code> or <code class="mono">plumb-4b</code>, or, under <code class="mono">classifier.kind: systemone</code>, the <code class="mono">typesafe</code> provider (key in <code class="mono">TYPESAFE_API_KEY</code>) or a provider of kind <code class="mono">systemone</code></dd></div>
         <div><dt>Needs</dt><dd>llama-server on PATH, or your own <code class="mono">/v1/systemone</code> server</dd></div>
         <div><dt>Speed on a CPU</dt><dd>about a second for a short check</dd></div>
         <div><dt>Content leaves</dt><dd>only for your own server, over https or localhost</dd></div>
@@ -489,6 +498,73 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           The server runs with a fixed command line on 127.0.0.1, a clean environment, and its own process
           group. Content is quoted so it cannot add a question or an answer of its own. Content larger than
           16 KiB is checked by the agent model, which keeps each check fast on a CPU.
+        </p>
+      </div>
+    </details>
+  </article>
+
+  <article id="strands-decider" class="engine mt-sub" aria-labelledby="engine-decider">
+    <header class="engine__head">
+      <span class="engine__num mono">03c</span>
+      <h3 id="engine-decider" class="text-3xl font-bold tracking-tight text-vx-ink">Strands Decider-2B, local first</h3>
+      <code class="engine__tag mono">strands-decider · systemone</code>
+    </header>
+    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          Strands Decider-2B is a small decision model with calibrated answers, and it can take over every
+          question Belai would send to Jev. It runs in its own server on your machine, so the security check,
+          the choice of mode, model routing and every relevance job are decided on loopback. There is no API
+          key to set, and the content being judged stays on the host.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Install the server with <code class="mono">uv tool install strands-decider</code>, open{' '}
+          <code class="mono">/providers</code> and press enter on <code class="mono">strands-decider</code>. That
+          is the whole setup, the same as picking TypeSafe. Belai asks before it downloads the pinned weights
+          (about 4.6 GB), checks every file against the hash it pins, starts the server on 127.0.0.1 and runs
+          its test before saving anything. A server you already run on port 8000 is picked up as it is.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Once Belai finds it, <code class="mono">/model</code> lists it first under{' '}
+          <code class="mono">classifier.kind: systemone</code>, and switching to that kind starts on it. If
+          OpenRouter or a Hugging Face inference provider starts serving the model, Belai shows it there too.
+        </p>
+        <div class="flow mono mt-5" role="list" aria-label="How Strands Decider-2B answers">
+          <span role="listitem" class="flow__step flow__step--jev">state and options in one request</span>
+          <span class="flow__arrow" aria-hidden="true">→</span>
+          <span role="listitem" class="flow__step">one probability per option</span>
+          <span role="listitem" class="flow__step">same thresholds as Jev</span>
+          <span role="listitem" class="flow__step flow__step--hand">slow or unclear: agent model decides</span>
+        </div>
+      </div>
+      <dl class="facts">
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: strands-decider</code> and <code class="mono">classifier.model: decider-2b</code></dd></div>
+        <div><dt>Needs</dt><dd>the <code class="mono">strands-decider</code> command, or a server already on 127.0.0.1</dd></div>
+        <div><dt>Runs on</dt><dd>CUDA, then Apple's GPU, then the CPU</dd></div>
+        <div><dt>Content goes to</dt><dd>127.0.0.1 only</dd></div>
+        <div><dt>Request fails</dt><dd>content is blocked</dd></div>
+      </dl>
+    </div>
+
+    <details class="deep">
+      <summary>How Belai runs it</summary>
+      <div class="deep__body">
+        <p>
+          The model is a LoRA adapter and a readout head on Qwen3.5-2B-Base. The head scores each option from
+          the model's state at the end of that option's line, so a choice question gets one probability per
+          option in a single pass and nothing is generated. Belai talks to it through the same{' '}
+          <code class="mono">/v1/systemone</code> API it uses for TypeSafe.
+        </p>
+        <p>
+          Belai starts the server with a fixed command line, a clean environment and its own process group,
+          and points it at the copy of the weights Belai downloaded with the network switched off, so the
+          server reads only those files. The checkpoint and the base model are pinned to exact revisions and
+          hashes. Only the Belai process that started the server stops it.
+        </p>
+        <p>
+          A question with more than 24 options is sent to the agent model, since the head reads 24 at most.
+          A provider of kind <code class="mono">systemone</code> whose model names the decider, such as a Hugging
+          Face Inference Endpoint running the same server, gets the same treatment.
         </p>
       </div>
     </details>

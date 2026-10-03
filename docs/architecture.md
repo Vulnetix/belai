@@ -22,7 +22,7 @@ chain: default < state < global < project prefs < project < env < flag):
 
 ```jsonc
 "classifier": {
-  "kind":   "models",           // "llm" | "jev" | "models"; default models when embedded, else llm| "models"; default models when embedded, else llm
+  "kind":   "models",           // "llm" | "models" | "openrouter-decisions" | "systemone"; default models when embedded, else llm
   "provider": "openrouter",      // llm: omit → main provider; models: phase 3 (extraction/jailbreak) sentinel
   "model":    "typesafe/jev-1.13", // openrouter → the Jev Decisions gate model; huggingface → a curated BERT id
   "effort":   "none",             // default: reasoning OFF
@@ -58,10 +58,14 @@ chat, rather than classify with a model nobody asked for. A file written
 before the kinds existed reads as what it is (`run.ClassifierKind`): `kind:
 "llm"` with an OpenRouter Jev model or the local decision provider, and
 `kind: "jev"` naming OpenRouter or the local provider, read as
-`openrouter-decisions`; `typesafe` reads as `jev`. In `/model`, the kind row
-cycles `llm`, `models`, `openrouter-decisions`, `jev`. Choosing a decision
+`openrouter-decisions`; `typesafe` and `strands-decider` read as
+`systemone`, and so does any other `kind: "jev"` (the kind's name before
+many servers spoke `/v1/systemone`; `config.NormalizeKinds` rewrites it on
+load, for provider profiles too). In `/model`, the kind row cycles `llm`,
+`models`, `openrouter-decisions`, `systemone`. Choosing a decision
 kind whose backend is not selected starts on OpenRouter's Jev model
-(`openrouter-decisions`) or `typesafe/jev-latest` (`jev`); leaving a decision
+(`openrouter-decisions`) or, under `systemone`, Strands Decider-2B when it is
+detected on this machine (local first) and `typesafe/jev-latest` otherwise; leaving a decision
 kind clears the selection so the guard returns to the main model. A kind whose
 test fails saves nothing, and the next press of the kind row moves on from the
 kind that was tried, so an unreachable backend (no key, no network) never
@@ -146,12 +150,15 @@ Business rules:
   never a chat model, so it appears on the classifier picker only and never on
   the agent or routing pickers.
 - **Decision backends.** Besides OpenRouter's Jev, the classifier can name
-  TypeSafe's hosted API (the built-in `typesafe` provider), a self-hosted Jev
-  server (a provider profile of kind `jev`, TypeSafe's `/v1/systemone`) or
-  the local decision model (`decision-local`: Decider-4B
-  or Plumb-4B on a shared llama-server). Whichever is set answers every Jev
-  job: security, intent detection and routing. `internal/decisions` holds the
-  transports, `internal/decisionserver` the shared local server, and
+  TypeSafe's hosted API (the built-in `typesafe` provider), Strands
+  Decider-2B on this machine (the built-in `strands-decider` provider,
+  upstream's `strands-decider serve` on loopback), a server speaking the
+  `/v1/systemone` API (a provider profile of kind `systemone`) or the local
+  decision model (`decision-local`: Decider-4B or Plumb-4B on a shared
+  llama-server). Whichever is set answers every Jev job: security, intent
+  detection and routing. `internal/decisions` holds the transports,
+  `internal/decisionserver` the shared local llama-server,
+  `internal/deciderserver` the shared Strands Decider server, and
   docs/role-manager.md "Decision backends" the details.
 - **Selections are tested before they are saved.** A `/model` edit that
   selects a model runs the `internal/modeltest` ladder and is written only on

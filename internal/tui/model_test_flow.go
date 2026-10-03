@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/localinfer"
@@ -45,6 +46,9 @@ type stagedChange struct {
 	// decisionModel is the local decision model under test, so a
 	// re-download hint knows which file to delete.
 	decisionModel *decisions.LocalModel
+	// deciderModel is the Strands Decider under test, whose server a passed
+	// test hands to this process's supervisor.
+	deciderModel *decisions.DeciderModel
 	// jevProfile names the self-hosted Jev profile whose address a test
 	// correction updates on save.
 	jevProfile string
@@ -81,6 +85,7 @@ func (a *App) startupModelTests() tea.Cmd {
 			ch.steps = append(ch.steps, c.steps...)
 			ch.chatKeys = append(ch.chatKeys, c.chatKeys...)
 			ch.decisionModel, ch.jevProfile = local, jevProfile
+			ch.deciderModel = deciderOf(t)
 		}
 	}
 	rc := a.cfg.Routing
@@ -248,10 +253,11 @@ func (a *App) classifierTarget(cand *config.ClassifierSettings) (modeltest.Targe
 			d.Key = func() (string, error) { return k, nil }
 		}
 		t.Decisions = &d
-		if d.Backend == decisions.BackendLocal {
+		switch {
+		case d.Backend == decisions.BackendLocal:
 			m := d.Local
 			local = &m
-		} else {
+		case d.Decider == nil:
 			jevProfile = d.Provider
 		}
 		// The decision backend hands undecided checks to the agent model,
@@ -275,6 +281,14 @@ func (a *App) classifierTarget(cand *config.ClassifierSettings) (modeltest.Targe
 	return t, local, jevProfile, nil
 }
 
+// deciderOf is the Strands Decider a classifier target runs, or nil.
+func deciderOf(t modeltest.Target) *decisions.DeciderModel {
+	if t.Decisions != nil {
+		return t.Decisions.Decider
+	}
+	return nil
+}
+
 // stageClassifier tests a classifier edit and writes it on a pass.
 func (a *App) stageClassifier(rowKey, label string, fn func(*config.ClassifierSettings)) tea.Cmd {
 	cand := cloneSettings(a.settings)
@@ -293,6 +307,7 @@ func (a *App) stageClassifier(rowKey, label string, fn func(*config.ClassifierSe
 		write:   func() tea.Cmd { return a.mutateClassifier(fn) },
 		scope:   a.modelState.classifierScope,
 		restage: restage, decisionModel: local, jevProfile: jevProfile,
+		deciderModel: deciderOf(target),
 	}
 	if err != nil {
 		return a.failStaged(ch, "resolve", err.Error())
@@ -603,6 +618,9 @@ func (a *App) adoptTestServers(ch stagedChange, rep modeltest.Report) {
 	if rep.Handle != nil && ch.decisionModel != nil {
 		decisionserver.Shared(*ch.decisionModel).Adopt(rep.Handle)
 	}
+	if rep.Decider != nil && ch.deciderModel != nil {
+		deciderserver.Shared(*ch.deciderModel).Adopt(rep.Decider)
+	}
 	if rep.ChatServer != nil {
 		_ = a.persistLocalServerCredentials(rep.ChatServer.Port)
 	}
@@ -750,11 +768,11 @@ func (a *App) testingSuffix(role modelRole, key string) string {
 // providerIsDecisions reports whether a provider name is a decision backend
 // (never offered for chat roles).
 func (a *App) providerIsDecisions(name string) bool {
-	if name == decisions.LocalProvider || name == decisions.TypeSafeProvider {
+	if name == decisions.LocalProvider || name == decisions.TypeSafeProvider || name == decisions.DeciderProvider {
 		return true
 	}
 	p, ok := a.settings.Providers[name]
-	return ok && p.Kind == decisions.JevKind
+	return ok && decisions.IsSystemOneKind(p.Kind)
 }
 
 // decisionCatalog is the model list for a decision provider: the catalogue of
@@ -772,6 +790,17 @@ func (a *App) decisionCatalog(name string) []models.Model {
 		}
 		return out
 	}
+	if name == decisions.DeciderProvider {
+		out := make([]models.Model, 0, len(decisions.DeciderModels))
+		for _, m := range decisions.DeciderModels {
+			label := m.Label + " · " + a.deciderStatus().Label() + " · " + m.Blurb
+			if note := a.deciderHubNote(); note != "" {
+				label += " · " + note
+			}
+			out = append(out, models.Model{ID: m.ID, Label: label})
+		}
+		return out
+	}
 	var out []models.Model
 	if name == decisions.TypeSafeProvider {
 		for _, id := range decisions.TypeSafeModels {
@@ -781,11 +810,15 @@ func (a *App) decisionCatalog(name string) []models.Model {
 	}
 	if p, ok := a.settings.Providers[name]; ok {
 		for _, m := range p.Models {
-			out = append(out, models.Model{ID: m.ID, Label: "self-hosted Jev"})
+			label := "systemone server"
+			if decisions.IsDeciderID(m.ID) {
+				label = "Strands Decider · systemone server"
+			}
+			out = append(out, models.Model{ID: m.ID, Label: label})
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, models.Model{ID: "jev", Label: "self-hosted Jev · the server's default model"})
+		out = append(out, models.Model{ID: "jev", Label: "systemone server · the server's default model"})
 	}
 	return out
 }

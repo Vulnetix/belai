@@ -405,26 +405,35 @@ entries) and `firewall` (optional object). Any other key is refused.
 starting with a letter or digit, at most 64 bytes, and not one of Belai's built-in
 names (openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter,
 google-gemini, ollama, llama-server, groq, deepseek, fireworks, mistral, together,
-xai, moonshot, minimax, alibaba, github-copilot, kiro, huggingface, openai-compatible)
-or `typesafe`. Belai's own validator also refuses a built-in added since, and a name
+xai, moonshot, minimax, alibaba, github-copilot, kiro, huggingface, openai-compatible),
+`typesafe` or `strands-decider`. Belai's own validator also refuses a built-in added since, and a name
 that starts with a digit.
 
 | Field | Rule |
 | --- | --- |
 | `base_url` | required, at most 1024 bytes; an absolute `http` or `https` URL with a host, no credentials, no fragment, no space, control character or backslash, a port from 1 to 65535 |
-| `api` | `openai-chat`, `openai-responses` or `anthropic-messages`; **required unless `kind` is `jev`**, and checked whenever it is present |
+| `api` | `openai-chat`, `openai-responses` or `anthropic-messages`; **required unless `kind` is `systemone`**, and checked whenever it is present |
 | `auth` | `bearer`, `x-api-key` or `cf-aig`, or absent |
 | `api_key_env` | an environment variable name, see above |
-| `kind` | `ollama`, `llama-server`, `openai-compatible`, `jev` or absent |
+| `kind` | `ollama`, `llama-server`, `openai-compatible`, `systemone` or absent; `jev`, the name `systemone` had before, is accepted and installed as `systemone` |
 | `protocol` | `http`, `https` or absent |
 | `port` | a string of 1 to 5 digits, 1 to 65535, or absent |
 | `host` | a host name of at most 253 bytes (letters, digits, `.`, `:`, `-`, starting and ending with a letter or digit), or absent |
 | `decision_path` | absent, or an absolute path of printable ASCII, at most 128 bytes, with no `..`, `?`, `#`, `\` or space |
 | `models` | at most 256 of `{id, name?, context_window?, max_tokens?, images?}`; `id` required, at most 128 bytes, no control character, listed once; `name` at most 128 bytes; the two token counts whole numbers 0 to 10000000; `images` a boolean; no other key |
 
-A `jev` provider (a self-hosted Jev decision server) must use `https`, or `http` only to
+A `systemone` provider (a server speaking the `/v1/systemone` decision API: a
+self-hosted Jev server, Strands Decider-2B on another host or an Inference
+Endpoint) must use `https`, or `http` only to
 a loopback host (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1`), because tool output
 is sent to it. Any other provider may use plain `http`, as Belai allows.
+
+A host backs up a provider set from its settings, where a `jev` kind already reads
+as `systemone`, so a library version saved with `jev` differs from the host's copy
+once, and the next automatic sync stores the host's `systemone` version. The
+website's validator and the server's (`vdb-site` `belai_items_validate_provider.go`)
+accept both names, the website's editor writes `systemone`, and its install pane
+marks a host on a Belai older than the rename, which refuses a `systemone` set.
 
 **Firewall** keys are `enabled` (boolean), `active` (string) and `instances` (object of
 0 to 16). An instance name matches `^[a-z0-9][a-z0-9-]{0,39}$`.

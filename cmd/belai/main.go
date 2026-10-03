@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
@@ -44,6 +45,7 @@ import (
 func main() {
 	// Stop any local decision server this process launched, on every exit.
 	defer decisionserver.StopAll()
+	defer deciderserver.StopAll()
 	_, _ = config.Migrate()
 	activatePlugins()
 	// Remember providers without a nonce endpoint across runs, so a session
@@ -135,7 +137,7 @@ func main() {
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
 	classifierModel := flag.String("classifier-model", "", "security-classifier model (default: the main model)")
 	classifierEffort := flag.String("classifier-effort", "", "security-classifier thinking effort (default: none)")
-	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm, jev or models (default: models when the binary embeds a model, else llm)")
+	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm, models, openrouter-decisions or systemone (jev is read as systemone) (default: models when the binary embeds a model, else llm)")
 	classifierPhase1Model := flag.String("classifier-phase1-model", "", "phase-1 prompt-saturation model id")
 	classifierPhase1Source := flag.String("classifier-phase1-source", "", "phase-1 source: embedded or huggingface")
 	classifierPhase1Threshold := flag.Float64("classifier-phase1-threshold", 0, "phase-1 attack threshold (default 0.75)")
@@ -256,7 +258,7 @@ func main() {
 		settings.Classifier.Provider = *classifierProvider
 		settings.Classifier.Model = *classifierModel
 		settings.Classifier.Effort = *classifierEffort
-		settings.Classifier.Kind = *classifierKind
+		settings.Classifier.Kind = config.CanonicalKind(*classifierKind)
 		settings.Classifier.Phase1 = config.ClassifierPhaseSettings{
 			Model:     *classifierPhase1Model,
 			Source:    *classifierPhase1Source,
@@ -809,5 +811,6 @@ func recordUsage(sessionID string, settings config.Settings, sum *run.UsageSumma
 // exits. A server another belai process launched is left running for it.
 func exitProcess(code int) {
 	decisionserver.StopAll()
+	deciderserver.StopAll()
 	os.Exit(code)
 }

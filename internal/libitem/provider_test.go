@@ -288,3 +288,29 @@ func TestLibraryItemsPageStatesTheProviderRules(t *testing.T) {
 		t.Error("a provider limit changed; update docs/library-items.md and this test")
 	}
 }
+
+// A provider set may name the systemone kind, or jev, its name before the
+// rename: both validate unchanged (so a hash the library holds still matches),
+// and the parsed set installs as systemone.
+func TestProviderSetSystemOneKind(t *testing.T) {
+	for _, kind := range []string{"systemone", "jev"} {
+		src := `{"name":"mine","providers":{"home":{"base_url":"http://127.0.0.1:8000","kind":"` + kind + `"}}}`
+		it, err := Validate(Provider, []byte(src))
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if !strings.Contains(string(it.Doc), `"kind":"`+kind+`"`) {
+			t.Errorf("%s: canonical bytes changed the kind: %s", kind, it.Doc)
+		}
+		d, err := ParseProvider(it.Doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.Providers["home"].Kind != config.SystemOneKind {
+			t.Errorf("%s installs as %q", kind, d.Providers["home"].Kind)
+		}
+	}
+	if _, err := Validate(Provider, []byte(`{"name":"mine","providers":{"strands-decider":{"base_url":"http://127.0.0.1:8000","kind":"systemone"}}}`)); err == nil {
+		t.Error("a provider set may not take the strands-decider name")
+	}
+}

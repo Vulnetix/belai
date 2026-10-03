@@ -285,9 +285,12 @@ func (s Settings) LocateDestination() (name string, previews bool) {
 	case decisions.BackendLocal:
 		name, local = "the local decision model", true
 	case decisions.BackendSystemOne:
-		if cls.Provider == decisions.TypeSafeProvider {
+		switch {
+		case cls.Provider == decisions.TypeSafeProvider:
 			name = "TypeSafe's hosted API"
-		} else {
+		case cls.Provider == decisions.DeciderProvider:
+			name, local = "Strands Decider-2B on this machine", true
+		default:
 			name, local = "your self-hosted server "+cls.Provider, true
 		}
 	default:

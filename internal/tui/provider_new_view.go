@@ -37,7 +37,7 @@ type providerNewField struct {
 }
 
 // providerNewKinds are the selectable template kinds, in cycle order.
-var providerNewKinds = []string{"ollama", "llama-server", "openai-compatible", "jev"}
+var providerNewKinds = []string{"ollama", "llama-server", "openai-compatible", config.SystemOneKind}
 
 // openProviderNew seeds the add-new form with template defaults.
 func (a *App) openProviderNew() {
@@ -156,7 +156,7 @@ func (a *App) applyProviderNewKind(kind string) {
 		if port == "" || port == "11434" {
 			a.setProviderNewField("port", "8080")
 		}
-	case "jev":
+	case config.SystemOneKind:
 		// A self-hosted Jev server (laya-serve, decider.serve, jevk5-serve …)
 		// speaks TypeSafe's /v1/systemone; the port is the server's own.
 		if port == "11434" || port == "8080" {
@@ -399,7 +399,7 @@ func (a *App) providerNewCommit() (tea.Model, tea.Cmd) {
 	if display == "" {
 		display = slug
 	}
-	if kind == config.JevKind {
+	if kind == config.SystemOneKind {
 		return a, a.providerNewJev(slug, display, protocol, host, port, strings.TrimSpace(a.providerNewFieldValue("path")), apiKey)
 	}
 
@@ -488,7 +488,7 @@ func (a *App) providerNewJev(slug, display, protocol, host, port, path, apiKey s
 		path = ""
 	}
 	prof := config.ProviderProfile{
-		BaseURL: baseURL, Kind: config.JevKind, Protocol: protocol, Host: host, Port: port, DecisionPath: path,
+		BaseURL: baseURL, Kind: config.SystemOneKind, Protocol: protocol, Host: host, Port: port, DecisionPath: path,
 	}
 	candidate := cloneSettings(a.settings)
 	if candidate.Providers == nil {
@@ -585,5 +585,5 @@ func (a *App) stageJevProfile(slug, display string, prof config.ProviderProfile,
 // providerNewHidden reports whether a form row does not apply to the chosen
 // kind: the decision path belongs to a self-hosted Jev server only.
 func (a *App) providerNewHidden(f providerNewField) bool {
-	return f.key == "path" && a.providerNewFieldValue("kind") != config.JevKind
+	return f.key == "path" && a.providerNewFieldValue("kind") != config.SystemOneKind
 }

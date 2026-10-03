@@ -70,7 +70,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
 | `-classifier-model` | security-classifier model (default: the main model) |
 | `-classifier-effort` | security-classifier thinking effort (default: `none`) |
-| `-classifier-kind` | security-classifier stack: `llm`, `jev` or `models` (default: `models` when the binary embeds a model, else `llm`) |
+| `-classifier-kind` | security-classifier stack: `llm`, `models`, `openrouter-decisions` or `systemone` (`jev` is read as `systemone`; default: `models` when the binary embeds a model, else `llm`) |
 | `-classifier-phase1-model` | phase-1 prompt-saturation model id |
 | `-classifier-phase1-source` | phase-1 source: `embedded` or `huggingface` |
 | `-classifier-phase1-threshold` | phase-1 attack threshold, a probability; `0` or unset means the default `0.75` |
@@ -797,9 +797,24 @@ BELAI_LIVE_DECISION=decider-4b BELAI_MODELS_DIR=/some/roomy/dir \
   go test -count=1 -timeout 45m -run TestLiveLocalDecisionLadder -v ./internal/modeltest/
 ```
 
-Use `plumb-4b` for the other catalogue model. To try a self-hosted Jev from
+Use `plumb-4b` for the other catalogue model. To try a self-hosted server from
 the TUI, run any `/v1/systemone` server (for example `laya-serve`) and add it
-under providers → `+ add new provider` → kind `jev`.
+under providers → `+ add new provider` → kind `systemone`.
+
+To try Strands Decider-2B, install the server and select it; nothing else is
+set:
+
+```bash
+uv tool install strands-decider
+# then in the TUI: /providers → strands-decider → enter (tests, offers the
+# ~4.6 GB pinned download, starts the server on 127.0.0.1:18098)
+```
+
+A server you start yourself is used as it is when it answers on `127.0.0.1:8000`
+(upstream's default) or `127.0.0.1:18098`:
+`strands-decider serve StrandsAgents/strands-decider-2B-hobson-v19`.
+`internal/deciderserver`'s tests launch a stand-in server through the same
+path, so they need no Python.
 
 The speech recogniser (`internal/voice/asr`) is pure Go, so `just cross` needs
 no toolchain for it. Its unit tests build a tiny synthetic model in memory. An
@@ -855,6 +870,14 @@ BuildDate = UTC RFC 3339
 
 - `.github/workflows/ci.yml` runs on every push (except Dependabot branches), every tag and every pull request, as three jobs. `test` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile. `models` prepares the classifier models and runs the golden tests under the `belai_bert` and `belai_bert_jailbreak` tags, without `-race` because the race detector multiplies the model's memory use. `voice` fetches the pinned speech model, runs the voice tests with `belai_voice` and builds with it.
 - `.github/workflows/release.yml` fires on a `v*` tag: `modelprep` prepares the embedded models (cached by model id + revision), cross-compiles the six vanilla targets plus the three variant families (`belai-bert-guardrails`, `belai-bert-guardrails-jailbreak`, `belai-no-classifier`), publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
+- **Contracts the website and server mirror.** Library item validators are kept
+  case for case in `vdb-site` (`api/internal/handler/belai_items_validate_*.go`)
+  and the website (`src/components/belai/belai-item-*.ts`). A release that
+  changes what a host writes into an item (a new provider kind, a reserved
+  provider name) ships only after both accept it, or hosts' backups and the
+  automatic sync are refused. The `systemone` kind and the `strands-decider`
+  name are the current example; the website's `SYSTEMONE_KIND_SINCE` names the
+  release that carries them and is set when it is tagged.
 - `.github/workflows/pages.yml` builds the marketing site on pushes to `main` that touch `site/**` or the workflow itself, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
 
 ## Site

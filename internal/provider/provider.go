@@ -28,7 +28,7 @@ type Profile struct {
 	// ("ollama", "llama-server", "", or "openai-compatible"). An unknown
 	// kind is rejected so a profile can never invent new behaviour.
 	Kind string
-	// DecisionPath is a kind "jev" profile's decision endpoint path.
+	// DecisionPath is a kind "systemone" profile's decision endpoint path.
 	DecisionPath string
 	// Vision maps a model id to the profile's declaration of image input for
 	// it. A model absent from the map is decided from its id.

@@ -92,8 +92,9 @@ consulted for a firewall key.
 - **Sign-in providers are never routed.** Copilot, Kiro and the Cloudflare
   AI Gateway provider are never routed through a firewall.
 - **Decision backends are never routed.** The local decision model
-  (`decision-local`), the hosted `typesafe` provider and self-hosted Jev
-  profiles (kind `jev`) answer
+  (`decision-local`), Strands Decider-2B (`strands-decider`), the hosted
+  `typesafe` provider and `systemone` profiles (kind `systemone`, once `jev`)
+  answer
   decisions, not chat, so a firewall never carries them and a firewall key
   never rides on a decision request (see docs/role-manager.md, "Decision
   backends"). This includes OpenRouter's Decisions model

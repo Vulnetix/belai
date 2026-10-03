@@ -37,7 +37,7 @@ func ValidateProviders(s Settings) error {
 }
 
 func validateProvider(name string, p ProviderProfile) error {
-	if provider.Builtin(name) || name == decisions.TypeSafeProvider {
+	if provider.Builtin(name) || name == decisions.TypeSafeProvider || name == decisions.DeciderProvider {
 		return fmt.Errorf("provider %q collides with a built-in provider", name)
 	}
 	if !provider.ValidCustomName(name) {
@@ -46,8 +46,8 @@ func validateProvider(name string, p ProviderProfile) error {
 	if !validBaseURL(p.BaseURL) {
 		return fmt.Errorf("provider %q: invalid base_url %q", name, p.BaseURL)
 	}
-	if p.Kind == JevKind {
-		return validateJevProfile(name, p)
+	if p.Kind == SystemOneKind {
+		return validateSystemOneProfile(name, p)
 	}
 	if !validSurface(p.API) {
 		return fmt.Errorf("provider %q: unknown api %q", name, p.API)
@@ -59,7 +59,7 @@ func validateProvider(name string, p ProviderProfile) error {
 		return fmt.Errorf("provider %q: invalid api_key_env %q", name, p.APIKeyEnv)
 	}
 	if !validKind(p.Kind) {
-		return fmt.Errorf("provider %q: unknown kind %q (want \"ollama\", \"llama-server\", \"openai-compatible\", \"jev\", or empty)", name, p.Kind)
+		return fmt.Errorf("provider %q: unknown kind %q (want \"ollama\", \"llama-server\", \"openai-compatible\", \"systemone\", or empty)", name, p.Kind)
 	}
 	if p.Protocol != "" && !ValidOllamaProtocol(p.Protocol) {
 		return fmt.Errorf("provider %q: invalid protocol %q (want http or https)", name, p.Protocol)
@@ -72,21 +72,55 @@ func validateProvider(name string, p ProviderProfile) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case "", "ollama", "llama-server", "openai-compatible", JevKind:
+	case "", "ollama", "llama-server", "openai-compatible", SystemOneKind:
 		return true
 	}
 	return false
 }
 
-// JevKind is the provider-profile kind of a self-hosted Jev-compatible
-// decision server (TypeSafe's /v1/systemone API). Such a profile is never a
+// SystemOneKind is the provider-profile kind of a decision server speaking
+// the /v1/systemone API (TypeSafe's hosted Jev, a self-hosted Jev server,
+// Strands Decider-2B and the others that serve it). Such a profile is never a
 // chat provider.
-const JevKind = "jev"
+const SystemOneKind = "systemone"
 
-// validateJevProfile checks a self-hosted Jev profile. Tool results are sent
+// LegacySystemOneKind is the name SystemOneKind had before the protocol was
+// named for itself. It is read as SystemOneKind everywhere a kind is read,
+// and never written.
+const LegacySystemOneKind = "jev"
+
+// CanonicalKind maps the legacy "jev" kind to SystemOneKind and returns any
+// other kind unchanged. It serves both a provider profile's kind and
+// classifier.kind, which share the name.
+func CanonicalKind(kind string) string {
+	if kind == LegacySystemOneKind {
+		return SystemOneKind
+	}
+	return kind
+}
+
+// NormalizeKinds rewrites legacy kinds in s to their current names, so a
+// settings file written before the rename reads, validates and saves as the
+// current one.
+func NormalizeKinds(s *Settings) {
+	if s == nil {
+		return
+	}
+	for name, p := range s.Providers {
+		if k := CanonicalKind(p.Kind); k != p.Kind {
+			p.Kind = k
+			s.Providers[name] = p
+		}
+	}
+	if s.Classifier != nil {
+		s.Classifier.Kind = CanonicalKind(s.Classifier.Kind)
+	}
+}
+
+// validateSystemOneProfile checks a self-hosted Jev profile. Tool results are sent
 // to it, so the URL must be https, or plain http only on a loopback host; the
 // decision path is a plain path under that URL.
-func validateJevProfile(name string, p ProviderProfile) error {
+func validateSystemOneProfile(name string, p ProviderProfile) error {
 	if err := ValidJevURL(p.BaseURL); err != nil {
 		return fmt.Errorf("provider %q: %w", name, err)
 	}
