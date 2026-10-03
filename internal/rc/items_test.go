@@ -205,6 +205,8 @@ func TestItemInstallRefusals(t *testing.T) {
 		{"no kind", sessionsync.Dispatch{Kind: "item_install", Library: itemID, Version: itemVer}, nil, "", "not a library item kind"},
 		{"a segment instead of a kind", sessionsync.Dispatch{Kind: "item_install", ItemKind: "skills", Library: itemID, Version: itemVer}, nil, "", "not a library item kind"},
 		{"an unknown kind", sessionsync.Dispatch{Kind: "item_install", ItemKind: "agent", Library: itemID, Version: itemVer}, nil, "", "not a library item kind"},
+		{"a launch configuration, which only the website keeps", sessionsync.Dispatch{Kind: "item_install", ItemKind: "launch", Library: itemID, Version: itemVer}, nil, "", "not a library item kind"},
+		{"a launch configuration backup", sessionsync.Dispatch{Kind: "item_backup", ItemKind: "launch", Name: "api-team"}, nil, "", "not a library item kind"},
 		{"no library id", sessionsync.Dispatch{Kind: "item_install", ItemKind: "skill", Version: itemVer}, nil, "", "not a library item and version"},
 		{"a path as a library id", sessionsync.Dispatch{Kind: "item_install", ItemKind: "skill", Library: "../x", Version: itemVer}, nil, "", "not a library item and version"},
 		{"a bad version", sessionsync.Dispatch{Kind: "item_install", ItemKind: "skill", Library: itemID, Version: "latest"}, nil, "", "not a library item and version"},

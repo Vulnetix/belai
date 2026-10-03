@@ -39,6 +39,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | `repo` | `belai repo` | JSON object | the `repos` list of `~/.vulnetix/belai/settings.json`; clones under `~/.vulnetix/belai/repos/<dir>` | `sync.repos` |
 | `budget` | `belai budget` | JSON object | `token_budgets` and the footer settings in `~/.vulnetix/belai/settings.json` | `sync.budgets` |
 | `rewrite` | `belai rewrite` | JSON object | `bash_rewrite` in `~/.vulnetix/belai/settings.json` | `sync.rewrites` |
+| `launch` | none | JSON object | never on a host: a launch configuration the website keeps and applies, refused in every host path | none |
 | `provider` | `belai provider` | JSON object | `providers` and `firewall` in `~/.vulnetix/belai/settings.json`; keys in the credentials resolver | `sync.providers` |
 
 An item is identified by its kind and its name. On the website each item also
