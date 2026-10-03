@@ -105,6 +105,10 @@ type Worker struct {
 	// sync.remote_prompts switch; off, the worker takes nothing from the web.
 	RemotePrompts bool
 	web           *webInbox
+	// Controls, when set, takes session controls from the web (belai rc
+	// --web-controls passed to the workers it starts): the model, effort,
+	// guardrails and caveman of the next turn (controls.go). nil takes none.
+	Controls *WorkerControls
 	// Record is this worker's registry entry (ID, Profile, Crew set).
 	Record Record
 	// Once works at most one item (or finds none) and returns.
@@ -284,7 +288,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.auditWorker(audit.WorkerStarted, "started")
 	if w.Sync != nil && w.Sessions != nil {
 		w.mirror = sessionsync.New(sessionsync.Options{
-			Client: w.Sync, HostID: headless.HostID(), RemotePrompts: w.RemotePrompts,
+			Client: w.Sync, HostID: headless.HostID(), RemotePrompts: w.RemotePrompts, RemoteCommands: w.Controls != nil,
 			Host: sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		})
 		// It outlives ctx long enough to upload the last lines and end the
@@ -294,6 +298,10 @@ func (w *Worker) Run(ctx context.Context) error {
 		if w.RemotePrompts {
 			w.web = &webInbox{mirror: w.mirror, facts: w.profileFacts}
 			go w.web.run(ctx)
+		}
+		if w.Controls != nil {
+			w.mirror.SetSessionControls(w.Controls.StateJSON(), false)
+			go w.runControls(ctx, w.mirror)
 		}
 	}
 	reason, runErr := w.loop(ctx)
@@ -1096,7 +1104,11 @@ func (w *Worker) reflect(ctx context.Context, it kanban.Item, res run.Result, ru
 // worktree, with the worker's claim, persona and budgets.
 func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	p := w.Profile
-	settings := w.Settings
+	settings, cfg, pol := w.Settings, w.Cfg, w.Posture
+	if w.Controls != nil {
+		// The controls the web set apply from this turn.
+		settings, cfg, pol = w.Controls.Turn(settings, cfg, pol)
+	}
 	// The pass ceiling is a copy: Resilience is a pointer shared with the
 	// caller's settings.
 	if b := p.Budget; b != nil && b.MaxPassesPerItem > 0 {
@@ -1125,7 +1137,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		}
 	}
 	params := headless.Params{
-		Cfg: w.Cfg, Client: w.Client, Posture: w.Posture, Workdir: t.Workdir, Settings: settings,
+		Cfg: cfg, Client: w.Client, Posture: pol, Workdir: t.Workdir, Settings: settings,
 		SessionID: t.SessionID, AskDisabled: &askOff, MCP: mcpMgr,
 		Kanban: store, KanbanSource: src, Claim: t.Claim,
 		Narrow: func(r *tools.Registry) *tools.Registry {

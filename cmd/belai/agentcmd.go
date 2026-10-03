@@ -30,6 +30,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/trustgate"
 )
 
@@ -309,6 +310,8 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
 	drain := fs.Bool("drain", false, "exit once nothing is left to claim even when the profile has a cron schedule")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
+	webControls := fs.Bool("web-controls", false, "take session controls from the website (set by `agent start`)")
+	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, guardrails may be turned off from the website (set by `agent start`)")
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
 		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME")
 	}
@@ -402,6 +405,18 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 	}
+	if *webControls {
+		// The model, effort, guardrails and caveman of the next turn, from the
+		// website; a model is resolved when the control arrives, the way a
+		// remote session resolves one (rccmd.go).
+		w.Controls = fleet.NewWorkerControls(settings, cfg, rcControlEnv(cfg, *allowOff), func(st sessionctl.State) (run.Config, error) {
+			nc, err := run.ResolveWithSource(st.Model, st.Provider, os.Getenv, resolver)
+			if err != nil {
+				return run.Config{}, err
+			}
+			return withClassifier(nc, settings, resolver)
+		})
+	}
 	if err := w.Run(ctx); err != nil {
 		return 1, err
 	}
@@ -474,11 +489,17 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
 	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
+	fill := fs.Bool("fill", false, "with -crew, start only the replicas the crew lacks in this repository")
+	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
+	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
 	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
-		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW")
+		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW [-fill]")
 	}
 	if *stay && *drain {
 		return 2, errors.New("-stay and -drain contradict each other")
+	}
+	if *fill && *crewName == "" {
+		return 2, errors.New("-fill needs -crew")
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -491,11 +512,13 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	type launch struct{ profile, crew string }
 	var launches []launch
+	var crew agentprofile.Crew
 	if *crewName != "" {
 		c, err := agentprofile.LoadCrew(*crewName)
 		if err != nil {
 			return 1, err
 		}
+		crew = c
 		for _, m := range c.Members {
 			for range m.Count() {
 				launches = append(launches, launch{m.Profile, c.Name})
@@ -549,13 +572,27 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	var started []string
 	// The one-per-repository check, the worker cap and the spawns are one step
 	// under the crew-start lock, so two starts fired together cannot both pass.
-	if err := reg.WithCrewStart(*crewName, repo, onePerRepo, func() error {
+	// Filling a crew that is already live is the point of -fill, so it skips the
+	// one-per-repository refusal; the cap still applies to what it starts.
+	nothing := false
+	if err := reg.WithCrewStart(*crewName, repo, onePerRepo && !*fill, func() error {
 		live, _ := reg.Live()
+		if *fill {
+			launches = launches[:0]
+			for _, p := range fleet.FillCrew(crew, live, repo) {
+				launches = append(launches, launch{p, crew.Name})
+			}
+			if len(launches) == 0 {
+				nothing = true
+				return nil
+			}
+		}
 		if len(live)+len(launches) > max {
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 		}
 		for _, l := range launches {
-			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax})
+			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
+				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff})
 			if err != nil {
 				return err
 			}
@@ -564,6 +601,10 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return nil
 	}); err != nil {
 		return 1, err
+	}
+	if nothing {
+		fmt.Fprintf(stdout, "%s has every replica it asks for in this repository; nothing to fill\n", crew.Name)
+		return 0, nil
 	}
 	// Wait briefly for each worker to register, so a worker that fails its
 	// own start is reported here rather than discovered later.

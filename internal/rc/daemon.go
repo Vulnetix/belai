@@ -140,6 +140,11 @@ type WorkerStart struct {
 	// Drain makes the workers exit once nothing is left to claim, whatever
 	// cron schedule their profile carries (a stored schedule fires them).
 	Drain bool
+	// Fill starts only the replicas a crew lacks in the directory.
+	Fill bool
+	// Controls and GuardrailsOff are the daemon's own --web-controls and
+	// --web-allow-guardrails-off, passed on so the workers take session controls.
+	Controls, GuardrailsOff bool
 }
 
 // Child is one session to start.

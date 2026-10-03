@@ -358,6 +358,24 @@ profile name and hash, display name, palette, avatar, crew, model, provider,
 effort and tool count, never the system prompt or the tool list, so a shared
 thread can show which customisation produced each entry.
 
+### Session controls
+
+A worker started by `belai rc --web-controls` (the daemon passes
+`-web-controls` to `belai agent start`, and that to each `belai agent run`)
+takes four session controls from the website, the same commands and keys a
+remote session takes ([remote-control.md](remote-control.md#session-controls-from-the-web)):
+`/model` (`ctrl+q`), `/effort` (`f6`), `/guardrails` (`f3`) and `/caveman`
+(`f2`). Each is parsed by `internal/sessionctl` against its fixed table and
+checked the same way (a model must be one this host holds credentials for), and
+applies from the worker's next turn, never the one running. Guardrails go off
+only when the daemon also had `--web-allow-guardrails-off`. `/ask` is refused,
+since nobody waits on a worker's asks; `/mode` is refused, since a worker's mode
+is its profile's; display, test, language-server and Jev controls are refused,
+since a worker has no display and runs its profile's gates. Each control is
+acked with the worker's new state, written to the worker's log as `web: ...`, and
+carried in `profile_facts` (`model`, `provider`, `effort`, `guardrails`,
+`caveman`) from then on. Nothing is written to a settings file.
+
 ## Assigning and pinning
 
 `belai kanban assign` routes an item the way a worker will look for it:
@@ -903,6 +921,12 @@ The check, the worker cap and the spawns are one step under a lock, so two
 starts fired together cannot both get in. A crew without it can be started
 alongside itself.
 
+`belai agent start -crew NAME -fill` starts only the replicas the crew lacks in
+this repository: for each member, its replicas less its live workers of that crew
+here. It is how a replica that the worker cap refused, or that ended, comes back
+without starting the whole crew again, so it skips the one-per-repository refusal.
+The worker cap still applies, and a crew with every replica live starts nothing.
+
 ## Command line
 
 | Command | Effect |
@@ -921,8 +945,8 @@ alongside itself.
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |
-| `belai agent run NAME [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground. `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached` and `-max-workers` to the workers it launches; they are not for typing |
-| `belai agent start NAME [-replicas N] \| -crew CREW [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; exactly one of NAME and `-crew` is required |
+| `belai agent run NAME [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground. `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME and `-crew` is required |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |

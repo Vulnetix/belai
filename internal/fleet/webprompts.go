@@ -150,5 +150,14 @@ func (w *Worker) profileFacts() map[string]any {
 	if p.Effort != "" {
 		f["effort"] = p.Effort
 	}
+	if w.Controls != nil {
+		// What the web set for the next turn outranks what the worker started on.
+		for k, v := range w.Controls.Facts() {
+			if s, ok := v.(string); ok && s == "" {
+				continue
+			}
+			f[k] = v
+		}
+	}
 	return f
 }
