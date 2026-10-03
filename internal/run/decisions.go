@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 )
 
@@ -47,6 +48,8 @@ type DecisionsConfig struct {
 	// Clef on Workers AI or AI Gateway (see decisions.SystemOne).
 	WireModel    string
 	MaxQuestions int
+	// MaxBodyBytes caps a systemone request body (Tev1 on Ollama).
+	MaxBodyBytes int
 	Envelope     bool
 	ExtraHeaders func() (map[string]string, error)
 	// Timeout and MaxStateBytes come from classifier.decision; zero keeps
@@ -93,6 +96,7 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			MaxOptions:     d.MaxOptions,
 			WireModel:      d.WireModel,
 			MaxQuestions:   d.MaxQuestions,
+			MaxBodyBytes:   d.MaxBodyBytes,
 			Envelope:       d.Envelope,
 			ExtraHeaders:   d.ExtraHeaders,
 		}
@@ -102,6 +106,16 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			s.OnConnRefused = sup.Recover
 		}
 		return s
+	case decisions.BackendChatLetters:
+		return &decisions.ChatLetters{
+			Name:          d.Provider,
+			BaseURL:       d.BaseURL,
+			Model:         d.Model,
+			Key:           d.Key,
+			Client:        client,
+			Timeout:       d.Timeout,
+			MaxStateBytes: d.MaxStateBytes,
+		}
 	}
 	return nil
 }
@@ -143,9 +157,14 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 			return DecisionsConfig{}, true, fmt.Errorf("classifier.model %q is not a local decision model (want %s)", cls.Model, localModelIDs())
 		}
 		out.Local = m
+	case decisions.BackendChatLetters:
+		return resolveTev1(out, src)
 	case decisions.BackendSystemOne:
 		if decisions.IsHostedClef(cls.Provider, cls.Model) {
 			return resolveClef(out, cls, src)
+		}
+		if decisions.IsOllamaTev1(cls.Provider, cls.Model) {
+			return resolveOllamaTev1(out, src)
 		}
 		if cls.Provider == decisions.DeciderProvider {
 			// Strands Decider-2B on this machine: a loopback server the
@@ -271,6 +290,60 @@ func resolveClef(out DecisionsConfig, cls *config.ClassifierSettings, src Creden
 			}
 			return map[string]string{"cf-aig-authorization": "Bearer " + token}, nil
 		}
+	}
+	return out, true, nil
+}
+
+// resolveTev1 resolves Tev1 on Together from the user's own Together key. It
+// is never firewall-routed: the request is built here, not from a chat
+// config, and the key rides only in the Authorization header to Together's
+// API (or the base_url the user set, https or loopback http).
+func resolveTev1(out DecisionsConfig, src CredentialSource) (DecisionsConfig, bool, error) {
+	out.Model = decisions.Tev1HostedModel
+	base := lookupCred(src, decisions.TogetherProvider, "base_url")
+	if base == "" {
+		d, _ := provider.Lookup(decisions.TogetherProvider)
+		base = d.BaseURL
+	}
+	if err := config.ValidJevURL(base); err != nil {
+		return DecisionsConfig{}, true, fmt.Errorf("together: %w", err)
+	}
+	out.BaseURL = strings.TrimRight(base, "/")
+	out.Key = func() (string, error) {
+		k := lookupCred(src, decisions.TogetherProvider, "api_key")
+		if k == "" {
+			return "", fmt.Errorf("together has no API key (TOGETHER_API_KEY)")
+		}
+		return k, nil
+	}
+	return out, true, nil
+}
+
+// resolveOllamaTev1 resolves a Tev1 tag on Ollama, answered by Ollama's own
+// /v1/systemone (Ollama 0.35 and later) at the address the ollama provider is
+// configured with: https, or http on loopback.
+func resolveOllamaTev1(out DecisionsConfig, src CredentialSource) (DecisionsConfig, bool, error) {
+	fields := map[string]string{}
+	for _, f := range []string{"host", "port", "protocol"} {
+		fields[f] = lookupCred(src, decisions.OllamaProvider, f)
+	}
+	d, _ := provider.Lookup(decisions.OllamaProvider)
+	base := d.BaseURL
+	if d.BaseURLBuilder != nil {
+		base = d.BaseURLBuilder(fields)
+	}
+	base = strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1")
+	if err := config.ValidJevURL(base); err != nil {
+		return DecisionsConfig{}, true, fmt.Errorf("ollama: %w", err)
+	}
+	out.BaseURL, out.Path = base, decisions.DefaultSystemOnePath
+	out.Model = strings.ToLower(strings.TrimSpace(out.Model))
+	out.SendModel = true
+	out.MaxOptions = decisions.Tev1MaxOptions
+	out.MaxQuestions = decisions.ClefMaxQuestions
+	out.MaxBodyBytes = decisions.OllamaMaxBodyBytes
+	out.Key = func() (string, error) {
+		return lookupCred(src, decisions.OllamaProvider, "api_key"), nil
 	}
 	return out, true, nil
 }

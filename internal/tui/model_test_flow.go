@@ -257,7 +257,7 @@ func (a *App) classifierTarget(cand *config.ClassifierSettings) (modeltest.Targe
 		case d.Backend == decisions.BackendLocal:
 			m := d.Local
 			local = &m
-		case d.Decider == nil:
+		case d.Decider == nil && d.Backend == decisions.BackendSystemOne:
 			jevProfile = d.Provider
 		}
 		// The decision backend hands undecided checks to the agent model,

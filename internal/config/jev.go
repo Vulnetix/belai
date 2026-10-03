@@ -292,9 +292,13 @@ func (s Settings) LocateDestination() (name string, previews bool) {
 			name, local = "Strands Decider-2B on this machine", true
 		case decisions.IsHostedClef(cls.Provider, cls.Model):
 			name = "Clef on Cloudflare Workers AI"
+		case decisions.IsOllamaTev1(cls.Provider, cls.Model):
+			name, local = "Tev1 on Ollama", true
 		default:
 			name, local = "your self-hosted server "+cls.Provider, true
 		}
+	case decisions.BackendChatLetters:
+		name = "Tev1 on Together AI"
 	default:
 		name = "OpenRouter's hosted Jev model"
 	}

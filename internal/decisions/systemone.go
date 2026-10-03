@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -60,6 +61,10 @@ type SystemOne struct {
 	// MaxQuestions, when set, is the most questions one request may carry; a
 	// larger request is never sent and fails as unavailable.
 	MaxQuestions int
+	// MaxBodyBytes, when set, is the largest request body the server takes
+	// (Ollama's is 64 KiB); a larger one is never sent and fails as
+	// unavailable, so the fallback answers instead of the server refusing it.
+	MaxBodyBytes int
 	// Envelope reads Cloudflare's API envelope ({"result": …, "success": …,
 	// "errors": […]}) around the answers. A bare answer body is read too.
 	Envelope bool
@@ -81,9 +86,12 @@ func (s *SystemOne) baseURL() string {
 // Backend implements Decider.
 func (s *SystemOne) Backend() Backend { return BackendSystemOne }
 
-// Hosted reports whether the server is TypeSafe's hosted API rather than one
-// the user runs.
+// Hosted reports whether the server is a hosted API (TypeSafe's, or Clef on
+// Cloudflare, which answers in its envelope) rather than one the user runs.
 func (s *SystemOne) Hosted() bool {
+	if s.Envelope {
+		return true
+	}
 	u := strings.TrimRight(s.BaseURL, "/")
 	return u == TypeSafeBaseURL || strings.HasPrefix(u, TypeSafeBaseURL+"/")
 }
@@ -179,6 +187,9 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return Result{}, &Error{Class: ClassSchema, Msg: "encode request", Err: err}
+	}
+	if s.MaxBodyBytes > 0 && len(raw) > s.MaxBodyBytes {
+		return Result{}, &Error{Class: ClassUnavailable, Msg: fmt.Sprintf("a request of %d bytes is over the server's %d-byte limit", len(raw), s.MaxBodyBytes)}
 	}
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.baseURL(), "/")+s.path(), bytes.NewReader(raw))

@@ -378,12 +378,12 @@ still load, but they fall back at runtime.
 ### Decision backends
 
 Every Jev job — the security guard, intent detection and routing — asks its
-questions through one transport (`internal/decisions`). There are six.
+questions through one transport (`internal/decisions`). There are seven.
 OpenRouter Decisions and the local decision model are
 `classifier.kind: "openrouter-decisions"`; TypeSafe, Clef on Workers AI,
 Strands Decider-2B and a systemone profile all speak the `/v1/systemone` API
 and are
-`classifier.kind: "systemone"`. The kind was called `"jev"` before many
+`classifier.kind: "systemone"`, as is Tev1 on Together or Ollama. The kind was called `"jev"` before many
 servers spoke the API: a file that says `"jev"` (for `classifier.kind` or a
 provider profile's `kind`) loads as `"systemone"` and is saved that way, and
 one that names the OpenRouter or local backend with it reads as
@@ -394,9 +394,11 @@ one that names the OpenRouter or local backend with it reads as
 | OpenRouter Decisions | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
 | TypeSafe | `classifier.provider: typesafe`, `classifier.model: jev-latest` or `jev-1.13.0` | `POST https://api.typesafe.ai/v1/systemone`, key from `TYPESAFE_API_KEY` | 5 s |
 | Clef on Workers AI | `classifier.provider: cloudflare-workers-ai` (or `cloudflare-ai-gateway`), `classifier.model: @cf/cloudflare/clef-flash` or `@cf/cloudflare/clef` | `POST api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}` (or the gateway's `/workers-ai/{model}`), Cloudflare's envelope | 5 s |
+| Tev1 on Together | `classifier.provider: together`, `classifier.model: together/Tev1-4B-experimental` | `POST https://api.together.xyz/v1/chat/completions`, one token per question, option-letter log-probabilities | 10 s |
+| Tev1 on Ollama | `classifier.provider: ollama`, `classifier.model` a `tev1:` tag | `POST {ollama}/v1/systemone` (Ollama 0.35 and later) | 5 s |
 | Strands Decider-2B | `classifier.provider: strands-decider`, `classifier.model: decider-2b` | `POST http://127.0.0.1:{port}/v1/systemone` to `strands-decider serve` on this machine | 5 s |
 | systemone profile | `classifier.provider` names a profile of kind `systemone` | `POST {base_url}{decision_path}`, the `/v1/systemone` API | 5 s |
-| Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b` or `plumb-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
+| Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b`, `plumb-4b` or `tev1-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
 
 `classifier.decision.timeout_ms` overrides the timeout and
 `classifier.decision.max_state_bytes` (default 16 KiB) caps what is sent to a
@@ -446,6 +448,49 @@ configured, and moving to that kind starts on Clef-flash.
 - **Never a chat model.** A Clef id is dropped from the agent, fast and routing
   pickers and from the llm kind's catalogue, and a configuration that names one
   for chat falls back to the main model.
+
+**Tev1.** Together AI's experimental decision model, a Qwen3.5-4B fine-tune
+that reads one state, one question and 2 to 24 options lettered A to X and
+answers with the letter. Belai asks each question as Tev1 was trained: the
+fixed system instruction, then the state, question and options as JSON
+(`{"state", "question", "options": [{"label", "key", "description"}]}`), with
+thinking off. A noul question is the two options "The proposition is true."
+and "The proposition is false.".
+
+- **Together.** Selected by the `together` provider's API key; under
+  `classifier.kind: systemone` it is listed after hosted Clef once the key is
+  set, and moving to that kind starts on it when Cloudflare is not set up.
+  Each question is one chat completion for one token at temperature 0, read
+  from the answer letter's log-probabilities (`top_logprobs`), up to four
+  questions at a time. A reply without log-probabilities, or whose letters
+  hold under 10% of the probability, hands the check to the agent model; the
+  letter text alone never decides. The key goes only to Together, in the
+  `Authorization` header, never through the AI Firewall, and redirects are
+  refused. The sanitised state (at most 32 KiB) goes to Together, so
+  `jev.locate_previews: local` keeps file names away from it. Cost is
+  Together's $0.04 per million input tokens; output is free.
+- **Ollama.** `ollama pull tev1:4b` (Ollama 0.35 and later) and Ollama serves
+  Tev1 on its own `/v1/systemone`. The `ollama` provider is offered under
+  `classifier.kind: systemone` once its model list shows a `tev1:` tag, and
+  its picker lists only those tags. The address is the `ollama` provider's,
+  https or http on loopback. Ollama takes at most 64 questions and a 64 KiB
+  body, so a larger request is never sent and the check goes to the agent
+  model.
+- **Local.** `decision-local` lists Tev1 4B (`bartowski/togethercomputer_Tev1-4B-experimental-GGUF`,
+  Q4_K_M, 2.8 GB) on llama-server build 10964 or later, read like Plumb-4B
+  from the letter log-probabilities after a rendered Qwen turn. The 0.8B
+  model is not listed: in a check on 2026-10-04 it scored plain and injected
+  text alike, near 0.5, on yes/no questions.
+- **Calibration.** In a check on 2026-10-04 Tev1 4B on Together scored a
+  plain prompt injection 0.85 and a clean `git status` 0.08, so with the
+  default 0.9 guard threshold some injections are handed to the agent model,
+  as with Clef-flash. Choices are its strength: the charge-dispute example
+  from its repository picks the right intent at 0.996.
+- **Not elsewhere.** OpenRouter lists no Tev1 model today, no Hugging Face
+  inference provider serves it, and Workers AI does not run it. The weights'
+  licence is still being settled upstream.
+- **Never a chat model.** A Tev1 id or tag is dropped from the agent, fast
+  and routing pickers like Clef's.
 
 **Local Clef.** `decision-local` also lists Clef-flash
 (`ggml-org/Clef-Flash-GGUF`, Q4_K_M, 6.5 GB) and Clef (`ggml-org/Clef-GGUF`,
@@ -628,14 +673,18 @@ rows filter:
   Its model picker offers the Jev Decisions model (`typesafe/jev-1.13`, seeded)
   plus any `typesafe/jev*` ids the catalogue returns, so the Jev security
   classifier and tool-call gate are the classifier choices there.
-- **`decision-local`** — always offered. Its picker lists Decider-4B and
-  Plumb-4B with their size and whether they are on disk; picking one tests
+- **`decision-local`** — always offered. Its picker lists Decider-4B,
+  Plumb-4B, Clef-flash, Clef and Tev1 4B with their size and whether they are on disk; picking one tests
   (and, after confirmation, downloads) everything it needs.
 - **`cloudflare-workers-ai`** and **`cloudflare-ai-gateway`** — offered first
   under `classifier.kind: systemone` when their credentials resolve; their
   picker lists Clef-flash and Clef only.
+- **`together`** — offered under `classifier.kind: systemone` after hosted
+  Clef when its API key resolves; its picker lists Tev1 4B only.
+- **`ollama`** — offered under `classifier.kind: systemone` when its model
+  list shows a `tev1:` tag; its picker lists those tags only.
 - **`strands-decider`** — offered under `classifier.kind: systemone`, after
-  hosted Clef, ahead of TypeSafe when detected. Its picker lists Strands Decider-2B with its status; picking
+  hosted Clef and Tev1, ahead of TypeSafe when detected. Its picker lists Strands Decider-2B with its status; picking
   it tests (and, after confirmation, downloads) everything it needs.
 - **`typesafe`** — offered only under `classifier.kind: systemone`. Its picker lists
   `jev-latest` and `jev-1.13.0`; it never appears for the agent, fast or

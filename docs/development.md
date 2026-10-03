@@ -810,6 +810,14 @@ BELAI_CLEF_LIVE=1 CLOUDFLARE_API_KEY=… CLOUDFLARE_ACCOUNT_ID=… \
 # BELAI_CLEF_MODEL=@cf/cloudflare/clef for the 27B model
 ```
 
+To ask Tev1 on Together the charge-dispute example from its repository:
+
+```bash
+BELAI_TEV1_LIVE=1 TOGETHER_API_KEY=… go test -count=1 -run Tev1Live -v ./internal/decisions/
+# against a llama-server already serving the Tev1 4B GGUF:
+BELAI_TEV1_LOCAL_URL=http://127.0.0.1:18197 go test -count=1 -run Tev1LocalLive -v ./internal/decisions/
+```
+
 A local Clef needs llama.cpp build 11371 or later; then
 `BELAI_LIVE_DECISION=clef-flash` runs the local ladder above against it.
 

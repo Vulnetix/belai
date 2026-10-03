@@ -44,6 +44,11 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
     cells: [J('Clef → sentinel'), J('Clef → sentinel'), J('Clef → sentinel'), J('Clef → sentinel')],
   },
   {
+    setup: 'Tev1 on Together as the whole classifier',
+    how: 'kind: systemone + together',
+    cells: [J('Tev1 → sentinel'), J('Tev1 → sentinel'), J('Tev1 → sentinel'), J('Tev1 → sentinel')],
+  },
+  {
     setup: 'Strands Decider-2B as the whole classifier',
     how: 'kind: systemone + strands-decider',
     cells: [J('decider → sentinel'), J('decider → sentinel'), J('decider → sentinel'), J('decider → sentinel')],
@@ -190,6 +195,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           <code class="mono">classifier.kind: openrouter-decisions</code> for OpenRouter and the local decision model,
           and <code class="mono">classifier.kind: systemone</code> for every server that speaks the systemone API:
           Clef on Cloudflare Workers AI (<code class="mono">classifier.provider: cloudflare-workers-ai</code>),
+          Tev1 on Together AI (<code class="mono">classifier.provider: together</code>) or Ollama,
           TypeSafe's hosted API (<code class="mono">classifier.provider: typesafe</code>), Strands Decider-2B on your
           machine (<code class="mono">classifier.provider: strands-decider</code>) and servers you add. <code class="mono">/model</code>
           lists both beside llm and models. A settings file that says <code class="mono">jev</code>, the kind's
@@ -455,7 +461,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         <p class="text-vx-ink/80">
           The same questions Jev answers on OpenRouter can be answered on hardware you control. Pick{' '}
           <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B,
-          Plumb-4B, Clef-flash or Clef. Belai asks before it downloads the model (2.5 GB, or 6.5 GB for Clef-flash), checks the file against the hash Hugging
+          Plumb-4B, Tev1 4B, Clef-flash or Clef. Belai asks before it downloads the model (2.5 GB, 2.8 GB for Tev1 4B, or 6.5 GB for Clef-flash), checks the file against the hash Hugging
           Face publishes, and starts one llama-server on localhost that every Belai process on the machine
           shares. Or point Belai at a server you already run that speaks the{' '}
           <code class="mono">/v1/systemone</code> API, such as laya-serve, as a provider of kind{' '}
@@ -548,9 +554,45 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </div>
   </article>
 
-  <article id="strands-decider" class="engine mt-sub" aria-labelledby="engine-decider">
+  <article id="tev1" class="engine mt-sub" aria-labelledby="engine-tev1">
     <header class="engine__head">
       <span class="engine__num mono">03d</span>
+      <h3 id="engine-tev1" class="text-3xl font-bold tracking-tight text-vx-ink">Tev1 from Together AI</h3>
+      <code class="engine__tag mono">together/Tev1-4B-experimental · systemone</code>
+    </header>
+    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          Tev1 is Together AI's experimental decision model, a 4B model that reads a piece of content, one
+          question and up to 24 lettered options, and answers with a letter. Belai reads how likely each letter
+          was, so every answer comes with a score, and it runs the same jobs Jev does.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          With a Together API key set as a provider, <code class="mono">/model</code> lists Tev1 under{' '}
+          <code class="mono">classifier.kind: systemone</code> and tests it before saving. Belai sends the key only
+          to Together. Each question is one short request for a single letter, and an answer that comes back
+          without its scores goes to the agent model. Tev1 also runs on Ollama (<code class="mono">ollama pull tev1:4b</code>)
+          and on a local llama-server as <code class="mono">tev1-4b</code>.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Tev1 is strongest at choosing between options, which suits mode detection and routing. For the security
+          check it scores clear injections a little under the default threshold, so more borderline checks reach
+          the agent model.
+        </p>
+      </div>
+      <dl class="facts">
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: together</code> and <code class="mono">classifier.model: together/Tev1-4B-experimental</code></dd></div>
+        <div><dt>Needs</dt><dd>a Together API key, or Ollama 0.35 with a Tev1 model</dd></div>
+        <div><dt>Cost</dt><dd>$0.04 per million input tokens on Together, output free</dd></div>
+        <div><dt>Content goes to</dt><dd>Together AI, text only, or your own machine</dd></div>
+        <div><dt>Request fails</dt><dd>a busy service or an unscored answer goes to the agent model; anything else blocks</dd></div>
+      </dl>
+    </div>
+  </article>
+
+  <article id="strands-decider" class="engine mt-sub" aria-labelledby="engine-decider">
+    <header class="engine__head">
+      <span class="engine__num mono">03e</span>
       <h3 id="engine-decider" class="text-3xl font-bold tracking-tight text-vx-ink">Strands Decider-2B, local first</h3>
       <code class="engine__tag mono">strands-decider · systemone</code>
     </header>

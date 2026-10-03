@@ -233,6 +233,8 @@ func Plan(t Target) []Step {
 		switch d.Backend {
 		case decisions.BackendLocal:
 			steps = append(steps, DecisionLocalSteps(d.Local, d.Timeout, d.MaxStateBytes)...)
+		case decisions.BackendChatLetters:
+			steps = append(steps, HostedTev1Steps(*d)...)
 		case decisions.BackendSystemOne:
 			if d.Decider != nil {
 				steps = append(steps, StrandsDeciderSteps(DeciderTarget{Model: *d.Decider, Timeout: d.Timeout})...)

@@ -424,7 +424,8 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 			switch {
 			case cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model):
 				return ClassifierKindOpenRouterDecisions
-			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider, decisions.IsHostedClef(cls.Provider, cls.Model):
+			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider, decisions.IsHostedClef(cls.Provider, cls.Model),
+				decisions.IsHostedTev1(cls.Provider, cls.Model), decisions.IsOllamaTev1(cls.Provider, cls.Model):
 				return ClassifierKindSystemOne
 			}
 		}

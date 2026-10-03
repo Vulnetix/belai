@@ -178,6 +178,48 @@ func deciderLaunchFailure(err error) Outcome {
 	return fail("could not start strands-decider: "+oneLine(err.Error(), 160), retryHint())
 }
 
+// HostedTev1Steps is the ladder for Tev1 on Together: a first decision that
+// shows the key, the model id and the answer letter's log-probabilities all
+// work, then the shared sanity and intent probes and a choice. A provider that
+// answers without log-probabilities fails the first step, so the selection is
+// not saved.
+func HostedTev1Steps(d run.DecisionsConfig) []Step {
+	var c *decisions.ChatLetters
+	build := func(st *State) *decisions.ChatLetters {
+		if c == nil {
+			dec, _ := d.NewDecider(st.Env.Client).(*decisions.ChatLetters)
+			c = dec
+		}
+		return c
+	}
+	return []Step{
+		{Name: "tev1 · " + d.Provider, Run: func(ctx context.Context, st *State) Outcome {
+			dec := build(st)
+			if dec == nil {
+				return fail("Tev1 is not configured", providersHint("set the Together API key under providers → "+d.Provider))
+			}
+			res, err := dec.Decide(ctx, decisions.Request{
+				State:     map[string]any{"content": benignState},
+				Questions: map[string]decisions.Question{"q": decisions.Noul(injectionProposition)},
+			})
+			if err != nil {
+				switch decisions.ClassOf(err) {
+				case decisions.ClassAuth:
+					return fail("Together refused the key: "+oneLine(err.Error(), 160), providersHint("check the API key under providers → "+d.Provider), retryHint())
+				case decisions.ClassNotFound, decisions.ClassSchema:
+					return fail("Together does not serve "+d.Model+" for this key: "+oneLine(err.Error(), 160), retryHint())
+				}
+				return fail("no scored answer: "+oneLine(err.Error(), 160), retryHint())
+			}
+			o := ok("answered in %s · letter mass %.2f", res.Meta.Latency.Round(time.Millisecond), res.Meta.LetterMass)
+			o.Metrics = map[string]string{"latency": res.Meta.Latency.String()}
+			return o
+		}},
+		sanityStep(func() decisions.Decider { return c }),
+		intentStep(func() decisions.Decider { return c }),
+	}
+}
+
 // HostedClefSteps is the ladder for Clef on Workers AI, directly or through
 // AI Gateway. The endpoint is fixed by the resolver, so nothing else on
 // Cloudflare's hosts is probed: one answer, the sanity pair, intent, a choice

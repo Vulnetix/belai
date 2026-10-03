@@ -352,6 +352,9 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 	if decisions.IsCloudflareProvider(name) && a.cloudflareClefReady(name) {
 		extra += " · also Clef decisions"
 	}
+	if a.tev1Ready(name) {
+		extra += " · also Tev1 decisions"
+	}
 
 	// The display label (or host:port fallback) is the primary token; the
 	// slug stays muted beside it so the underlying identity is never hidden.

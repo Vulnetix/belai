@@ -85,3 +85,49 @@ func TestHostedClefLeadsSystemOneWhenConfigured(t *testing.T) {
 		t.Fatalf("chat catalogue = %v", chat)
 	}
 }
+
+func TestTev1OfferedWhenItsProviderIsConfigured(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TOGETHER_API_KEY", "")
+	a := newModelScreen(t, t.TempDir())
+	a.resolver = newTestResolver(t, a.workdir)
+	a.settings.Classifier = &config.ClassifierSettings{Kind: config.SystemOneKind, Provider: decisions.TypeSafeProvider}
+	for _, p := range a.classifierProviders() {
+		if p == decisions.TogetherProvider || p == decisions.OllamaProvider {
+			t.Fatalf("%s offered for Tev1 without being configured: %v", p, a.classifierProviders())
+		}
+	}
+
+	t.Setenv("TOGETHER_API_KEY", "tg-key")
+	a.resolver = newTestResolver(t, a.workdir)
+	if got := a.classifierProviders(); indexOfString(got, decisions.TogetherProvider) < 0 || indexOfString(got, decisions.TogetherProvider) > indexOfString(got, decisions.TypeSafeProvider) {
+		t.Fatalf("providers = %v, want together before typesafe", got)
+	}
+	a.modelState.pickingRole = roleClassifier
+	a.modelState.picking = true
+	if a.modelState.pendingProvider == nil {
+		a.modelState.pendingProvider = map[modelRole]string{}
+	}
+	a.modelState.pendingProvider[roleClassifier] = decisions.TogetherProvider
+	if name, cat := a.modelPickerCatalog(); name != decisions.TogetherProvider || len(cat) != 1 || cat[0].ID != decisions.Tev1HostedModel {
+		t.Fatalf("picker %s %+v", name, cat)
+	}
+
+	// Ollama is offered once it lists a Tev1 tag, and only its Tev1 tags.
+	a.catalogCache[decisions.OllamaProvider] = []models.Model{{ID: "llama3"}, {ID: "tev1:4b"}}
+	if indexOfString(a.classifierProviders(), decisions.OllamaProvider) < 0 {
+		t.Fatalf("ollama with tev1:4b not offered: %v", a.classifierProviders())
+	}
+	a.modelState.pendingProvider[roleClassifier] = decisions.OllamaProvider
+	if _, cat := a.modelPickerCatalog(); len(cat) != 1 || cat[0].ID != "tev1:4b" {
+		t.Fatalf("ollama picker %+v", cat)
+	}
+	chat := filterOutDecisionsModels(decisions.OllamaProvider, a.catalogCache[decisions.OllamaProvider])
+	if len(chat) != 1 || chat[0].ID != "llama3" {
+		t.Fatalf("a Tev1 tag must never be a chat model: %v", chat)
+	}
+	if !a.classifierSelectsDecision(&config.ClassifierSettings{Provider: decisions.TogetherProvider, Model: decisions.Tev1HostedModel}) {
+		t.Fatal("Tev1 on Together is a decision selection")
+	}
+}
