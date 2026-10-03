@@ -40,7 +40,8 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
-	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain}
+	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain,
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff}
 	inv := d.o.Inventory()
 	switch r.Kind {
 	case "worker":
@@ -58,7 +59,7 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 		if !slices.ContainsFunc(inv.Crews, func(c sessionsync.RCCrew) bool { return c.Name == r.Crew }) {
 			return "", "this host has no crew " + r.Crew
 		}
-		w.Crew = r.Crew
+		w.Crew, w.Fill = r.Crew, r.Fill
 	}
 	report, err := d.o.StartWorkers(w)
 	if err != nil {
@@ -78,8 +79,17 @@ func runAgentStart(w WorkerStart) (string, error) {
 	if w.Drain {
 		args = append(args, "-drain")
 	}
+	if w.Controls {
+		args = append(args, "-web-controls")
+		if w.GuardrailsOff {
+			args = append(args, "-web-allow-guardrails-off")
+		}
+	}
 	if w.Crew != "" {
 		args = append(args, "-crew", w.Crew)
+		if w.Fill {
+			args = append(args, "-fill")
+		}
 	} else {
 		args = append(args, w.Profile)
 	}

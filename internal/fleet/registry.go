@@ -446,6 +446,10 @@ type SpawnOptions struct {
 	// against (belai rc --max); the worker reserves its slot under the same
 	// cap instead of falling back to agents.max_workers.
 	MaxWorkers int
+	// WebControls lets the website change the worker's model, effort,
+	// guardrails and caveman (belai rc --web-controls); GuardrailsOff also lets
+	// it turn guardrails off (--web-allow-guardrails-off).
+	WebControls, GuardrailsOff bool
 }
 
 // Spawn starts a detached `belai agent run` worker and returns its id. The
@@ -467,6 +471,12 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	}
 	if o.Drain {
 		args = append(args, "-drain")
+	}
+	if o.WebControls {
+		args = append(args, "-web-controls")
+		if o.GuardrailsOff {
+			args = append(args, "-web-allow-guardrails-off")
+		}
 	}
 	if o.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))

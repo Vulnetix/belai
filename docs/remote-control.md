@@ -171,6 +171,11 @@ a control rather than a prompt, and the keys work while the page has focus.
 - **Auto-commit and tests** run after a turn when their control is on: the
   commit covers the files a completed goal changed, and the test pass runs
   under the session's gates.
+- **Fleet workers.** The workers the daemon starts (from the Board, the Crews
+  tab or a schedule) take `/model`, `/effort`, `/guardrails` and `/caveman` too,
+  each from the worker's next turn; the rest are refused for a worker, with a
+  reason. The Crews tab sends such a line to every chosen worker of a crew. See
+  [fleet.md](fleet.md#session-controls).
 
 ## Project settings from the web
 
@@ -247,7 +252,9 @@ predict what will happen to them:
   `belai agent start NAME` or `belai agent start -crew NAME` there, which
   applies the trust check, the preflight and the worker cap
   (`agents.max_workers`, or an explicit `--max`) as it does in a terminal. The ack is `started` with the command's report, or
-  `refused` with its error.
+  `refused` with its error. A `crew` request with `fill` set runs
+  `belai agent start -crew NAME -fill` instead, which starts only the replicas the
+  crew lacks in that directory (the Crews tab's "Start the missing worker").
 
 ## Scheduled agents
 

@@ -382,6 +382,9 @@ type Dispatch struct {
 	// Profile or Crew names what a "worker" or "crew" request starts.
 	Profile string `json:"profile,omitempty"`
 	Crew    string `json:"crew,omitempty"`
+	// Fill makes a "crew" request start only the replicas the crew lacks in
+	// the directory (`belai agent start -crew CREW -fill`).
+	Fill bool `json:"fill,omitempty"`
 	// Worker is the worker id a "pause" or "resume" request names.
 	Worker string `json:"worker,omitempty"`
 	// A "profile_install" request names a library profile and one of its
