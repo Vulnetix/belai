@@ -54,6 +54,8 @@ behaviour, and implementation details.
   (History and live Sessions) and prompting a live session from the browser.
 - [Remote control](remote-control.md): `belai rc`, which lets the website
   start and drive sessions on this machine.
+- [Pix Sandbox](pix-sandbox.md): the contract between Belai and the hosted machine Vulnetix
+  runs: host id, settings, credentials, trusted directories and Jev.
 - [Library items](library-items.md): the skills, prompts, processes, repositories, token
   budgets, Bash rewrite table and provider sets the website's library keeps for an
   account, and how provider keys reach a host: formats, canonical bytes, limits, install
