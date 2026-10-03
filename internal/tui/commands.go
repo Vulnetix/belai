@@ -113,7 +113,10 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
-	r.Register("model", "pick provider and model for each role", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("model", "pick provider and model for each role; /model <provider> <model> [effort] switches this session", nil, func(a *App, arg string) tea.Cmd {
+		if strings.TrimSpace(arg) != "" {
+			return a.runControl("/model " + arg)
+		}
 		return a.push(viewModel)
 	})
 	r.Register("mode", "show or set operating mode", nil, func(a *App, arg string) tea.Cmd {
@@ -266,7 +269,10 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
-	r.Register("lsp", "manage language-server diagnostics", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("lsp", "manage language-server diagnostics; /lsp on|off [language] switches this session", nil, func(a *App, arg string) tea.Cmd {
+		if strings.TrimSpace(arg) != "" {
+			return a.runControl("/lsp " + arg)
+		}
 		return a.push(viewLSP)
 	})
 	r.Register("sync", "show or change session sync to the Vulnetix website", func() []string {
@@ -614,6 +620,7 @@ func NewRegistry(workdir string) *Registry {
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
 	r.RegisterHiddenAlias("provider", "providers")
+	registerSessionControls(r)
 	return r
 }
 

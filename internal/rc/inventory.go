@@ -36,6 +36,9 @@ type Inventory struct {
 	// Knowledge is the catalogue of this host's knowledge indexes: document
 	// facts only (knowledge.go).
 	Knowledge []sessionsync.RCKnowledge
+	// Prefs are the offered directories' project preferences, by path, read
+	// only with --web-project-settings (prefs.go).
+	Prefs map[string]DirPrefs
 }
 
 // Caps on what one host reports; the server applies the same caps.
@@ -55,7 +58,8 @@ func (i Inventory) catalogueHash() string {
 		I []sessionsync.RCItem
 		D *sessionsync.RCModels
 		K []sessionsync.RCKnowledge
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models, i.Knowledge})
+		F map[string]DirPrefs
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models, i.Knowledge, i.Prefs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }

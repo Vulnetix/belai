@@ -88,7 +88,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   per-turn status, never the system block.
 - **Language servers are a trusted-root feature.** A language server is only
   spawned under a directory the user has already trusted, and only in an
-  interactive TUI session. The server is always started with a scrubbed
+  interactive TUI session or a `belai rc --web-controls` session whose web
+  user turned the language-server control on (`rolemanager.DiagnosticsGate`
+  passed through `headless.Params.Diagnostics`, closed when the session is
+  rebuilt or ends). The server is always started with a scrubbed
   environment and its own process group. It is never asked to perform a
   `workspace/applyEdit` (every such request receives `{"applied":false}`),
   `initializationOptions` is always `null`, and binary overrides from a
@@ -1085,11 +1088,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   Every website request is untrusted: the daemon re-checks the directory
   against its own list (exact match after resolving symlinks, never a
   prefix), the `rc-session` child checks trust again and fails closed, and
-  the prompt is cleaned and admitted like a typed one. The website never
-  picks the provider, model, posture or permissions. rc refuses to run with
+  the prompt is cleaned and admitted like a typed one. Without
+  `--web-controls` the website never changes a session's provider, model,
+  posture or permissions after the start request, rc refuses to run with
   guardrails off, sessions run with `AllowAsk` false and web answers off
-  (never `AskDisabled`, which would allow every ask), and the prompt reaches
-  the child on stdin, never argv. The heartbeat's worker entries are
+  (never `AskDisabled`, which would allow every ask); a guardrails-off
+  project preference is overridden to on for a remote session, never honoured
+  without the host's flag. The prompt reaches the child on stdin, never argv. The heartbeat's worker entries are
   registry facts plus a tail of each worker's own log, read by id from the
   fleet log directory (never a path from a record), cleaned with
   `sessionsync.CleanLogLine` and capped per line, per worker and in total.
@@ -1103,6 +1108,40 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   of an id (`fleet.ValidID`) and the worker is live in the host's own
   registry, and otherwise refuses it with a reason. It sets or clears the
   worker's empty pause marker and does nothing else.
+- **Web session controls are the host's opt-in and a fixed table.**
+  `belai rc --web-controls` passes `-controls` to each `rc-session` as fixed
+  argv, and only then does the syncer take `commands` from the inbox
+  (`sessionsync.RemoteCommand`: one slash line or one key). Each is parsed by
+  `internal/sessionctl`, the same table the TUI's control commands use, and
+  nothing outside it runs: never a free-form slash command, `!cmd` or `@`. Every
+  value is checked there or by an existing validator (a model through
+  `rc.CheckModel` against the host's credentialed providers, Jev thresholds by
+  `JevThresholdSettings.Validate`, known job and language names). A control
+  changes that session only (`sessionctl.State.Apply` on a copy of the
+  settings) and writes no settings file; a change that needs it rebuilds the
+  agent session between turns (`rc.Controller`), keeping the history. Guardrails
+  may be turned off only with `--web-allow-guardrails-off` (refused without
+  `--web-controls`), and off means `posture.AllIgnore()` as everywhere. Ask on
+  routes permission and clarify asks to the web through `rc`'s ask bridge,
+  recorded and validated as the TUI does (`internal/webask`): only an explicit
+  allow runs a call, allow-always is remembered in memory for that session,
+  and an unanswered ask is denied after `rc.DefaultAskWait`. Ask off mirrors
+  `f4` (`AskDisabled`), so it is part of the same opt-in. Each applied control
+  writes a harness-composed transcript line and its ack carries the state;
+  refusal reasons are harness text. Auto-commit commits only the paths a
+  completed goal's tools changed through `forge.CommitPaths`, and the post-end
+  test pass is `headless.RunPostEnd` under the session's gates.
+- **Web project settings write the host's preferences only.**
+  `belai rc --web-project-settings` advertises each offered directory's
+  `config.ProjectPrefs` as flat keys with their resolved value and origin, and
+  takes `project_prefs` requests naming an offered directory (the same exact
+  match as a start) and flat keys to set or clear. Only `config.PrefKeys` can be
+  named, each value is a boolean, a word from the key's fixed set or a number in
+  [0,1], and the result must pass `ProjectPrefs.ValidateOver` before it is
+  written to the host-private preference file, never the repository. A
+  preference that later fails validation is dropped by `config.Resolve` with a
+  note rather than stopping Belai. The acknowledgement holds counts and the
+  directory's base name only.
 - **A scheduled agent starts only what a worker request could.**
   `internal/schedule` records (profile, cron, directory, on/off) sync with the
   website like kanban cards, and the website may edit them but never run one or

@@ -91,8 +91,9 @@ that is code execution (`tsconfig.json` plugins, `gopls` running `go list`,
 etc.). Therefore:
 
 - Live servers are enabled only in interactive TUI sessions on already-
-  trusted roots.
-- Headless, non-TTY, and `-trust-dir`-only runs use fallback checks only.
+  trusted roots, and in a `belai rc --web-controls` session whose web user
+  turned `/lsp on` (see [remote-control.md](remote-control.md#session-controls-from-the-web)).
+- Other headless, non-TTY, and `-trust-dir`-only runs use fallback checks only.
 - `workspace/applyEdit` is always answered with `{"applied": false}`.
 - `initializationOptions` is always `null`.
 - `lsp.servers` is dropped from the project layer unconditionally.

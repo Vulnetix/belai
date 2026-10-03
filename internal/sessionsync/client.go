@@ -145,6 +145,27 @@ type RCInfo struct {
 	// credentials for. Names only, never a key or an endpoint. Nil from an
 	// older daemon.
 	Models *RCModels `json:"models,omitempty"`
+	// Controls says web sessions on this host take session controls (belai rc
+	// --web-controls), and ControlCatalogue is the table of them: ids,
+	// commands, keys and values, from internal/sessionctl. GuardrailsOff says
+	// a web session may turn guardrails off (--web-allow-guardrails-off).
+	Controls         bool        `json:"controls"`
+	GuardrailsOff    bool        `json:"guardrailsOff"`
+	ControlCatalogue []RCControl `json:"controlCatalogue,omitempty"`
+	// ProjectSettings says the website may read and edit each offered
+	// directory's project preferences (--web-project-settings); each RCDir then
+	// carries them.
+	ProjectSettings bool `json:"projectSettings"`
+}
+
+// RCControl is one session control as the website offers it.
+type RCControl struct {
+	ID      string   `json:"id"`
+	Command string   `json:"command"`
+	Usage   string   `json:"usage"`
+	Keys    []string `json:"keys,omitempty"`
+	Values  []string `json:"values,omitempty"`
+	Kind    string   `json:"kind"`
 }
 
 // RCModels is a host's model advertisement.
@@ -331,6 +352,20 @@ type RCDir struct {
 	Provider      string `json:"provider,omitempty"`
 	Branch        string `json:"branch,omitempty"`
 	DefaultBranch string `json:"defaultBranch,omitempty"`
+	// Prefs and Effective are the directory's project preferences, sent only
+	// with --web-project-settings: Prefs holds the keys set in the host's
+	// preference file for the directory (flat keys, internal/config
+	// PrefKeys), Effective each key's resolved value and the settings layer it
+	// came from. Values are booleans, fixed words and numbers only.
+	Prefs     map[string]any         `json:"prefs,omitempty"`
+	Effective map[string]RCEffective `json:"effective,omitempty"`
+}
+
+// RCEffective is one preference key's resolved value and its settings layer
+// (default, global, project_prefs, project, env, flag).
+type RCEffective struct {
+	Value  any    `json:"value"`
+	Origin string `json:"origin"`
 }
 
 // Dispatch is a website request to an rc daemon: start a session in Cwd with
@@ -382,8 +417,13 @@ type Dispatch struct {
 	Effort   string `json:"effort,omitempty"`
 	// GitSync, when set on a "start" request, switches the new session's git
 	// sync on or off; nil leaves it to the host's settings.
-	GitSync   *bool `json:"gitSync,omitempty"`
-	CreatedAt int64 `json:"createdAt"`
+	GitSync *bool `json:"gitSync,omitempty"`
+	// A "project_prefs" request names an offered directory in Cwd and the flat
+	// preference keys to set (with their values) and to clear. Keys and values
+	// are checked by the host against config.ProjectPrefs' shape.
+	PrefsSet   map[string]any `json:"prefsSet,omitempty"`
+	PrefsUnset []string       `json:"prefsUnset,omitempty"`
+	CreatedAt  int64          `json:"createdAt"`
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:
@@ -417,8 +457,13 @@ type SessionMeta struct {
 	ResumedFromID   string `json:"resumedFromId,omitempty"`
 	RemotePrompts   bool   `json:"remotePrompts"`
 	// RemoteAnswers says the host takes web answers to its open asks.
-	RemoteAnswers bool  `json:"remoteAnswers"`
-	CreatedAt     int64 `json:"createdAt,omitempty"`
+	RemoteAnswers bool `json:"remoteAnswers"`
+	// Controls says the host takes session controls from the web (belai rc
+	// --web-controls). ControlState is the session's current controls as
+	// internal/sessionctl.State, opaque here; the server validates its shape.
+	Controls     bool            `json:"controls"`
+	ControlState json.RawMessage `json:"controlState,omitempty"`
+	CreatedAt    int64           `json:"createdAt,omitempty"`
 	// DispatchID is the website request that started this session on an rc
 	// daemon; empty for a session someone started at the terminal.
 	DispatchID string `json:"dispatchId,omitempty"`
@@ -477,6 +522,18 @@ type RemoteDraft struct {
 	} `json:"context"`
 	CreatedAt int64 `json:"createdAt"`
 	ExpiresAt int64 `json:"expiresAt"`
+}
+
+// RemoteCommand is a session control sent from the website, claimed from the
+// inbox: a slash line ("/caveman on") or a key ("f4"), exactly one of them. It
+// is untrusted: the host parses it with internal/sessionctl, which knows only
+// its fixed controls, and nothing else ever runs.
+type RemoteCommand struct {
+	ID        string `json:"id"`
+	SessionID string `json:"sessionId"`
+	Line      string `json:"line,omitempty"`
+	Key       string `json:"key,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 // Prompt outcomes the host reports back.
@@ -619,17 +676,38 @@ func (c *Client) End(ctx context.Context, sessionID string) error {
 // that predates the session filter hands over the whole host's inbox, which
 // the TUI refuses per prompt as before.
 func (c *Client) Inbox(ctx context.Context, hostID, sessionID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, []RemoteDraft, error) {
-	var out struct {
-		Prompts []RemotePrompt `json:"prompts"`
-		Answers []RemoteAnswer `json:"answers"`
-		Drafts  []RemoteDraft  `json:"drafts"`
-	}
+	b, err := c.InboxBatch(ctx, hostID, sessionID, wait)
+	return b.Prompts, b.Answers, b.Drafts, err
+}
+
+// Inbox is everything one inbox poll returned.
+type Inbox struct {
+	Prompts  []RemotePrompt  `json:"prompts"`
+	Answers  []RemoteAnswer  `json:"answers"`
+	Drafts   []RemoteDraft   `json:"drafts"`
+	Commands []RemoteCommand `json:"commands"`
+}
+
+// InboxBatch is Inbox with session controls. A server that predates them
+// sends none.
+func (c *Client) InboxBatch(ctx context.Context, hostID, sessionID string, wait time.Duration) (Inbox, error) {
+	var out Inbox
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
 	if sessionID != "" {
 		path += "&session=" + url.QueryEscape(sessionID)
 	}
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
-	return out.Prompts, out.Answers, out.Drafts, err
+	return out, err
+}
+
+// AckCommand reports what the host did with a session control: accepted, with
+// the session's new controls, or refused, with a harness-worded reason.
+func (c *Client) AckCommand(ctx context.Context, commandID, status, reason string, state json.RawMessage) error {
+	body := map[string]any{"status": status, "reason": reason}
+	if len(state) > 0 {
+		body["state"] = state
+	}
+	return c.do(ctx, http.MethodPost, "/commands/"+url.PathEscape(commandID)+"/ack", body, nil, requestTimeout)
 }
 
 // Draft outcomes the host reports back.

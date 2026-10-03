@@ -32,3 +32,34 @@ func TestStartChildSpawnsInOwnProcessGroup(t *testing.T) {
 		t.Errorf("wait: %v", err)
 	}
 }
+
+// The daemon's control flags reach every session as fixed argv, and only
+// those two words: nothing from the request is added.
+func TestStartChildPassesControlFlags(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "fake-belai")
+	out := filepath.Join(dir, "argv")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho \"$@\" > "+out+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		controls, off bool
+		want          string
+	}{
+		{false, false, ""},
+		{true, false, " -controls"},
+		{true, true, " -controls -allow-guardrails-off"},
+	} {
+		_, wait, err := startChild(Child{Exe: exe, Cwd: dir, Dispatch: "d1", SessionID: "s1", Idle: time.Minute,
+			Prompt: "hi", Controls: c.controls, GuardrailsOff: c.off})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = wait()
+		got, _ := os.ReadFile(out)
+		want := "rc-session -dispatch d1 -session-id s1 -idle 1m0s" + c.want + "\n"
+		if string(got) != want {
+			t.Fatalf("argv = %q, want %q", got, want)
+		}
+	}
+}

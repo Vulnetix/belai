@@ -11,6 +11,8 @@ and you can prompt it again or stop it.
 belai rc                      # run in this terminal; Ctrl+C stops it
 belai rc --detach             # run in the background
 belai rc --dir ~/src/api      # also offer a directory
+belai rc --web-controls       # web sessions take the TUI's session controls
+belai rc --web-project-settings  # the website edits project preferences here
 belai rc --status
 belai rc --stop
 ```
@@ -85,7 +87,8 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   prompt classifier, the posture and the permission rules.
 - **Asks are off.** Nobody is at the terminal, so a tool call that would ask
   is decided by the posture and permission rules, exactly as for
-  `belai -prompt`. Web answers are off too.
+  `belai -prompt`. Web answers are off too. With `--web-controls` the ask
+  control decides instead ([below](#session-controls-from-the-web)).
 - Model and provider are the host's own, resolved the way `belai agent start`
   resolves them: `provider` and `model` in settings, then the model last chosen
   in the TUI (`state.json`), then the built-in default. When `routing.kind` is
@@ -108,7 +111,9 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   website request it answers) and refuses to start without both, with `-mode`
   (`agent`, `plan` or `goal`, otherwise classified from the prompt), `-idle`,
   `-provider`, `-model` and `-effort`, and `-git-sync on|off` (the daemon passes
-  them only when the web request named them) optional. Typing it yourself starts nothing the website knows about. The
+  them only when the web request named them) optional. `-controls` and
+  `-allow-guardrails-off` are the daemon's own `--web-controls` and
+  `--web-allow-guardrails-off`, passed on to every session it starts. Typing it yourself starts nothing the website knows about. The
   prompt is read from stdin, cleaned like a web prompt and capped, and an empty
   prompt is refused.
 
@@ -126,6 +131,67 @@ sandbox. Without `--max-workers`, an explicit `--max N` is also the worker
 cap, as before. A repository whose settings lower `agents.max_workers` still
 holds its own cap. With neither flag, `agents.max_workers` (default 4)
 applies.
+
+## Session controls from the web
+
+`belai rc --web-controls` lets a web session change itself the way the TUI
+does, with the same slash commands and keys
+([session-controls.md](session-controls.md)): the mode (`shift+tab`, `f5`),
+the model (`/model`, `ctrl+q`), the effort (`f6`), guardrails (`f3`), ask
+(`f4`), caveman (`f2`), auto-commit, the reasoning, tool-call, edit and
+decision displays (`ctrl+r`, `ctrl+t`), the post-end tests, language servers,
+and Jev jobs and thresholds. The session page shows the controls as a strip,
+a line typed in the composer that starts with one of their commands is sent as
+a control rather than a prompt, and the keys work while the page has focus.
+
+- **For that session only.** A control changes the running session and is
+  never written to a settings file. A change to the model, guardrails, ask,
+  caveman, language servers or Jev rebuilds the agent session, keeping the
+  conversation: at once between turns, or when the running turn ends.
+- **Only the table.** The host parses each command against the fixed table in
+  `internal/sessionctl` and checks every value: a model must be one this host
+  holds credentials for, a Jev threshold is held to the settings rules, a job
+  or language must be a known one. Anything else is refused with a reason, and
+  a line that is not a control (`/help`, `!ls`) is never run.
+- **Guardrails stay on** unless you also pass `--web-allow-guardrails-off`.
+  Turning them back on never needs the flag.
+- **Ask.** With ask on (the setting's value at start), a tool call that would
+  ask is put to the web session as a permission ask and waits for an answer,
+  and the agent's questions are asked there too. Allow-always is remembered for
+  that session only. An unanswered ask is denied after ten minutes. With ask
+  off, calls are decided by the rules, the classifier and the sandbox without
+  asking, as `f4` does in the TUI.
+- **What the transcript shows.** Every applied control writes a harness line
+  (`web: caveman: on`), and the turn facts carry the current mode, model,
+  guardrails, ask and caveman.
+- **Language servers** start only when the web turns them on, in the directory
+  the host trusts, with the same scrubbed environment, process group and
+  refused edits as in the TUI. They are closed when the session is rebuilt or
+  ends.
+- **Auto-commit and tests** run after a turn when their control is on: the
+  commit covers the files a completed goal changed, and the test pass runs
+  under the session's gates.
+
+## Project settings from the web
+
+`belai rc --web-project-settings` advertises each offered directory's project
+preferences and lets the console's project settings page change them. The page
+lists every key with its resolved value and the settings layer it came from,
+so you can see when a repository's settings or your global settings win.
+
+- **Host-private.** Edits go to the host's preference file for the directory
+  (`~/.vulnetix/belai/projectprefs/`), the same file the TUI's `f2`, `f3`
+  and `f4` write. The repository is never touched.
+- **Fixed keys.** The page can set guardrails, ask, the firewall switch,
+  caveman, the starting mode, the displays, auto-commit, the post-end test
+  trigger and fail branch, language servers (all, or per language) and Jev
+  jobs and thresholds. A key outside that list is refused; values are booleans,
+  fixed words or numbers between 0 and 1, and the result must pass the settings
+  validators before it is written.
+- **The next session.** A running session keeps its settings; sessions started
+  afterwards, in the TUI or from the web, read the new preferences. A remote
+  session still runs with guardrails on unless the host passed
+  `--web-allow-guardrails-off`, whatever the preference says.
 
 ## Fleet workers
 

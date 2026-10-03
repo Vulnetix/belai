@@ -29,8 +29,12 @@ type Options struct {
 	HostID        string
 	Host          Host
 	RemotePrompts bool
-	// RemoteAnswers delivers web answers to the host's open asks.
+	// RemoteAnswers delivers web answers to the host's open asks. A session
+	// whose ask gate the web can switch changes it with SetRemoteAnswers.
 	RemoteAnswers bool
+	// RemoteCommands delivers session controls from the web (belai rc
+	// --web-controls). Off, every command is refused.
+	RemoteCommands bool
 	// OnControls is called, on the syncer's goroutine, with the website's
 	// pending controls for the live session each time the server returns some
 	// (registration and every heartbeat). It must not block. nil ignores them.
@@ -109,6 +113,7 @@ type Syncer struct {
 	prompts  chan RemotePrompt
 	answers  chan RemoteAnswer
 	drafts   chan RemoteDraft
+	commands chan RemoteCommand
 
 	cancel    context.CancelFunc
 	closeOnce sync.Once
@@ -116,6 +121,11 @@ type Syncer struct {
 	mu     sync.Mutex
 	status Status
 	live   string // the registered session id, for the inbox loop
+	// remoteAnswers, ctlState and ctlGen are the parts of the registration
+	// the host changes while the session runs; a new ctlGen re-registers.
+	remoteAnswers bool
+	ctlState      json.RawMessage
+	ctlGen        int
 }
 
 // New builds a Syncer. Call Start to run it.
@@ -140,6 +150,9 @@ func New(opts Options) *Syncer {
 		prompts:  make(chan RemotePrompt, 16),
 		answers:  make(chan RemoteAnswer, 16),
 		drafts:   make(chan RemoteDraft, 4),
+		commands: make(chan RemoteCommand, 16),
+
+		remoteAnswers: opts.RemoteAnswers,
 	}
 }
 
@@ -147,7 +160,7 @@ func New(opts Options) *Syncer {
 func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
-	if s.opts.RemotePrompts || s.opts.RemoteAnswers {
+	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands {
 		go s.inbox(ctx)
 	}
 }
@@ -209,7 +222,53 @@ func (s *Syncer) RemotePromptsEnabled() bool { return s.opts.RemotePrompts }
 func (s *Syncer) Answers() <-chan RemoteAnswer { return s.answers }
 
 // RemoteAnswersEnabled reports whether web answers are taken.
-func (s *Syncer) RemoteAnswersEnabled() bool { return s.opts.RemoteAnswers }
+func (s *Syncer) RemoteAnswersEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.remoteAnswers
+}
+
+// Commands delivers session controls claimed from the inbox.
+func (s *Syncer) Commands() <-chan RemoteCommand { return s.commands }
+
+// SetSessionControls records the session's current controls and whether it
+// takes web answers (ask on), and re-registers the session so the website
+// shows both. The inbox must already be running: a syncer that may turn
+// answers on is built with RemoteCommands.
+func (s *Syncer) SetSessionControls(state json.RawMessage, remoteAnswers bool) {
+	s.mu.Lock()
+	s.ctlState = append(json.RawMessage(nil), state...)
+	s.remoteAnswers = remoteAnswers
+	s.ctlGen++
+	s.mu.Unlock()
+	s.Nudge()
+}
+
+// AckCommand reports a session control's outcome in the background.
+func (s *Syncer) AckCommand(commandID, status, reason string, state json.RawMessage) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		if err := s.opts.Client.AckCommand(ctx, commandID, status, reason, state); err != nil {
+			s.setErr(fmt.Errorf("ack command: %w", err))
+		}
+	}()
+}
+
+// pollControls marks the session for re-registration after the controls
+// changed.
+func (s *Syncer) pollControls(t *tail) {
+	if t == nil {
+		return
+	}
+	s.mu.Lock()
+	gen := s.ctlGen
+	s.mu.Unlock()
+	if gen != t.ctlGen {
+		t.ctlGen = gen
+		t.dirty = true
+	}
+}
 
 // AckAnswer reports a web answer's outcome, like Ack: an accepted answer
 // refers to the ask_answer line just written, so it waits for that upload.
@@ -317,6 +376,7 @@ type tail struct {
 	seq        int64
 	dirty      bool
 	lastBeat   time.Time
+	ctlGen     int
 }
 
 func (s *Syncer) run(ctx context.Context) {
@@ -387,6 +447,7 @@ func (s *Syncer) run(ctx context.Context) {
 		case <-tick.C:
 		}
 		s.pollGit(cur)
+		s.pollControls(cur)
 		if cur == nil {
 			s.sendAcks(ctx, &pendingAcks)
 			continue
@@ -541,9 +602,16 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		HostID: s.opts.HostID, ProjectKey: i.ProjectKey, ProjectName: i.ProjectName, Cwd: i.Cwd,
 		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode, ActiveProfile: i.ActiveProfile,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
-		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
+		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.RemoteAnswersEnabled(),
 		DispatchID: i.DispatchID, Git: i.Git,
+		Controls: s.opts.RemoteCommands, ControlState: s.controlState(),
 	}
+}
+
+func (s *Syncer) controlState() json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ctlState
 }
 
 // applyControls hands the website's pending controls for the live session to
@@ -781,7 +849,8 @@ func (s *Syncer) inbox(ctx context.Context) {
 			}
 			continue
 		}
-		prompts, answers, drafts, err := s.opts.Client.Inbox(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		batch, err := s.opts.Client.InboxBatch(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		prompts, answers, drafts := batch.Prompts, batch.Answers, batch.Drafts
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -795,12 +864,24 @@ func (s *Syncer) inbox(ctx context.Context) {
 		backoff = 0
 		// Answers first: the host is blocked on an ask until one arrives.
 		for _, a := range answers {
-			if !s.opts.RemoteAnswers {
+			if !s.RemoteAnswersEnabled() {
 				s.AckAnswer(a.ID, AckRefused, "this host does not take answers from the web", "")
 				continue
 			}
 			select {
 			case s.answers <- a:
+			case <-ctx.Done():
+				return
+			}
+		}
+		// Controls next: they apply to the turn the prompts start.
+		for _, c := range batch.Commands {
+			if !s.opts.RemoteCommands {
+				s.AckCommand(c.ID, AckRefused, "this host does not take session controls from the web", nil)
+				continue
+			}
+			select {
+			case s.commands <- c:
 			case <-ctx.Done():
 				return
 			}

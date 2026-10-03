@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -115,6 +116,18 @@ type Options struct {
 	LibraryRemote LibraryRemote
 	// LibrarySyncEvery is how often profiles, crews and items are checked (30s).
 	LibrarySyncEvery time.Duration
+
+	// Controls lets web sessions change their own controls (--web-controls,
+	// internal/sessionctl); GuardrailsOff also lets them turn guardrails off
+	// (--web-allow-guardrails-off). Both reach a session as fixed argv.
+	Controls      bool
+	GuardrailsOff bool
+	// ProjectSettings advertises each offered directory's project preferences
+	// and takes "project_prefs" requests (--web-project-settings).
+	ProjectSettings bool
+	// Prefs reads the offered directories' preferences (localPrefs unless a
+	// test replaces it).
+	Prefs func([]Dir) map[string]DirPrefs
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -139,6 +152,8 @@ type Child struct {
 	// leaves it to git.sync in the host's settings.
 	GitSync *bool
 	Idle    time.Duration
+	// Controls and GuardrailsOff are the daemon's own flags, passed on.
+	Controls, GuardrailsOff bool
 }
 
 // Daemon is a running `belai rc`.
@@ -202,6 +217,17 @@ func New(o Options) (*Daemon, error) {
 		o.Inventory = func() Inventory {
 			inv := read()
 			inv.Knowledge = cat(dirs)
+			return inv
+		}
+	}
+	if o.ProjectSettings {
+		if o.Prefs == nil {
+			o.Prefs = localPrefs
+		}
+		read, dirs, prefs := o.Inventory, o.Dirs, o.Prefs
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.Prefs = prefs(dirs)
 			return inv
 		}
 	}
@@ -296,7 +322,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge}
+		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge,
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings}
+	if d.o.Controls {
+		for _, c := range sessionctl.Controls {
+			h.RC.ControlCatalogue = append(h.RC.ControlCatalogue, sessionsync.RCControl{
+				ID: c.ID, Command: c.Command, Usage: c.Usage, Keys: c.Keys, Values: c.Values, Kind: c.Kind,
+			})
+		}
+	}
 	if h.RC.Items == nil {
 		h.RC.Items = []sessionsync.RCItem{}
 	}
@@ -310,7 +344,11 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	d.catalog = inv.catalogueHash()
 	d.mu.Unlock()
 	for _, dir := range d.o.Dirs {
-		h.RC.Dirs = append(h.RC.Dirs, dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source}))
+		rd := dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
+		if p, ok := inv.Prefs[dir.Path]; ok {
+			rd.Prefs, rd.Effective = p.Prefs, p.Effective
+		}
+		h.RC.Dirs = append(h.RC.Dirs, rd)
 	}
 	backoff := time.Second
 	for {
@@ -389,7 +427,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -508,6 +546,19 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("provider_keys_remove: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "project_prefs":
+		// Key names and counts go in the log and the acknowledgement; values
+		// are fixed words, booleans and numbers checked by the host.
+		report, why := d.setProjectPrefs(r)
+		if why != "" {
+			d.logf("refused project_prefs in %s: %s", r.Cwd, why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("project_prefs: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+		// Advertise the new values now rather than at the next heartbeat.
+		d.register(ctx, d.o.Inventory())
 	default:
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}
@@ -558,6 +609,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		Exe: d.o.Exe, Cwd: cwd, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
 		Provider: r.Provider, Model: r.Model, Effort: r.Effort, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
 	}
 	pid, wait, err := d.o.Start(c)
 	if err != nil {
@@ -683,6 +735,12 @@ func startChild(c Child) (int, func() error, error) {
 	}
 	if c.GitSync != nil {
 		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])
+	}
+	if c.Controls {
+		args = append(args, "-controls")
+		if c.GuardrailsOff {
+			args = append(args, "-allow-guardrails-off")
+		}
 	}
 	cmd := exec.Command(c.Exe, args...)
 	cmd.Dir = c.Cwd

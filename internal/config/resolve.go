@@ -58,6 +58,13 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err != nil {
 		return eff, err
 	}
+	// A preference that would fail validation is left out rather than
+	// stopping Belai: the file is the user's, but it is edited from the web.
+	if err := prefs.ValidateOver(global); err != nil {
+		eff.Notes = append(eff.Notes, "project preferences ignored: "+err.Error())
+		prefs = ProjectPrefs{Guardrails: prefs.Guardrails, AskPermission: prefs.AskPermission,
+			FirewallEnabled: prefs.FirewallEnabled, Caveman: prefs.Caveman, Mode: prefs.Mode, Agent: prefs.Agent}
+	}
 	eff.apply(prefs.toSettings(), SourceProjectPrefs)
 
 	// 3. project settings.json.

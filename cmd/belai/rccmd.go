@@ -14,22 +14,30 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/rc"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
@@ -42,6 +50,7 @@ func (d *dirList) String() string     { return strings.Join(*d, ",") }
 func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 
 const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
+                [--web-controls [--web-allow-guardrails-off]] [--web-project-settings]
        belai rc --status
        belai rc --stop
 
@@ -49,6 +58,11 @@ Runs Belai remote control: this machine appears under Belai → Sessions on the
 Vulnetix website, which can start headless Belai sessions here, follow them
 live and prompt them. Sessions run only in projects already trusted on this
 machine and in the directories given with --dir.
+
+--web-controls lets a web session change its own mode, model and switches
+with the TUI's slash commands and keys, for that session only.
+--web-project-settings lets the website edit each offered directory's project
+preferences on this host.
 
 Needs a Vulnetix CLI browser login (vulnetix auth login).
 `
@@ -66,10 +80,17 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	detach := fs.Bool("detach", false, "run in the background; logs go to ~/.vulnetix/belai/rc/rc.log")
 	status := fs.Bool("status", false, "show whether remote control is running")
 	stop := fs.Bool("stop", false, "stop the running remote control and its sessions")
+	webControls := fs.Bool("web-controls", false, "let web sessions change their mode, model, guardrails, ask and display with the TUI's slash commands and keys (that session only)")
+	webGuardrailsOff := fs.Bool("web-allow-guardrails-off", false, "with --web-controls, let a web session turn its guardrails off")
+	webProjectSettings := fs.Bool("web-project-settings", false, "let the website read and edit each offered directory's project preferences on this host")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
 		}
+		return 2
+	}
+	if *webGuardrailsOff && !*webControls {
+		fmt.Fprintln(stderr, "belai rc: --web-allow-guardrails-off needs --web-controls")
 		return 2
 	}
 	if fs.NArg() > 0 {
@@ -167,7 +188,18 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "  %s  (%s)\n", d.Path, d.Source)
 	}
 	fmt.Fprintf(stderr, "\nManage hosts and start sessions: %s\n", url)
-	fmt.Fprintln(stderr, "Sessions run with asks off: the posture and permission rules decide. Ctrl+C stops remote control and its sessions.")
+	switch {
+	case *webControls && *webGuardrailsOff:
+		fmt.Fprintln(stderr, "Web sessions take session controls, including turning guardrails off. Asks go to the web while ask is on.")
+	case *webControls:
+		fmt.Fprintln(stderr, "Web sessions take session controls (guardrails stay on). Asks go to the web while ask is on.")
+	default:
+		fmt.Fprintln(stderr, "Sessions run with asks off: the posture and permission rules decide.")
+	}
+	if *webProjectSettings {
+		fmt.Fprintln(stderr, "The website may edit the offered directories' project preferences on this host.")
+	}
+	fmt.Fprintln(stderr, "Ctrl+C stops remote control and its sessions.")
 	fmt.Fprintln(stderr)
 
 	exe, err := os.Executable()
@@ -200,6 +232,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
 		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd),
+		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)
@@ -372,7 +405,13 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	modelFlag := fs.String("model", "", "model for this session (default: the host's own)")
 	effortFlag := fs.String("effort", "", "effort for this session (default: the host's own)")
 	gitSyncFlag := fs.String("git-sync", "", "on or off: sync the branch with origin's default branch before turns (default: git.sync in settings)")
+	controls := fs.Bool("controls", false, "take session controls from the web (belai rc --web-controls)")
+	allowGuardrailsOff := fs.Bool("allow-guardrails-off", false, "with -controls, a web session may turn guardrails off")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *allowGuardrailsOff && !*controls {
+		fmt.Fprintln(stderr, "belai rc-session: -allow-guardrails-off needs -controls")
 		return 2
 	}
 	if *sessionID == "" || *dispatch == "" {
@@ -396,7 +435,8 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		fmt.Fprintln(stderr, "belai rc-session: empty prompt")
 		return 1
 	}
-	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag}
+	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag,
+		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff}
 	switch *gitSyncFlag {
 	case "":
 	case "on", "off":
@@ -419,6 +459,9 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 type rcModelPick struct {
 	Provider, Model, Effort string
 	GitSync                 *bool
+	// Controls and AllowGuardrailsOff are the daemon's --web-controls and
+	// --web-allow-guardrails-off, passed on as fixed argv.
+	Controls, AllowGuardrailsOff bool
 }
 
 func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mode, prompt string, idle time.Duration, pick rcModelPick, stderr io.Writer) error {
@@ -435,18 +478,38 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if !st.Trusted {
 		return fmt.Errorf("%s is not trusted on this host", cwd)
 	}
-	settings, err := config.LoadMerged(cwd)
+	// The resolved settings, the host's per-project preferences included (the
+	// project settings page edits those), as a TUI session reads them.
+	eff, err := config.Resolve(cwd, os.Getenv, config.Settings{})
 	if err != nil {
 		return fmt.Errorf("load settings: %w", err)
 	}
+	settings := eff.Settings
+	var startNote string
 	if !settings.GuardrailsEnabled() {
-		return errors.New("guardrails are off; remote sessions never run without them")
+		switch {
+		case pick.AllowGuardrailsOff:
+			// The host said a web session may run without them.
+		case eff.Origin["guardrails"] == config.SourceProjectPrefs:
+			// A preference (f3 in the TUI, or the project settings page) is
+			// not the host's consent for remote sessions: they run with
+			// guardrails on.
+			on := true
+			settings.Guardrails = &on
+			startNote = "guardrails are on for this remote session: the project's preference to turn them off applies only where the host allows it"
+		default:
+			return errors.New("guardrails are off; remote sessions never run without them")
+		}
 	}
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
 		return fmt.Errorf("load embedded classifier: %w", err)
 	}
 	projectPol, _ := posture.Load(cwd)
-	pol := posture.Defaults().Override(projectPol)
+	basePol := posture.Defaults().Override(projectPol)
+	pol := basePol
+	if !settings.GuardrailsEnabled() {
+		pol = posture.AllIgnore()
+	}
 	resolver, err := newResolver(cwd)
 	if err != nil {
 		return err
@@ -527,9 +590,11 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		Client: client, HostID: headless.HostID(),
 		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		RemotePrompts: settings.SyncRemotePromptsEnabled(),
-		// Nobody answers asks in a remote session: they are off.
-		RemoteAnswers: false,
-		Git:           gs.Raw,
+		// Without session controls nobody answers asks in a remote session:
+		// they are off. With them, the ask control turns web answers on.
+		RemoteAnswers:  false,
+		RemoteCommands: pick.Controls,
+		Git:            gs.Raw,
 		OnControls: func(_ string, c sessionsync.Controls) {
 			if c.GitSync != nil && gs.Enabled() != *c.GitSync {
 				gs.SetEnabled(*c.GitSync)
@@ -547,32 +612,192 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		Mode: string(mode), DispatchID: dispatch,
 	})
 
-	// Asks off exactly as for `belai -prompt`: nobody can answer one, so a
-	// call that would ask is decided by the posture and permission rules.
-	// (AskDisabled is left alone: it would resolve every ask to allow.)
 	board, src := cliKanban(cwd, sessionID, settings)
-	sess, err := headless.NewSession(ctx, headless.Params{
-		Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
-		PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
-		MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-	})
+	tlog := turnlog.New(w)
+	if startNote != "" {
+		tlog.System(startNote)
+	}
+	// Every role-manager decision this session makes is written to its
+	// transcript, shown or not.
+	defer tlog.AttachRoleManager()()
+
+	opts := rc.SessionOptions{
+		Log: tlog, Mirror: syncer, Dispatch: dispatch,
+		Prompt: prompt, Mode: mode, Idle: idle, Out: stderr,
+		Facts: map[string]any{
+			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
+			"guardrails": settings.GuardrailsEnabled(), "routing": cfg.Routing.Kind,
+		},
+	}
+	if !pick.Controls {
+		// Asks off exactly as for `belai -prompt`: nobody can answer one, so a
+		// call that would ask is decided by the posture and permission rules.
+		// (AskDisabled is left alone: it would resolve every ask to allow.)
+		sess, err := headless.NewSession(ctx, headless.Params{
+			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
+			PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
+			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
+		})
+		if err != nil {
+			w.System("remote session could not start: " + err.Error())
+			syncer.Nudge()
+			return err
+		}
+		opts.Agent = sess
+		return rc.RunSession(ctx, opts)
+	}
+
+	// Session controls from the web: the state starts from the resolved
+	// settings and the request, and each change rebuilds the agent session
+	// from a copy of the settings with the state overlaid. Nothing is written.
+	modeName := string(mode)
+	if modeName == "" {
+		modeName = "auto"
+	}
+	ctlState := sessionctl.FromSettings(settings, modeName, cfg.Provider, cfg.Model, settings.Effort)
+	env := rcControlEnv(cfg, pick.AllowGuardrailsOff)
+	var prevDiag io.Closer
+	build := func(st sessionctl.State) (rc.Runner, error) {
+		s := st.Apply(settings)
+		p := basePol
+		if !s.GuardrailsEnabled() {
+			p = posture.AllIgnore()
+		}
+		c := cfg
+		if st.Provider != cfg.Provider || st.Model != cfg.Model {
+			// A model picked on the web outranks the routing table.
+			s.Routing = nil
+			nc, err := run.ResolveWithSource(st.Model, st.Provider, os.Getenv, resolver)
+			if err != nil {
+				return nil, err
+			}
+			if nc, err = withClassifier(nc, s, resolver); err != nil {
+				return nil, err
+			}
+			c = nc
+		}
+		config.SetActiveJevThresholds(s.JevThresholds())
+		// Language servers run only when the web turned them on, in this
+		// directory the host trusts (internal/lsp scrubs their environment,
+		// gives them their own process group and refuses every applyEdit).
+		gate := rolemanager.DiagnosticsGateFromSettings(s, []string{cwd}, st.LSP && s.LSPEnabled())
+		askOff := !st.Ask
+		sess, err := headless.NewSession(ctx, headless.Params{
+			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, Settings: s,
+			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
+			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
+			Diagnostics: &gate,
+		})
+		if err != nil {
+			closeDiagnoser(gate.Diagnoser)
+			return nil, err
+		}
+		if prevDiag != nil {
+			_ = prevDiag.Close()
+		}
+		prevDiag, _ = gate.Diagnoser.(io.Closer)
+		return sess, nil
+	}
+	defer func() {
+		if prevDiag != nil {
+			_ = prevDiag.Close()
+		}
+	}()
+	ctl, err := rc.NewController(ctlState, env, build)
 	if err != nil {
 		w.System("remote session could not start: " + err.Error())
 		syncer.Nudge()
 		return err
 	}
-	tlog := turnlog.New(w)
-	// Every role-manager decision this session makes is written to its
-	// transcript, shown or not.
-	defer tlog.AttachRoleManager()()
-	return rc.RunSession(ctx, rc.SessionOptions{
-		Agent: sess, Log: tlog, Mirror: syncer, Dispatch: dispatch,
-		Prompt: prompt, Mode: mode, Idle: idle, Out: stderr,
-		Facts: map[string]any{
-			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
-			"guardrails": true, "routing": cfg.Routing.Kind,
+	opts.Controls = ctl
+	opts.Commands = syncer.Commands()
+	opts.AckCommand = syncer.AckCommand
+	opts.Changed = syncer.SetSessionControls
+	opts.Answers = syncer
+	opts.AfterTurn = func(ctx context.Context, prompt string, res run.Result, paths []string) {
+		rcAfterTurn(ctx, ctl, settings, cfg, pol, cwd, sessionID, tlog, prompt, res, paths)
+	}
+	return rc.RunSession(ctx, opts)
+}
+
+// rcControlEnv is what a web session's controls may name on this host: a
+// provider it holds credentials for, the effort levels the model takes, the
+// fast tier for ctrl+q, and guardrails off only with the host's flag.
+func rcControlEnv(cfg run.Config, allowGuardrailsOff bool) sessionctl.Env {
+	main := [2]string{cfg.Provider, cfg.Model}
+	return sessionctl.Env{
+		AllowGuardrailsOff: allowGuardrailsOff,
+		CheckModel:         rc.CheckModel,
+		Efforts: func(p, m string) []string {
+			if l := models.Efforts(p, m); len(l) > 0 {
+				return l
+			}
+			return models.DefaultEfforts()
 		},
+		Swap: func(st sessionctl.State) (string, string, bool) {
+			f := cfg.Routing.Fast
+			if f == nil || f.Model == "" {
+				return "", "", false
+			}
+			if st.Provider == f.Provider && st.Model == f.Model {
+				return main[0], main[1], true
+			}
+			return f.Provider, f.Model, true
+		},
+	}
+}
+
+// rcAfterTurn runs the auto-commit and the post-end test pass for a web
+// session's finished turn, each when its control is on. Both go through the
+// same paths as the TUI's and the CLI's: the commit is the harness's own, of
+// the paths the goal's tools changed, and the pass runs under the session's
+// gates. Their lines go to the transcript.
+func rcAfterTurn(ctx context.Context, ctl *rc.Controller, settings config.Settings, cfg run.Config, pol posture.Policy, cwd, sessionID string, tlog *turnlog.Log, prompt string, res run.Result, paths []string) {
+	st := ctl.State()
+	s := st.Apply(settings)
+	if !s.GuardrailsEnabled() {
+		pol = posture.AllIgnore()
+	}
+	if st.AutoCommit && res.GoalSentinel == rolemanager.GoalComplete && len(paths) > 0 {
+		msg := forge.TaskCommitMessage(firstLine(prompt, 200), paths)
+		sha, err := forge.CommitPaths(ctx, forge.NonInteractiveRunner, cwd, paths, msg)
+		switch {
+		case err != nil:
+			tlog.System("auto-commit: " + forge.CleanErr(err))
+		case sha != "":
+			tlog.System(fmt.Sprintf("auto-commit %s %s", sha, msg))
+			project, _ := kanban.ProjectFor(cwd)
+			audit.Emit(audit.Fact{Kind: audit.RepoCommit, ActorKind: audit.ActorAgent, Actor: "belai",
+				SessionID: sessionID, Repo: project, Commit: forge.HeadCommit(ctx, forge.NonInteractiveRunner, cwd), Outcome: "auto_commit"})
+		}
+	}
+	if st.Mode == "plan" {
+		return
+	}
+	trigger := testpass.TriggerSession
+	if res.GoalSentinel == rolemanager.GoalComplete {
+		trigger = testpass.TriggerGoal
+	}
+	if !headless.ShouldPostEnd(ctx, s, cwd, trigger) {
+		return
+	}
+	sess, _ := ctl.Runner().(*agent.Session)
+	out := headless.RunPostEnd(ctx, headless.PostEnd{
+		Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: s,
+		Session: sess, Trigger: trigger, Observe: tlog.Observe,
+		Notify: tlog.System,
 	})
+	tlog.Flush()
+	tlog.System(out.Line())
+	if out.Report != "" {
+		tlog.System(out.Report)
+	}
+}
+
+func closeDiagnoser(d rolemanager.Diagnoser) {
+	if c, ok := d.(io.Closer); ok {
+		_ = c.Close()
+	}
 }
 
 func firstLine(s string, n int) string {
