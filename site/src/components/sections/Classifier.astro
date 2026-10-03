@@ -8,7 +8,7 @@ import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to Clef from Cloudflare on Workers AI, to Strands Decider-2B or Clef or another decision model on your own machine, or to any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to Strands Decider-2B or another decision model on your own machine, or to any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
@@ -37,11 +37,6 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
     setup: 'Jev as the whole classifier',
     how: 'kind: openrouter-decisions + typesafe/jev-1.13',
     cells: [J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel')],
-  },
-  {
-    setup: 'Clef on Workers AI as the whole classifier',
-    how: 'kind: systemone + cloudflare-workers-ai',
-    cells: [J('Clef → sentinel'), J('Clef → sentinel'), J('Clef → sentinel'), J('Clef → sentinel')],
   },
   {
     setup: 'Strands Decider-2B as the whole classifier',
@@ -189,7 +184,6 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           Jev is not a chat model, so it is not this kind. It has two of its own:
           <code class="mono">classifier.kind: openrouter-decisions</code> for OpenRouter and the local decision model,
           and <code class="mono">classifier.kind: systemone</code> for every server that speaks the systemone API:
-          Clef on Cloudflare Workers AI (<code class="mono">classifier.provider: cloudflare-workers-ai</code>),
           TypeSafe's hosted API (<code class="mono">classifier.provider: typesafe</code>), Strands Decider-2B on your
           machine (<code class="mono">classifier.provider: strands-decider</code>) and servers you add. <code class="mono">/model</code>
           lists both beside llm and models. A settings file that says <code class="mono">jev</code>, the kind's
@@ -454,16 +448,12 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           The same questions Jev answers on OpenRouter can be answered on hardware you control. Pick{' '}
-          <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B,
-          Plumb-4B, Clef-flash or Clef. Belai asks before it downloads the model (2.5 GB, or 6.5 GB for Clef-flash), checks the file against the hash Hugging
+          <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B or
+          Plumb-4B. Belai asks before it downloads the 2.5 GB model, checks the file against the hash Hugging
           Face publishes, and starts one llama-server on localhost that every Belai process on the machine
           shares. Or point Belai at a server you already run that speaks the{' '}
           <code class="mono">/v1/systemone</code> API, such as laya-serve, as a provider of kind{' '}
           <code class="mono">systemone</code>.
-        </p>
-        <p class="mt-4 text-vx-ink/80">
-          Clef runs on llama.cpp build 11371 or later, which answers its questions on its own systemone endpoint. Belai
-          starts it with the whole context as one batch, as Clef needs, and the test says when llama.cpp is too old.
         </p>
         <p class="mt-4 text-vx-ink/80">
           Whichever you pick answers every Jev question Belai has: the security check, the choice of mode for
@@ -513,44 +503,9 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <article id="clef" class="engine mt-sub" aria-labelledby="engine-clef">
-    <header class="engine__head">
-      <span class="engine__num mono">03c</span>
-      <h3 id="engine-clef" class="text-3xl font-bold tracking-tight text-vx-ink">Clef on Cloudflare Workers AI</h3>
-      <code class="engine__tag mono">@cf/cloudflare/clef-flash · systemone</code>
-    </header>
-    <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
-      <div class="prose-measure">
-        <p class="text-vx-ink/80">
-          Clef is Cloudflare's open decision model, in two sizes: Clef-flash (9B), built for speed, and Clef (27B),
-          the most accurate. It answers the questions Belai would send to Jev in one pass, so it can run the
-          security check, the choice of mode, model routing and every relevance job.
-        </p>
-        <p class="mt-4 text-vx-ink/80">
-          If your Cloudflare account is already set up as a provider, there is nothing else to configure. Under{' '}
-          <code class="mono">classifier.kind: systemone</code>, <code class="mono">/model</code> lists Clef first and
-          switching to that kind starts on Clef-flash. Belai uses your own API token, sends it only to Cloudflare's
-          API or your AI Gateway, and tests the choice before saving it.
-        </p>
-        <p class="mt-4 text-vx-ink/80">
-          Clef answers every question of a request together, and its probabilities use Cloudflare's own
-          calibration. For the security check the 27B model gives the clearer scores; Clef-flash gives the fastest
-          answers and passes more borderline checks to the agent model.
-        </p>
-      </div>
-      <dl class="facts">
-        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: cloudflare-workers-ai</code> (or <code class="mono">cloudflare-ai-gateway</code>) and <code class="mono">classifier.model: @cf/cloudflare/clef-flash</code></dd></div>
-        <div><dt>Needs</dt><dd>a Cloudflare API token with Workers AI and the account id</dd></div>
-        <div><dt>Cost</dt><dd>$0.24 per million input tokens</dd></div>
-        <div><dt>Content goes to</dt><dd>Cloudflare Workers AI, text only</dd></div>
-        <div><dt>Request fails</dt><dd>content is blocked</dd></div>
-      </dl>
-    </div>
-  </article>
-
   <article id="strands-decider" class="engine mt-sub" aria-labelledby="engine-decider">
     <header class="engine__head">
-      <span class="engine__num mono">03d</span>
+      <span class="engine__num mono">03c</span>
       <h3 id="engine-decider" class="text-3xl font-bold tracking-tight text-vx-ink">Strands Decider-2B, local first</h3>
       <code class="engine__tag mono">strands-decider · systemone</code>
     </header>
