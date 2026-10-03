@@ -55,6 +55,16 @@ func (m *memStore) Store(provider, field, secret string, _ credentials.Source) e
 	return nil
 }
 func (m *memStore) PreferredBackend() credentials.Source { return credentials.SourceUserFile }
+func (m *memStore) Clear(provider, field string, _ credentials.Source) error {
+	if err := m.failFor[provider]; err != nil {
+		return err
+	}
+	if field != "api_key" {
+		panic("a provider key is cleared from the api_key field")
+	}
+	delete(m.stored, provider)
+	return nil
+}
 func (m *memStore) Lookup(provider, _ string) (string, string, bool) {
 	if o, ok := m.origin[provider]; ok {
 		return "v", o, true
@@ -372,5 +382,70 @@ func TestProviderKeyRequestsAreAuditedByKindOnly(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func (h *itemHarness) removeKeys(providers ...string) (string, string) {
+	return h.run(sessionsync.Dispatch{Kind: "provider_keys_remove", Providers: providers})
+}
+
+// A remove request clears what an install stored, asks the library nothing, and
+// names slugs only.
+func TestProviderKeysRemoveClearsTheCredentialsFile(t *testing.T) {
+	h := newItemHarness(t)
+	useRealStore(t)
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	const openai = "sk-proj-REMOVESECRET-aaaaaaaaaaaa"
+	h.serveKeys(`{"keys":[{"provider":"openai","key":"` + openai + `"},{"provider":"anthropic","key":"sk-ant-KEEPSECRET"}]}`)
+	if status, why := h.keys("openai", "anthropic"); status != sessionsync.DispatchStarted {
+		t.Fatalf("%s %q", status, why)
+	}
+	calls := h.site.keysCalls
+
+	status, why := h.removeKeys("openai", "openai")
+	if status != sessionsync.DispatchStarted || why != "cleared keys for openai" {
+		t.Fatalf("%s %q", status, why)
+	}
+	if h.site.keysCalls != calls {
+		t.Error("a remove request asked the library for keys")
+	}
+	r, err := credentials.NewGlobalResolver()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.Resolve("openai").Get("api_key"); ok {
+		t.Error("openai still resolves a key")
+	}
+	if got, ok := r.Resolve("anthropic").Get("api_key"); !ok || got != "sk-ant-KEEPSECRET" {
+		t.Error("anthropic lost its key")
+	}
+	b, _ := json.Marshal([]any{why, h.log.String()})
+	if strings.Contains(string(b), "SECRET") {
+		t.Errorf("a key reached the log or the ack: %s", b)
+	}
+}
+
+func TestProviderKeysRemoveSaysWhatItCouldNotClear(t *testing.T) {
+	h := newItemHarness(t)
+	mem := useMemStore(t)
+	mem.stored["groq"] = "k"
+	mem.origin["openai"] = "env $OPENAI_API_KEY"
+	mem.failFor["mistral"] = errors.New("disk full")
+	status, why := h.removeKeys("groq", "openai", "mistral")
+	if status != sessionsync.DispatchStarted {
+		t.Fatalf("%s %q", status, why)
+	}
+	if !strings.Contains(why, "cleared keys for groq, openai (an environment variable still supplies one)") || !strings.Contains(why, "mistral (could not clear it: disk full)") {
+		t.Errorf("report = %q", why)
+	}
+	if _, ok := mem.stored["groq"]; ok {
+		t.Error("groq was not cleared")
+	}
+	if status, why := h.removeKeys("Not A Slug"); status != sessionsync.DispatchRefused || why != "that is not a provider slug" {
+		t.Errorf("bad slug: %s %q", status, why)
+	}
+	if status, _ := h.removeKeys(); status != sessionsync.DispatchRefused {
+		t.Errorf("no slugs: %s", status)
 	}
 }
