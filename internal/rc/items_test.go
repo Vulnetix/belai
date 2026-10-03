@@ -813,6 +813,62 @@ func TestItemInstallWritesTokenBudgetsAndNamesTheSet(t *testing.T) {
 	}
 }
 
+// The website's Pix sandbox Launch tab and the sandbox Worker send the rewrite
+// table as an item_install naming bash_rewrite, with replace on when the host
+// already holds one. The host writes it to bash_rewrite in its settings, settles
+// it so autosync does not push it back, and reports the library's own hash, which
+// is how the website tells which version a machine holds.
+func TestItemInstallOfTheRewriteTableByDispatch(t *testing.T) {
+	h := newItemHarness(t)
+	doc := map[string]any{"name": "bash_rewrite", "rules": []map[string]any{{"match": "npm", "replace": "pnpm"}, {"match": "pip install", "replace": "uv pip install"}}}
+	h.serve("bash_rewrite", doc)
+	installRewrite := func(overwrite bool) (string, string) {
+		return h.run(sessionsync.Dispatch{Kind: "item_install", ItemKind: "rewrite", Name: "bash_rewrite", Library: itemID, Version: itemVer, Overwrite: overwrite})
+	}
+	if status, why := installRewrite(false); status != sessionsync.DispatchStarted {
+		t.Fatalf("install: %s %s", status, why)
+	}
+	s, _ := config.LoadGlobal()
+	if s.BashRewrite == nil || len(s.BashRewrite.Rules) != 2 || s.BashRewrite.Rules[1].Replace != "uv pip install" || s.BashRewrite.Enabled != nil {
+		t.Fatalf("bash_rewrite = %+v", s.BashRewrite)
+	}
+	it, err := libstore.Get(libitem.Rewrite, "bash_rewrite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.d.libsync.due(localItem{kind: "rewrite", id: "bash_rewrite", name: "bash_rewrite", data: it.Doc}, time.Now()) {
+		t.Error("an installed rewrite table is due for a sync")
+	}
+	raw, _ := json.Marshal(doc)
+	want, err := libitem.Validate(libitem.Rewrite, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held string
+	for _, i := range LocalInventory().Items {
+		if i.Kind == "rewrite" && i.Name == "bash_rewrite" {
+			held = i.SHA256
+		}
+	}
+	if held != want.SHA256 {
+		t.Errorf("inventory hash %q, library hash %q", held, want.SHA256)
+	}
+
+	// A newer table over the host's own needs replace, which the console and the
+	// Worker send; switching the table off travels the same way.
+	h.serve("bash_rewrite", map[string]any{"name": "bash_rewrite", "enabled": false, "rules": []map[string]any{{"match": "docker", "replace": "podman"}}})
+	if status, why := installRewrite(false); status != sessionsync.DispatchRefused || !strings.Contains(why, "already has its own rewrite (named bash_rewrite)") {
+		t.Fatalf("without replace: %s %q", status, why)
+	}
+	if status, why := installRewrite(true); status != sessionsync.DispatchStarted || !strings.Contains(why, "replacing") {
+		t.Fatalf("replace: %s %q", status, why)
+	}
+	s, _ = config.LoadGlobal()
+	if s.BashRewrite == nil || len(s.BashRewrite.Rules) != 1 || s.BashRewrite.Enabled == nil || *s.BashRewrite.Enabled {
+		t.Fatalf("replaced bash_rewrite = %+v", s.BashRewrite)
+	}
+}
+
 func TestItemBackupOfTheRewriteTableAndOfNothing(t *testing.T) {
 	h := newItemHarness(t)
 	status, why := h.run(sessionsync.Dispatch{Kind: "item_backup", ItemKind: "rewrite", Name: "bash_rewrite"})
