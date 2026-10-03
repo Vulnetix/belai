@@ -123,10 +123,13 @@ func DecisionLocalSteps(m decisions.LocalModel, timeout time.Duration, maxState 
 				return fail("llama-server is not on PATH; the local decision model runs in it", installLlamaHint(), retryHint())
 			}
 			build, line := localinfer.Version(ctx, bin)
+			_ = line
+			if m.MinBuild > 0 && build > 0 && build < m.MinBuild {
+				return fail(fmt.Sprintf("llama-server build %d is too old for %s, which needs build %d or later", build, m.Label, m.MinBuild), upgradeLlamaHint(), retryHint())
+			}
 			if build == 0 {
 				return ok("found %s", bin.Path)
 			}
-			_ = line
 			return ok("llama-server build %d", build)
 		}},
 		{Name: "weights", Run: func(ctx context.Context, st *State) Outcome {
@@ -214,6 +217,9 @@ func launchFailure(err error) Outcome {
 	}
 	if errors.Is(err, decisionserver.ErrWeightsMissing) {
 		return fail("the model file is missing", retryHint())
+	}
+	if errors.Is(err, decisionserver.ErrUpgrade) {
+		return fail(oneLine(err.Error(), 160), upgradeLlamaHint(), retryHint())
 	}
 	var le *localinfer.LaunchError
 	if errors.As(err, &le) {

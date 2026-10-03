@@ -221,7 +221,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	// model that would chat are refused rather than quietly classified by a
 	// model the user did not ask for.
 	if IsDecisionKind(config.CanonicalKind(cls.Kind)) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
-		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, %s, a provider profile of kind systemone, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.DeciderProvider, decisions.LocalProvider)
+		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, %s, Clef on cloudflare-workers-ai or cloudflare-ai-gateway, a provider profile of kind systemone, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.DeciderProvider, decisions.LocalProvider)
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -424,7 +424,7 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 			switch {
 			case cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model):
 				return ClassifierKindOpenRouterDecisions
-			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider:
+			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider, decisions.IsHostedClef(cls.Provider, cls.Model):
 				return ClassifierKindSystemOne
 			}
 		}

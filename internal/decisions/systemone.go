@@ -53,6 +53,20 @@ type SystemOne struct {
 	// OnConnRefused, when set, is called when nothing listens at the URL, so
 	// a local supervisor can start its server again.
 	OnConnRefused func()
+	// WireModel, when set, is the "model" value sent with SendModel in place
+	// of Model, which stays the catalogue id Identity names (Workers AI takes
+	// "clef" for @cf/cloudflare/clef).
+	WireModel string
+	// MaxQuestions, when set, is the most questions one request may carry; a
+	// larger request is never sent and fails as unavailable.
+	MaxQuestions int
+	// Envelope reads Cloudflare's API envelope ({"result": …, "success": …,
+	// "errors": […]}) around the answers. A bare answer body is read too.
+	Envelope bool
+	// ExtraHeaders, when set, adds harness-composed headers (AI Gateway's
+	// cf-aig-authorization) to requests to BaseURL only; redirects are
+	// refused, so they never reach another host.
+	ExtraHeaders func() (map[string]string, error)
 }
 
 func (s *SystemOne) baseURL() string {
@@ -124,6 +138,9 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if s.MaxQuestions > 0 && len(r.Questions) > s.MaxQuestions {
+		return Result{}, &Error{Class: ClassUnavailable, Msg: "a request has more questions than the model reads at once"}
+	}
 	questions := make(map[string]wireQuestion, len(r.Questions))
 	for id, q := range r.Questions {
 		if s.MaxOptions > 0 && len(q.Options) > s.MaxOptions {
@@ -154,8 +171,10 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		questions[id] = wq
 	}
 	body := map[string]any{"state": r.State, "questions": questions}
-	if s.SendModel && s.Model != "" {
-		body["model"] = s.Model
+	if s.SendModel {
+		if m := s.wireModel(); m != "" {
+			body["model"] = m
+		}
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -176,6 +195,15 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
+	if s.ExtraHeaders != nil {
+		h, err := s.ExtraHeaders()
+		if err != nil {
+			return Result{}, &Error{Class: ClassAuth, Msg: "resolve gateway credential", Err: err}
+		}
+		for k, v := range h {
+			req.Header.Set(k, v)
+		}
+	}
 	resp, err := s.client().Do(req)
 	if err != nil {
 		if s.OnConnRefused != nil && IsConnRefused(err) {
@@ -189,7 +217,20 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 			return Result{}, &Error{Status: resp.StatusCode, Class: ClassProtocol, Msg: "server redirected; redirects are not followed"}
 		}
-		return Result{}, &Error{Status: resp.StatusCode, Class: classForStatus(resp.StatusCode), Msg: excerpt(data)}
+		msg := excerpt(data)
+		if s.Envelope {
+			if m := envelopeError(data); m != "" {
+				msg = m
+			}
+		}
+		return Result{}, &Error{Status: resp.StatusCode, Class: classForStatus(resp.StatusCode), Msg: msg}
+	}
+	if s.Envelope {
+		inner, err := unwrapEnvelope(data)
+		if err != nil {
+			return Result{}, err
+		}
+		data = inner
 	}
 	var out struct {
 		Answers map[string]wireAnswer `json:"answers"`
@@ -211,6 +252,65 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		return Result{}, err
 	}
 	return Result{Answers: answers, Meta: Meta{Latency: time.Since(start), LetterMass: 1, Path: s.path()}}, nil
+}
+
+func (s *SystemOne) wireModel() string {
+	if s.WireModel != "" {
+		return s.WireModel
+	}
+	return s.Model
+}
+
+// cfEnvelope is Cloudflare's API envelope.
+type cfEnvelope struct {
+	Result  json.RawMessage `json:"result"`
+	Success *bool           `json:"success"`
+	Errors  []struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// unwrapEnvelope returns the answers body inside Cloudflare's envelope. A
+// body that already holds answers (a gateway that unwrapped it) is returned
+// as it is. success:false is a refusal, worded from the first error only
+// after sanitising.
+func unwrapEnvelope(data []byte) ([]byte, error) {
+	var probe struct {
+		Answers json.RawMessage `json:"answers"`
+	}
+	if json.Unmarshal(data, &probe) == nil && len(probe.Answers) > 0 {
+		return data, nil
+	}
+	var env cfEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil, &Error{Class: ClassProtocol, Msg: "response is not a Cloudflare answer", Err: err}
+	}
+	if env.Success != nil && !*env.Success {
+		msg := envelopeError(data)
+		if msg == "" {
+			msg = "Cloudflare reported a failure"
+		}
+		return nil, &Error{Class: ClassSchema, Msg: msg}
+	}
+	if len(env.Result) == 0 || string(env.Result) == "null" {
+		return nil, &Error{Class: ClassProtocol, Msg: "Cloudflare answer has no result"}
+	}
+	return env.Result, nil
+}
+
+// envelopeError is the first error message of a Cloudflare envelope,
+// sanitised and capped, or "".
+func envelopeError(data []byte) string {
+	var env cfEnvelope
+	if json.Unmarshal(data, &env) != nil || len(env.Errors) == 0 {
+		return ""
+	}
+	m := sanitize.Line(env.Errors[0].Message, 0)
+	if m == "" {
+		return ""
+	}
+	return truncate(m, 200)
 }
 
 // transportError classes a failure before any response arrived.

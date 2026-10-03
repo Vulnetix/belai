@@ -12,11 +12,12 @@ import (
 // TestLiveLocalDecisionLadder runs the whole local ladder against the real
 // Hugging Face download and the llama-server on PATH. It downloads ~2.6 GB,
 // so it runs only with BELAI_LIVE_DECISION set to a catalogue id
-// (decider-4b or plumb-4b), and BELAI_MODELS_DIR pointing somewhere roomy.
+// (decider-4b, plumb-4b, clef-flash or clef), and BELAI_MODELS_DIR pointing
+// somewhere roomy. Clef needs llama-server build 11371 or later.
 func TestLiveLocalDecisionLadder(t *testing.T) {
 	id := os.Getenv("BELAI_LIVE_DECISION")
 	if id == "" {
-		t.Skip("set BELAI_LIVE_DECISION=decider-4b|plumb-4b to run")
+		t.Skip("set BELAI_LIVE_DECISION=decider-4b|plumb-4b|clef-flash|clef to run")
 	}
 	m, ok := decisions.LocalModelByID(id)
 	if !ok {

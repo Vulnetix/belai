@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,6 +43,12 @@ type DecisionsConfig struct {
 	// server (see decisions.SystemOne).
 	CriteriaObject bool
 	MaxOptions     int
+	// WireModel, MaxQuestions, Envelope and ExtraHeaders shape requests for
+	// Clef on Workers AI or AI Gateway (see decisions.SystemOne).
+	WireModel    string
+	MaxQuestions int
+	Envelope     bool
+	ExtraHeaders func() (map[string]string, error)
 	// Timeout and MaxStateBytes come from classifier.decision; zero keeps
 	// the backend default.
 	Timeout       time.Duration
@@ -83,6 +91,10 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			Timeout:        d.Timeout,
 			CriteriaObject: d.CriteriaObject,
 			MaxOptions:     d.MaxOptions,
+			WireModel:      d.WireModel,
+			MaxQuestions:   d.MaxQuestions,
+			Envelope:       d.Envelope,
+			ExtraHeaders:   d.ExtraHeaders,
 		}
 		if d.Decider != nil {
 			sup := deciderserver.Shared(*d.Decider)
@@ -132,6 +144,9 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 		out.Local = m
 	case decisions.BackendSystemOne:
+		if decisions.IsHostedClef(cls.Provider, cls.Model) {
+			return resolveClef(out, cls, src)
+		}
 		if cls.Provider == decisions.DeciderProvider {
 			// Strands Decider-2B on this machine: a loopback server the
 			// supervisor finds or starts, no key, no profile.
@@ -190,6 +205,100 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 	}
 	return out, true, nil
+}
+
+// cfAccountID is the shape of a Cloudflare account id.
+var cfAccountID = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// cfGatewayID is the shape of an AI Gateway id.
+var cfGatewayID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// lookupCred reads one credential field, trimmed; "" when unset.
+func lookupCred(src CredentialSource, provider, field string) string {
+	if src == nil {
+		return ""
+	}
+	v, _, _ := src.Lookup(provider, field)
+	return strings.TrimSpace(v)
+}
+
+// resolveClef resolves Clef on Workers AI, directly or through AI Gateway,
+// from the user's own Cloudflare credentials. It is never firewall-routed:
+// the request is built here, not from a chat config. The key rides only in
+// the Authorization header to Cloudflare's API (or the gateway), and the
+// gateway token only in cf-aig-authorization to the gateway.
+func resolveClef(out DecisionsConfig, cls *config.ClassifierSettings, src CredentialSource) (DecisionsConfig, bool, error) {
+	m, _ := decisions.ClefByID(strings.TrimSpace(cls.Model))
+	out.Model = m.ID
+	out.WireModel = m.Wire
+	out.SendModel = true
+	out.Envelope = true
+	out.CriteriaObject = true
+	out.MaxOptions = decisions.ClefMaxOptions
+	out.MaxQuestions = decisions.ClefMaxQuestions
+	workersKey := func() (string, error) {
+		return lookupCred(src, decisions.CloudflareWorkersAIProvider, "api_key"), nil
+	}
+	switch cls.Provider {
+	case decisions.CloudflareWorkersAIProvider:
+		acct := lookupCred(src, decisions.CloudflareWorkersAIProvider, "account_id")
+		if !cfAccountID.MatchString(acct) {
+			return DecisionsConfig{}, true, fmt.Errorf("cloudflare-workers-ai: account_id must be a Cloudflare account id (32 hex characters) to run %s", m.ID)
+		}
+		out.BaseURL = "https://api.cloudflare.com/client/v4/accounts/" + acct
+		out.Path = "/ai/run/" + m.ID
+		out.Key = func() (string, error) {
+			k, _ := workersKey()
+			if k == "" {
+				return "", fmt.Errorf("cloudflare-workers-ai has no API token")
+			}
+			return k, nil
+		}
+	case decisions.CloudflareGatewayProvider:
+		base, err := clefGatewayBase(lookupCred(src, decisions.CloudflareGatewayProvider, "base_url"), lookupCred(src, decisions.CloudflareGatewayProvider, "account_id"))
+		if err != nil {
+			return DecisionsConfig{}, true, err
+		}
+		out.BaseURL = base
+		out.Path = "/workers-ai/" + m.ID
+		// The Workers AI token when one is configured; otherwise the
+		// gateway's stored key answers.
+		out.Key = workersKey
+		token := lookupCred(src, decisions.CloudflareGatewayProvider, "token")
+		out.ExtraHeaders = func() (map[string]string, error) {
+			if token == "" {
+				return nil, nil
+			}
+			return map[string]string{"cf-aig-authorization": "Bearer " + token}, nil
+		}
+	}
+	return out, true, nil
+}
+
+// clefGatewayBase is the AI Gateway root a Workers AI call goes under:
+// https://gateway.ai.cloudflare.com/v1/{account}/{gateway}. A configured
+// base_url (the compat URL the chat provider uses) names the gateway;
+// otherwise it is the account's "default" gateway.
+func clefGatewayBase(baseURL, account string) (string, error) {
+	gateway := "default"
+	if baseURL != "" {
+		u, err := url.Parse(baseURL)
+		if err != nil || u.Scheme != "https" || u.Host != "gateway.ai.cloudflare.com" || u.User != nil {
+			return "", fmt.Errorf("cloudflare-ai-gateway: base_url must be an https URL on gateway.ai.cloudflare.com to run Clef")
+		}
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) < 3 || parts[0] != "v1" {
+			return "", fmt.Errorf("cloudflare-ai-gateway: base_url must look like https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/compat")
+		}
+		account, gateway = parts[1], parts[2]
+	}
+	if !cfAccountID.MatchString(account) {
+		return "", fmt.Errorf("cloudflare-ai-gateway: account_id must be a Cloudflare account id (32 hex characters) to run Clef")
+	}
+	if !cfGatewayID.MatchString(gateway) {
+		return "", fmt.Errorf("cloudflare-ai-gateway: the gateway id in base_url is not a plain name")
+	}
+	return "https://gateway.ai.cloudflare.com/v1/" + account + "/" + gateway, nil
 }
 
 func deciderModelIDs() string {

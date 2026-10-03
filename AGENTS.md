@@ -273,12 +273,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   built-in classifier-only `typesafe` provider, key `TYPESAFE_API_KEY`, sent
   only to `https://api.typesafe.ai`), Strands Decider-2B on this machine (the
   built-in classifier-only `strands-decider` provider: upstream's
-  `strands-decider serve` on loopback, `internal/deciderserver`), a server
+  `strands-decider serve` on loopback, `internal/deciderserver`), Cloudflare's
+  Clef on Workers AI (`@cf/cloudflare/clef` or `clef-flash` under the
+  `cloudflare-workers-ai` or `cloudflare-ai-gateway` provider), a server
   speaking the `/v1/systemone` API (a provider profile of kind `systemone`;
-  these three are `classifier.kind` `systemone`, and `jev`, the kind's name
+  these four are `classifier.kind` `systemone`, and `jev`, the kind's name
   before, is read as `systemone` and never written), or the local decision
-  model (`decision-local`: Decider-4B or Plumb-4B on llama-server,
-  `internal/decisionserver`). The rules:
+  model (`decision-local`: Decider-4B or Plumb-4B read from letter
+  log-probabilities, or Clef-flash and Clef on llama-server's own
+  `/v1/systemone`, `internal/decisionserver`). The rules:
   - A `systemone` profile is a provider profile, so the project layer cannot
     add one; its URL is https or loopback http with no credentials in it, and
     its key rides only in the `Authorization` header to that URL, never across
@@ -297,6 +300,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     more options than the head reads is never sent. OpenRouter and Hugging
     Face are asked only whether they serve it; a remote decider is used only
     through OpenRouter's Decisions API or a `systemone` profile.
+  - Clef on Workers AI uses the user's own Cloudflare API token, resolved
+    from the credentials store and never from a firewall route
+    (`run.resolveClef` builds the request itself). The token rides only in
+    the `Authorization` header to
+    `api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/clef*`,
+    or to `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/...`
+    with the gateway token only in `cf-aig-authorization`; the account id is
+    32 hex characters and the gateway URL is checked to be on that host, and
+    a redirect is refused. Cloudflare's envelope error text is sanitised and
+    capped. A Clef model is never offered or asked to chat (the agent, fast
+    and routing pickers drop every decision model), and no image is sent.
+  - A local Clef runs on llama-server build 11371 or later (`Ensure` refuses
+    an older build before launching) with the harness-fixed argv plus
+    `--batch-size` and `--ubatch-size` equal to the context, so a decision
+    prompt is evaluated in one micro-batch.
   - The local server's binary comes from PATH and its argv is harness-fixed
     (`localinfer.DecisionArgs`: loopback host, `-m` path, alias). It starts
     only after the trust gate, with the scrubbed environment, in its own

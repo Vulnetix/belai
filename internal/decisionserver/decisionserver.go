@@ -50,6 +50,8 @@ var (
 	ErrWeightsMissing = errors.New("decision model weights are not downloaded")
 	// ErrNoBinary means llama-server is not on PATH.
 	ErrNoBinary = errors.New("llama-server is not installed")
+	// ErrUpgrade means llama-server is older than the model needs.
+	ErrUpgrade = errors.New("llama-server is too old for this decision model")
 )
 
 // Options shapes a launch.
@@ -159,23 +161,30 @@ func Serving(ctx context.Context, client *http.Client, base, alias string) bool 
 		return false
 	}
 	code, body := get("/v1/models")
+	if code == http.StatusOK {
+		var models struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(body, &models) == nil {
+			for _, m := range models.Data {
+				if m.ID == alias {
+					return true
+				}
+			}
+		}
+	}
+	// A server that answers only /v1/systemone (Clef) may not list models;
+	// its /props still names the alias it was started with.
+	code, body = get("/props")
 	if code != http.StatusOK {
 		return false
 	}
-	var models struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+	var props struct {
+		Alias string `json:"model_alias"`
 	}
-	if json.Unmarshal(body, &models) != nil {
-		return false
-	}
-	for _, m := range models.Data {
-		if m.ID == alias {
-			return true
-		}
-	}
-	return false
+	return json.Unmarshal(body, &props) == nil && props.Alias == alias
 }
 
 // ModelPath returns the on-disk GGUF for m, or "".
@@ -199,6 +208,13 @@ func Ensure(ctx context.Context, m decisions.LocalModel, o Options) (*Handle, er
 	bin, ok := localinfer.LlamaServer()
 	if !ok {
 		return nil, ErrNoBinary
+	}
+	if m.MinBuild > 0 {
+		// An unreadable build is let through: the launch itself then says
+		// whether the server knows the model.
+		if build, _ := localinfer.Version(ctx, bin); build > 0 && build < m.MinBuild {
+			return nil, fmt.Errorf("%w: build %d, needs %d or later", ErrUpgrade, build, m.MinBuild)
+		}
 	}
 
 	dir, err := RunDir()
@@ -231,7 +247,7 @@ func Ensure(ctx context.Context, m decisions.LocalModel, o Options) (*Handle, er
 	if deadline <= 0 {
 		deadline = 120 * time.Second
 	}
-	args := localinfer.DecisionArgs(localinfer.DecisionServerOptions{ModelPath: path, Alias: m.Alias, Port: port, NGL: o.NGL})
+	args := localinfer.DecisionArgs(localinfer.DecisionServerOptions{ModelPath: path, Alias: m.Alias, Port: port, NGL: o.NGL, OneBatch: m.Template == decisions.TemplateSystemOne})
 	stop, err := localinfer.Launch(ctx, bin, args, localinfer.BaseURL("127.0.0.1", port), localinfer.LaunchOptions{
 		Deadline: deadline,
 		Registry: o.Registry,
@@ -331,6 +347,8 @@ func Describe(err error) string {
 		return "decision model not downloaded; open /model and select it to download"
 	case errors.Is(err, ErrNoBinary):
 		return "llama-server is not installed; security checks use the agent model"
+	case errors.Is(err, ErrUpgrade):
+		return "llama-server is too old for this decision model; update llama.cpp (Clef needs build 11371 or later)"
 	}
 	var le *localinfer.LaunchError
 	if errors.As(err, &le) {

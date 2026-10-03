@@ -7,6 +7,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/models"
 )
 
 // Local first: under kind systemone, Strands Decider-2B leads the provider
@@ -45,5 +46,42 @@ func TestDeciderLeadsSystemOneWhenDetected(t *testing.T) {
 	}
 	if !found {
 		t.Error("/providers does not list strands-decider")
+	}
+}
+
+// Hosted Clef leads the systemone kind once Cloudflare is configured, its
+// picker offers Clef only, and no chat picker offers a Clef model.
+func TestHostedClefLeadsSystemOneWhenConfigured(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLOUDFLARE_API_KEY", "cf-token")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "0123456789abcdef0123456789abcdef")
+	a := newModelScreen(t, t.TempDir())
+	a.resolver = newTestResolver(t, a.workdir)
+	if !a.cloudflareClefReady(decisions.CloudflareWorkersAIProvider) {
+		t.Fatal("cloudflare-workers-ai is not configured from the environment")
+	}
+	a.settings.Classifier = &config.ClassifierSettings{Kind: config.SystemOneKind, Provider: decisions.TypeSafeProvider}
+	if got := a.classifierProviders(); got[0] != decisions.CloudflareWorkersAIProvider {
+		t.Fatalf("providers = %v, want cloudflare-workers-ai first", got)
+	}
+	a.modelState.pickingRole = roleClassifier
+	a.modelState.picking = true
+	if a.modelState.pendingProvider == nil {
+		a.modelState.pendingProvider = map[modelRole]string{}
+	}
+	a.modelState.pendingProvider[roleClassifier] = decisions.CloudflareWorkersAIProvider
+	name, cat := a.modelPickerCatalog()
+	if name != decisions.CloudflareWorkersAIProvider || len(cat) != len(decisions.ClefModels) {
+		t.Fatalf("picker %s %+v", name, cat)
+	}
+	for _, m := range cat {
+		if _, ok := decisions.ClefByID(m.ID); !ok {
+			t.Fatalf("the systemone picker offered %s", m.ID)
+		}
+	}
+	chat := filterOutDecisionsModels(decisions.CloudflareWorkersAIProvider, []models.Model{{ID: "@cf/cloudflare/clef"}, {ID: "@cf/moonshotai/kimi-k2.6"}})
+	if len(chat) != 1 || chat[0].ID != "@cf/moonshotai/kimi-k2.6" {
+		t.Fatalf("chat catalogue = %v", chat)
 	}
 }

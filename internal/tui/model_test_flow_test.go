@@ -213,7 +213,7 @@ func TestDecisionLocalIsOfferedAndOpensPicker(t *testing.T) {
 		t.Fatalf("picking=%v provider=%q", a.modelState.picking, a.pickerProvider(roleClassifier))
 	}
 	name, cat := a.modelPickerCatalog()
-	if name != decisions.LocalProvider || len(cat) != 2 || cat[0].ID != "decider-4b" || !strings.Contains(cat[0].Label, "download") {
+	if name != decisions.LocalProvider || len(cat) != len(decisions.LocalModels) || cat[0].ID != "decider-4b" || cat[2].ID != "clef-flash" || !strings.Contains(cat[0].Label, "download") {
 		t.Fatalf("catalog %s %+v", name, cat)
 	}
 	if !strings.Contains(a.modelView(), "decision-local") {

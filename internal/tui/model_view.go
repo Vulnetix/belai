@@ -900,6 +900,11 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	if a.modelState.pickingRole == roleClassifier && a.providerIsDecisions(name) {
 		return name, filterModels(a.decisionCatalog(name), a.modelState.filter)
 	}
+	// Under the systemone kind a Cloudflare provider offers Clef, its
+	// decision models, and nothing else.
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && decisions.IsCloudflareProvider(name) {
+		return name, filterModels(clefCatalog(), a.modelState.filter)
+	}
 	catalog := a.catalogFor(name)
 	// The classifier-only filter (curated BERT ids on huggingface, Jev on
 	// openrouter) applies to the models path, where the picker offers
@@ -923,26 +928,43 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 			catalog = filterOutDecisionsModels(name, catalog)
 		}
 	}
-	// Routed use cases are chat activities, so the routing picker never offers
-	// Jev Decisions models (which cannot chat). Stored Jev routing targets
-	// still load, but resolve to the main model at runtime.
-	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast {
+	// Routed use cases and the agent are chat activities, so their pickers
+	// never offer a decision model (Jev, Clef), which cannot chat. Stored
+	// Jev routing targets still load, but resolve to the main model at
+	// runtime.
+	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast || a.modelState.pickingRole == roleAgent {
 		catalog = filterOutDecisionsModels(name, catalog)
 	}
 	return name, filterModels(catalog, a.modelState.filter)
 }
 
-// filterOutDecisionsModels drops Jev Decisions models from a routing picker
-// catalogue. Routed use cases need chat, and a Jev Decisions model cannot
-// chat: it is only ever asked Decisions questions.
+// filterOutDecisionsModels drops decision models (OpenRouter's Jev, Clef on
+// Workers AI) from a chat picker catalogue. A decision model cannot chat: it
+// is only ever asked decision questions.
 func filterOutDecisionsModels(providerName string, catalog []models.Model) []models.Model {
 	out := make([]models.Model, 0, len(catalog))
 	for _, m := range catalog {
-		if !jev.IsDecisionsModel(providerName, m.ID) {
+		if _, decision := decisions.BackendOf(providerName, "", m.ID); !decision {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// clefCatalog is the Clef picker of a Cloudflare provider.
+func clefCatalog() []models.Model {
+	out := make([]models.Model, 0, len(decisions.ClefModels))
+	for _, m := range decisions.ClefModels {
+		out = append(out, models.Model{ID: m.ID, Label: m.Label + " · " + m.Blurb})
+	}
+	return out
+}
+
+// cloudflareClefReady reports whether a Cloudflare provider can run Clef:
+// its credentials resolve (the API token and account for Workers AI; the
+// account or base URL for AI Gateway).
+func (a *App) cloudflareClefReady(name string) bool {
+	return a.resolver != nil && a.resolver.Configured(name)
 }
 
 // classifierCatalogFor restricts a provider's catalogue to the models the
@@ -1432,12 +1454,17 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 			// the one most people have a key for. The provider row moves it.
 			c.Provider, c.Model = "openrouter", jev.DefaultModel
 		case next == run.ClassifierKindSystemOne && !fits:
-			// Local first: Strands Decider-2B on this machine when it is
-			// detected, so decisions stay on the host; TypeSafe's hosted API
-			// otherwise.
-			if a.deciderDetected() {
+			// Clef on Workers AI first when Cloudflare is configured (the
+			// fastest backend), then Strands Decider-2B on this machine when
+			// it is detected, then TypeSafe's hosted API.
+			switch {
+			case a.cloudflareClefReady(decisions.CloudflareWorkersAIProvider):
+				c.Provider, c.Model = decisions.CloudflareWorkersAIProvider, decisions.ClefModels[0].ID
+			case a.cloudflareClefReady(decisions.CloudflareGatewayProvider):
+				c.Provider, c.Model = decisions.CloudflareGatewayProvider, decisions.ClefModels[0].ID
+			case a.deciderDetected():
 				c.Provider, c.Model = decisions.DeciderProvider, decisions.Decider2B.ID
-			} else {
+			default:
 				c.Provider, c.Model = decisions.TypeSafeProvider, decisions.TypeSafeDefaultModel
 			}
 		case !run.IsDecisionKind(next) && decision:
@@ -1453,7 +1480,7 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 // decision backend: the local decision model, a self-hosted Jev profile, or
 // OpenRouter's Jev model.
 func (a *App) classifierSelectsDecision(c *config.ClassifierSettings) bool {
-	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model))
+	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model) || decisions.IsHostedClef(c.Provider, c.Model))
 }
 
 // cycleClassifierPhase advances one phase gate's source through the choices the
@@ -1763,11 +1790,20 @@ func (a *App) classifierProviders() []string {
 		return []string{"openrouter", decisions.LocalProvider}
 	}
 	if kind == run.ClassifierKindSystemOne {
-		// Strands Decider-2B on this machine leads when it is detected (local
-		// first); it is always offered, and its test says how to install it.
-		out := []string{decisions.TypeSafeProvider, decisions.DeciderProvider}
+		// Clef on Workers AI leads when Cloudflare is configured (directly,
+		// then through AI Gateway). Strands Decider-2B on this machine comes
+		// next when it is detected; it is always offered, and its test says
+		// how to install it.
+		var out []string
+		for _, cf := range []string{decisions.CloudflareWorkersAIProvider, decisions.CloudflareGatewayProvider} {
+			if a.cloudflareClefReady(cf) {
+				out = append(out, cf)
+			}
+		}
 		if a.deciderDetected() {
-			out = []string{decisions.DeciderProvider, decisions.TypeSafeProvider}
+			out = append(out, decisions.DeciderProvider, decisions.TypeSafeProvider)
+		} else {
+			out = append(out, decisions.TypeSafeProvider, decisions.DeciderProvider)
 		}
 		for _, name := range a.providerNames() {
 			if a.providerIsDecisions(name) && name != decisions.LocalProvider && name != decisions.TypeSafeProvider && name != decisions.DeciderProvider {

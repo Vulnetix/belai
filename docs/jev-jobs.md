@@ -10,8 +10,11 @@ without approving anything. This page is the reference for the relevance jobs.
 selected, and Strands Decider-2B can be that backend on your own machine
 (`classifier.provider: strands-decider`). Then the security guard, intent
 detection, routing and every relevance job are answered by a process on
-loopback: no API key, no network, and no state leaves the host. See
-[role manager](role-manager.md#decision-backends).
+loopback: no API key, no network, and no state leaves the host. Clef-flash or
+Clef on llama-server (`classifier.provider: decision-local`) does the same.
+When speed matters more, Clef on Cloudflare Workers AI answers each job in tens
+of milliseconds of model time with the Cloudflare credentials already set up.
+See [role manager](role-manager.md#decision-backends).
 
 ## The contract every job keeps
 
@@ -52,7 +55,7 @@ classifier; the space key toggles a row and `x` returns it to its default.
 | Key | Meaning |
 | --- | --- |
 | `jev.jobs.<job>` | `true` or `false` for a job in the list below. A missing key means on. An unknown job name is an error. |
-| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model, Strands Decider-2B and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
+| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model, Strands Decider-2B and a self-hosted server only, the default), `hosted` (also OpenRouter, TypeSafe's hosted API and Clef on Cloudflare Workers AI) or `off` (paths only, everywhere). |
 
 | `jev.thresholds.<key>` | A score cut-off, a number from 0 to 1, for a gate or job. A missing key keeps its default. The keys are in [Scores and thresholds](#scores-and-thresholds). An out-of-range value or an inverted pair is an error, and settings that fail to validate are never used. |
 

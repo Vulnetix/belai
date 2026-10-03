@@ -10,6 +10,7 @@ import (
 	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/localinfer"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // DeciderTarget is Strands Decider on this machine. Opts reaches the server
@@ -175,4 +176,60 @@ func deciderLaunchFailure(err error) Outcome {
 			Hint{Text: "a first load on a CPU reads 4.5 GB and can take minutes; retry"}, retryHint())
 	}
 	return fail("could not start strands-decider: "+oneLine(err.Error(), 160), retryHint())
+}
+
+// HostedClefSteps is the ladder for Clef on Workers AI, directly or through
+// AI Gateway. The endpoint is fixed by the resolver, so nothing else on
+// Cloudflare's hosts is probed: one answer, the sanity pair, intent, a choice
+// with object criteria, and the time an answer takes.
+func HostedClefSteps(d run.DecisionsConfig) []Step {
+	var s *decisions.SystemOne
+	build := func(st *State) *decisions.SystemOne {
+		if s == nil {
+			dec, _ := d.NewDecider(st.Env.Client).(*decisions.SystemOne)
+			s = dec
+		}
+		return s
+	}
+	name := "clef · " + d.Provider
+	return []Step{
+		{Name: name, Run: func(ctx context.Context, st *State) Outcome {
+			c := build(st)
+			if c == nil {
+				return fail("Clef is not configured", providersHint("set the Cloudflare account id and API token under providers → "+d.Provider))
+			}
+			res, err := c.Decide(ctx, decisions.Request{
+				State:     map[string]any{"content": benignState},
+				Questions: map[string]decisions.Question{"q": decisions.Noul(injectionProposition)},
+			})
+			if err != nil {
+				switch decisions.ClassOf(err) {
+				case decisions.ClassAuth:
+					return fail("Cloudflare refused the credential: "+oneLine(err.Error(), 160), providersHint("check the API token (Workers AI read and run) under providers → "+d.Provider), retryHint())
+				case decisions.ClassNotFound:
+					return fail("Cloudflare does not know this model or account: "+oneLine(err.Error(), 160), providersHint("check the account id under providers → "+d.Provider), retryHint())
+				}
+				return fail("no answer: "+oneLine(err.Error(), 160), retryHint())
+			}
+			o := ok("answered in %s", res.Meta.Latency.Round(time.Millisecond))
+			o.Metrics = map[string]string{"latency": res.Meta.Latency.String()}
+			return o
+		}},
+		sanityStep(func() decisions.Decider { return s }),
+		intentStep(func() decisions.Decider { return s }),
+		{Name: "choice", Run: func(ctx context.Context, st *State) Outcome {
+			res, err := s.Decide(ctx, decisions.Request{
+				State: map[string]any{"prompt": "The build fails with: undefined: parseConfig in cmd/main.go"},
+				Questions: map[string]decisions.Question{"q": {
+					Type: decisions.TypeChoice, Instructions: "Which kind of work does the user want next?",
+					Options: []string{"agent", "plan", "debug"},
+				}},
+			})
+			if err != nil {
+				return warn("a choice failed (" + oneLine(err.Error(), 120) + "); jobs that ask choices fall back to their ordinary behaviour")
+			}
+			a := res.Answers["q"]
+			return ok("picked %q (%.2f) for a build failure", a.Choice, a.Probabilities[a.Choice])
+		}},
+	}
 }
