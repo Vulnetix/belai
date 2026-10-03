@@ -13,13 +13,13 @@ import nixLogo from '../../assets/logos/nix.svg';
 // Worker that launches it.
 
 const sealText =
-  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on TypeSafe Jev, Cloudflare Sandbox and Nix. Every Jev feature on this page comes with a Pix Sandbox at no extra cost and is the classifier from the first session. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly.';
+  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly.';
 
 const firewalls = [
   {
     title: 'AI Firewall and guardrails',
     tag: 'model calls · provider keys',
-    body: "Every model call passes the Vulnetix AI Firewall, and your provider keys live in its vault. Switch a provider on in the sandbox's Models tab and the machine fetches its key now and on every launch; switch it off and the key is cleared. Belai's guardrails run in every session, with Jev reading each tool result before the model does.",
+    body: "Every model call passes the Vulnetix AI Firewall, and your provider keys live in its vault. Switch a provider on in the sandbox's Models tab and the machine fetches its key now and on every launch; switch it off and the key is cleared. Belai's guardrails run in every session, with Clef or Jev reading each tool result before the model does.",
   },
   {
     title: 'Package Firewall',
@@ -35,7 +35,7 @@ const firewalls = [
 
 // Illustrative rows for the console's egress list.
 const egress: [host: string, requests: string, refused: string, action: 'always' | 'Allow' | 'Deny'][] = [
-  ['api.typesafe.ai', '3,906', '0', 'always'],
+  ['api.cloudflare.com', '3,906', '0', 'always'],
   ['guardrails.vulnetix.com', '1,284', '0', 'always'],
   ['packages.vulnetix.com', '412', '0', 'always'],
   ['api.github.com', '57', '0', 'Allow'],
@@ -55,7 +55,31 @@ const yours: [string, string][] = [
   ['Your languages', 'Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any package from nixpkgs. Pick a repository and the console suggests the bundles its language and build files need, such as uv and pytest for Python, with registries kept behind the Package Firewall unless you allow them directly.'],
   ['Your console', 'Sessions, agents, crews and schedules run from the Belai pages you already use. The console is the way in.'],
   ['Sessions you can steer', "Each sandbox starts belai rc with session controls and project settings on, so a session page takes the terminal's slash commands and keys and each repository has its own settings page. The Launch tab sets both per sandbox, and letting a page switch guardrails off is a separate choice that starts off."],
+  ['Your decision model', 'Clef from Cloudflare is the default. The Launch tab switches a sandbox to Jev from TypeSafe, and a sandbox that does not set one follows the product default.'],
 ];
+
+// What the image build proves, and what a launch gets from it. Every line comes
+// from .github/workflows/pix-sandbox-image.yml and sandbox-worker/src/evidence.ts
+// in the website repository.
+const provenance: [title: string, body: string][] = [
+  ['SLSA v1 provenance', 'After the image is pushed, the build signs an in-toto statement that names the registry digest a launch runs and the image tarball it was loaded from.'],
+  ['Keyless signature', "cosign signs with the build run's GitHub identity, a short-lived Fulcio certificate and a Sigstore timestamp. The signing config lists no transparency log, so nothing about the private repository goes into a public one."],
+  ['Verified before it is published', 'The same workflow checks the signature, the certificate identity (the image workflow on main), the timestamp and the digest. A bundle that does not verify is never stored.'],
+];
+
+const pack: [file: string, what: string][] = [
+  ['evidence.cdx.json', 'CycloneDX 1.6: the image and its components with hashes, every check as a claim with its result, and the in-toto statement as evidence.'],
+  ['evidence.pdf', 'Plain language: what ran, the provenance, each check with its result and UTC time, how to verify, and the limits.'],
+  ['SHA256SUMS', 'A checksum for every other file in the pack.'],
+];
+
+const verifyCommand = `cosign verify-blob-attestation \\
+  --bundle provenance.sigstore.json --new-bundle-format \\
+  --type slsaprovenance1 \\
+  --digest <image sha256> --digestAlg sha256 \\
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+  --certificate-identity-regexp '^https://github.com/Vulnetix/website/\\.github/workflows/pix-sandbox-image\\.yml@refs/heads/main$' \\
+  --use-signed-timestamps --insecure-ignore-tlog`;
 ---
 
 <SealedSection id="pix" label="pix sandbox" sealText={sealText}>
@@ -65,7 +89,23 @@ const yours: [string, string][] = [
     sessions, agents and crews from the same pages you use for your own hosts.
   </SectionHead>
 
-  <div class="mt-12 grid gap-5 @3xl:grid-cols-3">
+  <div class="mt-12 grid gap-5 @3xl:grid-cols-2">
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink border-t-[6px] border-t-cf-orange p-6">
+      <div class="flex h-10 items-center justify-between gap-3">
+        <span class="flex items-center gap-3">
+          <img src={cloudflareLogo.src} alt="" class="h-9 w-auto" loading="lazy" />
+          <span class="text-lg font-bold">Cloudflare</span>
+        </span>
+        <span class="mono rounded-full bg-cf-orange px-2.5 py-1 text-xs font-semibold text-vx-ink">default · included</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Clef by Cloudflare</h3>
+      <p class="text-sm text-vx-ink/80">
+        Clef is Cloudflare's open decision model. A Pix Sandbox runs it on Workers AI through the sandbox Worker's own
+        binding, so no Cloudflare key exists on the machine to leak or rotate. It is the classifier from the first
+        session, with nothing to sign up for.{' '}
+        <a href="#clef" class="underline">How Belai uses Clef</a>
+      </p>
+    </article>
     <article class="flex flex-col gap-3 rounded-xl border border-vx-ink bg-vx-ink p-6 text-vx-cream">
       <div class="flex h-10 items-center justify-between gap-3">
         <img src={typesafeLogo.src} alt="TypeSafe AI" class="h-7 w-auto" loading="lazy" />
@@ -73,8 +113,8 @@ const yours: [string, string][] = [
       </div>
       <h3 class="mt-2 text-xl font-bold">Jev included</h3>
       <p class="text-sm text-vx-cream/80">
-        Every Jev feature on this page comes with a Pix Sandbox at no extra cost. It is the classifier from the first
-        session, with nothing to sign up for.{' '}
+        Every Jev feature on this page comes with a Pix Sandbox at no extra cost. Switch a sandbox to Jev from its
+        launch settings; its TypeSafe key is added at the network edge and never reaches the machine.{' '}
         <a href="#jev" class="text-vx-mint underline">How Belai uses Jev</a>
       </p>
     </article>
@@ -142,7 +182,7 @@ const yours: [string, string][] = [
         or denies it for the next launch.
       </p>
       <p class="mt-3 text-vx-ink/80">
-        Jev, the AI Firewall and the Package Firewall stay reachable in either mode, so guardrails and installs keep working
+        Clef, Jev, the AI Firewall and the Package Firewall stay reachable in either mode, so guardrails and installs keep working
         while you tighten the list.
       </p>
     </div>
@@ -163,13 +203,58 @@ const yours: [string, string][] = [
     ))}
   </ol>
 
+  <SubHead id="pix-provenance" title="Signed provenance and an evidence pack">
+    The build proves how the image was made, and every launch can hand you that proof, with the checks the machine made
+    on the way up, as a file you can verify yourself.
+  </SubHead>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {provenance.map(([title, body], i) => (
+      <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class="h-1 w-10 rounded-full bg-vx-mint-strong"></span>
+        <h4 class="mt-3 text-xl font-bold">{title}</h4>
+        <p class={`mt-3 text-sm ${i === 2 ? 'text-vx-cream/80' : 'text-vx-ink/80'}`}>{body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">One pack for each launch</h3>
+      <p class="mt-3 text-vx-ink/80">
+        Open the sandbox's Trust tab and download the evidence pack for the running instance. A relaunch is a new
+        instance with its own pack, and asking twice returns the same file with the same checksum.
+      </p>
+      <ul class="mono mt-4 grid list-none gap-3 p-0 text-sm">
+        {pack.map(([file, what]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold text-vx-mint-strong">{file}</span>
+            <span class="mt-1 block font-sans text-vx-ink/80">{what}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        The pack is not signed. Check the zip against the SHA-256 the console shows and the download returns. An image
+        built before provenance was recorded is reported as not attested, and the pack claims nothing for it.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">Check it without trusting us</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The Worker re-checks the bundle against its pinned checksum and the launch's image digest. The signature itself
+        was verified by the build, and you can repeat that with cosign. The bundle has no transparency log entry, so the
+        check uses the signed timestamp.
+      </p>
+      <pre class="mono mt-4 overflow-x-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="cosign command that verifies the image provenance"><code>{verifyCommand}</code></pre>
+    </div>
+  </div>
+
   <Limits items={yours} />
 
   <div class="mt-sub grid gap-4 @3xl:grid-cols-2">
     <a href="https://www.vulnetix.com/features/pix-sandbox" class="flex flex-col gap-2 rounded-xl border border-vx-ink bg-vx-mint p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
       <span class="mono text-xs">features/pix-sandbox</span>
       <span class="font-bold">Take the tour ↗</span>
-      <span class="text-vx-ink/85">Jev, Cloudflare, Nix, the three firewalls and the verified build, in detail.</span>
+      <span class="text-vx-ink/85">Clef and Jev, Cloudflare, Nix, the three firewalls, signed provenance and the evidence pack, in detail.</span>
     </a>
     <a href="https://www.vulnetix.com/resolve/belai-hosts?tab=sandboxes&buy=1" class="flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
       <span class="mono text-xs">console</span>

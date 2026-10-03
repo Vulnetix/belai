@@ -6,6 +6,7 @@ import SubHead from '../ui/SubHead.astro';
 
 import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
+import cloudflareLogo from '../../assets/logos/cloudflare.svg';
 
 const sealText =
   'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to Clef from Cloudflare on Workers AI, to Strands Decider-2B or Clef or another decision model on your own machine, or to any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
@@ -519,11 +520,14 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <article id="clef" class="engine mt-sub" aria-labelledby="engine-clef">
+  <article id="clef" class="engine mt-sub" style="border-top: 3px solid var(--color-cf-orange)" aria-labelledby="engine-clef">
     <header class="engine__head">
       <span class="engine__num mono">03c</span>
+      <img src={cloudflareLogo.src} alt="Cloudflare" class="h-8 w-auto self-center" loading="lazy" />
       <h3 id="engine-clef" class="text-3xl font-bold tracking-tight text-vx-ink">Clef on Cloudflare Workers AI</h3>
       <code class="engine__tag mono">@cf/cloudflare/clef-flash · systemone</code>
+      <span class="mono self-center rounded-full bg-cf-orange px-2.5 py-1 text-xs font-semibold text-vx-ink">by Cloudflare</span>
+      <span class="mono self-center rounded-full border border-vx-ink px-2.5 py-1 text-xs font-semibold">default on a Pix Sandbox</span>
     </header>
     <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
@@ -547,6 +551,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <dl class="facts">
         <div><dt>Settings</dt><dd><code class="mono">classifier.provider: cloudflare-workers-ai</code> (or <code class="mono">cloudflare-ai-gateway</code>) and <code class="mono">classifier.model: @cf/cloudflare/clef-flash</code></dd></div>
         <div><dt>Needs</dt><dd>a Cloudflare API token with Workers AI and the account id</dd></div>
+        <div><dt>On a Pix Sandbox</dt><dd>the default decision model, answered by the sandbox Worker's own Workers AI binding, so no Cloudflare key exists on the machine. <a href="#pix" class="underline">About Pix Sandbox</a></dd></div>
         <div><dt>Cost</dt><dd>$0.24 per million input tokens</dd></div>
         <div><dt>Content goes to</dt><dd>Cloudflare Workers AI, text only</dd></div>
         <div><dt>Request fails</dt><dd>content is blocked</dd></div>

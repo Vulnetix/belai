@@ -28,6 +28,13 @@
   --color-vx-pane-dim: #4A6560;
   --color-vx-pane-line: #2F4340;
 
+  /* Cloudflare's own brand colours, for Clef and the Cloudflare mark only.
+     Orange is a fill or a border: on cream its contrast is too low for text,
+     so text on an orange fill is vx-ink. */
+  --color-cf-orange: #F38020;
+  --color-cf-orange-light: #FAAD3F;
+  --color-cf-gray: #404041;
+
   /* TUI palette (internal/tui/components/theme.go): used by shot SVGs and
      any inline chrome that must read as terminal output. */
   --color-tui-ink: #1C3431;
