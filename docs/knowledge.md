@@ -446,6 +446,7 @@ test files is not named here, so this table and the code move together.
 | K57 | The screen only reads: it never writes an index, lists a corrupt one as unreadable and leaves it, drops a stale load and fits a small terminal | `TestKnowledgeScreenOnlyReadsIndexes`, `TestCatalogReportsACorruptIndexAndLeavesIt`, `TestKnowledgeCorruptIndexIsListedAndLeftAlone`, `TestKnowledgeStaleLoadIsDropped`, `TestKnowledgeScreenFitsASmallTerminal` |
 | K58 | The topic cut-off cannot be set below 0.5, and the job is a switch like the others | `TestTopicAtDefaultAndFloor` |
 | K59 | `belai agent knowledge` reports each document's type, language, topic ids and who decided them (`patterns` or `jev`), as ids only | `TestAgentKnowledgeReportsTagsAsIdsOnly` |
+| K60 | `belai rc` advertises the knowledge catalogue of its profiles' and offered directories' indexes: each document's knowledge address, size, SHA-256, harness labels and topics, never passage text or a source path. A label or topic outside the harness shapes and a document without a knowledge address or SHA-256 are left out; an index is loaded again only when its file changes | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes`, `TestLocalKnowledgeCapsWhatOneAdvertisementCarries` |
 
 ## Edge cases
 

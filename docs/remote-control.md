@@ -420,6 +420,16 @@ seconds and the fast model has. The drawing takes at most 240 seconds on the hos
 The catalogue carries each worker profile's `id`, display name, palette and
 avatar id, so the website can draw the agent. They are presentation only.
 
+### What the advertisement and library sync hold
+
+| Rule | Tests |
+| --- | --- |
+| A `library_sync` request runs one pass of the automatic sync at once, asking about every profile, crew and item whose switch is on, including ones a recent answer settled, and acknowledges with counts only, never a name | `TestLibrarySyncNowAsksAboutSettledItemsAndReportsCountsOnly` |
+| With every sync switch off a `library_sync` request is refused and says so; a website that does not know the sync routes is reported in plain words | `TestLibrarySyncNowRefusesWithEverySwitchOffAndSaysWhyOnError` |
+| An offered directory carries `remote`, `host`, `provider`, `branch` and `defaultBranch` only when they have an identifier shape, read from the repository's files; a remote with credentials keeps none of them | `TestDirGitCarriesIdentifierFactsAndNoCredential` |
+| A directory that is not a checkout, a local-path origin, a detached HEAD and an odd branch name add nothing; the scp form of a remote is read | `TestDirGitLeavesOutWhatIsNotAForgeCheckout` |
+| The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
+
 ## Files
 
 - `~/.vulnetix/belai/schedules.json`: the host's schedules and the sync cursor.
