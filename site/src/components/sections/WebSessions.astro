@@ -7,7 +7,7 @@ import Limits from '../ui/Limits.astro';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page.';
+  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page. The library on the website: Sync from hosts asks each online host to run its library sync now and each answers with counts. A checkout directory tells the website its owner/repo, forge, branch and default branch, so the Library joins it with scans, sandboxes and sessions per repository. The Documents view shows each document\'s address, size, SHA-256, labels and topics from each host\'s knowledge index; the text stays on the host.';
 
 const answers = [
   {
@@ -31,6 +31,13 @@ const answers = [
     detail: 'Read the plan on the page and approve it, or send notes back. Notes take the web-prompt path, so they are never a slash or shell command.',
   },
 ];
+
+// What a host running belai rc gives the website's Library (docs/remote-control.md).
+const library: [string, string][] = [
+  ['Sync from hosts', 'Hosts back their profiles, crews and library items up on their own every half minute. Sync from hosts on the Library page asks each online host to run that pass now, and each answers with counts, never a name.'],
+  ['Repositories, joined', 'A directory that is a checkout tells the website its owner/repo, forge, branch and default branch, read from its own files. The Library joins that with your scans, sandboxes and sessions, one row per repository, and lists the ones that can be cloned.'],
+  ['What each host indexes', "The Documents view shows what each host's knowledge index holds: every document's address, size, SHA-256, labels and topics. The text and the index file stay on the host."],
+]
 
 const remote: [string, string][] = [
   ['Checked before it starts', '`belai rc` prints one line per check and the one thing to do about each failure: the Vulnetix CLI, a browser login, session sync, guardrails on, a directory to offer and a website that accepts the credential. `/rc` walks the same list as a setup screen.'],
@@ -255,6 +262,13 @@ const limits = [
   </div>
     </div>
   </details>
+
+  <SubHead title="The library on the website" id="library-web">
+    With <code class="mono">belai rc</code> running, the website's Library keeps what your hosts hold and shows
+    where each repository and document lives. A host sends facts about what it holds, and a person
+    decides what to back up or install.
+  </SubHead>
+  <Limits items={library} class="mt-head" />
 
   <Limits items={limits} />
 </SealedSection>
