@@ -290,6 +290,8 @@ func (s Settings) LocateDestination() (name string, previews bool) {
 			name = "TypeSafe's hosted API"
 		case cls.Provider == decisions.DeciderProvider:
 			name, local = "Strands Decider-2B on this machine", true
+		case decisions.IsHostedClef(cls.Provider, cls.Model):
+			name = "Clef on Cloudflare Workers AI"
 		default:
 			name, local = "your self-hosted server "+cls.Provider, true
 		}

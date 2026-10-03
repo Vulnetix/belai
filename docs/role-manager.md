@@ -378,10 +378,11 @@ still load, but they fall back at runtime.
 ### Decision backends
 
 Every Jev job — the security guard, intent detection and routing — asks its
-questions through one transport (`internal/decisions`). There are five.
+questions through one transport (`internal/decisions`). There are six.
 OpenRouter Decisions and the local decision model are
-`classifier.kind: "openrouter-decisions"`; TypeSafe, Strands Decider-2B and a
-systemone profile all speak the `/v1/systemone` API and are
+`classifier.kind: "openrouter-decisions"`; TypeSafe, Clef on Workers AI,
+Strands Decider-2B and a systemone profile all speak the `/v1/systemone` API
+and are
 `classifier.kind: "systemone"`. The kind was called `"jev"` before many
 servers spoke the API: a file that says `"jev"` (for `classifier.kind` or a
 provider profile's `kind`) loads as `"systemone"` and is saved that way, and
@@ -392,6 +393,7 @@ one that names the OpenRouter or local backend with it reads as
 |---|---|---|---|
 | OpenRouter Decisions | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
 | TypeSafe | `classifier.provider: typesafe`, `classifier.model: jev-latest` or `jev-1.13.0` | `POST https://api.typesafe.ai/v1/systemone`, key from `TYPESAFE_API_KEY` | 5 s |
+| Clef on Workers AI | `classifier.provider: cloudflare-workers-ai` (or `cloudflare-ai-gateway`), `classifier.model: @cf/cloudflare/clef-flash` or `@cf/cloudflare/clef` | `POST api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}` (or the gateway's `/workers-ai/{model}`), Cloudflare's envelope | 5 s |
 | Strands Decider-2B | `classifier.provider: strands-decider`, `classifier.model: decider-2b` | `POST http://127.0.0.1:{port}/v1/systemone` to `strands-decider serve` on this machine | 5 s |
 | systemone profile | `classifier.provider` names a profile of kind `systemone` | `POST {base_url}{decision_path}`, the `/v1/systemone` API | 5 s |
 | Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b` or `plumb-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
@@ -412,6 +414,47 @@ store. It is listed in the providers view (`/providers`, marked `decisions ·
 classifier only`) so its key can be set there like any provider's. It is never routed through a firewall and never offered for a chat
 role. Live check:
 `BELAI_TYPESAFE_LIVE=1 TYPESAFE_API_KEY=… go test ./internal/decisions -run TypeSafeLive -v`.
+
+**Clef on Workers AI.** Cloudflare's decision models, released 2026-10-01 under
+Apache-2.0: Clef (27B) and Clef-flash (9B), read through a joint head that
+decides every question of a request together. They answer the same
+`/v1/systemone` questions as Jev, so selecting one answers every Jev job. Under
+`classifier.kind: systemone` they are listed first once Cloudflare is
+configured, and moving to that kind starts on Clef-flash.
+
+- **Setup.** The `cloudflare-workers-ai` provider's API token (with Workers AI
+  read and run) and account id (32 hex characters), the same credentials its
+  chat models use. Through AI Gateway, `cloudflare-ai-gateway` names the
+  gateway (`base_url`, or the account's `default` gateway); the Workers AI
+  token rides in `Authorization` when one is set, otherwise the gateway's
+  stored key answers, and the gateway token rides in `cf-aig-authorization`.
+- **Requests.** The body carries `model` as the API requires (`clef` or
+  `clef-flash`), choice criteria as an object, at most 64 questions and 255
+  options; a larger request is never sent and the job falls back. The answer
+  comes inside Cloudflare's `{result, success, errors}` envelope, whose first
+  error message is the only Cloudflare text Belai keeps, cleaned and capped.
+- **What leaves the machine.** The sanitised state (a tool result, a prompt)
+  goes to Cloudflare, as with TypeSafe and OpenRouter's Jev, so
+  `jev.locate_previews: local` keeps file names away from it. Images are never
+  sent. Cost is Workers AI's $0.24 per million input tokens.
+- **Calibration.** Cloudflare scales the probabilities with its own
+  temperatures; they are not calibrated for Belai's cut-offs. On a plain prompt
+  injection Clef-flash scored 0.82 and Clef 0.98 in a check on 2026-10-04, so
+  with the default 0.9 guard threshold Clef-flash more often hands a check to
+  the agent model. Pick Clef (27B) for the guard if that matters more than
+  speed, or tune `jev.thresholds`.
+- **Never a chat model.** A Clef id is dropped from the agent, fast and routing
+  pickers and from the llm kind's catalogue, and a configuration that names one
+  for chat falls back to the main model.
+
+**Local Clef.** `decision-local` also lists Clef-flash
+(`ggml-org/Clef-Flash-GGUF`, Q4_K_M, 6.5 GB) and Clef (`ggml-org/Clef-GGUF`,
+Q4_K_M, 19.2 GB). llama.cpp serves them itself on its native
+`POST /v1/systemone` (build 11371 and later), so Belai sends the state and the
+questions and composes no prompt. The server starts with the whole context as
+one batch (`--batch-size` and `--ubatch-size`), which Clef needs, and the
+`/model` test fails on an older llama-server with how to update it. Clef runs
+text only here, as it does for Belai everywhere.
 
 **Strands Decider-2B (local first).** A 2B decision model (Qwen3.5-2B-Base
 with a LoRA adapter and a pointer readout head) that answers every Jev
@@ -588,8 +631,11 @@ rows filter:
 - **`decision-local`** — always offered. Its picker lists Decider-4B and
   Plumb-4B with their size and whether they are on disk; picking one tests
   (and, after confirmation, downloads) everything it needs.
-- **`strands-decider`** — offered under `classifier.kind: systemone`, first
-  when detected. Its picker lists Strands Decider-2B with its status; picking
+- **`cloudflare-workers-ai`** and **`cloudflare-ai-gateway`** — offered first
+  under `classifier.kind: systemone` when their credentials resolve; their
+  picker lists Clef-flash and Clef only.
+- **`strands-decider`** — offered under `classifier.kind: systemone`, after
+  hosted Clef, ahead of TypeSafe when detected. Its picker lists Strands Decider-2B with its status; picking
   it tests (and, after confirmation, downloads) everything it needs.
 - **`typesafe`** — offered only under `classifier.kind: systemone`. Its picker lists
   `jev-latest` and `jev-1.13.0`; it never appears for the agent, fast or

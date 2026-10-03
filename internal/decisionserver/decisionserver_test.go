@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +24,12 @@ import (
 // and /v1/models with the alias it was given.
 func TestMain(m *testing.M) {
 	if os.Getenv("DECISIONSERVER_FAKE") == "1" {
+		for _, a := range os.Args[1:] {
+			if a == "--version" {
+				fmt.Printf("version: 0.4.1 (build %s, commit abc)\n", os.Getenv("DECISIONSERVER_BUILD"))
+				return
+			}
+		}
 		port, alias := "0", ""
 		for i, a := range os.Args {
 			switch a {
@@ -176,5 +183,50 @@ func TestSupervisorRecoverIsRateLimited(t *testing.T) {
 	s.Recover()
 	if s.last != first {
 		t.Fatal("a second Recover inside the window must not start another attempt")
+	}
+}
+
+// Clef needs llama.cpp build 11371: an older server is refused before any
+// launch, with the build in the reason; a new enough one starts with the whole
+// context as one batch.
+func TestEnsureRefusesAnOldBuildForClef(t *testing.T) {
+	isolate(t)
+	launches := fakeLlamaOnPath(t)
+	m, _ := decisions.LocalModelByID("clef-flash")
+	weights := filepath.Join(t.TempDir(), "clef.gguf")
+	if err := os.WriteFile(weights, []byte("gguf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DECISIONSERVER_BUILD", "10964")
+	_, err := Ensure(context.Background(), m, Options{ModelPath: weights, Deadline: 10 * time.Second})
+	if !errors.Is(err, ErrUpgrade) || !strings.Contains(err.Error(), "10964") || !strings.Contains(Describe(err), "11371") {
+		t.Fatalf("err = %v (%s)", err, Describe(err))
+	}
+	if b, _ := os.ReadFile(launches); len(b) != 0 {
+		t.Fatal("an old build was launched")
+	}
+	t.Setenv("DECISIONSERVER_BUILD", "11371")
+	h, err := Ensure(context.Background(), m, Options{ModelPath: weights, Deadline: 10 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Stop()
+}
+
+// A server that answers only /v1/systemone may list no models; /props still
+// names its alias.
+func TestServingReadsTheAliasFromProps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+		case "/props":
+			_, _ = w.Write([]byte(`{"model_alias":"belai-clef-flash"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	if !Serving(context.Background(), srv.Client(), srv.URL, "belai-clef-flash") || Serving(context.Background(), srv.Client(), srv.URL, "belai-decider-4b") {
+		t.Fatal("props alias not honoured, or a foreign alias accepted")
 	}
 }

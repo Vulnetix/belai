@@ -238,6 +238,10 @@ func Plan(t Target) []Step {
 				steps = append(steps, StrandsDeciderSteps(DeciderTarget{Model: *d.Decider, Timeout: d.Timeout})...)
 				break
 			}
+			if d.Envelope {
+				steps = append(steps, HostedClefSteps(*d)...)
+				break
+			}
 			steps = append(steps, SystemOneSteps(SystemOneTarget{Name: d.Provider, Model: d.Model, SendModel: d.SendModel, BaseURL: d.BaseURL, Path: d.Path, Key: d.Key, Timeout: d.Timeout, CriteriaObject: d.CriteriaObject, MaxOptions: d.MaxOptions})...)
 		}
 	}

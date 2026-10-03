@@ -801,6 +801,18 @@ Use `plumb-4b` for the other catalogue model. To try a self-hosted server from
 the TUI, run any `/v1/systemone` server (for example `laya-serve`) and add it
 under providers → `+ add new provider` → kind `systemone`.
 
+To ask Clef on Workers AI from a test (one noul and one choice, a fraction of
+a cent):
+
+```bash
+BELAI_CLEF_LIVE=1 CLOUDFLARE_API_KEY=… CLOUDFLARE_ACCOUNT_ID=… \
+  go test -count=1 -run ClefLive -v ./internal/decisions/
+# BELAI_CLEF_MODEL=@cf/cloudflare/clef for the 27B model
+```
+
+A local Clef needs llama.cpp build 11371 or later; then
+`BELAI_LIVE_DECISION=clef-flash` runs the local ladder above against it.
+
 To try Strands Decider-2B, install the server and select it; nothing else is
 set:
 

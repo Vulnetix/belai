@@ -32,7 +32,7 @@ func upgradeLlamaHint() Hint {
 	case "windows":
 		return Hint{Text: "update llama.cpp: winget upgrade llama.cpp"}
 	}
-	return Hint{Text: "update llama.cpp to a recent build; this model needs Qwen3.5 support"}
+	return Hint{Text: "update llama.cpp to a recent build; Qwen3.5 models need a 2026 build, and Clef needs build 11371 or later"}
 }
 
 func installDeciderHint() Hint {

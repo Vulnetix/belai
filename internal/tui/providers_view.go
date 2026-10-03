@@ -349,6 +349,9 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 	if cfg.BaseURL != "" && d.Local {
 		extra = cfg.BaseURL
 	}
+	if decisions.IsCloudflareProvider(name) && a.cloudflareClefReady(name) {
+		extra += " · also Clef decisions"
+	}
 
 	// The display label (or host:port fallback) is the primary token; the
 	// slug stays muted beside it so the underlying identity is never hidden.

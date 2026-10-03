@@ -59,6 +59,33 @@ type Llama struct {
 // Backend implements Decider.
 func (l *Llama) Backend() Backend { return BackendLocal }
 
+// systemOne answers through llama-server's own /v1/systemone endpoint, for a
+// model the server reads itself (Clef). No prompt layout is composed here, and
+// a refused connection still reaches the supervisor.
+func (l *Llama) systemOne(ctx context.Context, r Request) (Result, error) {
+	base := l.BaseURL
+	if l.Resolve != nil {
+		if u := l.Resolve(); u != "" {
+			base = u
+		}
+	}
+	s := &SystemOne{
+		Name:           LocalProvider,
+		Model:          l.Model.ID,
+		BaseURL:        base,
+		Path:           DefaultSystemOnePath,
+		Client:         l.Client,
+		Timeout:        LocalTimeout,
+		CriteriaObject: true,
+		MaxOptions:     l.Model.MaxOptions,
+		OnConnRefused:  l.OnConnRefused,
+	}
+	if dl, ok := ctx.Deadline(); ok {
+		s.Timeout = time.Until(dl)
+	}
+	return s.Decide(ctx, r)
+}
+
 // Identity implements Decider.
 func (l *Llama) Identity() string { return LocalProvider + "/" + l.Model.ID }
 
@@ -90,6 +117,9 @@ func (l *Llama) Decide(ctx context.Context, r Request) (Result, error) {
 	}
 	if len(state) > limit {
 		return Result{}, &Error{Class: ClassUnavailable, Msg: fmt.Sprintf("state of %d bytes is over the local model's %d-byte limit", len(state), limit)}
+	}
+	if l.Model.Template == TemplateSystemOne {
+		return l.systemOne(ctx, r)
 	}
 
 	ids := make([]string, 0, len(r.Questions))

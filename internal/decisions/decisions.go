@@ -85,6 +85,8 @@ func BackendOf(provider, kind, model string) (Backend, bool) {
 		return BackendLocal, true
 	case provider == TypeSafeProvider, provider == DeciderProvider:
 		return BackendSystemOne, true
+	case IsHostedClef(provider, model):
+		return BackendSystemOne, true
 	case IsSystemOneKind(kind):
 		return BackendSystemOne, true
 	}

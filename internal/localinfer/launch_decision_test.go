@@ -157,6 +157,12 @@ func TestDecisionArgs(t *testing.T) {
 	if all := strings.Join(DecisionArgs(DecisionServerOptions{ModelPath: "m", NGL: -1}), " "); !strings.Contains(all, "--n-gpu-layers 99") {
 		t.Fatalf("negative NGL should offload all layers: %s", all)
 	}
+	if strings.Contains(joined, "--ubatch-size") {
+		t.Fatalf("a letter-readout model needs no batch sizing: %s", joined)
+	}
+	if one := strings.Join(DecisionArgs(DecisionServerOptions{ModelPath: "m", OneBatch: true}), " "); !strings.Contains(one, "--batch-size 8192 --ubatch-size 8192") {
+		t.Fatalf("a /v1/systemone model evaluates a prompt in one micro-batch: %s", one)
+	}
 }
 
 func TestClassifyLog(t *testing.T) {
