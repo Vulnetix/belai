@@ -13,6 +13,7 @@ belai rc --detach             # run in the background
 belai rc --dir ~/src/api      # also offer a directory
 belai rc --web-controls       # web sessions take the TUI's session controls
 belai rc --web-project-settings  # the website edits project preferences here
+belai rc --web-shell          # web sessions run a shell line here, under the TUI's sandbox
 belai rc --status
 belai rc --stop
 ```
@@ -113,7 +114,8 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   `-provider`, `-model` and `-effort`, and `-git-sync on|off` (the daemon passes
   them only when the web request named them) optional. `-controls` and
   `-allow-guardrails-off` are the daemon's own `--web-controls` and
-  `--web-allow-guardrails-off`, passed on to every session it starts. Typing it yourself starts nothing the website knows about. The
+  `--web-allow-guardrails-off`, and `-shell` its `--web-shell`, passed on to
+  every session it starts. Typing it yourself starts nothing the website knows about. The
   prompt is read from stdin, cleaned like a web prompt and capped, and an empty
   prompt is refused.
 
@@ -152,7 +154,9 @@ a control rather than a prompt, and the keys work while the page has focus.
   `internal/sessionctl` and checks every value: a model must be one this host
   holds credentials for, a Jev threshold is held to the settings rules, a job
   or language must be a known one. Anything else is refused with a reason, and
-  a line that is not a control (`/help`, `!ls`) is never run.
+  a line that is not a control (`/help`, `!ls`) is never run as a control. A
+  shell line has its own channel, and only with `--web-shell` (see
+  [Shell lines from the web](#shell-lines-from-the-web)).
 - **Guardrails stay on** unless you also pass `--web-allow-guardrails-off`.
   Turning them back on never needs the flag.
 - **Ask.** With ask on (the setting's value at start), a tool call that would
@@ -181,6 +185,45 @@ a control rather than a prompt, and the keys work while the page has focus.
   each from the worker's next turn; the rest are refused for a worker, with a
   reason. The Crews tab sends such a line to every chosen worker of a crew. See
   [fleet.md](fleet.md#session-controls).
+
+## Shell lines from the web
+
+`belai rc --web-shell` lets a web session run one shell line at a time on this
+host. The Pix Sandbox starts `belai rc` with it. A prompt is still never a shell
+command: a prompt that starts with `!` is plain prompt text. A shell line is a
+request on the same inbox as a control, with its own fields (`shell`, `cwd`,
+`attach`), so the host can tell the two apart and a host without the flag
+refuses it.
+
+Two surfaces send one, and they differ only in what happens to the output:
+
+| Surface | `attach` | Output |
+|---------|----------|--------|
+| The composer's `!cmd` | set | Shown in the transcript. When the classifier calls it safe it is attached to the model's next turn, as the TUI attaches a `!cmd`. |
+| The console drawer's remote shell | never | Shown in the console and the transcript. Never offered to the model, whatever the verdict. |
+
+- **Same rules as the TUI.** A line is refused in plan mode unless the
+  read-only gate allows it, and by a deny rule, or by an ask rule since nobody
+  can answer one on the host. With no matching rule it runs, as a typed `!cmd`
+  does.
+- **Same sandbox.** The line runs through the Bash tool under the OS sandbox
+  profile from `sandbox` in settings (bubblewrap on Linux), with a 30 second
+  limit. Each line is a fresh process, so a `cd` is resolved by the host
+  (`cd`, `cd PATH` and nothing else) and the page keeps the directory.
+- **Confined to the session.** The directory must be the session's directory
+  or below it, after symlinks. Anything else is refused.
+- **Out of band.** A line runs while a turn is running and does not wait for
+  it. It counts as activity, so a console left open keeps the session from
+  idling out.
+- **Classified.** The output is sanitised and classified like the TUI's
+  `!cmd`. Only an `attach` line with a safe verdict is attached, once, to the
+  next turn. The verdict is in the entry either way.
+- **What the transcript shows.** One `shell` entry per line: the output as
+  content and `command`, `shell_id` (the request id, how the page finds its
+  result), `status`, `exit_code`, `duration_ms`, `cwd`, `source`
+  (`composer` or `console`), `attached` and `verdict` in `meta`. The request is
+  acked after the entry is written: accepted when the line ran, refused with a
+  reason when it did not.
 
 ## Project settings from the web
 

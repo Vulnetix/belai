@@ -58,7 +58,7 @@ func (c *cidrList) Set(v string) error { *c = append(*c, v); return nil }
 
 const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
                 [--web-controls [--web-allow-guardrails-off]] [--web-project-settings]
-                [--allow-private-cidr CIDR]...
+                [--web-shell] [--allow-private-cidr CIDR]...
        belai rc --status
        belai rc --stop
 
@@ -71,6 +71,11 @@ machine and in the directories given with --dir.
 with the TUI's slash commands and keys, for that session only.
 --web-project-settings lets the website edit each offered directory's project
 preferences on this host.
+
+--web-shell lets a web session run one shell line at a time on this host. A line
+runs out of band under the same permission rules and OS sandbox as the TUI's
+!cmd, and lands in the session's transcript. The composer's !cmd attaches its
+classified output to the model's next turn; the console drawer's never does.
 
 --allow-private-cidr names one private range that WebFetch may reach, for a host
 whose own network answers with addresses there (the Pix Sandbox's egress
@@ -96,6 +101,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	webControls := fs.Bool("web-controls", false, "let web sessions change their mode, model, guardrails, ask and display with the TUI's slash commands and keys (that session only)")
 	webGuardrailsOff := fs.Bool("web-allow-guardrails-off", false, "with --web-controls, let a web session turn its guardrails off")
 	webProjectSettings := fs.Bool("web-project-settings", false, "let the website read and edit each offered directory's project preferences on this host")
+	webShell := fs.Bool("web-shell", false, "let web sessions run a shell line on this host, under the TUI's `!cmd` permission rules and OS sandbox")
 	var allowCIDRs cidrList
 	fs.Var(&allowCIDRs, "allow-private-cidr", "let WebFetch reach this private-use range (repeatable); loopback and link-local are never allowed, and every other private address stays refused")
 	if err := fs.Parse(args); err != nil {
@@ -231,6 +237,9 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	default:
 		fmt.Fprintln(stderr, "Sessions run with asks off: the posture and permission rules decide.")
 	}
+	if *webShell {
+		fmt.Fprintln(stderr, "Web sessions may run a shell line on this host, under the TUI's `!cmd` permission rules and OS sandbox.")
+	}
 	if *webProjectSettings {
 		fmt.Fprintln(stderr, "The website may edit the offered directories' project preferences on this host.")
 	}
@@ -268,6 +277,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd),
 		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
+		Shell: *webShell,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)
@@ -442,6 +452,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	gitSyncFlag := fs.String("git-sync", "", "on or off: sync the branch with origin's default branch before turns (default: git.sync in settings)")
 	controls := fs.Bool("controls", false, "take session controls from the web (belai rc --web-controls)")
 	allowGuardrailsOff := fs.Bool("allow-guardrails-off", false, "with -controls, a web session may turn guardrails off")
+	shell := fs.Bool("shell", false, "run shell lines from the web (belai rc --web-shell)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -471,7 +482,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		return 1
 	}
 	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag,
-		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff}
+		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell}
 	switch *gitSyncFlag {
 	case "":
 	case "on", "off":
@@ -497,6 +508,9 @@ type rcModelPick struct {
 	// Controls and AllowGuardrailsOff are the daemon's --web-controls and
 	// --web-allow-guardrails-off, passed on as fixed argv.
 	Controls, AllowGuardrailsOff bool
+	// Shell is the daemon's --web-shell: the session runs shell lines the
+	// website sends (internal/rc shell.go).
+	Shell bool
 }
 
 func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mode, prompt string, idle time.Duration, pick rcModelPick, stderr io.Writer) error {
@@ -629,6 +643,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		// they are off. With them, the ask control turns web answers on.
 		RemoteAnswers:  false,
 		RemoteCommands: pick.Controls,
+		RemoteShell:    pick.Shell,
 		Git:            gs.Raw,
 		OnControls: func(_ string, c sessionsync.Controls) {
 			if c.GitSync != nil && gs.Enabled() != *c.GitSync {
@@ -679,6 +694,14 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			return err
 		}
 		opts.Agent = sess
+		if pick.Shell {
+			// Shell lines arrive on the commands channel; there are no
+			// controls to take, so the settings and posture are fixed.
+			opts.Commands = syncer.Commands()
+			opts.AckCommand = syncer.AckCommand
+			opts.Shell = rcShellRunner(cwd, func() (config.Settings, posture.Policy) { return settings, pol },
+				cfg, httpclient.Default(), rcShellCache())
+		}
 		return rc.RunSession(ctx, opts)
 	}
 
@@ -749,6 +772,18 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	opts.AckCommand = syncer.AckCommand
 	opts.Changed = syncer.SetSessionControls
 	opts.Answers = syncer
+	if pick.Shell {
+		// A web control can turn guardrails off or change the mode, so a
+		// line is judged by the session's settings and posture as they are now.
+		opts.Shell = rcShellRunner(cwd, func() (config.Settings, posture.Policy) {
+			s := ctl.State().Apply(settings)
+			p := basePol
+			if !s.GuardrailsEnabled() {
+				p = posture.AllIgnore()
+			}
+			return s, p
+		}, cfg, httpclient.Default(), rcShellCache())
+	}
 	opts.AfterTurn = func(ctx context.Context, prompt string, res run.Result, paths []string) {
 		rcAfterTurn(ctx, ctl, settings, cfg, pol, cwd, sessionID, tlog, prompt, res, paths)
 	}
