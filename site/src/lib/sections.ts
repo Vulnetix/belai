@@ -23,7 +23,7 @@ export const sections = [
   ['vulnetix', 'vulnetix'],
   ['kanban', 'kanban'],
   ['web', 'web sessions'],
-  ['pix', 'pix sandbox'],
+  ['pix-sandbox', 'pix sandbox'],
   ['extend', 'extend & integrate'],
   ['cli', 'cli'],
   ['qol', 'qol'],

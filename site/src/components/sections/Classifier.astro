@@ -555,7 +555,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <dl class="facts">
         <div><dt>Settings</dt><dd><code class="mono">classifier.provider: cloudflare-workers-ai</code> (or <code class="mono">cloudflare-ai-gateway</code>) and <code class="mono">classifier.model: @cf/cloudflare/clef-flash</code></dd></div>
         <div><dt>Needs</dt><dd>a Cloudflare API token with Workers AI and the account id</dd></div>
-        <div><dt>On a Pix Sandbox</dt><dd>the default decision model, answered by the sandbox Worker's own Workers AI binding, so no Cloudflare key exists on the machine. <a href="#pix" class="underline">About Pix Sandbox</a></dd></div>
+        <div><dt>On a Pix Sandbox</dt><dd>the default decision model, answered by the sandbox Worker's own Workers AI binding, so no Cloudflare key exists on the machine. <a href="#pix-sandbox" class="underline">About Pix Sandbox</a></dd></div>
         <div><dt>Cost</dt><dd>$0.24 per million input tokens</dd></div>
         <div><dt>Content goes to</dt><dd>Cloudflare Workers AI, text only</dd></div>
         <div><dt>Request fails</dt><dd>content is blocked</dd></div>
