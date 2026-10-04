@@ -27,6 +27,7 @@ import (
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/netguard"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/rc"
@@ -49,8 +50,15 @@ type dirList []string
 func (d *dirList) String() string     { return strings.Join(*d, ",") }
 func (d *dirList) Set(v string) error { *d = append(*d, v); return nil }
 
+// cidrList is a repeatable --allow-private-cidr flag.
+type cidrList []string
+
+func (c *cidrList) String() string     { return strings.Join(*c, ",") }
+func (c *cidrList) Set(v string) error { *c = append(*c, v); return nil }
+
 const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
                 [--web-controls [--web-allow-guardrails-off]] [--web-project-settings]
+                [--allow-private-cidr CIDR]...
        belai rc --status
        belai rc --stop
 
@@ -63,6 +71,11 @@ machine and in the directories given with --dir.
 with the TUI's slash commands and keys, for that session only.
 --web-project-settings lets the website edit each offered directory's project
 preferences on this host.
+
+--allow-private-cidr names one private range that WebFetch may reach, for a host
+whose own network answers with addresses there (the Pix Sandbox's egress
+gateway). Only a private-use range is accepted, never loopback or link-local;
+every other private address stays refused. Sessions and workers inherit it.
 
 Needs a Vulnetix CLI browser login (vulnetix auth login).
 `
@@ -83,10 +96,17 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	webControls := fs.Bool("web-controls", false, "let web sessions change their mode, model, guardrails, ask and display with the TUI's slash commands and keys (that session only)")
 	webGuardrailsOff := fs.Bool("web-allow-guardrails-off", false, "with --web-controls, let a web session turn its guardrails off")
 	webProjectSettings := fs.Bool("web-project-settings", false, "let the website read and edit each offered directory's project preferences on this host")
+	var allowCIDRs cidrList
+	fs.Var(&allowCIDRs, "allow-private-cidr", "let WebFetch reach this private-use range (repeatable); loopback and link-local are never allowed, and every other private address stays refused")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
 		}
+		return 2
+	}
+	allowed, err := netguard.ParseAllowCIDRs(strings.Join(allowCIDRs, ","))
+	if err != nil {
+		fmt.Fprintln(stderr, "belai rc:", err)
 		return 2
 	}
 	if *webGuardrailsOff && !*webControls {
@@ -143,6 +163,21 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 
 	if *detach {
 		return rcDetach(args, stdout, stderr, url)
+	}
+
+	// The sessions and workers this process starts inherit the environment, so
+	// the allow list reaches every process that can run WebFetch.
+	if len(allowed) > 0 {
+		names := make([]string, len(allowed))
+		for i, p := range allowed {
+			names[i] = p.String()
+		}
+		netguard.SetAllowedPrefixes(allowed)
+		if err := os.Setenv(netguard.EnvAllowPrivateCIDRs, strings.Join(names, ",")); err != nil {
+			fmt.Fprintln(stderr, "belai rc: --allow-private-cidr:", err)
+			return 1
+		}
+		fmt.Fprintf(stderr, "WebFetch may reach %s (from --allow-private-cidr); every other private address stays refused.\n", strings.Join(names, ", "))
 	}
 
 	wd, _ := os.Getwd()

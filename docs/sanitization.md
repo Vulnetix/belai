@@ -28,6 +28,7 @@ the sanitiser sits in the tool-result pipeline.
 | URL a user configured for a service | `internal/netguard` | `CheckURL` with the `Endpoint` profile | Refuses |
 | Address a connection would reach | `internal/netguard` | `Forbidden`, `ForbiddenIP` | Refuses |
 | Loopback test used by all of the above | `internal/netguard` | `IsLoopbackHost` | n/a |
+| Private range a host explicitly allows | `internal/netguard` | `ParseAllowCIDRs`, `SetAllowedPrefixes`, `AllowedPrefixes` | Refuses all but the named range |
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
 | Tool argument | `internal/tools` | `CheckArgs`, `CheckFormat` | Refuses |
 | Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
@@ -152,6 +153,24 @@ connection. Every redirect target goes through `CheckURL` again. The four
 earlier copies of the loopback test all call `IsLoopbackHost`, which accepts
 `localhost` (with a trailing dot, or as a subdomain), loopback literals and
 IPv4-mapped IPv6 loopback.
+
+**An explicit allow list.** A host whose own network answers with addresses in
+a private range can name that range, and only that range, with
+`belai rc --allow-private-cidr <cidr>` (repeatable). The Pix Sandbox needs it:
+its egress gateway stands in for every host the container reaches, so a name
+resolves to a placeholder address such as `fd00::119:1`, which `Forbidden` would
+refuse, and WebFetch could reach nothing. `ParseAllowCIDRs` accepts only a CIDR
+written in canonical form (host bits zero) that lies wholly inside a private-use
+block (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`), at most eight
+of them. Loopback, link-local (the cloud metadata address), multicast, the
+unspecified address, the IPv6 transition ranges and any public range can never be
+allowed, and an invalid value allows nothing. `belai rc` passes the list to the
+sessions and workers it starts in the `BELAI_ALLOW_PRIVATE_CIDRS` environment
+variable, which each process reads at start, and `SetAllowedPrefixes` drops any
+entry `ParseAllowCIDRs` would have refused. `Forbidden` then lets an address in
+the list through and still refuses every other private address, so allowing
+`fd00::/64` does not open `10/8`, `fc00::/7` outside it, or `fd00:ec2::254`.
+`AllowedPrefixes` returns the list in force.
 
 Limit: the IDNA conversion rejects invisible characters and invalid names but
 cannot detect look-alike letters from different scripts.
