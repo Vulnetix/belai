@@ -43,6 +43,7 @@ const (
 	HostRCOffline     Kind = "host.rc_offline"
 	HostDispatch      Kind = "host.dispatch"
 	HostSchedule      Kind = "host.schedule"
+	HostTeleport      Kind = "host.teleport"
 
 	WorkerStarted Kind = "worker.started"
 	WorkerState   Kind = "worker.state"
@@ -70,7 +71,7 @@ const (
 
 var kindScope = map[Kind]string{
 	HostFirstSeen: ScopeHost, HostVersionChange: ScopeHost, HostRCOnline: ScopeHost,
-	HostRCOffline: ScopeHost, HostDispatch: ScopeHost, HostSchedule: ScopeHost,
+	HostRCOffline: ScopeHost, HostDispatch: ScopeHost, HostSchedule: ScopeHost, HostTeleport: ScopeHost,
 	WorkerStarted: ScopeAgent, WorkerState: ScopeAgent, WorkerStopped: ScopeAgent,
 	CardClaimed: ScopeAgent, CardReleased: ScopeAgent, CardLeaseLapse: ScopeAgent,
 	RepoCommit: ScopeAgent, RepoPublish: ScopeAgent,

@@ -18,16 +18,20 @@ const SchemaVersion = 2
 // entry's Content, matching plan_state / goal_state / todo_list, rather than
 // the free-form Meta map used by assistant entries.
 type Meta struct {
-	Schema        int    `json:"schema"`
-	Cwd           string `json:"cwd,omitempty"`
-	Version       string `json:"version,omitempty"`
-	CreatedAt     int64  `json:"createdAt,omitempty"`
-	ResumedFrom   string `json:"resumedFrom,omitempty"`
-	OriginCwd     string `json:"originCwd,omitempty"`
-	ActivePlan    string `json:"activePlan,omitempty"`
-	ActiveGoal    string `json:"activeGoal,omitempty"`
-	ActiveProfile string `json:"activeProfile,omitempty"`
-	Mode          string `json:"mode,omitempty"`
+	Schema      int    `json:"schema"`
+	Cwd         string `json:"cwd,omitempty"`
+	Version     string `json:"version,omitempty"`
+	CreatedAt   int64  `json:"createdAt,omitempty"`
+	ResumedFrom string `json:"resumedFrom,omitempty"`
+	// TeleportedFrom is the id of the session this one continues on another
+	// host (belai -teleport). The backend records the origin itself from the
+	// teleport it coordinated; this is the session file's own memory of it.
+	TeleportedFrom string `json:"teleportedFrom,omitempty"`
+	OriginCwd      string `json:"originCwd,omitempty"`
+	ActivePlan     string `json:"activePlan,omitempty"`
+	ActiveGoal     string `json:"activeGoal,omitempty"`
+	ActiveProfile  string `json:"activeProfile,omitempty"`
+	Mode           string `json:"mode,omitempty"`
 	// RepoMapHead is the repository HEAD the session already consulted for its
 	// repo map, so a resumed session knows whether to re-check the registry.
 	RepoMapHead string `json:"repoMapHead,omitempty"`
@@ -92,6 +96,9 @@ func LatestMeta(entries []Entry) (Meta, bool) {
 		}
 		if m.ResumedFrom != "" {
 			out.ResumedFrom = m.ResumedFrom
+		}
+		if m.TeleportedFrom != "" {
+			out.TeleportedFrom = m.TeleportedFrom
 		}
 		if m.OriginCwd != "" {
 			out.OriginCwd = m.OriginCwd

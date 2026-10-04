@@ -157,6 +157,8 @@ func main() {
 	flag.StringVar(resume, "r", "", "shorthand for -resume")
 	continueLast := flag.String("continue", "", "continue the most recent session for this project")
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
+	teleportID := flag.String("teleport", "", "continue a session of your account from another host, sandbox or the web: its transcript and any agent profile it needs are fetched, and the session opens here under a new id (the original carries on)")
+	teleportRef := flag.String("teleport-ref", "", "with -teleport, check out this ref or commit instead of the one the session was at")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
 	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
 	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
@@ -197,6 +199,23 @@ func main() {
 	if *continueLast != "" && *resume != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue cannot be combined with -resume")
 		exitProcess(1)
+	}
+	if *teleportRef != "" && *teleportID == "" {
+		fmt.Fprintln(os.Stderr, "belai: -teleport-ref needs -teleport")
+		exitProcess(2)
+	}
+	if *teleportID != "" {
+		switch {
+		case *resume != "" || *continueLast != "":
+			fmt.Fprintln(os.Stderr, "belai: -teleport cannot be combined with -resume or -continue")
+			exitProcess(1)
+		case *prompt != "":
+			fmt.Fprintln(os.Stderr, "belai: -teleport requires the interactive TUI (not supported with -prompt)")
+			exitProcess(1)
+		case !interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv):
+			fmt.Fprintln(os.Stderr, "belai: -teleport opens the terminal UI, so it needs a terminal")
+			exitProcess(1)
+		}
 	}
 	if *continueLast != "" && *prompt != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue requires the interactive TUI (not supported with -prompt)")
@@ -345,7 +364,17 @@ func main() {
 	// into a TUI to discover the failure.
 	var resumeKey session.Key
 	var resumeID string
-	if *resume != "" || *continueLast != "" {
+	var teleported *tui.Teleported
+	if *teleportID != "" {
+		// After the trust gate, so the repository is one the user trusted, and
+		// before the TUI, so a refusal exits non-zero with its reason.
+		res, tp, err := runTeleport(ctx, workdir, *teleportID, *teleportRef, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "belai:", err)
+			exitProcess(1)
+		}
+		workdir, resumeKey, resumeID, teleported = res.Workdir, res.Key, res.SessionID, tp
+	} else if *resume != "" || *continueLast != "" {
 		store, err := session.NewStore()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
@@ -422,7 +451,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			exitProcess(1)
 		}
-		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID})
+		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID, Teleported: teleported})
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)

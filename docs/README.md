@@ -55,6 +55,8 @@ behaviour, and implementation details.
   (History and live Sessions) and prompting a live session from the browser.
 - [Remote control](remote-control.md): `belai rc`, which lets the website
   start and drive sessions on this machine.
+- [Teleport](teleport.md): `belai -teleport`, which continues a session from another
+  host, sandbox or the web on this host, under a new id.
 - [Pix Sandbox](pix-sandbox.md): the contract between Belai and the hosted machine Vulnetix
   runs: host id, settings, credentials, trusted directories and Jev.
 - [Library items](library-items.md): the skills, prompts, processes, repositories, token
@@ -97,6 +99,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
+| Continuing a session from another host, sandbox or the web | [Teleport](teleport.md) | alpha-20261004 |
 | Library items: skills, prompts, processes, repositories, budgets, the rewrite table and provider sets synced with the website | [Library items](library-items.md) | alpha-20261002 |
 | Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 | Reading replies aloud, with a player card | [Read aloud](tts.md) | alpha-20260930 |
