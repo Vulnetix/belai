@@ -81,7 +81,9 @@ func resolveDialect(cfg Config) (dialect, error) {
 		maxCompletion: d.MaxCompletionTokens,
 	}
 	// Workers AI has its own route and requires tool arguments as objects.
-	if cfg.Provider == "cloudflare-workers-ai" {
+	// Keyed on the descriptor's surface, not the provider name, so a second
+	// provider that speaks /ai/run/{model} takes the same route.
+	if d.Surface == wire.SurfaceWorkersAI {
 		return dialect{kind: kindWorkersAI, route: routeWorkersAI, method: wire.ToolMethodObject}, nil
 	}
 	// Cloudflare AI Gateway switches surface based on the upstream model.

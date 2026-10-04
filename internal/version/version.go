@@ -6,7 +6,8 @@ var (
 	Commit    = "unknown"
 	BuildDate = "unknown"
 	// Variant names the release asset family this binary belongs to: "",
-	// "no-classifier", "bert-guardrails", or "bert-guardrails-jailbreak".
+	// "no-classifier", "bert-guardrails", "bert-guardrails-jailbreak", or
+	// "pix-sandbox".
 	// It is set at build time via -ldflags and read by selfupdate.AssetURL so
 	// a guardrails binary updates to a guardrails binary.
 	Variant = ""

@@ -80,6 +80,11 @@ func checkOverride(prov, model, effort string, models func() *sessionsync.RCMode
 	return "this host has no credentials for provider " + prov
 }
 
+// hideProvider is a hook a build variant sets in init() to keep a provider
+// out of the advertised list. Nil in the default build, which advertises every
+// configured provider.
+var hideProvider func(name string) bool
+
 // buildModels is LocalModels with its inputs passed in.
 func buildModels(s config.Settings, loadState func() (config.State, error), env func(string) string, configured []string) *sessionsync.RCModels {
 	prov, model := config.SelectedModel(s, loadState)
@@ -107,6 +112,9 @@ func buildModels(s config.Settings, loadState func() (config.State, error), env 
 	names := append([]string{}, configured...)
 	sort.Strings(names)
 	for _, name := range names {
+		if hideProvider != nil && hideProvider(name) {
+			continue
+		}
 		if len(out.Providers) >= sessionsync.MaxRCProviders {
 			break
 		}

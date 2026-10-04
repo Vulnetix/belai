@@ -2450,6 +2450,9 @@ func TestDefaultModelTableOnThePageMatchesEveryBuiltin(t *testing.T) {
 		rows[m[1]] = strings.TrimSpace(m[2])
 	}
 	for _, name := range provider.Names() {
+		if undocumentedProviders[name] {
+			continue
+		}
 		cell, ok := rows[name]
 		if !ok {
 			t.Errorf("the default model table has no row for the built-in provider %s", name)

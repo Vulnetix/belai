@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Workers AI serves prompt-prefix caching per replica, and a request is
@@ -25,10 +27,10 @@ const headerSessionAffinity = "x-session-affinity"
 // directly or through the AI Gateway (whose Claude branch goes to Anthropic
 // and is excluded).
 func wantsSessionAffinity(cfg Config) bool {
-	switch cfg.Provider {
-	case "cloudflare-workers-ai":
+	if d, ok := provider.Lookup(cfg.Provider); ok && d.Surface == wire.SurfaceWorkersAI {
 		return true
-	case "cloudflare-ai-gateway":
+	}
+	if cfg.Provider == "cloudflare-ai-gateway" {
 		return !isClaudeModel(cfg.Model)
 	}
 	return false
