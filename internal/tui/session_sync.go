@@ -245,8 +245,8 @@ func (a *App) drainRemoteQueue() tea.Cmd {
 
 // submitRemote runs a website prompt as a typed prompt would run, minus the
 // composer: the user's draft and pending attachments are left alone, and a
-// leading "/" or "!" is plain text — the website can never run a slash
-// command or a shell command. Admission (sanitize + classifier) happens in
+// leading "/" or "!" is plain text: a prompt is never a slash command or a
+// shell command (a shell line has its own channel, internal/rc/shell.go). Admission (sanitize + classifier) happens in
 // the turn exactly as for a typed prompt, and a refusal lands in the
 // transcript, which the website then shows.
 func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {

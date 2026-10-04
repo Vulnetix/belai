@@ -35,6 +35,9 @@ type Options struct {
 	// RemoteCommands delivers session controls from the web (belai rc
 	// --web-controls). Off, every command is refused.
 	RemoteCommands bool
+	// RemoteShell delivers shell lines from the web (belai rc --web-shell).
+	// Off, every shell line is refused.
+	RemoteShell bool
 	// OnControls is called, on the syncer's goroutine, with the website's
 	// pending controls for the live session each time the server returns some
 	// (registration and every heartbeat). It must not block. nil ignores them.
@@ -160,7 +163,7 @@ func New(opts Options) *Syncer {
 func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
-	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands {
+	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands || s.opts.RemoteShell {
 		go s.inbox(ctx)
 	}
 }
@@ -605,6 +608,7 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.RemoteAnswersEnabled(),
 		DispatchID: i.DispatchID, Git: i.Git,
 		Controls: s.opts.RemoteCommands, ControlState: s.controlState(),
+		Shell: s.opts.RemoteShell,
 	}
 }
 
@@ -876,7 +880,12 @@ func (s *Syncer) inbox(ctx context.Context) {
 		}
 		// Controls next: they apply to the turn the prompts start.
 		for _, c := range batch.Commands {
-			if !s.opts.RemoteCommands {
+			if c.Shell != "" {
+				if !s.opts.RemoteShell {
+					s.AckCommand(c.ID, AckRefused, "this host does not run shell lines from the web", nil)
+					continue
+				}
+			} else if !s.opts.RemoteCommands {
 				s.AckCommand(c.ID, AckRefused, "this host does not take session controls from the web", nil)
 				continue
 			}

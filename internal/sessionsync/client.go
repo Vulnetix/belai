@@ -471,7 +471,10 @@ type SessionMeta struct {
 	// internal/sessionctl.State, opaque here; the server validates its shape.
 	Controls     bool            `json:"controls"`
 	ControlState json.RawMessage `json:"controlState,omitempty"`
-	CreatedAt    int64           `json:"createdAt,omitempty"`
+	// Shell says the host runs a shell line from the web (belai rc
+	// --web-shell).
+	Shell     bool  `json:"shell"`
+	CreatedAt int64 `json:"createdAt,omitempty"`
 	// DispatchID is the website request that started this session on an rc
 	// daemon; empty for a session someone started at the terminal.
 	DispatchID string `json:"dispatchId,omitempty"`
@@ -532,15 +535,23 @@ type RemoteDraft struct {
 	ExpiresAt int64 `json:"expiresAt"`
 }
 
-// RemoteCommand is a session control sent from the website, claimed from the
-// inbox: a slash line ("/caveman on") or a key ("f4"), exactly one of them. It
-// is untrusted: the host parses it with internal/sessionctl, which knows only
-// its fixed controls, and nothing else ever runs.
+// RemoteCommand is a request sent from the website, claimed from the inbox: a
+// session control (a slash line "/caveman on" or a key "f4") or, from a host
+// run with --web-shell, one shell line; exactly one of Line, Key and Shell.
+// It is untrusted: a control is parsed by internal/sessionctl, which knows
+// only its fixed controls, and a shell line runs only after the TUI's own
+// permission rules and under its sandbox profile (internal/rc shell.go).
 type RemoteCommand struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionId"`
 	Line      string `json:"line,omitempty"`
 	Key       string `json:"key,omitempty"`
+	// Shell is the line to run, Cwd the directory the page was showing and
+	// Attach whether its output may go to the model's next turn (the
+	// composer's `!cmd`; the console's remote shell never attaches).
+	Shell     string `json:"shell,omitempty"`
+	Cwd       string `json:"cwd,omitempty"`
+	Attach    bool   `json:"attach,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 

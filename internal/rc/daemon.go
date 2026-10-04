@@ -125,6 +125,9 @@ type Options struct {
 	// ProjectSettings advertises each offered directory's project preferences
 	// and takes "project_prefs" requests (--web-project-settings).
 	ProjectSettings bool
+	// Shell lets web sessions run a shell line on this host (--web-shell); it
+	// reaches a session as fixed argv.
+	Shell bool
 	// Prefs reads the offered directories' preferences (localPrefs unless a
 	// test replaces it).
 	Prefs func([]Dir) map[string]DirPrefs
@@ -159,6 +162,8 @@ type Child struct {
 	Idle    time.Duration
 	// Controls and GuardrailsOff are the daemon's own flags, passed on.
 	Controls, GuardrailsOff bool
+	// Shell is the daemon's --web-shell, passed on.
+	Shell bool
 }
 
 // Daemon is a running `belai rc`.
@@ -626,6 +631,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		Provider: r.Provider, Model: r.Model, Effort: r.Effort, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
+		Shell: d.o.Shell,
 	}
 	pid, wait, err := d.o.Start(c)
 	if err != nil {
@@ -757,6 +763,9 @@ func startChild(c Child) (int, func() error, error) {
 		if c.GuardrailsOff {
 			args = append(args, "-allow-guardrails-off")
 		}
+	}
+	if c.Shell {
+		args = append(args, "-shell")
 	}
 	cmd := exec.Command(c.Exe, args...)
 	cmd.Dir = c.Cwd

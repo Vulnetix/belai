@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/session"
@@ -54,6 +55,41 @@ func (l *Log) System(text string) {
 	if l.w != nil {
 		l.w.System(text)
 	}
+}
+
+// ShellEntry is the transcript type and role of a `!cmd` line: what the TUI
+// writes for its shell panel and what the website renders as a shell block.
+const ShellEntry = "shell"
+
+// maxShellBytes caps a shell entry's content, as the TUI caps a tool result.
+const maxShellBytes = 32 << 10
+
+// Shell writes a shell line's result and returns its entry id ("" when not
+// written). meta carries command, shell_id and status like the TUI's entry;
+// content is cut at a rune boundary when it is over the cap.
+func (l *Log) Shell(content string, meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	if len(content) > maxShellBytes {
+		cut := maxShellBytes
+		for cut > 0 && !utf8.RuneStart(content[cut]) {
+			cut--
+		}
+		meta = copyMeta(meta)
+		meta["truncated"] = true
+		meta["orig_len"] = len(content)
+		content = content[:cut]
+	}
+	return l.w.Entry(session.Entry{Type: ShellEntry, Role: ShellEntry, Content: content, Meta: meta})
+}
+
+func copyMeta(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m)+2)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // Flush writes the assistant text and calls gathered so far.

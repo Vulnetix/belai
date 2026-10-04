@@ -53,6 +53,9 @@ type SessionOptions struct {
 	// each one's outcome with the new state.
 	Commands   <-chan sessionsync.RemoteCommand
 	AckCommand func(id, status, reason string, state json.RawMessage)
+	// Shell, when set, runs the shell lines the website sends (belai rc
+	// --web-shell). The lines arrive on Commands, so Commands must be set too.
+	Shell ShellRunner
 	// Changed is called after the controls changed, with the new state (the
 	// syncer re-registers the session with it).
 	Changed func(json.RawMessage, bool)
@@ -92,9 +95,20 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 	if o.Answers != nil {
 		bridge = newAskBridge(o.Log, o.Answers, o.AskWait)
 	}
+	// Commands carry web controls and, with a Shell runner, shell lines.
 	commands := o.Commands
-	if o.Controls == nil {
+	if o.Controls == nil && o.Shell == nil {
 		commands = nil
+	}
+	shells := &shellQueue{}
+	resetIdle := func() {
+		if !idle.Stop() {
+			select {
+			case <-idle.C:
+			default:
+			}
+		}
+		idle.Reset(o.Idle)
 	}
 	if o.Controls != nil && o.Changed != nil {
 		st := o.Controls.State()
@@ -127,7 +141,12 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
-				applyCommand(o, c, true, bridge)
+				applyCommand(ctx, o, c, true, bridge, shells)
+				// A shell line is activity: a console left open on a sandbox
+				// keeps its session alive while it is in use.
+				if c.Shell != "" {
+					resetIdle()
+				}
 				continue
 			}
 		}
@@ -138,9 +157,10 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 			}
 			continue
 		}
-		// A leading "/" or "!" is plain prompt text: the website never runs a
-		// slash command or a shell command on the host. Session controls arrive
-		// on their own channel (Commands), typed and parsed by sessionctl.
+		// A leading "/" or "!" is plain prompt text: a prompt is never a slash
+		// command or a shell command. Session controls and shell lines arrive on
+		// their own channel (Commands): controls typed and parsed by
+		// sessionctl, shell lines checked and run by the ShellRunner.
 		meta := map[string]any{"source": "web", "dispatch_id": o.Dispatch}
 		if p.ID != "" {
 			meta = map[string]any{"source": "web", "remote_prompt_id": p.ID}
@@ -151,9 +171,12 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		}
 		o.Mirror.Nudge()
 
+		// Output of the composer's shell lines since the last turn rides on this
+		// one, exactly once. The console's lines never get here.
+		attachments := shells.drain()
 		done := make(chan run.Turn, 1)
 		go func() {
-			done <- runTurn(ctx, o, history, text, bridge)
+			done <- runTurn(ctx, o, history, text, bridge, attachments)
 		}()
 		// While the turn runs, later prompts wait their turn (FIFO) and the
 		// website shows them queued.
@@ -175,7 +198,7 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
-				applyCommand(o, c, false, bridge)
+				applyCommand(ctx, o, c, false, bridge, shells)
 			}
 		}
 		if o.Controls != nil {
@@ -205,7 +228,23 @@ const maxTurnPaths = 1000
 
 // applyCommand applies one web control and reports it: a harness line in the
 // transcript, the ack with the new state, and the re-registration.
-func applyCommand(o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge) {
+func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge, shells *shellQueue) {
+	if c.Shell != "" {
+		if o.Shell == nil {
+			if o.AckCommand != nil {
+				o.AckCommand(c.ID, sessionsync.AckRefused, "this session does not run shell lines from the web", nil)
+			}
+			return
+		}
+		startShell(ctx, o, c, shells, planMode(o))
+		return
+	}
+	if o.Controls == nil {
+		if o.AckCommand != nil {
+			o.AckCommand(c.ID, sessionsync.AckRefused, "this session takes no controls from the web", nil)
+		}
+		return
+	}
 	summary, err := o.Controls.Apply(c, idle)
 	if err != nil {
 		if o.AckCommand != nil {
@@ -230,6 +269,15 @@ func applyCommand(o SessionOptions, c sessionsync.RemoteCommand, idle bool, brid
 	}
 }
 
+// planMode reports whether the session is in plan mode right now: the web
+// controls' mode when it has them, the mode it started in otherwise.
+func planMode(o SessionOptions) bool {
+	if o.Controls != nil {
+		return o.Controls.Mode() == modes.ModePlan
+	}
+	return o.Mode == modes.ModePlan
+}
+
 // turnFacts are the footer facts for a turn: the session's own, overlaid by
 // the controls when the web can change them.
 func turnFacts(o SessionOptions) map[string]any {
@@ -246,7 +294,7 @@ func turnFacts(o SessionOptions) map[string]any {
 
 // runTurn runs one turn between its turn_state lines and returns the
 // assistant turn for the history ("" Role when it failed).
-func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text string, bridge *askBridge) run.Turn {
+func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text string, bridge *askBridge, attachments []run.Attachment) run.Turn {
 	facts := turnFacts(o)
 	agentRunner, mode := o.Agent, o.Mode
 	asks := false
@@ -307,7 +355,7 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		o.Log.Observe(e)
 		o.Mirror.Nudge()
 	}
-	res, err := agentRunner.RunInputObserved(ctx, history, agent.TurnInput{Prompt: text, ForceMode: mode}, emit)
+	res, err := agentRunner.RunInputObserved(ctx, history, agent.TurnInput{Prompt: text, Attachments: attachments, ForceMode: mode}, emit)
 	state := "ended"
 	switch {
 	case ctx.Err() != nil:

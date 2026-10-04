@@ -23,6 +23,7 @@ and each rule is pinned by `internal/rc/pixsandbox_test.go`.
 | `--dir <path>` | one per cloned repository | the only offered and trusted directories |
 | `--web-controls`, `--web-project-settings` | on by default, set per sandbox in the console's Launch tab | web sessions take session controls, and each offered directory's project preferences are managed from the console ([remote-control.md](remote-control.md#session-controls-from-the-web)) |
 | `--web-allow-guardrails-off` | off by default; only with `--web-controls` | a web session may switch its guardrails off |
+| `--web-shell` | on | the session page can run a shell line in the sandbox, from the composer's `!cmd` (output goes to the model) and the console drawer (it never does), under the TUI's permission rules and bubblewrap profile ([remote-control.md](remote-control.md#shell-lines-from-the-web)) |
 | `--allow-private-cidr <cidr>` | the range the egress gateway answers from (`fd00::/64`) | WebFetch may reach that one range. The gateway stands in for every host the machine reaches, so a name resolves to a placeholder such as `fd00::119:1`, which the fetch guard would otherwise refuse as private. Loopback, link-local and every other private range stay refused ([sanitization.md](sanitization.md)) |
 
 ## Rules
