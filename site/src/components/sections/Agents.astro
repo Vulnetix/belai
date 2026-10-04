@@ -5,6 +5,7 @@ import SubHead from '../ui/SubHead.astro';
 import Walkthrough from '../ui/Walkthrough.astro';
 import Limits from '../ui/Limits.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import CrewLanes from '../figures/CrewLanes.astro';
 import rubberDuck from '../../assets/pix/personas/8a28c058-0f9e-5320-a948-f2b651f08874.svg?url';
 import kremvax from '../../assets/pix/personas/3e8f176f-1538-5d79-b2c7-2eb35edfe989.svg?url';
 import darkAvenger from '../../assets/pix/personas/52f09d1b-981d-59e9-b770-2eec1e628b49.svg?url';
@@ -427,7 +428,8 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
     Two crews ship with Belai, each member with a name and a way of writing its report. Your own crews
     are a Markdown profile away.
   </SubHead>
-  <div class="mt-head grid gap-10 @6xl:grid-cols-2 @6xl:items-start">
+  <CrewLanes />
+  <div class="mt-sub grid gap-10 @6xl:grid-cols-2 @6xl:items-start">
     <div class="min-w-0">
       {crews.map((c, ci) => (
         <div class={ci === 0 ? '' : 'mt-8'}>
@@ -455,9 +457,6 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
               </li>
             ))}
           </ul>
-          <p class="mt-3 text-sm">
-            <span class="rounded-lg bg-vx-mint px-3 py-1.5">ends in a draft PR</span>
-          </p>
         </div>
       ))}
     </div>

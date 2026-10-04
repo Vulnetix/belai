@@ -4,7 +4,6 @@ import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
 import Shot from '../ui/Shot.astro';
 import Limits from '../ui/Limits.astro';
-import budgetsShot from '../../assets/shots/budgets.svg';
 import footerShot from '../../assets/shots/footer.svg';
 
 // Token budgets: three windows (session, day, month), the footer's three
@@ -175,10 +174,15 @@ const limits = [
       </div>
     </div>
   </div>
-  <div class="mt-8 grid max-w-[1000px] gap-6">
-    <Shot src={budgetsShot.src} alt="The token budgets screen with teal, amber and red budgets" caption="f1 → b, token budgets" />
-    <Shot src={footerShot.src} alt="The status footer with an amber day budget on the right of the top line" caption="footer, amber day budget" />
-  </div>
+  <Shot
+    class="mt-8"
+    shot={footerShot}
+    title="status footer"
+    alt="The status footer with an amber day budget on the right of the top line and the guardrails chip on the second"
+    rows={[0, 2]}
+    marks={[{ row: 0, col: 71 }, { row: 1, col: 27 }]}
+    notes={['The day budget turns amber when spend runs ahead of the clock.', 'The guardrails switch, on.']}
+  />
 
   <SubHead id="economy" title="Smaller requests, measured">
     Budgets cap what a session may spend. These settings and tools reduce what each request sends in the

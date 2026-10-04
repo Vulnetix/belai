@@ -4,7 +4,6 @@ import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
 import Shot from '../ui/Shot.astro';
 import Limits from '../ui/Limits.astro';
-import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
 
 // Providers: hosted, local and the classifier, then the credential layers,
@@ -164,10 +163,14 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
   </p>
   <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
     <div class="min-w-0 @4xl:col-span-7">
-      <div class="grid gap-6">
-        <Shot src={modelPickerShot.src} alt="The model picker" caption="/model picker" />
-        <Shot src={localModelShot.src} alt="A /local-model assess verdict" caption="/local-model assess" />
-      </div>
+      <Shot
+        shot={localModelShot}
+        title="/local-model assess"
+        alt="A /local-model assess verdict showing the candidate, how well it fits and notes"
+        rows={[2, 6]}
+        marks={[{ row: 4, col: 22 }]}
+        notes={['How well the candidate fits this machine, before you commit to it.']}
+      />
     </div>
     <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-5">
       <div class="rounded-xl bg-vx-ink p-5">
