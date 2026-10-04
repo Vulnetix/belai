@@ -129,13 +129,18 @@ build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
           tags="-tags belai_bert_jailbreak,belai_voice"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak"
           ;;
+        pix-sandbox)
+          name="{{ binary }}-pix-sandbox"
+          tags="-tags belai_voice,belai_sandbox"
+          extra="-X {{ module }}/internal/version.Variant=pix-sandbox"
+          ;;
       esac
       echo "  {{ bin }}/${name}-${goos}-${goarch}${suffix}"
       CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
         go build $tags -ldflags '-s -w {{ ldflags }} '"$extra" \
         -o "{{ bin }}/${name}-${goos}-${goarch}${suffix}" {{ pkg }}
     }
-    for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
+    for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak pix-sandbox; do
       build "$variant"
     done
     ( cd {{ bin }} && { sha256sum {{ binary }}-* 2>/dev/null || shasum -a 256 {{ binary }}-*; } > checksums.txt )

@@ -20,6 +20,11 @@ var visionID = regexp.MustCompile(`(^|/)(` +
 	`qwen[\d.]*-vl|kimi-vl|mistral-(medium|large)-3` +
 	`)`)
 
+// extraVision is a hook a build variant sets in init() to name further
+// vision-capable ids, tested after the built-in list. Nil in the default
+// build, which then answers from visionID alone.
+var extraVision func(providerName, id string) bool
+
 // Vision reports whether the model is known to accept image input. Unknown
 // ids answer false.
 func Vision(providerName, modelID string) bool {
@@ -27,5 +32,8 @@ func Vision(providerName, modelID string) bool {
 	if id == "" {
 		return false
 	}
-	return visionID.MatchString(id)
+	if visionID.MatchString(id) {
+		return true
+	}
+	return extraVision != nil && extraVision(providerName, id)
 }
