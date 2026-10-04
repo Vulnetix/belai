@@ -8,7 +8,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 // subcommands and the gates, each group a terminal block beside its notes.
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, -usage-json records what a run spent, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags. The subcommands are agent, kanban, rc, plugin, acp and login, and belai help followed by a command prints that command own flags. The top-level flags fall into five groups: session, model, safety, security classifier and other.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, -usage-json records what a run spent, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags. The subcommands are agent, kanban, rc, plugin, acp and login, and belai help followed by a command prints that command own flags. -teleport continues a session from another host, sandbox or the web in this checkout under a new id. The top-level flags fall into five groups: session, model, safety, security classifier and other.';
 
 const groups = [
   {
@@ -38,6 +38,7 @@ const groups = [
       ['belai kanban add "…" -label build', 'add, list, show, move, note, release and import put work on the board from scripts. Labels, priority, an assignee and dependencies route it, and -json prints items for tooling.'],
       ['belai rc --detach', 'remote control: the Vulnetix website starts and drives sessions on this machine, in the directories you offer. --status shows the daemon and --stop ends it.'],
       ['belai login kiro', 'signs in to Kiro with an AWS Builder ID or an IAM Identity Center start URL, and -import reuses the sign-in Kiro already made.'],
+      ['belai -teleport <id>', 'continues a session of your account from another host, a Pix Sandbox or the web, in the checkout you are in, under a new id. The original keeps running, and -teleport-ref picks the commit to check out.'],
       ['belai help <command>', 'prints the command\'s own flags, the same as belai <command> -h.'],
       ['belai agent start -crew belai:delivery', 'starts detached worker agents that claim items off the board. ps, logs and stop manage them, run -once works one item in the foreground, and import validates a JSON or Markdown profile.'],
     ],

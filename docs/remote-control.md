@@ -302,7 +302,9 @@ The website keeps a library of agent profiles and crews so they survive the
 machine they came from. Four requests reach them on this host, all through the
 dispatch queue and all carrying identifiers only: `profile_backup` and
 `profile_install` for an agent, `crew_backup` and `crew_install` for a crew
-(see [Crews](#crews) below):
+(see [Crews](#crews) below). A fifth, `teleport_backup`, is not a person's
+action: the backend sends it to the origin host of a `belai -teleport` so the
+library holds the session's profile (see [teleport.md](teleport.md)):
 
 - **`profile_backup`** names one of this host's profiles. The daemon exports it
   as markdown (the same form `belai agent import` reads, with its `id`, display
@@ -310,6 +312,15 @@ dispatch queue and all carrying identifiers only: `profile_backup` and
   new version. A backup writes nothing on this host. Built-in profiles ship with
   Belai, so a request for one is refused. The files the profile names go
   with it (see [Files an agent carries](#files-an-agent-carries)).
+
+- **`teleport_backup`** names the profile a teleported session ran under. The
+  daemon backs that profile up, then every crew on this host that lists it and
+  those crews' members, through the same uploads as `profile_backup` and
+  `crew_backup` while the request is delivered to this host. The crews and
+  members come from this host's own definitions, never from the request, at most
+  24 uploads. It writes nothing here. A crew or member that cannot be backed up
+  is reported and does not stop the profile's backup, which is the part the
+  teleport needs. Built-in profiles and crews are not uploaded.
 
 - **`profile_install`** names a library profile and one of its versions, and
   whether it may replace a profile here. The daemon reads that version from the

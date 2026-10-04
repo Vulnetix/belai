@@ -1789,7 +1789,7 @@ session name or short id. Entry types:
 | `rolemanager` | `rolemanager` | a role-manager decision line, with `summary` / `outcome` / `tone` / `level` in `meta` |
 | `completion` | `completion` | the harness-composed agent-mode completion panel body (never sent to a model) |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
-| `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
+| `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `teleportedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
 | `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
 | `branch` | *(empty)* | `/tree` moved the session to an earlier entry: `meta.from_entry` is the leaf left, `meta.to_entry` the entry the next one hangs from; the marker's own `parentId` is `to_entry` |
@@ -1829,6 +1829,19 @@ and `originCwd`, because `App.workdir` is the tool-confinement boundary and
 must never be silently widened to another tree. Legacy schema-1 files rehydrate
 text-only (tool history predates persistence) and gain a backfilled
 `session_meta` on first same-key resume.
+
+Teleport (`belai -teleport <id>`, [teleport.md](teleport.md)) is the third way
+to open a session that already exists. It does not read the origin's file: the
+transcript comes from the backend's mirror, frozen at the line the session had
+reached. `internal/teleport` checks that every line arrived once and in order,
+cleans every text and meta string, drops the origin's `session_meta` lines,
+rebuilds one root with a fresh `session_meta` (`cwd` is this host's,
+`teleportedFrom` the origin id, mode and active profile from the origin's last
+record, no plan, goal or repo map head) and writes it with `Store.Import` under
+a new id, `O_EXCL` so nothing is replaced. The TUI then resumes it through the
+same `ResumeKey`/`ResumeSession` path, as a same-project resume. A checkout at a
+different commit gets a git worktree, so `App.workdir` stays the confinement
+boundary it was started in.
 
 Entries are appended by `persistTail`, which writes only *settled* messages: a
 tool row waits for its result, and an assistant `tool_calls` entry waits for

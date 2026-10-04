@@ -7,7 +7,7 @@ import Limits from '../ui/Limits.astro';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. With belai rc --web-controls the page changes a session the way the terminal does, with the same slash commands and keys, for that session only, and its asks come to the page; guardrails can be switched off there only when the host also passes --web-allow-guardrails-off. With --web-project-settings the console edits each offered directory\'s project preferences in the host\'s own file for it, and the next session there reads them. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page. The library on the website: Sync from hosts asks each online host to run its library sync now and each answers with counts. A checkout directory tells the website its owner/repo, forge, branch and default branch, so the Library joins it with scans, sandboxes and sessions per repository. The Documents view shows each document\'s address, size, SHA-256, labels and topics from each host\'s knowledge index; the text stays on the host.';
+  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. With belai rc --web-controls the page changes a session the way the terminal does, with the same slash commands and keys, for that session only, and its asks come to the page; guardrails can be switched off there only when the host also passes --web-allow-guardrails-off. With --web-project-settings the console edits each offered directory\'s project preferences in the host\'s own file for it, and the next session there reads them. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page. The library on the website: Sync from hosts asks each online host to run its library sync now and each answers with counts. A checkout directory tells the website its owner/repo, forge, branch and default branch, so the Library joins it with scans, sandboxes and sessions per repository. The Documents view shows each document\'s address, size, SHA-256, labels and topics from each host\'s knowledge index; the text stays on the host. Teleport: belai -teleport <id> continues a session from another host, a Pix Sandbox or the web on the host you are at, under a new id, while the original keeps running. Only the transcript and the agent profile it ran under travel, with the crews that list it when the new host lacks them, and never a provider, a setting or a schedule. The origin host backs the profile up first, the transcript is read frozen at the line the session had reached and checked line by line, and a checkout at another commit gets a worktree. Every session card and the session page copy the command, and a teleported session links back to where it came from.';
 
 const answers = [
   {
@@ -169,7 +169,7 @@ const limits = [
   </ol>
 
   <details class="deep deep--wide">
-    <summary>The session file, resuming a session and the Agent Builder</summary>
+    <summary>The session file, resuming and teleporting a session, and the Agent Builder</summary>
     <div class="deep__body">
   <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
     <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-7">
@@ -190,6 +190,14 @@ const limits = [
         screen. History hides sessions run in <code class="mono">/tmp</code> until you ask for them.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        <code class="mono">belai -teleport &lt;id&gt;</code> continues a session on another host. The session can have
+        run on a host, in a Pix Sandbox or on the web, and it opens on a host with a terminal. Only the transcript
+        and the agent profile it ran under travel, with the crews that list it when the new host lacks them. The
+        session opens in the checkout you are in, or in a worktree at the commit it was at, under a new id, and
+        the original keeps running. Every session card on the website copies the command, and a teleported
+        session links back to where it came from.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         The website's Agent Builder uses a live session too. It sends the host a one-line premise, and the
         host checks it like a typed prompt, drafts an agent profile with its own model, and sends back each
         field with a reason. Nothing is saved on the host. The request needs web prompts on, runs one at a
@@ -197,6 +205,7 @@ const limits = [
       </p>
       <p class="mt-4 text-sm">
         <a class="text-vx-ink underline" href={`${docBase}session-sync.md`}>docs/session-sync.md</a>
+        · <a class="text-vx-ink underline" href={`${docBase}teleport.md`}>docs/teleport.md</a>
       </p>
     </div>
   </div>
