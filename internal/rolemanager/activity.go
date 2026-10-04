@@ -65,6 +65,7 @@ const (
 	EventGateAlignment             Event = "gate_alignment"
 	EventRequestCoverage           Event = "request_coverage"
 	EventKnowledgeTopics           Event = "knowledge_topics"
+	EventAgentPick                 Event = "agent_pick"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -378,6 +379,8 @@ func Describe(a Activity) (Description, bool) {
 		return goalJudgeDescription(a), true
 	case EventRequestScale:
 		return requestScaleDescription(a), true
+	case EventAgentPick:
+		return agentPickDescription(a), true
 	case EventKnowledgeTopics:
 		return knowledgeTopicsDescription(a), true
 	case EventGateDraft:

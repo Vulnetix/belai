@@ -179,7 +179,9 @@ func (s *Session) kanbanDirective(prompt string) string {
 	if s.kanban != nil && s.kanban.worker {
 		return workerDirective(s.kanban.base.Claim)
 	}
-	if !s.turnKanbanLoop {
+	// A remediation turn is about the edit; the board waits until it lands, so
+	// its items are not offered to keep current (remediation.go).
+	if !s.turnKanbanLoop || s.turnRemediation {
 		return ""
 	}
 	prov := s.kanban.base.Source.Get()

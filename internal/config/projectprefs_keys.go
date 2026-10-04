@@ -39,6 +39,7 @@ var prefFixedKeys = map[string]prefKey{
 	"show_tool_calls":      {kind: prefBool, origin: "ui"},
 	"show_edits":           {kind: prefBool, origin: "ui"},
 	"show_internal_work":   {kind: prefWord, words: []string{"hidden", "decisions", "security", "all"}, origin: "ui"},
+	"layout":               {kind: prefWord, words: []string{LayoutClean, LayoutChronological}, origin: "ui"},
 	"auto_commit_per_task": {kind: prefBool, origin: "auto_commit_per_task"},
 	"tests.post_end":       {kind: prefWord, words: []string{"off", "goal", "goal_plan", "session"}, origin: "tests"},
 	"tests.on_fail":        {kind: prefWord, words: []string{"off", "diagnose", "fix"}, origin: "tests"},
@@ -106,6 +107,9 @@ func (p ProjectPrefs) Flat() map[string]any {
 	putB("show_edits", p.ShowEdits)
 	if p.ShowInternalWork != nil {
 		out["show_internal_work"] = *p.ShowInternalWork
+	}
+	if p.Layout != nil {
+		out["layout"] = *p.Layout
 	}
 	putB("auto_commit_per_task", p.AutoCommitPerTask)
 	if p.Tests != nil {
@@ -184,6 +188,8 @@ func (p *ProjectPrefs) SetFlat(key string, v any) error {
 		p.ShowEdits = &b
 	case "show_internal_work":
 		p.ShowInternalWork = &w
+	case "layout":
+		p.Layout = &w
 	case "auto_commit_per_task":
 		p.AutoCommitPerTask = &b
 	case "tests.post_end", "tests.on_fail":
@@ -252,6 +258,8 @@ func (p *ProjectPrefs) UnsetFlat(key string) error {
 		p.ShowEdits = nil
 	case "show_internal_work":
 		p.ShowInternalWork = nil
+	case "layout":
+		p.Layout = nil
 	case "auto_commit_per_task":
 		p.AutoCommitPerTask = nil
 	case "tests.post_end", "tests.on_fail":
@@ -333,6 +341,8 @@ func EffectivePrefs(eff Effective, mode string) map[string]EffectivePref {
 			v = s.EditsVisible()
 		case "show_internal_work":
 			v = s.InternalWorkLevel()
+		case "layout":
+			v = s.Layout()
 		case "auto_commit_per_task":
 			v = s.AutoCommitPerTaskEnabled()
 		case "tests.post_end":

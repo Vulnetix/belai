@@ -123,7 +123,16 @@ func (w *Writer) Assistant(text string, calls []map[string]any, meta map[string]
 
 // Tool writes a tool result, capped at MaxToolResultBytes.
 func (w *Writer) Tool(callID, name, args, status, content string) {
+	w.ToolWith(callID, name, args, status, content, nil)
+}
+
+// ToolWith is Tool with more meta, such as the "diff" a mutating tool left
+// behind, which the website draws.
+func (w *Writer) ToolWith(callID, name, args, status, content string, extra map[string]any) {
 	meta := map[string]any{"tool_call_id": callID, "tool_name": name, "tool_args": args, "status": status}
+	for k, v := range extra {
+		meta[k] = v
+	}
 	if len(content) > MaxToolResultBytes {
 		meta["truncated"] = true
 		meta["orig_len"] = len(content)

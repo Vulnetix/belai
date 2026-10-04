@@ -79,6 +79,12 @@ const JevRequestCoverage JevJob = "request_coverage"
 // backend, bounded to the sampled chunks of an admitted document.
 const JevKnowledgeTopics JevJob = "knowledge_topics"
 
+// JevAgentPick lets Auto mode choose one of the user's own agent profiles for a
+// general request. It only narrows what Auto already does: a profile that
+// lowers guardrails or ask is never offered, and the pick never changes the
+// mode, a permission or a gate.
+const JevAgentPick JevJob = "agent_pick"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -97,6 +103,7 @@ var JevJobs = []JevJob{
 	JevGateAlignment,
 	JevRequestCoverage,
 	JevKnowledgeTopics,
+	JevAgentPick,
 }
 
 // LocatePreview values for jev.locate_previews.

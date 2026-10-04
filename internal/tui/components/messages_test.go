@@ -1102,3 +1102,61 @@ func TestMessageListCompletedAssistantKeepsPrecedingBelai(t *testing.T) {
 		t.Fatalf("preceding belai should stay before a completed assistant, got:\n%s", out)
 	}
 }
+
+// The chronological layout renders in message order: a notice that came before
+// the streaming reply stays above it instead of being hoisted below.
+func TestChronologicalLayoutDoesNotHoistNotices(t *testing.T) {
+	streaming := Message{Role: "assistant"}
+	streaming.AppendText("hello")
+	list := MessageList{
+		Width:         60,
+		Chronological: true,
+		Messages:      []Message{{Role: "system", Content: "classifying"}, streaming},
+	}
+	out := list.View()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	var modelIdx, belaiIdx = -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "model") && modelIdx < 0 {
+			modelIdx = i
+		}
+		if strings.Contains(l, "belai") && belaiIdx < 0 {
+			belaiIdx = i
+		}
+	}
+	if modelIdx < 0 || belaiIdx < 0 || belaiIdx > modelIdx {
+		t.Fatalf("the notice should stay above the reply it preceded:\n%s", out)
+	}
+}
+
+// The blank line before a panel carries that panel's time in the chronological
+// layout, and the clean layout draws no clock. Either way the line count and the
+// line map stay in step.
+func TestChronologicalLayoutShowsEachPanelsTime(t *testing.T) {
+	at := time.Date(2026, 10, 5, 9, 4, 7, 0, time.Local)
+	msgs := []Message{
+		{Role: "user", Content: "hi", CreatedAt: at.Add(-time.Minute)},
+		{Role: "assistant", Content: "hello", CreatedAt: at},
+	}
+	clean, cleanLM := MessageList{Width: 60, Messages: msgs}.Render()
+	chrono, chronoLM := MessageList{Width: 60, Chronological: true, Messages: msgs}.Render()
+	if strings.Contains(ansi.Strip(clean), "09:04:07") {
+		t.Fatalf("the clean layout drew a clock:\n%s", clean)
+	}
+	if !strings.Contains(ansi.Strip(chrono), "09:04:07") {
+		t.Fatalf("the chronological layout lacks the panel's time:\n%s", ansi.Strip(chrono))
+	}
+	for name, got := range map[string]struct {
+		out string
+		lm  LineMap
+	}{"clean": {clean, cleanLM}, "chronological": {chrono, chronoLM}} {
+		if n := strings.Count(got.out, "\n") + 1; n != len(got.lm) {
+			t.Fatalf("%s: %d lines, %d line-map rows", name, n, len(got.lm))
+		}
+	}
+	// A row with no time gets no label.
+	noTime, _ := MessageList{Width: 60, Chronological: true, Messages: []Message{{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}}}.Render()
+	if strings.Contains(ansi.Strip(noTime), ":") && strings.Contains(ansi.Strip(noTime), "00:00:00") {
+		t.Fatalf("a row with no time drew a clock:\n%s", ansi.Strip(noTime))
+	}
+}

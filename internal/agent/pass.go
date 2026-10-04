@@ -156,11 +156,18 @@ func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive b
 		return ""
 	}
 	*streak++
-	if *streak%readStreakNudgeAfter != 0 {
+	every := readStreakNudgeAfter
+	if s.turnRemediation {
+		every = remediationNudgeAfter
+	}
+	if *streak%every != 0 {
 		return ""
 	}
 	if s.planMode || s.turnReadOnly || s.exploreSubagent || s.reportOnly || s.kanbanWrapUpPass {
 		return ""
+	}
+	if s.turnRemediation && mode != modes.ModePlan {
+		return remediationNudge
 	}
 	switch mode {
 	case modes.ModeGoal:
@@ -341,6 +348,12 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 
 		if len(assistant.ToolCalls) == 0 {
+			if s.refuseRemediationFinish(acc.mutations, mode) {
+				// The reply is kept; the model is asked once more for the edit.
+				turns = append(turns, run.Turn{Role: "assistant", Content: assistant.Text})
+				turns = append(turns, directiveTurns(remediationFinishGuard)...)
+				continue
+			}
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive}), turns, nil
 		}
 

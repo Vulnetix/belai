@@ -804,3 +804,37 @@ func TestSyncRemoteAnswersDefaultOnAndProjectOffOnly(t *testing.T) {
 		t.Fatal("project settings must be able to turn web answers off")
 	}
 }
+
+func TestLayoutDefaultsToCleanAndReadsUnknownAsClean(t *testing.T) {
+	var s Settings
+	if got := s.Layout(); got != LayoutClean {
+		t.Fatalf("default Layout = %q, want clean", got)
+	}
+	v := "bogus"
+	s.UI = &UISettings{Layout: &v}
+	if got := s.Layout(); got != LayoutClean {
+		t.Fatalf("unrecognised Layout = %q, want clean", got)
+	}
+	v = " Chronological "
+	if got := s.Layout(); got != LayoutChronological {
+		t.Fatalf("Layout = %q, want chronological", got)
+	}
+}
+
+func TestLayoutMergePrecedenceAndProjectPref(t *testing.T) {
+	global, proj := LayoutClean, LayoutChronological
+	got := (Settings{UI: &UISettings{Layout: &global}}).Override(Settings{UI: &UISettings{Layout: &proj}})
+	if got.Layout() != LayoutChronological {
+		t.Fatalf("project should override global: %q", got.Layout())
+	}
+	bad := "wide"
+	if err := (ProjectPrefs{Layout: &bad}).Validate(); err == nil {
+		t.Fatal("a layout outside clean and chronological validated")
+	}
+	if err := (ProjectPrefs{Layout: &proj}).Validate(); err != nil {
+		t.Fatalf("chronological refused: %v", err)
+	}
+	if s := (ProjectPrefs{Layout: &proj}).toSettings(); s.Layout() != LayoutChronological {
+		t.Fatalf("pref did not reach the settings: %q", s.Layout())
+	}
+}

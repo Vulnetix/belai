@@ -1897,6 +1897,19 @@ own `At`. A transcript row takes the time of the event that created it
 immediately (the user prompt, session name) use the write time, which is the
 same thing.
 
+**The thread is placed by those times.** Agent events and role-manager decisions
+reach the TUI on two channels read independently, so a decision made before a
+tool result can arrive after it. `placeByTime` (`internal/tui/timing.go`) moves a
+notice or card back over rows of the same turn that were stamped later. It never
+crosses a user prompt, and it only moves `rolemanager`, `system`, report and
+vulnerability rows: user, assistant, reasoning and tool rows are paired by their
+neighbours. A row that needs no write (a decision already recorded, an
+ephemeral card) may move anywhere in the turn and the persistence cursor then
+covers it; a row still to be written never moves behind the cursor. Under
+`ui.layout` `chronological` ([settings](settings.md#layout)) every row an agent
+event creates is placed this way and the renderer drops the streaming hoist and
+labels each panel with its time; under `clean` only decisions are placed.
+
 **Durations say where the time went.** `meta.duration_ms` is recorded for:
 
 | Entry | Measured |
@@ -2997,6 +3010,9 @@ foreground.
 - The picker is only visible in agent mode, only on the chat view, and only
   when no slash-completion popup or file chooser is active. An active `@`
   prefix hides the agent picker because the file chooser owns `@`.
+- Auto mode never opens the picker on `enter`: the role manager decides the
+  mode, and the `agent_pick` job may engage one of the user's profiles, for
+  each prompt.
 - Opening the picker sets the highlight to `belai:debug` when it exists; if
   the default built-in is missing, the first available candidate is selected.
 - Tab from a cold state (no highlight) lands on the first candidate; tab from

@@ -232,6 +232,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊛` | tool and skill search | `tools` |
 | `⊞` | tool and skill selection | `tools` |
 | `⚖` | request sized | `mode` |
+| `◈` | agent profile picked | `mode` |
 | `⚑` | goal pass rated by the decision backend | `mode` |
 | `⌘` | language server found | `code` |
 | `⌥` | diagnostics | `code` |

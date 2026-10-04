@@ -100,6 +100,12 @@ func (b *rowBuilder) chip(s, action string, fg lipgloss.TerminalColor) {
 	b.text(s, fg)
 }
 
+// rowFrom is row with the first gutter cells decoration and the rest text a
+// selection copies: a label, then a value.
+func (b *rowBuilder) rowFrom(gutter int) Row {
+	return Row{Segs: b.segs, Hits: b.hits, Gutter: gutter}
+}
+
 func (b *rowBuilder) row() Row {
 	// The whole row is interface, not text: nothing in it is copied.
 	return Row{Segs: b.segs, Hits: b.hits, Gutter: b.col}
