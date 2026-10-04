@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -255,11 +256,12 @@ func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {
 		a.syncer.Ack(p.ID, sessionsync.AckRefused, "the prompt was empty after cleaning", "")
 		return nil
 	}
-	// Agent mode with no carrier waits on the host's agent picker; the
-	// website cannot answer it.
-	if a.mode == "agent" && a.namedAgent == "" {
-		a.syncer.Ack(p.ID, sessionsync.AckRefused, "the host is in agent mode with no agent selected; choose one on the host", "")
-		return nil
+	// Agent mode with no carrier would wait on the host's agent picker, which
+	// the website cannot answer. The host moves to Auto instead, so the role
+	// manager decides the mode and the agent profile for this prompt, as it
+	// does for a prompt typed in Auto. The website never names an agent.
+	if a.mode == "agent" && a.namedAgent == "" && !a.modeAuto {
+		a.enterAutoMode()
 	}
 	firstUser := !a.hasUserMessage()
 	before := a.lastEntryID
@@ -270,6 +272,21 @@ func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {
 	}
 	a.syncer.Ack(p.ID, sessionsync.AckAccepted, "", entryID)
 	return a.dispatchPrompt(text, nil, "", firstUser)
+}
+
+// enterAutoMode moves the live session to Auto for a website prompt that
+// arrived with no agent engaged. It is the session's own state only: unlike
+// /mode auto it saves no preference, because a website prompt never changes
+// what the host remembers.
+func (a *App) enterAutoMode() {
+	a.mode = "agent"
+	a.modeAuto = true
+	a.modeExplicit = false
+	a.modeSticky = false
+	a.modeDecision = rolemanager.ModeDecision{}
+	a.syncPlanMode()
+	a.addSystem("auto mode on: no agent was selected, so the role manager picks the mode and agent for this prompt")
+	a.refreshFooter()
 }
 
 // userEntry is the session entry for a user message; a website prompt keeps

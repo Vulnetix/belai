@@ -25,7 +25,7 @@ var allRolemanagerEvents = []rolemanager.Event{
 	rolemanager.EventRouteFallback, rolemanager.EventDepChange, rolemanager.EventWebFetchAnswer,
 	rolemanager.EventBashSwap, rolemanager.EventBashReplan, rolemanager.EventOptionOrder,
 	rolemanager.EventPruneCompaction, rolemanager.EventToolSearch, rolemanager.EventToolSelect,
-	rolemanager.EventLSPTriage, rolemanager.EventExploreLocate, rolemanager.EventRequestScale, rolemanager.EventKnowledgeTopics, rolemanager.EventGoalJudge,
+	rolemanager.EventLSPTriage, rolemanager.EventExploreLocate, rolemanager.EventRequestScale, rolemanager.EventAgentPick, rolemanager.EventKnowledgeTopics, rolemanager.EventGoalJudge,
 	rolemanager.EventHandoffClarity, rolemanager.EventGateAlignment, rolemanager.EventRequestCoverage,
 	rolemanager.EventGateDraft, rolemanager.EventDeliveryReport,
 }

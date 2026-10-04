@@ -167,7 +167,7 @@ func settingsGroupOf(key string) string {
 	}
 	switch key {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
-		"show_edits", "show_internal_work", "show_todos", "mouse", "show_session_names":
+		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "show_session_names":
 		return "display"
 	case "max_agents", "plan_explore", "goal_explore":
 		return "agents"
@@ -385,6 +385,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_edits", label: "file edits", kind: "toggle", value: editsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_internal_work", label: "internal work", kind: "choose", opts: []string{"hidden", "decisions", "security", "all"}, value: s.InternalWorkLevel(), src: sourceLabel(origin["ui"])},
+		{key: "layout", label: "layout", kind: "choose", opts: config.LayoutNames, value: s.Layout(), src: sourceLabel(origin["ui"]), help: "clean is the usual thread; chronological places every late row by the time it happened and shows the time on each row"},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -452,6 +453,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevGateAlignment:   "jev gate alignment",
 	config.JevRequestCoverage: "jev request coverage",
 	config.JevKnowledgeTopics: "jev knowledge topics",
+	config.JevAgentPick:       "jev agent pick",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -469,6 +471,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevGateAlignment:   "flag a runnable gate whose suite and test may not show its stated outcome, and send its card to review",
 	config.JevRequestCoverage: "file a gap card for a request clause whose covering tasks do not seem to do it",
 	config.JevKnowledgeTopics: "label indexed documents with the topics they are about, by showing the backend a sample of each document's text",
+	config.JevAgentPick:       "in auto mode, engage one of your agent profiles when it is a clear fit for a general request",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the
@@ -1023,6 +1026,13 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.ShowInternalWork = &next
+		case "layout":
+			idx := indexOfString(opts, s.Layout())
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			next := opts[(idx+1)%len(opts)]
+			s.UI.Layout = &next
 		case "tests.post_end":
 			if s.Tests == nil {
 				s.Tests = &config.TestsSettings{}
@@ -1118,6 +1128,10 @@ func (a *App) unsetSetting(key string) error {
 		case "show_internal_work":
 			if s.UI != nil {
 				s.UI.ShowInternalWork = nil
+			}
+		case "layout":
+			if s.UI != nil {
+				s.UI.Layout = nil
 			}
 		case "show_todos":
 			if s.UI != nil {

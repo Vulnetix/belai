@@ -1813,6 +1813,12 @@ func (a *App) applyLiveModeDecision(d rolemanager.ModeDecision) {
 	if d.Intent != "" && d.Mode == modes.ModeAgent {
 		a.footerAgentOverride = d.Intent.Label()
 	}
+	if d.Mode == modes.ModeAgent && d.Intent == rolemanager.IntentAgent && d.AgentName != "" {
+		// Auto chose one of the user's profiles for a general request.
+		a.footerAgentOverride = d.AgentName
+		a.addSystem("engaged agent: " + d.AgentName)
+		a.announceProfileGateDrops(d.AgentName)
+	}
 	a.planMode = a.mode == "plan"
 	switch {
 	case string(d.Mode) != previous:
@@ -2371,8 +2377,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rmActivityMsg:
 		// Every decision is written to the session record, shown or not.
 		a.recordActivity(rolemanager.Activity(m))
+		before := len(a.messages)
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
+		// The decision may have happened before rows that arrived first.
+		a.placeLate(before)
 		return a, a.nextRMActivity()
 	case firewallVerdictMsg:
 		a.addFirewallCard(firewall.Verdict(m))
@@ -3039,7 +3048,8 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// In agent mode with no agent engaged, enter opens the picker rather
 		// than sending a turn that has no carrier. The submit is deferred, not
 		// dropped: acceptAgent finishes it once a carrier exists.
-		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
+		// Auto is the exception: the role manager picks the mode and agent.
+		if a.mode == "agent" && a.namedAgent == "" && !a.modeAuto && !a.agentPickerOpen {
 			a.openAgentPicker()
 			a.agentPickerSubmit = input != ""
 			a.relayout()
@@ -3774,8 +3784,15 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	evStart := time.Now()
 	defer func() { a.trace.Event("tui", "agent_event", time.Since(evStart)) }()
-	// Rows this event creates take the event's own emit time.
-	defer a.stampMessages(m.At)
+	// Rows this event creates take the event's own emit time. In the
+	// chronological layout they are then placed by it.
+	firstNew := len(a.messages)
+	defer func() {
+		a.stampMessages(m.At)
+		if a.chronological() {
+			a.placeLate(firstNew)
+		}
+	}()
 	switch m.Kind {
 	case agent.EventModelCallKind:
 		a.noteModelCall(m.Duration)
@@ -4314,6 +4331,7 @@ func (a *App) chatView() string {
 		ShowTools:     a.toolCallsVisible(),
 		ShowEdits:     a.editsVisible(),
 		InternalWork:  rolemanager.ParseLevel(a.settings.InternalWorkLevel()),
+		Chronological: a.chronological(),
 	}.Render()
 	// The banner is the first entry of the scrollable transcript. Prepending it
 	// here — before the content compare, Highlight and SetContent — keeps the

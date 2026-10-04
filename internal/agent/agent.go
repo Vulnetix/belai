@@ -373,8 +373,12 @@ type Session struct {
 	// or plan-execute turn; kanbanWrapUpPass narrows the surface to the
 	// wrap-up tools; passBudgetOverride, when positive, replaces the pass
 	// budget for that pass.
-	kanban             *kanbanState
-	turnKanbanLoop     bool
+	kanban         *kanbanState
+	turnKanbanLoop bool
+	// turnRemediation latches a remediation request for the turn (see
+	// remediation.go); remediationRefused counts the finishes it refused.
+	turnRemediation    bool
+	remediationRefused int
 	kanbanWrapUpPass   bool
 	passBudgetOverride int
 	// lastTurns is the most recent pass's final turns, which the wrap-up
@@ -996,6 +1000,11 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// supplied a decision or forced a mode/agent — its result would be
 	// discarded below.
 	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == "" && in.Handoff == nil
+	// A request to fix an advisory is not ambiguous: it runs as an agent turn
+	// with the full tool surface and the remediation contract, with no
+	// detector, mode-choice panel or agent pick in front of it.
+	remediation := remediationTurn(clean) && !s.planMode && !s.exploreSubagent
+	selectMode := needSelect && !remediation
 	detectCh := make(chan rolemanager.Detection, 1)
 	detectErrCh := make(chan error, 1)
 	// selectWG joins the mode-selection goroutine before run returns on ANY
@@ -1004,7 +1013,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// channel while RunStream closes it — a close/send race.
 	var selectWG sync.WaitGroup
 	defer selectWG.Wait()
-	if needSelect {
+	if selectMode {
 		selectWG.Add(1)
 		go func() {
 			defer selectWG.Done()
@@ -1058,7 +1067,12 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		d := modeDec
 		emit(Event{Kind: EventModeDecidedKind, Mode: &d})
 	}
-	if needSelect {
+	if needSelect && remediation {
+		modeDec = rolemanager.IntentAgent.Decision(nil)
+		d := modeDec
+		emit(Event{Kind: EventModeDecidedKind, Mode: &d})
+	}
+	if selectMode {
 		var det rolemanager.Detection
 		select {
 		case err := <-detectErrCh:
@@ -1076,6 +1090,14 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 			}
 		}
 		modeDec = intent.Decision(det.Handoff)
+		if intent == rolemanager.IntentAgent {
+			// A general request may be carried by one of the user's profiles
+			// when the backend is sure of it (docs/jev-jobs.md#agent-pick).
+			if name := s.pickAgent(ctx, clean); name != "" {
+				modeDec.AgentName = name
+				modeDec.AppendCarrier = true
+			}
+		}
 		modeDec.Scores = det.Scores
 		modeDec.UserChosen = needsChoice
 		// The caller sent no decision, so it is waiting on this one: a UI
@@ -1140,6 +1162,17 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		emit(Event{Kind: EventWarningKind, Text: "read_only is on; the plan handoff cannot make edits until the setting is turned off"})
 	}
 	defer func() { s.turnReadOnly = savedReadOnly }()
+	// The remediation contract rides the turn as a sealed directive and arms
+	// the pass loop's edit pressure. It applies only where the turn can edit:
+	// plan mode, a read-only turn and a profile without Edit keep their surface.
+	_, canEdit := s.findCallable("Edit")
+	savedRemediation, savedRefused := s.turnRemediation, s.remediationRefused
+	s.turnRemediation = remediation && canEdit && !s.turnReadOnly && modeDec.Mode != modes.ModePlan
+	s.remediationRefused = 0
+	defer func() { s.turnRemediation, s.remediationRefused = savedRemediation, savedRefused }()
+	if s.turnRemediation {
+		in.Directive = joinDirectives(in.Directive, remediationDirective)
+	}
 
 	// Per-turn kanban latch: an agent, goal or plan-execute turn of a main
 	// session may move board items while it works. Plan mode may only search

@@ -417,6 +417,10 @@ type MessageList struct {
 	ShowTools     bool
 	ShowEdits     bool
 	InternalWork  rolemanager.Level
+	// Chronological lays the transcript out strictly in message order, which
+	// is time order: a belai notice is not hoisted below a streaming reply, and
+	// the blank line before each panel carries the time of the panel.
+	Chronological bool
 }
 
 // editToolNames are the file-mutation tools whose rows ShowEdits governs —
@@ -530,7 +534,9 @@ func (m MessageList) Render() (string, LineMap) {
 	// (between the previous non-system entry and the streaming turn) into a
 	// single trailing belai panel rendered after the model panel, so the
 	// model panel can keep streaming characters without visual interruption.
-	entries = hoistStreamingPhaseSystems(entries, m.Messages)
+	if !m.Chronological {
+		entries = hoistStreamingPhaseSystems(entries, m.Messages)
+	}
 
 	var b strings.Builder
 	var lm LineMap
@@ -572,11 +578,25 @@ func (m MessageList) Render() (string, LineMap) {
 		if i == len(entries)-1 {
 			break
 		}
-		// Framed panels are separated by a blank line.
-		b.WriteString("\n\n")
+		// Framed panels are separated by a blank line, which in the
+		// chronological layout holds the next panel's time.
+		b.WriteString("\n" + m.clockLabel(entries[i+1], width) + "\n")
 		lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 	}
 	return b.String(), lm
+}
+
+// clockLabel is the dim time that heads an entry in the chronological layout:
+// the time of its first row, or nothing when the row has none.
+func (m MessageList) clockLabel(e renderEntry, width int) string {
+	if !m.Chronological || len(e.idxs) == 0 || width < 12 {
+		return ""
+	}
+	at := m.Messages[e.idxs[0]].CreatedAt
+	if at.IsZero() {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(ColorLow).Render(at.Format("15:04:05"))
 }
 
 // findStreamingAssistant returns the index of the last turn entry whose

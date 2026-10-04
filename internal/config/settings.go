@@ -1143,6 +1143,10 @@ type UISettings struct {
 	// "security", or "all". It is display-only — every level runs exactly the
 	// same gates.
 	ShowInternalWork *string `json:"show_internal_work,omitempty"`
+	// Layout selects the thread's layout: "clean" (the default) or
+	// "chronological", which places every late row by the time it happened and
+	// shows that time on each row. It is display-only.
+	Layout *string `json:"layout,omitempty"`
 	// BudgetCycleSeconds is how long the footer shows one token budget before
 	// cycling to the next (default 10, minimum 2). See BudgetCycle.
 	BudgetCycleSeconds *int `json:"budget_cycle_seconds,omitempty"`
@@ -1197,6 +1201,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.ShowInternalWork != nil {
 		u.ShowInternalWork = from.ShowInternalWork
+	}
+	if from.Layout != nil {
+		u.Layout = from.Layout
 	}
 	if from.BudgetCycleSeconds != nil {
 		u.BudgetCycleSeconds = from.BudgetCycleSeconds
@@ -1519,6 +1526,31 @@ func (s Settings) InternalWorkLevel() string {
 	default:
 		return "hidden"
 	}
+}
+
+// Layout values for ui.layout.
+const (
+	// LayoutClean is the default: rows as the thread builds them.
+	LayoutClean = "clean"
+	// LayoutChronological places every late row by the time it happened and
+	// shows that time on each row.
+	LayoutChronological = "chronological"
+)
+
+// LayoutNames lists the layouts in the order the settings screen cycles them.
+var LayoutNames = []string{LayoutClean, LayoutChronological}
+
+// Layout returns the thread layout as a normalised name. An unrecognised value
+// reads as clean. It is display-only: every layout runs exactly the same gates
+// and writes the same record.
+func (s Settings) Layout() string {
+	if s.UI == nil || s.UI.Layout == nil {
+		return LayoutClean
+	}
+	if strings.ToLower(strings.TrimSpace(*s.UI.Layout)) == LayoutChronological {
+		return LayoutChronological
+	}
+	return LayoutClean
 }
 
 // ToolCallsVisible reports whether tool-call rows render. Default true.

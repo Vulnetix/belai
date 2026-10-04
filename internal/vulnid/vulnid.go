@@ -171,13 +171,7 @@ func URL(id string) string {
 
 // Hint is the one line that points at the Vulnetix CLI's vdb command for an
 // identifier's remediation strategy. It is empty for anything Valid refuses.
-func Hint(id string) string {
-	c, ok := Valid(id)
-	if !ok {
-		return ""
-	}
-	return "remediation: vulnetix vdb vuln " + c + "  (vulnetix vdb --help lists the remediation lookups)"
-}
+func Hint(id string) string { return hintLine(id) }
 
 // TaskPrompt is the text appended to the triage agent's first turn. The
 // identifier rides as one labelled field and is the only variable part.

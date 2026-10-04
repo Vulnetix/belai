@@ -88,13 +88,14 @@ website never disagree.
 | `ask` | The host stops to ask | Entry id = ask id. `kind`: `permission` (tool, subject, args, the `rule` allow-always would add, the diff), `clarify` / `mode_choice` (the questionnaire), `plan_review` (the plan text, up to 64 KiB) |
 | `ask_answer` | The ask is resolved, closed with its turn, or cancelled | Entry id = `answer-` + ask id. `source` (`host` or `web`), then `decision`, `answers`, or `plan_choice` and `notes` |
 | `rolemanager` | Every role-manager or classifier decision | The existing summary and outcome, plus `verdict`, `verdict_label`, `subject` and `pass`. Decisions the live feed does not show (mode selection, goal and plan evaluation) carry `hidden: true` |
+| `vuln` | A turn ends having shown an advisory identifier, once per identifier per session (at most 3 a turn, 40 a session) | The canonical identifier in `content`; `meta` holds `vuln_id`, `url` (the console page), `command` (the `vulnetix vdb vuln` lookup) and `prompt` (the prepared remediation prompt), each composed from the identifier by the harness ([vulnerability row](vuln-row.md)). The website draws the row from it, and a remediate button sends `prompt` as an ordinary web prompt |
 | `intel_state` | A model call moves a plan limit by a percent, or changes the pace, trend or runway word; at most once a minute | `provider`, `at`, `limits[{provider, window, used, resetsAt, observedAt}]`, `pace`, `trend`, `runway`, `roles[{role, tokens}]` (up to 8). Numbers, window names and the harness's own words only, never provider text. The website draws its limit bars and runway from the latest one |
 
 A decision's `Detail` is never written: only the verdict token and the
 harness's own structure reach the record, as with the live feed.
 
 Resume restores diffs, rebuilds the ask and answer notices, and skips
-`tool_start`, `turn_state`, `intel_state` and hidden decisions. None of these records reach
+`tool_start`, `turn_state`, `intel_state`, `vuln` and hidden decisions. None of these records reach
 a model: the conversation is still rebuilt from paired calls and results.
 
 ## What it sends, and where
@@ -146,10 +147,14 @@ Beyond that:
 - **Queued while busy.** It waits (FIFO) while a turn is running or being
   prepared, or while you are on a screen other than the transcript. It is
   acked *queued* until then.
-- **Refused when it cannot run.** Two cases:
-  - The session is no longer the active one on the host.
-  - The host is in agent mode with no agent chosen: the agent picker is the
-    host user's to answer.
+- **Refused when it cannot run.** The session is no longer the active one on
+  the host.
+- **No agent chosen means Auto.** A prompt that arrives while the host is in
+  agent mode with no agent selected moves the live session to Auto, so the role
+  manager decides the mode and the agent profile for it (the `agent_pick` job in
+  [Jev jobs](jev-jobs.md#agent-pick)). The agent picker is the host user's to
+  answer, and the website never names an agent. The switch is for the session
+  only and saves no preference.
 - **Asks are answered through their own path.** A web prompt never answers an
   ask; a web answer does (below).
 - **Refusals show in the transcript.** If admission refuses the prompt, the

@@ -28,6 +28,7 @@ type ProjectPrefs struct {
 	ShowToolCalls     *bool   `json:"show_tool_calls,omitempty"`
 	ShowEdits         *bool   `json:"show_edits,omitempty"`
 	ShowInternalWork  *string `json:"show_internal_work,omitempty"`
+	Layout            *string `json:"layout,omitempty"`
 	AutoCommitPerTask *bool   `json:"auto_commit_per_task,omitempty"`
 	// Tests holds the trigger and the fail branch only: the command and scope
 	// stay in the user's settings.
@@ -66,8 +67,8 @@ func (p ProjectPrefs) toSettings() Settings {
 	if p.FirewallEnabled != nil {
 		s.Firewall = &FirewallSettings{Enabled: p.FirewallEnabled}
 	}
-	if p.ShowReasoning != nil || p.ShowToolCalls != nil || p.ShowEdits != nil || p.ShowInternalWork != nil {
-		s.UI = &UISettings{ShowReasoning: p.ShowReasoning, ShowToolCalls: p.ShowToolCalls, ShowEdits: p.ShowEdits, ShowInternalWork: p.ShowInternalWork}
+	if p.ShowReasoning != nil || p.ShowToolCalls != nil || p.ShowEdits != nil || p.ShowInternalWork != nil || p.Layout != nil {
+		s.UI = &UISettings{ShowReasoning: p.ShowReasoning, ShowToolCalls: p.ShowToolCalls, ShowEdits: p.ShowEdits, ShowInternalWork: p.ShowInternalWork, Layout: p.Layout}
 	}
 	s.AutoCommitPerTask = p.AutoCommitPerTask
 	if p.Tests != nil && (p.Tests.PostEnd != "" || p.Tests.OnFail != "") {
@@ -90,6 +91,13 @@ func (p ProjectPrefs) Validate() error {
 		case "hidden", "decisions", "security", "all":
 		default:
 			return fmt.Errorf("show_internal_work %q must be hidden, decisions, security or all", *p.ShowInternalWork)
+		}
+	}
+	if p.Layout != nil {
+		switch *p.Layout {
+		case LayoutClean, LayoutChronological:
+		default:
+			return fmt.Errorf("layout %q must be clean or chronological", *p.Layout)
 		}
 	}
 	if p.Tests != nil {

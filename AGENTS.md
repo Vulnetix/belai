@@ -457,6 +457,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   cut-offs `clear_at`, `align_at` and `cover_at` follow the same user-layer-only
   rule as every threshold. Only titles, clauses and gate identifiers reach a
   backend, and a card the harness files from a rating holds ids only.
+  Agent pick (`agent_pick`, `agent/agentpick.go`) lets Auto mode engage one of
+  the user's own single-mode profiles for a general request. It sees the
+  sanitized prompt and each offered profile's name and description as
+  `DecisionText`. A built-in profile, a profile without a description and one that
+  lowers `guardrails` or `ask_permission` are never offered, so a pick cannot
+  widen anything, and it engages only a lead at `mode_confident` and `mode_margin`
+  over every rival, `default` included. A website prompt with no agent selected
+  moves the live session to Auto and saves nothing.
   Request scale (`request_scale`, `agent/scale.go`) sees only the sanitized prompt.
   A simple verdict (at or above `simple_at`, default 0.80, never below 0.5, and
   staged below `keep_at`) only drops goal-turn ceremony: the contract draft, the
@@ -1028,18 +1036,29 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   (CVE, GHSA, OSV, PYSEC, RUSTSEC, GO, GSD, EUVD, VND and the distribution
   advisories): strict ASCII shapes, bounded on both sides, nothing matched
   across a control, bidi or zero-width rune. The TUI scans the tool results and
-  the reply it already shows (`internal/tui/vulnwatch.go`, no model call) and adds
-  one `Ephemeral` row per identifier per session, so it is never a session
-  entry, never in sync, telemetry, audit or a notification, and never promoted
-  to a model. Its link (a fixed https host with the identifier as one escaped
-  path component), its `vdb` hint and its `belai:triage` launch take only
-  `vulnid.Valid`'s canonical string, never the text around it; the click handler
-  validates again. `belai:triage` is read-only (`Vulnetix`, `Read`, `Grep`,
-  `Glob`), starts through `bgagent.Manager.StartTask` under the ordinary
-  permissions, trust gate and sandbox, and receives the identifier as one
-  `vulnerability_id:` data line, never in its instance name. Do not add a second
-  identifier recognizer or let any other text into the row. See
-  [docs/vuln-row.md](docs/vuln-row.md).
+  the reply it already shows (`internal/tui/vulnwatch.go`, no model call), and a
+  headless or remote-control transcript does the same at a turn's end
+  (`internal/turnlog`); both go through `vulnid.Tracker`, so the limits (3 a
+  turn, 40 a session, once per identifier) are one rule. The row on screen is
+  `Ephemeral`, never promoted to a model and never in telemetry, audit or a
+  notification. The website's copy is a `vuln` session entry whose content and
+  meta (`vuln_id`, `url`, `command`, `prompt`) `vulnid.EntryMeta` composes from
+  the canonical identifier alone, so session sync mirrors only harness-composed
+  text and a resume skips it. The link (a fixed https host with the identifier as
+  one escaped path component), the `vdb` command, the copy buttons, the
+  `remediate` prompt (`vulnid.RemediationPrompt`, sent as the user's own prompt
+  through the typed-prompt path on the user's click, or as a website prompt) and
+  the `belai:triage` launch take only `vulnid.Valid`'s canonical string, never the
+  text around it; the click handler validates again. `belai:triage` is read-only
+  (`Vulnetix`, `Read`, `Grep`, `Glob`), starts through
+  `bgagent.Manager.StartTask` under the ordinary permissions, trust gate and
+  sandbox, and receives the identifier as one `vulnerability_id:` data line, never
+  in its instance name. A remediation request (`vulnid.IsRemediation`, the prompt
+  alone, no model) skips the mode-choice panel and the agent pick, runs as an agent
+  turn on the full surface and arms the edit pressure in `agent/remediation.go`; it
+  never applies in plan mode, on a read-only turn or without `Edit`, and it widens
+  no permission. Do not add a second identifier recognizer or let any
+  other text into the row or the entry. See [docs/vuln-row.md](docs/vuln-row.md).
 - **The `/diff` pane is the user's own view and shows no denied file.**
   `internal/workdiff` collects the working tree's changes with read-only,
   hardened git calls (hooks and fsmonitor off, no optional locks, the scrubbed

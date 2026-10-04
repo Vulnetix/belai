@@ -38,7 +38,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Group | Rows |
 | --- | --- |
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task` |
-| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `todo panel`, `mouse capture`, `session names` |
+| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `todo panel`, `mouse capture`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
@@ -46,8 +46,21 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
 | Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents` |
-| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics` |
+| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics`, `jev agent pick` |
 | Jev thresholds | one slider per cut-off, in the sections below |
+
+### Layout
+
+`ui.layout` (the `layout` row in Display, and a per-project preference) sets how
+the thread is laid out. It is display only: both layouts run the same gates and
+write the same record.
+
+| Value | What the thread does |
+| --- | --- |
+| `clean` (default) | Rows as the thread builds them. A role-manager decision that reaches the TUI after rows that happened later is still placed by its own time, and a belai notice is held below a reply while it streams, so the reply is not interrupted. |
+| `chronological` | Strict time order. A notice an event raised is placed by the event's time too (never behind the rows already written, so each is written once), nothing is held below a streaming reply, and the blank line above each panel shows that panel's time as `HH:MM:SS`. A row with no recorded time shows none. |
+
+An unknown value reads as `clean`. A project layer may set it either way.
 
 **The two Jev groups exist only while a decision backend is configured**
 (`Settings.JevConfigured`). Without one they are hidden, not greyed, because no

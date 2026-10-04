@@ -86,6 +86,7 @@ prompt runs with it.
 | `gate_alignment` | Flags a runnable gate whose suite and test may not show its stated outcome, and sends its card to review | Shipped |
 | `request_coverage` | Files a gap card for a request clause whose covering tasks do not seem to do it | Shipped |
 | `knowledge_topics` | Labels each indexed document with the topics it is about, by scoring a sample of its text against a vocabulary of about three hundred in one request | Shipped |
+| `agent_pick` | In Auto mode, engages one of your agent profiles when it is a clear fit for a general request | Shipped |
 
 ## Scores and thresholds
 
@@ -535,6 +536,36 @@ turn, so a request such as "commit and push" starts at once.
 
 Recorded as a `request_scale` event: `simple`, `staged` or `unknown` and the
 score in percent. Never the request.
+
+## Agent pick
+
+In Auto mode the role manager decides the mode for each prompt. When it
+resolves a prompt to the general agent intent, `agent_pick` also decides which
+of your own agent profiles, if any, carries the turn. Intent detection is
+unchanged: the profile is a second question asked only after the intent is
+agent. A website prompt that arrives while the host is in agent mode with no
+agent selected moves the live session to Auto (it saves no preference) and is
+decided the same way.
+
+- **What is offered.** Profiles you wrote, in single mode, with a description,
+  at most 15. A built-in is never offered: debug, fan-out and handoff are
+  already intents, and the rest are background workers. A profile that sets
+  `guardrails` or `ask_permission` to false is never offered, so a pick cannot
+  lower the session's posture.
+- **What the backend sees.** The cleaned prompt and each profile's name and
+  description, as `DecisionText`, plus a final `default` option that means no
+  profile. It ranks them as one choice (2 to 16 options, like option order).
+- **The decision.** A profile engages only when it holds at least
+  `mode_confident` (0.80) with a lead of `mode_margin` (0.25) over the runner-up,
+  the same cut-offs a detected intent must meet. `default` counts as a rival. An
+  unanswered pick, a timeout (8 seconds), a missing backend or a switch that is
+  off runs the turn with no profile, as before.
+- **What it never changes.** The mode, permissions, hooks, the ask gate, the
+  classifier and the sandbox. It engages a carrier for this turn only: the next
+  Auto prompt is decided again. It never asks a chat model.
+
+Recorded as an `agent_pick` event: `engaged`, `default` or `unknown` and how many
+profiles were offered. Never the request or a profile's name.
 
 ## Goal judge
 
