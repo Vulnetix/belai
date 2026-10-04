@@ -81,7 +81,7 @@ website never disagree.
 | Type | Written when | Carries |
 | --- | --- | --- |
 | `session_name` | The model names the session, or a continued session inherits its parent's name (`meta.source` is `model` or `inherited`) | The name in `content`. The syncer reads it into the registration, so it is the title the website shows; the latest non-empty name wins, and an empty one never clears it |
-| `session_meta` | A session starts, and whenever the mode, a plan or goal, or the engaged agent changes | `cwd`, `mode`, `resumedFrom` and `activeProfile`, each into the registration. Lines merge: a field a line omits keeps its last value (`session.LatestMeta`) |
+| `session_meta` | A session starts, and whenever the mode, a plan or goal, or the engaged agent changes | `cwd`, `mode`, `resumedFrom` and `activeProfile`, each into the registration. Lines merge: a field a line omits keeps its last value (`session.LatestMeta`). A teleported session's first line also holds `teleportedFrom`, the origin id; it stays in the file, and the website reads the origin from the teleport record instead |
 | `turn_state` | A turn starts, and after its last rows are written | `turn_id`, `state` (`started`, `ended`, `error`, `interrupted`), `started_at`, `duration_ms` |
 | `tool_start` | A main-thread tool call starts | `tool_call_id`, `tool_name`, `tool_args`, `started_at` |
 | `tool` (`meta.diff`) | A tool that changed files returns | The rendered diff rows per file (`filediff.Change.Wire`), capped at 256 KiB. Every path keeps its header past the cap |
@@ -343,6 +343,10 @@ and the inbox run on the syncer's own goroutines.
 - **Liveness.** The host sends a heartbeat every 15 s. A session is live while
   its last heartbeat is under 45 s old, so a host that crashes drops into
   History on its own.
+- **A teleported session syncs like a resumed one.** `belai -teleport` writes the
+  new file before the TUI starts, so the syncer registers it under its new id and
+  uploads every line from the server's high-water mark (none yet), the way a
+  resumed file is. The origin session is not touched and keeps syncing.
 - **Moving to History.** Quitting the TUI, `/clear`, a resume of another
   session and `/sync off` all end the session, which moves it to History.
 - **A session that ends at once is still kept.** Closing the syncer takes the
@@ -381,7 +385,10 @@ and the inbox run on the syncer's own goroutines.
     `answer-<ask id>` line, so the Hosts page can show who is waiting on
     the user), detail, paged entries, an SSE
     stream, prompt create/cancel, answer create/cancel, and agent-draft
-    create/read/cancel (`belai_drafts.go`).
+    create/read/cancel (`belai_drafts.go`). The session detail also returns
+    `teleportedFrom` (the origin session, its host and when it finished) and
+    `teleports` (the copies this session started), both read from the teleport
+    record.
   - Wake-ups: `belai_notify.go` listens on `belai_s` (session) and `belai_h`
     (host).
   - **Timeline** (`belai_timeline.go`, `GET /v1/belai/sessions/{id}/timeline`):
@@ -400,6 +407,19 @@ and the inbox run on the syncer's own goroutines.
     API accepts it only for a worker the host reported as live, the host
     checks the id again against its own registry, and a `paused` worker still
     counts as live (it keeps its `agents.max_workers` slot).
+  - **Teleport** (`belai_teleport.go`, `POST /v1/belai/hosts/{id}/teleports`
+    and the routes under it): the target host asks to continue a session. The
+    transcript is already mirrored, so the origin host takes part only when the
+    session ran under a non-built-in agent profile: a `teleport_backup` request,
+    which only the backend makes, has it back the profile, its crews and their
+    members up to the library. The target reads the transcript (frozen at the
+    session's last line), profiles and crews through routes that answer only
+    for a ready teleport naming that host, then acknowledges with the new
+    session id. The row holds ids, a status and times for audit and outlives the
+    sessions and hosts it names. Its git facts, manifest and overrides are
+    cleared when it completes, fails or expires. A sandbox's activity tab reads
+    its teleports from `GET /v1/belai/sandboxes/{id}/teleports`. See
+    [teleport.md](teleport.md).
   - **Assignees** (`belai_assignees.go`, `POST /v1/belai/assignees`): turns an
     email into `person:<member id>` for an organization member, or
     `person:invite-<id>` for an address that is not yet a member, through the
@@ -410,7 +430,8 @@ and the inbox run on the syncer's own goroutines.
   `20260928000001_add_belai_remote_answers`, which adds `BelaiRemoteAnswer`,
   `BelaiSession.remoteAnswers` and the notify triggers, and
   `20261001000001_add_belai_agent_drafts`, which adds `BelaiAgentDraft` and
-  its trigger).
+  its trigger, and `20261017000001_add_belai_teleport`, which adds
+  `BelaiTeleport`).
 - **Website pages:** `src/pages/resolve/belai-*.vue`, in the sidebar's
   **Belai** group.
 

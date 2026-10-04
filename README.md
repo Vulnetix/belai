@@ -149,6 +149,8 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-detect-mode` | report which operating mode the prompt selects |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project |
+| `-teleport` | continue a session of your account from another host, sandbox or the web: it opens here under a new id and the original keeps running (see [docs/teleport.md](docs/teleport.md)) |
+| `-teleport-ref` | with `-teleport`, check out this ref or commit instead of the one the session was at |
 | `-verbose` | print mode and security decisions to stderr |
 | `-usage-json` | with `-prompt`, write a JSON summary of the run's token usage (per role, per model, cache reads and writes, request composition) to a file on exit — see [docs/benchmarks.md](docs/benchmarks.md) |
 | `-version` | print the version and exit |
@@ -340,7 +342,10 @@ Quitting (`ctrl+d` twice, `/exit`, or its alias `/quit`) prints a branded exit c
 restored shell prompt: the session's display name, turn/duration/token facts,
 its on-disk path, and the exact `belai --resume <id>` command that returns to
 it. `belai --continue` (`-c`) reopens the most recent session for the current
-project without remembering an id.
+project without remembering an id. `belai -teleport <id>` continues a session
+that ran on another host, in a Pix Sandbox or on the web, in the checkout you
+are in, under a new id ([docs/teleport.md](docs/teleport.md)); every session
+card on the Vulnetix website copies that command.
 
 ## Documentation
 
