@@ -177,3 +177,84 @@ func FuzzCheckURL(f *testing.F) {
 		}
 	})
 }
+
+func TestParseAllowCIDRsAcceptsOnlyPrivateUseRanges(t *testing.T) {
+	ok := []string{"fd00::/64", "fd00::/8", "fc00::/7", "10.1.0.0/16", "172.16.0.0/12", "192.168.4.0/24", "100.64.0.0/10", " fd00::/64 , 10.0.0.0/8 "}
+	for _, in := range ok {
+		if _, err := ParseAllowCIDRs(in); err != nil {
+			t.Errorf("ParseAllowCIDRs(%q) = %v", in, err)
+		}
+	}
+	if ps, err := ParseAllowCIDRs(""); err != nil || len(ps) != 0 {
+		t.Errorf("an empty value is an empty list, got %v, %v", ps, err)
+	}
+
+	bad := []string{
+		"0.0.0.0/0", "::/0", "8.8.8.0/24", "2606:4700::/32", "127.0.0.0/8", "127.0.0.1/32", "::1/128",
+		"169.254.0.0/16", "169.254.169.254/32", "fe80::/10", "fd00:ec2::254/128/1", "224.0.0.0/4", "ff00::/8",
+		"10.0.0.0/7", "fc00::/6", "64:ff9b::/96", "::ffff:10.0.0.0/104", "fd00::1/64", "not-a-cidr", "fd00::/129", "fd00::/64,,10.0.0.0/8",
+	}
+	for _, in := range bad {
+		if _, err := ParseAllowCIDRs(in); err == nil {
+			t.Errorf("ParseAllowCIDRs(%q) accepted a range that must be refused", in)
+		}
+	}
+
+	var many []string
+	for i := 0; i <= MaxAllowedPrefixes; i++ {
+		many = append(many, "10."+strings.Repeat("1", 1)+"."+string(rune('0'+i))+".0/24")
+	}
+	if _, err := ParseAllowCIDRs(strings.Join(many, ",")); err == nil {
+		t.Errorf("more than %d ranges must be refused", MaxAllowedPrefixes)
+	}
+}
+
+func TestAllowedPrefixesOpenOnlyWhatWasNamed(t *testing.T) {
+	t.Cleanup(func() { SetAllowedPrefixes(nil) })
+	gateway := net.ParseIP("fd00::119:1")
+	if !ForbiddenIP(gateway) {
+		t.Fatal("a ULA address is forbidden until it is allowed")
+	}
+
+	ps, err := ParseAllowCIDRs("fd00::/64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetAllowedPrefixes(ps)
+
+	if ForbiddenIP(gateway) {
+		t.Error("an address inside the allowed range must be dialable")
+	}
+	if _, err := CheckURL("https://[fd00::119:1]/", Fetch); err != nil {
+		t.Errorf("an IP literal inside the allowed range is refused: %v", err)
+	}
+	for _, still := range []string{"fd00:1::1", "fc00::1", "fd00:ec2::254", "10.0.0.1", "192.168.1.1", "172.16.0.1", "127.0.0.1", "::1", "169.254.169.254", "fe80::1", "100.64.0.1", "0.0.0.0"} {
+		if !ForbiddenIP(net.ParseIP(still)) {
+			t.Errorf("%s must stay forbidden when only fd00::/64 is allowed", still)
+		}
+	}
+	if !ForbiddenIP(net.ParseIP("::ffff:127.0.0.1")) {
+		t.Error("an IPv4-mapped loopback address must stay forbidden")
+	}
+
+	SetAllowedPrefixes(nil)
+	if !ForbiddenIP(gateway) {
+		t.Error("clearing the list forbids the range again")
+	}
+}
+
+func TestSetAllowedPrefixesDropsWhatParseWouldRefuse(t *testing.T) {
+	t.Cleanup(func() { SetAllowedPrefixes(nil) })
+	SetAllowedPrefixes([]netip.Prefix{
+		netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("0.0.0.0/0"),
+		netip.MustParsePrefix("::/0"), netip.MustParsePrefix("fe80::/10"),
+	})
+	if got := AllowedPrefixes(); len(got) != 0 {
+		t.Errorf("loopback, link-local and everything-ranges must be dropped, got %v", got)
+	}
+	for _, ip := range []string{"169.254.169.254", "127.0.0.1", "fe80::1", "8.8.8.8"} {
+		if net.ParseIP(ip) != nil && ip != "8.8.8.8" && !ForbiddenIP(net.ParseIP(ip)) {
+			t.Errorf("%s was opened by a range that is never allowable", ip)
+		}
+	}
+}

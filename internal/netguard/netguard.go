@@ -18,7 +18,9 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 
@@ -301,13 +303,111 @@ func mustPrefixes(ss ...string) []netip.Prefix {
 	return out
 }
 
+// EnvAllowPrivateCIDRs names the environment variable that carries the allowed
+// private ranges to every process a host starts: `belai rc --allow-private-cidr`
+// sets it, and the sessions and workers it runs inherit it.
+const EnvAllowPrivateCIDRs = "BELAI_ALLOW_PRIVATE_CIDRS"
+
+// MaxAllowedPrefixes bounds the allow list.
+const MaxAllowedPrefixes = 8
+
+// allowable lists the only ranges an allow-list entry may sit inside: the
+// private-use blocks. Loopback, link-local (the cloud metadata address),
+// multicast, unspecified and every transition range can never be allowed, so a
+// mistyped or hostile value cannot open them.
+var allowable = mustPrefixes("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+
+// allowed is the process's allow list: private ranges the host named on
+// purpose because its own network answers with addresses there (the Pix
+// Sandbox's egress gateway, which stands in for every host the container
+// reaches). It is empty unless set, and an address in it is not forbidden.
+var allowed atomic.Pointer[[]netip.Prefix]
+
+func init() {
+	// An invalid value leaves the list empty: the guard fails closed.
+	if ps, err := ParseAllowCIDRs(os.Getenv(EnvAllowPrivateCIDRs)); err == nil {
+		SetAllowedPrefixes(ps)
+	}
+}
+
+// ParseAllowCIDRs reads a comma-separated list of CIDRs. Each must be written
+// in canonical form (host bits zero) and lie wholly inside a private-use block,
+// and there are at most [MaxAllowedPrefixes]. An empty string is an empty list.
+func ParseAllowCIDRs(s string) ([]netip.Prefix, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	var out []netip.Prefix
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		p, err := netip.ParsePrefix(part)
+		if err != nil {
+			return nil, fmt.Errorf("allow-private-cidr %q: not a CIDR", part)
+		}
+		if p != p.Masked() {
+			return nil, fmt.Errorf("allow-private-cidr %q: host bits are set, write %s", part, p.Masked())
+		}
+		if p.Addr().Is4In6() {
+			return nil, fmt.Errorf("allow-private-cidr %q: write an IPv4 range as IPv4", part)
+		}
+		inside := false
+		for _, a := range allowable {
+			if a.Addr().Is4() == p.Addr().Is4() && a.Bits() <= p.Bits() && a.Contains(p.Addr()) {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return nil, fmt.Errorf("allow-private-cidr %q: only a private-use range may be allowed (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7)", part)
+		}
+		out = append(out, p)
+	}
+	if len(out) > MaxAllowedPrefixes {
+		return nil, fmt.Errorf("allow-private-cidr: at most %d ranges", MaxAllowedPrefixes)
+	}
+	return out, nil
+}
+
+// SetAllowedPrefixes replaces the process's allow list. Callers validate with
+// [ParseAllowCIDRs] first; an entry outside the private-use blocks is dropped
+// here as well, so the list can never reach loopback or link-local.
+func SetAllowedPrefixes(ps []netip.Prefix) {
+	kept := make([]netip.Prefix, 0, len(ps))
+	for _, p := range ps {
+		for _, a := range allowable {
+			if a.Addr().Is4() == p.Addr().Is4() && a.Bits() <= p.Bits() && a.Contains(p.Addr()) {
+				kept = append(kept, p.Masked())
+				break
+			}
+		}
+	}
+	allowed.Store(&kept)
+}
+
+// AllowedPrefixes returns the process's allow list.
+func AllowedPrefixes() []netip.Prefix {
+	if p := allowed.Load(); p != nil {
+		return append([]netip.Prefix(nil), *p...)
+	}
+	return nil
+}
+
 // Forbidden reports whether a is not a public unicast address. The zero Addr
-// is forbidden.
+// is forbidden. An address inside the process's allow list ([SetAllowedPrefixes])
+// is not.
 func Forbidden(a netip.Addr) bool {
 	if !a.IsValid() {
 		return true
 	}
 	a = a.Unmap().WithZone("")
+	if p := allowed.Load(); p != nil {
+		for _, r := range *p {
+			if r.Contains(a) {
+				return false
+			}
+		}
+	}
 	for _, p := range forbidden {
 		if p.Contains(a) {
 			return true
