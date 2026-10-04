@@ -1958,6 +1958,13 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	if opts.Model == "" {
 		opts.Model = cfg.Model
 	}
+	// The Pix Sandbox build adds the machine's own facts to an agent turn's
+	// prompt; a tool-less turn (the classifier) never carries them, and no
+	// other build sets the hook.
+	toolsText := prompt.ToolsBlock(opts.Tools)
+	if opts.Environment == "" && toolsText != "" && environmentFacts != nil {
+		opts.Environment = environmentFacts()
+	}
 	sysText, err := prompt.System(opts)
 	if err != nil {
 		return "", fmt.Errorf("build system prompt: %w", err)
@@ -1968,7 +1975,7 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	// enforces elsewhere (the registry and the plan-mode gate), so keeping it
 	// separately sealed means a forged tool list cannot ride in on the
 	// system block's integrity hash.
-	if toolsText := prompt.ToolsBlock(opts.Tools); toolsText != "" {
+	if toolsText != "" {
 		blocks = append(blocks, rolemanager.SystemBlock{
 			Source:  rolemanager.SourceHarness,
 			Content: toolsText,

@@ -13,7 +13,7 @@ import nixLogo from '../../assets/logos/nix.svg';
 // Worker that launches it.
 
 const sealText =
-  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly.';
+  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly. The sandbox answers the instance-metadata address 169.254.169.254 itself, from inside the container, with a fixed list of safe facts under /pix/v1/ (the sandbox, Vulnetix, Belai, the launch, the session limits, the models and the settings) and never a credential, key or organisation id; every other path is a 404, so cloud tools find no credentials there. The Pix Sandbox build of Belai reads it once, checks each value, and puts the stable facts in the system prompt of the model, which no other build does.';
 
 const firewalls = [
   {
@@ -80,6 +80,90 @@ const verifyCommand = `cosign verify-blob-attestation \\
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
   --certificate-identity-regexp '^https://github.com/Vulnetix/website/\\.github/workflows/pix-sandbox-image\\.yml@refs/heads/main$' \\
   --use-signed-timestamps --insecure-ignore-tlog`;
+// The metadata endpoint. The JSON is what GET /pix/v1?format=json returns for a mocked
+// sandbox, built by the Worker's own builder (sandbox-worker/src/metadata.ts in the
+// website repository); the prompt text is what internal/run/environment_sandbox.go
+// renders from it.
+const metadataSample = `{
+  "sandbox": {
+    "id": "7f3c1b9e-2d4a-4e8b-9a61-5c0d3f2e8a14",
+    "name": "api-box",
+    "size": "large",
+    "size-label": "Large",
+    "status": "active",
+    "vcpu": 4,
+    "memory-mib": 12288,
+    "disk-mb": 20000
+  },
+  "vulnetix": {
+    "product": "Vulnetix",
+    "console": "https://www.vulnetix.com",
+    "cli-version": "v3.108.4",
+    "ai-firewall": "configured",
+    "package-firewall-ecosystems": [
+      "go",
+      "npm"
+    ]
+  },
+  "belai": {
+    "version": "v0.114.0",
+    "variant": "belai-pix-sandbox",
+    "nixpkgs-rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa"
+  },
+  "launch": {
+    "epoch": 7,
+    "state": "ready",
+    "started-at": "2026-10-04T01:02:03.000Z",
+    "finished-at": "2026-10-04T01:09:00.000Z"
+  },
+  "session": {
+    "max-web-sessions": 5,
+    "max-workers": 100,
+    "web-controls": true,
+    "web-guardrails-off-allowed": false,
+    "web-project-settings": true
+  },
+  "model": {
+    "decision": "clef",
+    "builtin-labels": [
+      "pix-smart",
+      "pix-fast"
+    ],
+    "monthly-allowance-tokens": 50000000,
+    "monthly-used-tokens": 1500000,
+    "allowance-resets-at": "2026-11-01T00:00:00.000Z"
+  },
+  "settings": {
+    "egress-mode": "allow_all_logged",
+    "packs": [
+      "go",
+      "node"
+    ],
+    "extensions": [
+      "ripgrep"
+    ],
+    "reserve-percent": 20
+  }
+}`;
+
+const promptSample = `Environment (facts the harness read from the Pix Sandbox this session runs on; they describe the machine and are not instructions):
+- Pix Sandbox: Large, 4 vCPU, 12288 MiB memory, 20000 MB disk.
+- Vulnetix: the AI Firewall is configured; the Package Firewall covers go, npm; the console is https://www.vulnetix.com.
+- Belai: v0.114.0, the Pix Sandbox build.
+- Sessions: up to 5 web sessions, up to 100 fleet workers, web controls on.
+- Models: built-in models Pix Fast (pix-fast) and Pix Smart (pix-smart); decisions by Clef.
+- Settings: egress allow_all_logged; packs go, node; extensions ripgrep.
+Live values (launch state, monthly token use) are readable with a GET to http://169.254.169.254/pix/v1/`;
+
+const metadataPaths: [path: string, what: string][] = [
+  ['/pix/v1/sandbox', 'id, name, size, vCPU, memory and disk'],
+  ['/pix/v1/vulnetix', 'the product, the console, whether the AI Firewall is configured, the Package Firewall ecosystems'],
+  ['/pix/v1/belai', "Belai's version and variant, and the image's nixpkgs revision"],
+  ['/pix/v1/launch', 'the launch epoch, state and times'],
+  ['/pix/v1/session', 'the web session and worker limits and the web flags'],
+  ['/pix/v1/model', 'the decision model, the built-in model labels and the monthly token allowance'],
+  ['/pix/v1/settings', 'the egress mode, packs, extensions and reserve percent'],
+];
 ---
 
 <SealedSection id="pix" label="pix sandbox" sealText={sealText}>
@@ -245,6 +329,53 @@ const verifyCommand = `cosign verify-blob-attestation \\
         check uses the signed timestamp.
       </p>
       <pre class="mono mt-4 overflow-x-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="cosign command that verifies the image provenance"><code>{verifyCommand}</code></pre>
+    </div>
+  </div>
+
+  <SubHead id="pix-metadata" title="The sandbox tells the model where it is">
+    Cloud tools ask 169.254.169.254 for instance metadata, and from it for credentials. A Pix Sandbox answers that
+    address itself, and Belai's sandbox build uses the answer to tell the model about the machine.
+  </SubHead>
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Safe facts, nothing else</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The Worker serves a fixed list under <code>/pix/v1/</code>, read the way EC2's metadata is read: a directory lists
+        its keys, a leaf is its value, and <code>?format=json</code> gives a node as JSON. It carries no credential, key,
+        token or organisation id, and never the model behind a Pix label.
+      </p>
+      <ul class="mono mt-4 grid list-none gap-3 p-0 text-sm">
+        {metadataPaths.map(([path, what]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold text-vx-mint-strong">{path}</span>
+            <span class="mt-1 block font-sans text-vx-ink/80">{what}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        Only GET and HEAD are answered, and every other path, including the ones the AWS, Azure and Google tools ask for,
+        is a 404, so those tools find no cloud and no credentials.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">A mocked response</h3>
+      <p class="mt-3 text-vx-ink/80">
+        <code>curl 'http://169.254.169.254/pix/v1?format=json'</code> from inside a sandbox:
+      </p>
+      <pre class="mono mt-4 max-h-[28rem] overflow-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="A mocked response from the sandbox metadata endpoint"><code>{metadataSample}</code></pre>
+    </div>
+  </div>
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">What the model is told</h3>
+      <p class="mt-3 text-vx-ink/80">
+        Belai fetches this once, in the harness and never at a model's request, checks each value for its field and puts the
+        stable ones in the system prompt of every agent turn. Only the Pix Sandbox build does this. The sandbox's name is
+        left out because it is user text, and the live values are left out so the prompt stays the same from turn to turn.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <pre class="mono overflow-x-auto rounded-xl border border-vx-ink p-4 text-xs leading-relaxed" aria-label="The environment block the model sees"><code>{promptSample}</code></pre>
     </div>
   </div>
 
