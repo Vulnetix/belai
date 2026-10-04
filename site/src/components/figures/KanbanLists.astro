@@ -1,0 +1,50 @@
+---
+// The board's lists and how a card moves between them. A card is claimed from
+// backlog, worked, reviewed by a person and done; blocked is where a card waits
+// for a person. Counts and ids follow the capture below the figure.
+
+const lists = [
+  { name: 'backlog', count: 3, cards: ['', '', ''] },
+  { name: 'in progress', count: 1, cards: [''] },
+  { name: 'review', count: 2, cards: ['K-3c0bcb', 'K-9e41d7'] },
+  { name: 'done', count: 14, cards: ['', ''] },
+  { name: 'blocked', count: 1, cards: [''] },
+] as const;
+---
+
+<div class="overflow-x-auto rounded-xl border border-vx-ink bg-vx-bone/30 p-4 md:p-6">
+  <svg viewBox="0 0 960 282" class="h-auto w-full min-w-[640px]" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="Five lists. A card starts in the backlog, moves to in progress when an agent claims it, then to review, where a person looks at it, and then to done. A card that cannot go on waits in blocked for a person.">
+    <defs>
+      <marker id="kl-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-ink/60" stroke="none" /></marker>
+      <marker id="kl-mint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-mint-strong" stroke="none" /></marker>
+      <marker id="kl-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-amber-deep" stroke="none" /></marker>
+    </defs>
+
+    <path d="M180 112 H211" class="text-vx-ink/50" stroke="currentColor" marker-end="url(#kl-ink)" />
+    <path d="M363 112 H394" class="text-vx-ink/50" stroke="currentColor" marker-end="url(#kl-ink)" />
+    <path d="M546 112 H577" class="stroke-vx-mint-strong" marker-end="url(#kl-mint)" />
+    <path d="M288 52 V30 H837 V50" class="stroke-vx-amber-deep" stroke-dasharray="4 4" marker-end="url(#kl-amber)" />
+    <text x="575" y="24" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">waits for a person</text>
+
+    {lists.map((l, i) => {
+      const x = 30 + i * 183;
+      return (
+        <g>
+          <rect x={x} y="52" width="150" height="214" rx="10" class={i === 2 ? 'fill-vx-sand/60' : 'fill-vx-cream'} />
+          <text x={x + 12} y="78" font-family="Geist Mono, monospace" font-size="12" font-weight="700" fill="currentColor" stroke="none">{l.name}</text>
+          <text x={x + 138} y="78" text-anchor="end" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">{l.count}</text>
+          {l.cards.map((id, k) => (
+            <g>
+              <rect x={x + 10} y={94 + k * 48} width="130" height="38" rx="6" class="fill-vx-bone/70" />
+              {id ? (
+                <text x={x + 20} y={118 + k * 48} font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">{id}</text>
+              ) : (
+                <path d={`M${x + 20} ${113 + k * 48} H${x + 100} M${x + 20} ${123 + k * 48} H${x + 70}`} class="text-vx-ink/30" stroke="currentColor" />
+              )}
+            </g>
+          ))}
+        </g>
+      );
+    })}
+  </svg>
+</div>

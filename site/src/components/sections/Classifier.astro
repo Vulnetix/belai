@@ -3,13 +3,15 @@ import SealedSection from '../seal/SealedSection.astro';
 import Walkthrough from '../ui/Walkthrough.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
+import Shot from '../ui/Shot.astro';
+import DecisionBackends from '../figures/DecisionBackends.astro';
 
 import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 import cloudflareLogo from '../../assets/logos/cloudflare.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to Clef from Cloudflare on Workers AI, to Strands Decider-2B or Clef or another decision model on your own machine, or to any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. A systemone decision model can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. The decision can come from Jev on OpenRouter or the TypeSafe hosted API with a TYPESAFE_API_KEY, from Clef on Cloudflare Workers AI, from Tev1 on Together AI, from Strands Decider-2B or another decision model on your own machine, or from any server that speaks the systemone API, and Belai tests each choice before it saves it. With Strands Decider-2B the role manager runs local first: every decision is answered on loopback with no API key. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
@@ -22,10 +24,10 @@ const sentinels = [
 
 // Who rules on each threat category, per setup. Every cell is what the code
 // does, including the gaps.
-type Cell = { who: string; tone: 'local' | 'llm' | 'jev' | 'gap' };
+type Cell = { who: string; tone: 'local' | 'llm' | 'decision' | 'gap' };
 const L = (who: string): Cell => ({ who, tone: 'local' });
 const S = (who: string): Cell => ({ who, tone: 'llm' });
-const J = (who: string): Cell => ({ who, tone: 'jev' });
+const J = (who: string): Cell => ({ who, tone: 'decision' });
 const GAP: Cell = { who: 'not checked', tone: 'gap' };
 
 const coverage: { setup: string; how: string; cells: Cell[] }[] = [
@@ -61,7 +63,7 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
   },
   {
     setup: 'Default download with phase 3',
-    how: 'phase 3 = sentinel or Jev',
+    how: 'phase 3 = sentinel or decision model',
     cells: [L('BERT · saturation only'), S('phase 3'), S('phase 3'), S('phase 3')],
   },
   {
@@ -84,8 +86,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   { event: 'A classifier call errors, times out or gets a non-2xx response', result: 'The content is blocked. The provider error is shown on one line.', tone: 'closed' },
   { event: 'The content needs more than 64 BERT windows', result: 'The content is blocked.', tone: 'closed' },
   { event: 'An embedded model fails to load', result: 'Belai refuses to start.', tone: 'closed' },
-  { event: 'Jev scores between 0.1 and 0.9, or its answer is malformed', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
-  { event: 'A local or self-hosted Jev is slow, the content is over 16 KiB, or the server is restarting', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
+  { event: 'A decision model scores between 0.1 and 0.9, or its answer is malformed', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
+  { event: 'A local or self-hosted decision model is slow, the content is over 16 KiB, or the server is restarting', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
   { event: 'The binary has no phase-2 model', result: 'Phase 3 checks for jailbreaks as well, if phase 3 is set up.', tone: 'hand' },
   { event: 'Phase 3 replies with something malformed or empty', result: 'The content goes through. Phases 1 and 2 already passed it, and the feed shows "couldn\'t tell" for phase 3.', tone: 'open' },
 ];
@@ -126,11 +128,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   </div>
 
   <SectionHead title="The classifier">
-    Belai accepts only one kind of answer about untrusted content: a single token from the five
-    below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
-    token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
-    that returns a probability for each question it is asked, on OpenRouter or on hardware you
-    control. You choose which ones run.
+    Untrusted content gets one question and one answer, a single token from the five below. A chat
+    model, a small model built into the binary or a systemone decision model can give it. You choose.
   </SectionHead>
 
   <ul class="mt-8 grid list-none gap-2 p-0 @xl:grid-cols-5" aria-label="The five security sentinels">
@@ -138,6 +137,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <li class={`sentinel-chip sentinel-chip--${s.tone} py-3 text-center`}>{s.token}</li>
     ))}
   </ul>
+
+  <DecisionBackends />
 
   <SubHead title="Coverage by setup">
     Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
@@ -171,8 +172,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </div>
     <p class="mono mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-vx-ink/70">
       <span><span class="cov cov--local">local</span> BERT in-process or on HuggingFace</span>
-      <span><span class="cov cov--llm">LLM</span> the sentinel, or Jev as phase 3</span>
-      <span><span class="cov cov--jev">Jev</span> Jev first, then the sentinel</span>
+      <span><span class="cov cov--llm">LLM</span> the sentinel, or a decision model as phase 3</span>
+      <span><span class="cov cov--decision">decision</span> a systemone model first, then the sentinel</span>
       <span><span class="cov cov--gap">gap</span> no check</span>
     </p>
     </div>
@@ -192,7 +193,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           reply blocks the content.
         </p>
         <p class="mt-4 text-vx-ink/80">
-          Jev is not a chat model, so it is not this kind. It has two of its own:
+          A decision model is not a chat model, so it is not this kind. It has two of its own:
           <code class="mono">classifier.kind: openrouter-decisions</code> for OpenRouter and the local decision model,
           and <code class="mono">classifier.kind: systemone</code> for every server that speaks the systemone API:
           Clef on Cloudflare Workers AI (<code class="mono">classifier.provider: cloudflare-workers-ai</code>),
@@ -209,7 +210,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         </p>
         <p class="mt-4 text-vx-ink/80">
           The same sentinel is used in two other places. With the embedded models it runs as phase 3, using
-          a shorter list of tokens. With Jev it answers whenever Jev can't reach a decision.
+          a shorter list of tokens. With a decision model it answers whenever that model can't reach a decision.
         </p>
       </div>
       <dl class="facts">
@@ -282,7 +283,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           the same token windows, and a hit from either one ends the check. Neither model detects data or
           model extraction, so phase 3 hands that to an LLM once both BERT phases return{' '}
           <code class="mono">SAFE</code>. Phase 3 uses whatever <code class="mono">classifier.provider</code> and{' '}
-          <code class="mono">classifier.model</code> name, which can be the sentinel or Jev. It stays off until
+          <code class="mono">classifier.model</code> name, which can be the sentinel or a decision model. It stays off until
           both are set.
         </p>
         <p class="mt-4 text-vx-ink/80">
@@ -369,6 +370,9 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
+  <details id="backends" class="deep deep--wide">
+    <summary>Each decision backend in detail: Jev, local models, Clef, Tev1 and Decider-2B</summary>
+    <div class="deep__body">
   <article id="jev" class="engine mt-sub" aria-labelledby="engine-jev">
     <header class="engine__head">
       <span class="engine__num mono">03</span>
@@ -390,7 +394,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           phases 1, 2 and 3 would. You can keep that setup even if HuggingFace BERT models are available.
         </p>
         <div class="flow mono mt-5" role="list" aria-label="How a Jev result is decided">
-          <span role="listitem" class="flow__step flow__step--jev">Jev scores each threat</span>
+          <span role="listitem" class="flow__step flow__step--decision">Jev scores each threat</span>
           <span class="flow__arrow" aria-hidden="true">→</span>
           <span role="listitem" class="flow__step">any ≥ 0.9: that token</span>
           <span role="listitem" class="flow__step">all ≤ 0.1: SAFE</span>
@@ -454,13 +458,13 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   <article class="engine mt-sub" aria-labelledby="engine-jev-local">
     <header class="engine__head">
       <span class="engine__num mono">03b</span>
-      <h3 id="engine-jev-local" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on your own machine</h3>
+      <h3 id="engine-jev-local" class="text-3xl font-bold tracking-tight text-vx-ink">Decision models on your own machine</h3>
       <code class="engine__tag mono">decision-local · systemone</code>
     </header>
     <div class="engine__body grid gap-8 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
-          The same questions Jev answers on OpenRouter can be answered on hardware you control. Pick{' '}
+          The questions a hosted decision model answers can be answered on hardware you control. Pick{' '}
           <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B,
           Plumb-4B, Tev1 4B, Clef-flash or Clef. Belai asks before it downloads the model (2.5 GB, 2.8 GB for Tev1 4B, or 6.5 GB for Clef-flash), checks the file against the hash Hugging
           Face publishes, and starts one llama-server on localhost that every Belai process on the machine
@@ -473,7 +477,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           starts it with the whole context as one batch, as Clef needs, and the test says when llama.cpp is too old.
         </p>
         <p class="mt-4 text-vx-ink/80">
-          Whichever you pick answers every Jev question Belai has: the security check, the choice of mode for
+          Whichever you pick answers every decision question Belai has: the security check, the choice of mode for
           your prompt, and the model for each routed use case. Mode detection works with it straight away, with
           no OpenRouter key.
         </p>
@@ -485,10 +489,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           retrying on the CPU, and your previous choice stays in effect.
         </p>
         <div class="flow mono mt-5" role="list" aria-label="How a local decision is read">
-          <span role="listitem" class="flow__step flow__step--jev">one question per request</span>
+          <span role="listitem" class="flow__step flow__step--decision">one question per request</span>
           <span class="flow__arrow" aria-hidden="true">→</span>
           <span role="listitem" class="flow__step">read the answer letters' probabilities</span>
-          <span role="listitem" class="flow__step">same thresholds as Jev</span>
+          <span role="listitem" class="flow__step">same thresholds as a hosted model</span>
           <span role="listitem" class="flow__step flow__step--hand">slow or large: agent model decides</span>
         </div>
       </div>
@@ -533,7 +537,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           Clef is Cloudflare's open decision model, in two sizes: Clef-flash (9B), built for speed, and Clef (27B),
-          the most accurate. It answers the questions Belai would send to Jev in one pass, so it can run the
+          the most accurate. It answers Belai's decision questions in one pass, so it can run the
           security check, the choice of mode, model routing and every relevance job.
         </p>
         <p class="mt-4 text-vx-ink/80">
@@ -570,7 +574,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         <p class="text-vx-ink/80">
           Tev1 is Together AI's experimental decision model, a 4B model that reads a piece of content, one
           question and up to 24 lettered options, and answers with a letter. Belai reads how likely each letter
-          was, so every answer comes with a score, and it runs the same jobs Jev does.
+          was, so every answer comes with a score, and it runs the same jobs as any decision model.
         </p>
         <p class="mt-4 text-vx-ink/80">
           With a Together API key set as a provider, <code class="mono">/model</code> lists Tev1 under{' '}
@@ -605,7 +609,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           Strands Decider-2B is a small decision model with calibrated answers, and it can take over every
-          question Belai would send to Jev. It runs in its own server on your machine, so the security check,
+          decision question Belai asks. It runs in its own server on your machine, so the security check,
           the choice of mode, model routing and every relevance job are decided on loopback. There is no API
           key to set, and the content being judged stays on the host.
         </p>
@@ -622,10 +626,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           OpenRouter or a Hugging Face inference provider starts serving the model, Belai shows it there too.
         </p>
         <div class="flow mono mt-5" role="list" aria-label="How Strands Decider-2B answers">
-          <span role="listitem" class="flow__step flow__step--jev">state and options in one request</span>
+          <span role="listitem" class="flow__step flow__step--decision">state and options in one request</span>
           <span class="flow__arrow" aria-hidden="true">→</span>
           <span role="listitem" class="flow__step">one probability per option</span>
-          <span role="listitem" class="flow__step">same thresholds as Jev</span>
+          <span role="listitem" class="flow__step">same thresholds as a hosted model</span>
           <span role="listitem" class="flow__step flow__step--hand">slow or unclear: agent model decides</span>
         </div>
       </div>
@@ -662,6 +666,9 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
+    </div>
+  </details>
+
   <SubHead title="When a check fails">
     An error always blocks the content. An unclear result can be passed to another engine. This list
     covers every case.
@@ -685,15 +692,30 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </div>
   </details>
 
-  <figure class="mt-sub">
-    <div class="overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
-      <img src={classifierShot.src} alt="The /model classifier rows showing kind, phase 1, phase 2 and phase 3" class="block h-auto w-full" loading="lazy" />
-    </div>
-    <figcaption class="mono mt-3 text-sm text-vx-ink/70">/model, classifier kind and phase rows</figcaption>
-  </figure>
+  <Shot
+    class="mt-sub"
+    shot={classifierShot}
+    title="/model"
+    alt="The /model classifier rows showing kind, phase 1, phase 2 and phase 3"
+    rows={[2, 4]}
+    marks={[{ row: 2, col: 52 }, { row: 5, col: 82 }]}
+    notes={['The classifier kind in effect.', 'Phase 3 is opt-in: set a classifier provider and model to turn it on.']}
+  />
 </SealedSection>
 
 <script>
+  // A link to a backend (#jev, #clef, #tev1) opens the fold that holds it.
+  const openBackend = () => {
+    const el = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    const fold = el?.closest('details');
+    if (fold && !fold.open) {
+      fold.open = true;
+      el?.scrollIntoView();
+    }
+  };
+  openBackend();
+  addEventListener('hashchange', openBackend);
+
   // The WITHHELD stamp lands once, when the example scrolls into view. Without
   // JS (or with reduced motion) it is simply there.
   const caught = document.querySelector<HTMLElement>('.caught');

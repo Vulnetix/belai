@@ -1,0 +1,77 @@
+---
+// One question, any decision backend. The classifier asks a systemone model one
+// question about untrusted content and reads one token back. The backends that
+// can answer sit in a row under the decision. Drawn in the trust pipeline's
+// grammar: cream steps, one ink gate, mint for what reaches the model, coral for
+// what is withheld, dots walking the lanes. The dots stop under reduced motion.
+
+const backends = [
+  ['Clef · Cloudflare', 'Pix default', true],
+  ['Tev1 · Together', 'hosted or Ollama', false],
+  ['Decider-2B', 'on your machine', false],
+  ['Local model', 'llama-server', false],
+  ['Jev · TypeSafe', 'free with Pix', false],
+  ['Your server', 'any systemone API', false],
+] as const;
+---
+
+<div class="mt-10 overflow-x-auto rounded-xl border border-vx-ink bg-vx-bone/30 p-4 md:p-6">
+  <svg viewBox="0 0 960 440" class="trust-flow h-auto w-full min-w-[640px]" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="Untrusted content is sanitized, then a systemone decision model answers one question about it. A safe answer sends it to the model and anything else withholds it. If the decision model times out, ties or gets too much text, your agent model answers the same question. Six backends can give the decision: Clef from Cloudflare, Tev1 from Together, Decider-2B on your machine, a local model, Jev from TypeSafe, or your own systemone server.">
+    <defs>
+      <marker id="db-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-ink/60" stroke="none" /></marker>
+      <marker id="db-mint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-mint-strong" stroke="none" /></marker>
+      <marker id="db-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-red-deep" stroke="none" /></marker>
+    </defs>
+
+    <text x="16" y="94" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/60" stroke="none">UNTRUSTED CONTENT</text>
+
+    <path d="M166 150 H206" class="text-vx-ink/50" stroke="currentColor" stroke-dasharray="4 5" marker-end="url(#db-ink)" />
+    <path d="M336 150 H376" class="text-vx-ink/50" stroke="currentColor" stroke-dasharray="4 5" marker-end="url(#db-ink)" />
+    <path d="M626 150 H706 M706 88 V212" class="text-vx-ink/50" stroke="currentColor" stroke-dasharray="4 5" />
+    <path d="M706 88 H784" class="stroke-vx-mint-strong" marker-end="url(#db-mint)" />
+    <path d="M706 212 H784" class="stroke-vx-red-deep" marker-end="url(#db-red)" />
+    <path d="M501 90 V58" class="text-vx-ink/50" stroke="currentColor" stroke-dasharray="4 5" marker-end="url(#db-ink)" />
+    <path d="M501 210 V268" class="text-vx-ink/50" stroke="currentColor" />
+
+    <rect x="16" y="110" width="150" height="80" rx="10" class="fill-vx-cream" />
+    <text x="91" y="146" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">Tool result</text>
+    <text x="91" y="166" text-anchor="middle" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">Bash · web · files</text>
+
+    <rect x="206" y="110" width="130" height="80" rx="10" class="fill-vx-cream" />
+    <text x="271" y="146" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">sanitize</text>
+    <text x="271" y="166" text-anchor="middle" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">strip markup</text>
+
+    <rect x="376" y="90" width="250" height="120" rx="12" class="fill-vx-ink" stroke="none" />
+    <text x="501" y="140" text-anchor="middle" font-family="Geist, sans-serif" font-size="18" font-weight="700" class="fill-vx-cream" stroke="none">systemone decision</text>
+    <text x="501" y="164" text-anchor="middle" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-mint" stroke="none">one question, one token</text>
+
+    <rect x="784" y="60" width="160" height="56" rx="10" class="fill-vx-mint" stroke="none" />
+    <text x="864" y="94" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">to the model</text>
+    <rect x="784" y="184" width="160" height="56" rx="10" class="fill-vx-coral/15 stroke-vx-red-deep" />
+    <text x="864" y="218" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">withheld</text>
+
+    <rect x="376" y="8" width="250" height="50" rx="10" class="fill-vx-cream" stroke-dasharray="5 4" />
+    <text x="501" y="30" text-anchor="middle" font-family="Geist, sans-serif" font-size="14" font-weight="700" fill="currentColor" stroke="none">your agent model</text>
+    <text x="501" y="48" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">answers the same question</text>
+    <text x="516" y="80" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">timeout, tie or too long</text>
+
+    <rect x="16" y="268" width="928" height="156" rx="12" class="fill-vx-bone/60" />
+    <text x="36" y="294" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">ANY ONE OF THESE CAN ANSWER · kind: systemone</text>
+    {backends.map(([name, sub, hero], i) => (
+      <g>
+        <rect x={36 + i * 150} y="318" width="138" height="78" rx="10" class={hero ? 'fill-vx-mint' : 'fill-vx-cream'} />
+        <text x={105 + i * 150} y="352" text-anchor="middle" font-family="Geist, sans-serif" font-size="13" font-weight="700" fill="currentColor" stroke="none">{name}</text>
+        <text x={105 + i * 150} y="374" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/75" stroke="none">{sub}</text>
+      </g>
+    ))}
+
+    <g class="trust-flow__dots" stroke="none">
+      <circle r="6" class="fill-vx-mint-strong">
+        <animateMotion dur="4.2s" repeatCount="indefinite" path="M16 150 H706 V88 H784" />
+      </circle>
+      <circle r="6" class="fill-vx-red-deep">
+        <animateMotion dur="4.2s" begin="-2.1s" repeatCount="indefinite" path="M16 150 H706 V212 H784" />
+      </circle>
+    </g>
+  </svg>
+</div>

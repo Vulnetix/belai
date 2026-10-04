@@ -607,7 +607,7 @@ main > .chapter:first-child {
   border-color: var(--color-vx-sand-amber);
 }
 
-.cov--jev {
+.cov--decision {
   background: var(--color-vx-ink);
   color: var(--color-vx-mint);
 }
@@ -787,7 +787,7 @@ main > .chapter:first-child {
   border: 1px solid rgba(0, 22, 20, 0.35);
 }
 
-.flow__step--jev {
+.flow__step--decision {
   background: var(--color-vx-ink);
   color: var(--color-vx-mint);
   border-color: var(--color-vx-ink);

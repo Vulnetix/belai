@@ -199,7 +199,15 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   <SubHead title="Reviewing a plan">
     The plan is saved as a structured document. You approve it, send it back with notes, or cancel it.
   </SubHead>
-  <Shot class="mt-8" src={planReviewShot.src} alt="The plan review pane with Approve, Refine and Cancel" caption="plan review pane" />
+  <Shot
+    class="mt-8"
+    shot={planReviewShot}
+    title="plan review"
+    alt="The plan review pane with two steps, each naming its files and its check, then Approve, Refine and Cancel"
+    rows={[2, 18]}
+    marks={[{ row: 9, col: 40 }, { row: 19, col: 33 }]}
+    notes={['Each step names its files and the check that proves it.', 'Approve, refine with notes, or cancel.']}
+  />
 
   <Limits items={limits} />
 </SealedSection>

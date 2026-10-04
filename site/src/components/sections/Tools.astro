@@ -67,7 +67,7 @@ const locateFacts: [string, string][] = [
 const swapSteps = [
   'The command must be one plain command: no pipe, chain, redirect, substitution or line break.',
   'A Bash deny rule that matches it stops the swap, so a swap never launders a denied command.',
-  'Jev rates the builtin tools that could stand in for it. Exactly one must rate at 95 percent or more as a full replacement.',
+  'A decision model rates the builtin tools that could stand in for it. Exactly one must rate at 95 percent or more as a full replacement.',
   "The fast model is asked to reconsider and write that tool's arguments, or answer KEEP_BASH. Every value must appear in the original command.",
   'The builtin must pass its own schema, permissions and mode. Its output is classified as Bash output would be.',
 ];
@@ -201,7 +201,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   <p class="mt-3 text-sm text-vx-ink/75">
     Any failed step leaves the Bash call to run as written. The row reads{' '}
     <code class="mono">Grep ← Bash</code>, and a command sent twice runs as Bash the second time.{' '}
-    <a class="underline" href={`${docBase}jev-jobs.md`}>docs/jev-jobs.md</a>
+    <a class="underline" href={`${docBase}jev-jobs.md`}>More on decision jobs</a>
   </p>
     </div>
   </details>
@@ -222,7 +222,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   <p class="mt-3 text-sm text-vx-ink/75">
     <code class="mono">/locate --dry-run</code> shows what would be looked at and where the questions would go,
     without sending anything.{' '}
-    <a class="underline" href={`${docBase}jev-jobs.md#explore-locate`}>docs/jev-jobs.md</a>
+    <a class="underline" href={`${docBase}jev-jobs.md#explore-locate`}>More on decision jobs</a>
   </p>
 
   <SubHead title="Where a path can go">

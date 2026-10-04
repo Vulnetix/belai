@@ -1,0 +1,76 @@
+---
+// The two built-in crews as lanes, from the card that starts the work to the
+// draft pull request a person merges. The ink card in each lane is where the
+// crew checks the work before it reaches the person. A dot walks each lane and
+// stops under reduced motion.
+
+const lanes = [
+  {
+    label: 'BELAI:DELIVERY',
+    note: 'must-fix findings go back to the builders',
+    steps: [
+      ['Request', 'or a test run'],
+      ['Scout', 'surveys, files tasks'],
+      ['Builders ×2', 'one check each'],
+      ['Reviewer', 'must-fix or nit'],
+      ['Draft PR', 'you review, merge'],
+    ],
+  },
+  {
+    label: 'BELAI:SECURITY',
+    note: 'a fix fails if the scanner still reports it',
+    steps: [
+      ['Review of HEAD', 'scanners file cards'],
+      ['Vuln-scout', 'says which are real'],
+      ['Patchers ×2', 'numbered fixes'],
+      ['Verifier', 'argues each fix'],
+      ['Draft PR + VEX', 'a verdict per card'],
+    ],
+  },
+] as const;
+---
+
+<div class="mt-10 overflow-x-auto rounded-xl border border-vx-ink bg-vx-bone/30 p-4 md:p-6">
+  <svg viewBox="0 0 960 330" class="trust-flow h-auto w-full min-w-[640px]" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="Two crews. The delivery crew takes a request or a test run, then a scout surveys, two builders build, a reviewer checks and the work ends as a draft pull request. The security crew takes a review of HEAD, then a scout says which findings are real, two patchers fix, a verifier argues against each fix and the work ends as a draft pull request with a VEX verdict for every card.">
+    <defs>
+      <marker id="cl-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-ink/60" stroke="none" /></marker>
+      <marker id="cl-mint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-mint-strong" stroke="none" /></marker>
+    </defs>
+
+    {lanes.map((lane, li) => {
+      const top = 10 + li * 160;
+      const cy = top + 78;
+      return (
+        <g>
+          <rect x="0" y={top} width="960" height="150" rx="12" class="fill-vx-bone/60" stroke="none" />
+          <text x="16" y={top + 24} font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">{lane.label}</text>
+          {[0, 1, 2, 3].map((i) => (
+            <path d={`M${175 + i * 190} ${cy} H${215 + i * 190}`} class={i === 3 ? 'stroke-vx-mint-strong' : 'text-vx-ink/50'} stroke={i === 3 ? undefined : 'currentColor'} marker-end={i === 3 ? 'url(#cl-mint)' : 'url(#cl-ink)'} />
+          ))}
+          {lane.steps.map(([name, sub], i) => {
+            const x = 25 + i * 190;
+            const gate = i === 3;
+            const end = i === 4;
+            return (
+              <g>
+                <rect x={x} y={cy - 36} width="150" height="72" rx={gate ? 12 : 10} class={gate ? 'fill-vx-ink' : end ? 'fill-vx-mint' : 'fill-vx-cream'} stroke={gate || end ? 'none' : undefined} stroke-dasharray={i === 0 ? '5 4' : undefined} />
+                <text x={x + 75} y={cy - 4} text-anchor="middle" font-family="Geist, sans-serif" font-size="14" font-weight="700" class={gate ? 'fill-vx-cream' : ''} fill={gate ? undefined : 'currentColor'} stroke="none">{name}</text>
+                <text x={x + 75} y={cy + 18} text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class={gate ? 'fill-vx-mint' : 'fill-vx-ink/75'} stroke="none">{sub}</text>
+              </g>
+            );
+          })}
+          <text x="595" y={top + 140} font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">{lane.note}</text>
+        </g>
+      );
+    })}
+
+    <g class="trust-flow__dots" stroke="none">
+      <circle r="6" class="fill-vx-mint-strong">
+        <animateMotion dur="6s" repeatCount="indefinite" path="M25 88 H935" />
+      </circle>
+      <circle r="6" class="fill-vx-mint-strong">
+        <animateMotion dur="6s" begin="-3s" repeatCount="indefinite" path="M25 248 H935" />
+      </circle>
+    </g>
+  </svg>
+</div>

@@ -34,7 +34,7 @@ const product: { q: string; a: string[] }[] = [
   {
     q: 'Does it work without an API key, or offline?',
     a: [
-      'The security classifier ships in the default binary, so guardrails run with no provider and no key. The role manager\'s decisions, which Jev answers remotely, can run on Strands Decider-2B on your machine with no key: install strands-decider and pick it in /providers. For the agent itself, a local model on Ollama or llama-server needs no key and no network, and a self-hosted endpoint that needs no key is offered while it answers.',
+      'The security classifier ships in the default binary, so guardrails run with no provider and no key. The decision jobs can also run on a model on your machine, such as Strands Decider-2B, with no key: install strands-decider and pick it in /providers. For the agent itself, a local model on Ollama or llama-server needs no key and no network, and a self-hosted endpoint that needs no key is offered while it answers.',
     ],
   },
   {

@@ -1,0 +1,61 @@
+---
+// Three checks before a tool runs, in the order they happen. Deny is checked
+// first and always wins, ask puts the change in front of you, and the sandbox
+// limits whatever is allowed to run. The same flow applies on every surface.
+
+const steps = [
+  ['Tool call', 'from the model', 'plain'],
+  ['Deny?', 'any match wins', 'gate'],
+  ['Ask?', 'diff shown first', 'gate'],
+  ['Allow?', 'rule or default', 'gate'],
+  ['Sandbox', 'OS-level limits', 'plain'],
+  ['Runs', 'then classified', 'pass'],
+] as const;
+---
+
+<div class="mt-10 overflow-x-auto rounded-xl border border-vx-ink bg-vx-bone/30 p-4 md:p-6">
+  <svg viewBox="0 0 960 310" class="h-auto w-full min-w-[640px]" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="A tool call is checked against deny rules first, and a match withholds it. Then ask rules put the change in front of you, who allow or withhold it. Then allow rules, or the default, let it through to the sandbox, which limits what it can touch. It then runs and its result is classified.">
+    <defs>
+      <marker id="pf-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-ink/60" stroke="none" /></marker>
+      <marker id="pf-mint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-mint-strong" stroke="none" /></marker>
+      <marker id="pf-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" class="fill-vx-red-deep" stroke="none" /></marker>
+    </defs>
+
+    <rect x="0" y="8" width="960" height="140" rx="12" class="fill-vx-bone/60" stroke="none" />
+    <text x="16" y="30" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">EVERY TOOL CALL, ON EVERY SURFACE</text>
+
+    {[0, 1, 2, 3, 4].map((i) => (
+      <path d={`M${143 + i * 160} 90 H${177 + i * 160}`} class={i === 4 ? 'stroke-vx-mint-strong' : 'text-vx-ink/50'} stroke={i === 4 ? undefined : 'currentColor'} marker-end={i === 4 ? 'url(#pf-mint)' : 'url(#pf-ink)'} />
+    ))}
+
+    {steps.map(([name, sub, kind], i) => {
+      const x = 17 + i * 160;
+      return (
+        <g>
+          {kind === 'gate' ? (
+            <rect x={x} y="50" width="126" height="80" rx="12" class="fill-vx-ink" stroke="none" />
+          ) : (
+            <rect x={x} y="50" width="126" height="80" rx="10" class={kind === 'pass' ? 'fill-vx-mint' : 'fill-vx-cream'} stroke={kind === 'pass' ? 'none' : undefined} />
+          )}
+          <text x={x + 63} y="86" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" class={kind === 'gate' ? 'fill-vx-cream' : ''} fill={kind === 'gate' ? undefined : 'currentColor'} stroke="none">{name}</text>
+          <text x={x + 63} y="108" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class={kind === 'gate' ? 'fill-vx-mint' : 'fill-vx-ink/75'} stroke="none">{sub}</text>
+        </g>
+      );
+    })}
+
+    <path d="M240 130 V224" class="stroke-vx-red-deep" marker-end="url(#pf-red)" />
+    <path d="M400 130 V224" class="text-vx-ink/50" stroke="currentColor" marker-end="url(#pf-ink)" />
+    <path d="M463 256 H720 V132" class="text-vx-ink/50" stroke="currentColor" marker-end="url(#pf-ink)" />
+    <text x="252" y="182" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">match</text>
+    <text x="412" y="182" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">asks</text>
+    <text x="520" y="246" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/70" stroke="none">you allow</text>
+
+    <rect x="177" y="224" width="126" height="64" rx="10" class="fill-vx-coral/15 stroke-vx-red-deep" />
+    <text x="240" y="253" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">Withheld</text>
+    <text x="240" y="273" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/75" stroke="none">never runs</text>
+
+    <rect x="337" y="224" width="126" height="64" rx="10" class="fill-vx-cream stroke-vx-amber-deep" />
+    <text x="400" y="253" text-anchor="middle" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">You decide</text>
+    <text x="400" y="273" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/75" stroke="none">allow or withhold</text>
+  </svg>
+</div>

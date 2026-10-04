@@ -1,21 +1,71 @@
 ---
-// Shot is one real TUI capture (see tools/shot), shown in full with its
-// caption. Captures are never hidden behind a control: a section that has
-// several lays them out side by side or stacked.
+// Shot is one real TUI capture (see tools/shot) in a thin frame. It is drawn at
+// its own size, never stretched past it, so the type stays readable. `rows`
+// crops to a run of terminal rows ([first, count], 20px each in the capture),
+// and `marks` pins numbered callouts on it by row and column (10px a column);
+// `notes` is the legend that the numbers point to.
+import type { ImageMetadata } from 'astro';
+
+interface Mark {
+  row: number;
+  col: number;
+}
 
 interface Props {
-  src: string;
+  shot: ImageMetadata;
   alt: string;
+  title: string;
   caption?: string;
+  rows?: [number, number];
+  marks?: Mark[];
+  notes?: string[];
   class?: string;
 }
 
-const { src, alt, caption, class: cls = '' } = Astro.props;
+const { shot, alt, title, caption, rows, marks = [], notes = [], class: cls = '' } = Astro.props;
+
+const CELL_W = 10;
+const CELL_H = 20;
+const [first, count] = rows ?? [0, Math.round(shot.height / CELL_H)];
+const cropH = count * CELL_H;
+const pos = (m: Mark) => ({
+  left: `${((m.col * CELL_W) / shot.width) * 100}%`,
+  top: `${(((m.row - first) * CELL_H + CELL_H / 2) / cropH) * 100}%`,
+});
 ---
 
-<figure class={`m-0 min-w-0 ${cls}`}>
+<figure class={`m-0 min-w-0 ${cls}`} style={`max-width:${shot.width}px`}>
   <div class="overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
-    <img src={src} alt={alt} class="block h-auto w-full" loading="lazy" decoding="async" />
+    <div class="mono flex items-center justify-between gap-3 border-b border-vx-pane-line bg-vx-ink-2 px-4 py-2 text-xs text-vx-pane-mute">
+      <span>belai · {title}</span>
+      <span aria-hidden="true">{count === Math.round(shot.height / CELL_H) ? 'capture' : `${count} rows`}</span>
+    </div>
+    <div class="relative overflow-hidden" style={`aspect-ratio:${shot.width} / ${cropH}`}>
+      <img
+        src={shot.src}
+        alt={alt}
+        width={shot.width}
+        height={shot.height}
+        class="absolute left-0 block h-auto w-full max-w-none"
+        style={`top:${-((first * CELL_H) / cropH) * 100}%`}
+        loading="lazy"
+        decoding="async"
+      />
+      {marks.map((m, i) => (
+        <span
+          aria-hidden="true"
+          class="mono absolute grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-vx-mint text-xs font-bold text-vx-ink"
+          style={`left:${pos(m).left};top:${pos(m).top}`}
+        >{i + 1}</span>
+      ))}
+    </div>
   </div>
+  {notes.length > 0 && (
+    <ol class="mt-3 list-none space-y-1 p-0 text-sm text-vx-ink/80">
+      {notes.map((n, i) => (
+        <li class="flex gap-3"><span class="mono w-4 shrink-0 font-bold text-vx-mint-strong">{i + 1}</span><span>{n}</span></li>
+      ))}
+    </ol>
+  )}
   {caption && <figcaption class="mono mt-2 text-xs text-vx-ink/65">{caption}</figcaption>}
 </figure>

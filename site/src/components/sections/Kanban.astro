@@ -5,7 +5,7 @@ import SubHead from '../ui/SubHead.astro';
 import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 import Shot from '../ui/Shot.astro';
-import paneShot from '../../assets/shots/kanban-pane.svg';
+import KanbanLists from '../figures/KanbanLists.astro';
 import boardShot from '../../assets/shots/kanban-board.svg';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
@@ -104,8 +104,15 @@ const limits = [
   </SubHead>
   <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
     <div class="flex min-w-0 flex-col gap-6 @4xl:col-span-8">
-      <Shot src={paneShot.src} alt="The kanban pane above an empty composer, listing review, blocked and backlog items" caption="idle composer, kanban pane focused" />
-      <Shot src={boardShot.src} alt="The /kanban board on the review list, with provenance and history" caption="/kanban, the review list" />
+      <KanbanLists />
+      <Shot
+        shot={boardShot}
+        title="/kanban"
+        alt="The /kanban board on the review list, with provenance and history"
+        rows={[2, 13]}
+        marks={[{ row: 8, col: 84 }, { row: 13, col: 66 }]}
+        notes={['An item in review, with where and when it was added.', 'History: every move and note is kept on the card.']}
+      />
     </div>
     <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-4">
       <div class="rounded-xl border border-vx-ink p-5">
