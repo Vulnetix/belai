@@ -254,7 +254,7 @@ func TestAgentCommandWithSubcommandDoesNotOpenPicker(t *testing.T) {
 		t.Fatalf("expected /agent list to dispatch, not open the picker")
 	}
 	if a.view != viewAgent {
-		t.Fatalf("view = %q, want agent list view", a.view)
+		t.Fatalf("view = %d, want agent list view", a.view)
 	}
 }
 
