@@ -31,6 +31,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // State is the lifecycle of a supervised process.
@@ -318,6 +319,11 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 		ec = exec.CommandContext(p.ctx, "sh", "-c", p.command)
 		ec.Dir = p.dir
 		ec.Env = proc.ScrubbedEnv()
+		if p.background {
+			// A background command the model started is a tool call like Bash and gets
+			// the vault's variables the same way (internal/vaultenv).
+			ec.Env = append(ec.Env, vaultenv.Default.Environ(time.Now())...)
+		}
 	}
 	proc.SetProcessGroup(ec)
 	if run != nil {
@@ -340,12 +346,14 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 
 	sink := func(line string) { m.emitProgress(p.id, line) }
 	tw := proc.NewLineTee(maxLiveTailBytes, sink)
-	mw := io.MultiWriter(p.log, tw)
+	// What the process prints is scrubbed before it reaches the log file or the live
+	// tail, so a vault value never lands on disk.
+	sw := vaultenv.NewWriter(io.MultiWriter(p.log, tw), vaultenv.Default)
 	if run != nil {
-		run.wire(ec, mw)
+		run.wire(ec, sw)
 	} else {
-		ec.Stdout = mw
-		ec.Stderr = mw
+		ec.Stdout = sw
+		ec.Stderr = sw
 	}
 
 	if err := ec.Start(); err != nil {
@@ -362,6 +370,7 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 		if run != nil {
 			run.close()
 		}
+		_ = sw.Close()
 		tw.Flush()
 		p.log.Flush()
 		code := 0

@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/shellsafe"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
@@ -86,6 +87,7 @@ func (b *Bash) Definition() Definition {
 		"Output is the command's stdout and stderr interleaved, capped at 64 KiB and truncated beyond that, with a non-zero exit reported as a trailing `exit status N` line. " +
 		"The command is killed after its timeout (default 120000 ms, at most 600000 ms; set timeout for a long build or test run), and whatever it printed up to that point is still returned. " +
 		"Provider credentials are stripped from the environment, so a command cannot read or forward them. " +
+		vaultEnvNote() +
 		"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode — use Read, Grep, Glob, and the read-only command tools there instead."
 	arg := "The command to run, e.g. \"go test ./...\" or \"git commit -m msg\""
 	if b.ReadOnly {
@@ -184,6 +186,12 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	ec.Dir = baseDir(b.Root, b.Cwd)
 	ec.Env = proc.ScrubbedEnv()
 	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
+	if !b.ReadOnly {
+		// The vault's environment variables for this sandbox, set only on the
+		// process the command starts (internal/vaultenv): never in Belai's own
+		// environment, and removed from the output below.
+		ec.Env = append(ec.Env, vaultenv.Default.Environ(time.Now())...)
+	}
 
 	if b.MaxBytes <= 0 {
 		b.MaxBytes = 64 * 1024
@@ -196,7 +204,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	// two scanners would reorder the output of anything that writes to both.
 	var lineSink func(string)
 	if sink != nil {
-		lineSink = func(line string) { sink(Progress{Stream: "stdout", Text: line}) }
+		lineSink = func(line string) { sink(Progress{Stream: "stdout", Text: vaultenv.Default.Scrub(line)}) }
 	}
 	// Head and tail: a build or test run prints its summary last.
 	tw := proc.NewLineTee(b.MaxBytes, lineSink).KeepTail()
@@ -223,7 +231,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	err = ec.Wait()
 	tw.Flush()
 
-	content := tw.Content()
+	content := vaultenv.Default.Scrub(tw.Content())
 	if ctx.Err() == context.DeadlineExceeded {
 		// Keep whatever the command managed to produce. Returning an error
 		// here would discard it: executeCall drops the Result when err is
@@ -266,4 +274,17 @@ func sandboxNote(p sandbox.Policy) string {
 		note += ", and the network is off"
 	}
 	return note + "; if the command needs more, ask the user to adjust sandbox settings)"
+}
+
+// vaultEnvNote names the environment variables the vault gives this sandbox's
+// commands, so the model uses $NAME and never asks for a value. It names them and
+// nothing else; the values are hidden from output, transcripts and logs.
+func vaultEnvNote() string {
+	names := vaultenv.Default.Names(time.Now())
+	if len(names) == 0 {
+		return ""
+	}
+	return "These environment variables are set for commands, from the organisation's vault: " + strings.Join(names, ", ") +
+		". Use them as $NAME. Their values are hidden: they never appear in output, and are shown as [vault:NAME] if a command prints one. " +
+		"Do not try to read, decode or transform them to see the value. "
 }

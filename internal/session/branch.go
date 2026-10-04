@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // EntryTypeBranch marks a navigation inside a session: the entry after it
@@ -262,6 +264,7 @@ func (s *Store) ForkPath(src Key, srcID string, dst Key, dstID, leaf string) err
 		if err != nil {
 			return fmt.Errorf("marshal entry: %w", err)
 		}
+		data = vaultenv.Default.ScrubBytes(data)
 		if _, err := w.Write(append(data, '\n')); err != nil {
 			return fmt.Errorf("write forked entry: %w", err)
 		}

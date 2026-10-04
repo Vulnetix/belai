@@ -163,6 +163,7 @@ func New(opts Options) *Syncer {
 func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
+	go s.vaultLease(ctx)
 	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands || s.opts.RemoteShell {
 		go s.inbox(ctx)
 	}

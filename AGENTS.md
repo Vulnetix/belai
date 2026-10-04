@@ -1371,6 +1371,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   back and writes no profile, setting or file. A refusal reason is harness
   text, never model or provider output.
 
+- **A vault value never leaves a tool call unscrubbed.** The environment variables a
+  Pix sandbox gets from the secrets vault (`internal/vaultenv`) are held in memory,
+  set only on the process a command starts, and replaced by `[vault:NAME]` in the tool
+  result, the transcript, a background log and this process's own stdout and stderr.
+  Any new place that writes a tool's output or a transcript line must pass it through
+  `vaultenv.Default.Scrub` or `ScrubBytes`. See [docs/vault-env.md](docs/vault-env.md).
+
 ## Layout
 
 - `cmd/belai` — entrypoint.
