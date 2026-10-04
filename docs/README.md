@@ -59,6 +59,9 @@ behaviour, and implementation details.
   host, sandbox or the web on this host, under a new id.
 - [Pix Sandbox](pix-sandbox.md): the contract between Belai and the hosted machine Vulnetix
   runs: host id, settings, credentials, trusted directories and Jev.
+- [Vault environment variables](vault-env.md): the environment variables a Pix sandbox gets
+  from the organisation's secrets vault, how they reach a tool call, and how they are
+  scrubbed from output, transcripts and logs.
 - [Library items](library-items.md): the skills, prompts, processes, repositories, token
   budgets, Bash rewrite table and provider sets the website's library keeps for an
   account, and how provider keys reach a host: formats, canonical bytes, limits, install
