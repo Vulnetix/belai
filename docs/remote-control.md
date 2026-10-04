@@ -160,7 +160,12 @@ a control rather than a prompt, and the keys work while the page has focus.
   and the agent's questions are asked there too. Allow-always is remembered for
   that session only. An unanswered ask is denied after ten minutes. With ask
   off, calls are decided by the rules, the classifier and the sandbox without
-  asking, as `f4` does in the TUI.
+  asking, as `f4` does in the TUI. Turning ask off while a permission is open
+  allows that one call (allow once, recorded in the transcript as the host's
+  answer) and dismisses an open questionnaire, instead of leaving the turn
+  waiting for an answer that can no longer be given: web answers go off with
+  ask. A call the running turn asks about after that is allowed the same way
+  until the turn ends and the session is rebuilt with ask off.
 - **What the transcript shows.** Every applied control writes a harness line
   (`web: caveman: on`), and the turn facts carry the current mode, model,
   guardrails, ask and caveman.
