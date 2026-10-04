@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // uuidShape is the shape of a session id Belai mints (a version 4 UUID).
@@ -35,6 +37,7 @@ func (s *Store) Import(k Key, id string, entries []Entry) error {
 			if err != nil {
 				return fmt.Errorf("marshal entry: %w", err)
 			}
+			data = vaultenv.Default.ScrubBytes(data)
 			if _, err := w.Write(append(data, '\n')); err != nil {
 				return fmt.Errorf("write imported entry: %w", err)
 			}

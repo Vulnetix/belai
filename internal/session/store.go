@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // maxListBytes is the largest session file SessionsIn will parse for its
@@ -276,6 +277,10 @@ func (s *Store) AppendTo(k Key, sessionID string, e Entry) error {
 	if err != nil {
 		return fmt.Errorf("marshal entry: %w", err)
 	}
+	// A vault value never reaches the transcript: scrub the line as it is written,
+	// so a value in a tool result, a prompt or a model reply is stored as
+	// [vault:NAME] (internal/vaultenv).
+	data = vaultenv.Default.ScrubBytes(data)
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("append entry: %w", err)
 	}
@@ -369,6 +374,7 @@ func (s *Store) ForkAcross(src Key, srcID string, dst Key, dstID string) error {
 	w := bufio.NewWriter(f)
 	for _, e := range entries {
 		data, err := json.Marshal(e)
+		data = vaultenv.Default.ScrubBytes(data)
 		if err != nil {
 			return fmt.Errorf("marshal entry: %w", err)
 		}
