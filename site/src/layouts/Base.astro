@@ -180,6 +180,11 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       // A link to an anchor inside a collapsed block opens the block first,
       // then scrolls to the anchor, so a deep link never lands on hidden text.
       const openFolds = () => {
+        // The Pix section was once #pix, which an inline Pix drawing also uses.
+        if (location.hash === '#pix') {
+          location.replace('#pix-sandbox');
+          return;
+        }
         const id = decodeURIComponent(location.hash.slice(1));
         if (!id) return;
         const target = document.getElementById(id);
