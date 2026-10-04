@@ -172,6 +172,15 @@ the list through and still refuses every other private address, so allowing
 `fd00::/64` does not open `10/8`, `fc00::/7` outside it, or `fd00:ec2::254`.
 `AllowedPrefixes` returns the list in force.
 
+**The one fixed link-local fetch.** The Pix Sandbox build reads the sandbox's
+metadata service at `169.254.169.254` for the system prompt
+(`internal/run/environment_sandbox.go`, docs/pix-sandbox.md). That is the
+harness's own request, not a model-directed one, so it does not go through
+`CheckURL` or `Forbidden`: its dialer connects to one address whatever the URL
+says, takes no proxy and no redirect, and discards any answer that does not carry
+the sandbox Worker's `X-Pix-Metadata: v1` header. No other code dials that
+address, and a model's fetch of it is still refused.
+
 Limit: the IDNA conversion rejects invisible characters and invalid names but
 cannot detect look-alike letters from different scripts.
 

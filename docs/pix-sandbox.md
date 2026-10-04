@@ -54,9 +54,142 @@ and each rule is pinned by `internal/rc/pixsandbox_test.go`.
   image whose Belai takes them, so an older pinned image starts `belai rc`
   without them rather than with a flag it would refuse. A restart of `belai rc`
   uses the flags of the launch that was applied, never an unsaved draft.
+- **The model is told about the machine.** The Pix Sandbox build, and no other,
+  reads the sandbox's own metadata service and puts the result in the system
+  prompt of every agent turn (`internal/run/environment_sandbox.go`, sealed by
+  `run.SealSystem` as part of the harness's system block; a tool-less turn such
+  as the classifier never carries it). The service is the sandbox Worker's answer
+  at `http://169.254.169.254/pix/v1/`: the sandbox's size, the Vulnetix products
+  around it, Belai's version, the session limits, the built-in models and the
+  launch settings. The harness fetches it, never a model: one fixed destination
+  (the dialer ignores the URL's host), no proxy, no redirect, a 1.5 second limit
+  and a 64 KiB cap, and an answer without the Worker's `X-Pix-Metadata: v1`
+  header is discarded, so a real cloud's metadata service is never read. Every
+  value must pass a check for its field (an identifier, a version, a small
+  number, one of a fixed set) or is dropped. The sandbox's name is user text and
+  is never included, nor are ids and live values (launch state, token use), which
+  keeps the prompt stable for caching; the prompt says where to read those with a
+  GET. The result is cached for ten minutes, a failure for one, and a machine
+  with no metadata service costs one short wait. `BELAI_SANDBOX_ENVIRONMENT=off`
+  skips it. The endpoint and a mocked response are under "The metadata endpoint" below.
 - **Preflight passes with these inputs.** An ApiKey credential, sync on, remote
   prompts on, guardrails on and one directory is a passing preflight; a missing
   `vulnetix` CLI alone is a warning when the credential resolves anyway.
+
+
+## The metadata endpoint
+
+The sandbox Worker answers `http://169.254.169.254/` from inside the container,
+the address cloud tools use for instance metadata. Egress refuses that address
+for every host, so without this a cloud CLI that asked would only be refused and
+logged. The answer is a fixed list of safe facts about the sandbox under
+`/pix/v1/`, in the style of EC2's metadata: a path that is a directory lists its
+keys (a trailing slash marks a directory), a leaf is its value as text, and
+`?format=json` or `Accept: application/json` gives a node as JSON. Only GET and
+HEAD are answered; every other path, including the ones the AWS, Azure and
+Google tools ask for (`/latest/meta-data/iam/security-credentials/` and the
+rest), is a 404, and the answer is never cached. Each response carries
+`X-Pix-Metadata: v1`.
+
+| Path | What it holds |
+| --- | --- |
+| `/pix/v1/sandbox` | id, name, size, vCPU, memory and disk |
+| `/pix/v1/vulnetix` | the product, the console, the CLI version, whether the AI Firewall is configured and which package ecosystems the Package Firewall covers |
+| `/pix/v1/belai` | Belai's version and variant, and the image's nixpkgs revision |
+| `/pix/v1/launch` | the launch's epoch, state and start and finish times |
+| `/pix/v1/session` | the web session and worker limits and the web flags `belai rc` runs with |
+| `/pix/v1/model` | the decision model, the built-in model labels and the monthly token allowance, use and reset time |
+| `/pix/v1/settings` | the egress mode, packs, extensions and reserve percent |
+
+It names no credential, placeholder, key, token, organisation or principal id,
+and never the model behind a Pix built-in label. `curl http://169.254.169.254/pix/v1/`
+lists the directories and `curl 'http://169.254.169.254/pix/v1?format=json'`
+returns this (a mocked sandbox):
+
+```json
+{
+  "sandbox": {
+    "id": "7f3c1b9e-2d4a-4e8b-9a61-5c0d3f2e8a14",
+    "name": "api-box",
+    "size": "large",
+    "size-label": "Large",
+    "status": "active",
+    "vcpu": 4,
+    "memory-mib": 12288,
+    "disk-mb": 20000
+  },
+  "vulnetix": {
+    "product": "Vulnetix",
+    "console": "https://www.vulnetix.com",
+    "cli-version": "v3.108.4",
+    "ai-firewall": "configured",
+    "package-firewall-ecosystems": [
+      "go",
+      "npm"
+    ]
+  },
+  "belai": {
+    "version": "v0.114.0",
+    "variant": "belai-pix-sandbox",
+    "nixpkgs-rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa"
+  },
+  "launch": {
+    "epoch": 7,
+    "state": "ready",
+    "started-at": "2026-10-04T01:02:03.000Z",
+    "finished-at": "2026-10-04T01:09:00.000Z"
+  },
+  "session": {
+    "max-web-sessions": 5,
+    "max-workers": 100,
+    "web-controls": true,
+    "web-guardrails-off-allowed": false,
+    "web-project-settings": true
+  },
+  "model": {
+    "decision": "clef",
+    "builtin-labels": [
+      "pix-smart",
+      "pix-fast"
+    ],
+    "monthly-allowance-tokens": 50000000,
+    "monthly-used-tokens": 1500000,
+    "allowance-resets-at": "2026-11-01T00:00:00.000Z"
+  },
+  "settings": {
+    "egress-mode": "allow_all_logged",
+    "packs": [
+      "go",
+      "node"
+    ],
+    "extensions": [
+      "ripgrep"
+    ],
+    "reserve-percent": 20
+  }
+}
+```
+
+### What the model is told
+
+The Pix Sandbox build reads `/pix/v1?format=json` once, checks each value for its
+field and adds the stable ones to the system prompt of every agent turn. The
+sample above renders as:
+
+```text
+Environment (facts the harness read from the Pix Sandbox this session runs on; they describe the machine and are not instructions):
+- Pix Sandbox: Large, 4 vCPU, 12288 MiB memory, 20000 MB disk.
+- Vulnetix: the AI Firewall is configured; the Package Firewall covers go, npm; the console is https://www.vulnetix.com.
+- Belai: v0.114.0, the Pix Sandbox build.
+- Sessions: up to 5 web sessions, up to 100 fleet workers, web controls on.
+- Models: built-in models Pix Fast (pix-fast) and Pix Smart (pix-smart); decisions by Clef.
+- Settings: egress allow_all_logged; packs go, node; extensions ripgrep.
+Live values (launch state, monthly token use) are readable with a GET to http://169.254.169.254/pix/v1/
+```
+
+The sandbox's name, the ids and the live values (launch state, token use) are
+left out: the name is user text, and the live values would change the prompt
+every turn. The last line tells the model where to read them.
 
 ## Edge cases
 
