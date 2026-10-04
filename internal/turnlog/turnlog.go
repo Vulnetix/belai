@@ -84,6 +84,34 @@ func (l *Log) Shell(content string, meta map[string]any) string {
 	return l.w.Entry(session.Entry{Type: ShellEntry, Role: ShellEntry, Content: content, Meta: meta})
 }
 
+// Entry types a web shell line writes while it runs. The final ShellEntry still
+// carries the whole result; these let the website show the output as it
+// arrives. A resumed TUI session ignores both.
+const (
+	// ShellRunEntry marks a line that has started: meta has shell_id, command,
+	// cwd, source and attach.
+	ShellRunEntry = "shell_run"
+	// ShellOutEntry is a slice of the running line's output, in order: meta has
+	// shell_id and n.
+	ShellOutEntry = "shell_out"
+)
+
+// ShellRun records that a web shell line began running.
+func (l *Log) ShellRun(meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	return l.w.Entry(session.Entry{Type: ShellRunEntry, Role: ShellRunEntry, Meta: meta})
+}
+
+// ShellOut records a slice of a running web shell line's output.
+func (l *Log) ShellOut(content string, meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	return l.w.Entry(session.Entry{Type: ShellOutEntry, Role: ShellOutEntry, Content: content, Meta: meta})
+}
+
 func copyMeta(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m)+2)
 	for k, v := range m {

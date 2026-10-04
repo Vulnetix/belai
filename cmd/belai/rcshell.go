@@ -23,8 +23,13 @@ import (
 	"github.com/vulnetix/belai/internal/tools"
 )
 
-// rcShellTimeout bounds one web shell line, as the TUI bounds its `!cmd`.
+// rcShellTimeout bounds the classifier's look at one web shell line's output.
 const rcShellTimeout = 30 * time.Second
+
+// rcShellRunTimeout bounds the command itself. The page shows the output as it
+// is produced, so a long build or a sign-in that waits for a browser is usable;
+// this is the Bash tool's own ceiling.
+const rcShellRunTimeout = tools.BashMaxTimeout
 
 // rcShellEffective is the settings and posture a shell line is judged by now:
 // they follow the session's web controls when it has them.
@@ -77,9 +82,18 @@ func rcShellRunner(workdir string, eff rcShellEffective, cfg run.Config, client 
 		if !ok {
 			return rc.ShellOutcome{Err: fmt.Errorf("Bash tool not registered"), Cwd: dir}
 		}
-		runCtx, cancel := context.WithTimeout(sandbox.WithPolicy(ctx, sandbox.FromSettings(settings.Sandbox, []string{root}, pol)), rcShellTimeout)
+		runCtx, cancel := context.WithTimeout(sandbox.WithPolicy(ctx, sandbox.FromSettings(settings.Sandbox, []string{root}, pol)), rcShellRunTimeout)
 		defer cancel()
-		res, err := bash.Execute(runCtx, map[string]any{"command": cmd})
+		if req.Started != nil {
+			req.Started()
+		}
+		args := map[string]any{"command": cmd, "timeout": int64(rcShellRunTimeout / time.Millisecond)}
+		var res tools.Result
+		if st, ok := bash.(tools.StreamingTool); ok && req.Stream != nil {
+			res, err = st.ExecuteStream(runCtx, args, func(p tools.Progress) { req.Stream(p.Text) })
+		} else {
+			res, err = bash.Execute(runCtx, args)
+		}
 		if err != nil {
 			return rc.ShellOutcome{Err: err, Cwd: dir}
 		}
@@ -177,6 +191,11 @@ var rcShellExitRE = regexp.MustCompile(`(?m)^exit status (\d+)$`)
 func rcShellExit(content string) int {
 	all := rcShellExitRE.FindAllStringSubmatch(content, -1)
 	if len(all) == 0 {
+		// The Bash tool reports a timeout in the output and returns no status.
+		// 124 is timeout(1)'s code for it.
+		if strings.Contains(content, "\n… command timed out after ") {
+			return 124
+		}
 		return 0
 	}
 	n, err := strconv.Atoi(all[len(all)-1][1])

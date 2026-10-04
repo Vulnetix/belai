@@ -503,6 +503,9 @@ type RemotePrompt struct {
 	SessionID string `json:"sessionId"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"createdAt"`
+	// Origin names a prompt the host raised itself (a failed shell line to
+	// analyse) rather than one that came from the web. It is never on the wire.
+	Origin string `json:"-"`
 }
 
 // RemoteAnswer is a web answer to a question the host asked, claimed from the
