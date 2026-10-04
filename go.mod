@@ -1,6 +1,6 @@
 module github.com/vulnetix/belai
 
-go 1.25.10
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -17,8 +17,8 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/net v0.55.0
-	golang.org/x/text v0.37.0
+	golang.org/x/net v0.59.0
+	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
 )
@@ -49,5 +49,5 @@ require (
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
