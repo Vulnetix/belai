@@ -90,6 +90,8 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-plan` | start in plan mode: read-only tools only, no mutation |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |
+| `-teleport` | continue a session of your account from another host, sandbox or the web: the transcript and any agent profile it needs are fetched and the session opens here under a new id; rejected with `-resume`, `-continue` or `-prompt` ([teleport](teleport.md)) |
+| `-teleport-ref` | with `-teleport`, check out this ref or commit instead of the one the session was at |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
 | `-trust-dir` | trust the current directory without prompting (grants the directory only, never its proposed `workspace_dirs`) |

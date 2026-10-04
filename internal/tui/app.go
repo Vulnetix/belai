@@ -102,6 +102,21 @@ type Options struct {
 	// its project. Both are set by the CLI --resume flag.
 	ResumeKey     session.Key
 	ResumeSession string
+
+	// Teleported is set by `belai -teleport` when ResumeSession was just
+	// teleported in: the TUI shows its notices once and records the host.teleport
+	// audit fact when the audit stream starts.
+	Teleported *Teleported
+}
+
+// Teleported describes a session teleport already wrote (internal/teleport).
+type Teleported struct {
+	// OriginID is the session it continues, SessionID the new one.
+	OriginID  string
+	SessionID string
+	// Notices are one-line facts for the user, such as an uncommitted origin or
+	// a profile that could not be installed.
+	Notices []string
 }
 
 // streamChunkMsg wraps one chunk from the streaming channel (legacy text path).
@@ -545,6 +560,7 @@ type App struct {
 	audit       *sessionsync.AuditSyncer   // the audit log's upload, started with syncer
 	syncedID    string                     // the session the syncer was last pointed at
 	syncNote    string                     // why sync is off, for /sync status
+	teleported  *Teleported                // set when this session was teleported in
 	remoteQueue []sessionsync.RemotePrompt // web prompts waiting for the host to be idle
 
 	// context metering
@@ -1121,6 +1137,13 @@ func New(opts Options) *App {
 
 	if opts.ResumeSession != "" {
 		a.initCmd = a.resumeSession(opts.ResumeKey, opts.ResumeSession)
+	}
+	if t := opts.Teleported; t != nil && opts.ResumeSession != "" {
+		a.teleported = t
+		a.addSystem("teleported from session " + shortID(t.OriginID) + ": the origin session carries on there")
+		for _, n := range t.Notices {
+			a.addSystem(n)
+		}
 	}
 	if len(scanCmds) > 0 {
 		a.initCmd = tea.Batch(a.initCmd, tea.Batch(scanCmds...))

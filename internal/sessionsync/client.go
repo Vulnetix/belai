@@ -426,7 +426,12 @@ type Dispatch struct {
 	// are checked by the host against config.ProjectPrefs' shape.
 	PrefsSet   map[string]any `json:"prefsSet,omitempty"`
 	PrefsUnset []string       `json:"prefsUnset,omitempty"`
-	CreatedAt  int64          `json:"createdAt"`
+	// A "teleport_backup" request names the profile the teleported session ran
+	// under in Profiles (the host also backs up the crews that list it and their
+	// members) and the teleport it serves in Teleport. Identifiers only.
+	Teleport  string   `json:"teleport,omitempty"`
+	Profiles  []string `json:"profiles,omitempty"`
+	CreatedAt int64    `json:"createdAt"`
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:
@@ -555,6 +560,33 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any, timeo
 }
 
 func (c *Client) doBody(ctx context.Context, method, path string, in, out any, timeout time.Duration, compress bool) error {
+	status, data, err := c.roundTrip(ctx, method, path, in, timeout, compress, defaultMaxBody)
+	if err != nil {
+		return err
+	}
+	switch {
+	case status == http.StatusNotFound:
+		return ErrNotFound
+	case status == http.StatusUnauthorized:
+		return ErrUnauthorized
+	case status == http.StatusConflict:
+		return ErrConflict
+	case status < 200 || status > 299:
+		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, status)
+	}
+	if out != nil && len(data) > 0 {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
+// defaultMaxBody caps a response the client reads.
+const defaultMaxBody = 4 << 20
+
+// roundTrip sends one authenticated request and returns the status and the body
+// (read up to limit bytes). It maps no status to an error: callers differ in how
+// they read one, and teleport reads the reason a 409 carries.
+func (c *Client) roundTrip(ctx context.Context, method, path string, in any, timeout time.Duration, compress bool, limit int64) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var body io.Reader
@@ -562,7 +594,7 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
-			return err
+			return 0, nil, err
 		}
 		if compress && len(b) >= gzipMinBytes {
 			var buf bytes.Buffer
@@ -575,11 +607,11 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.Base+path, body)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	auth, err := c.AuthHeader()
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Accept", "application/json")
@@ -591,24 +623,11 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return ErrNotFound
-	case resp.StatusCode == http.StatusUnauthorized:
-		return ErrUnauthorized
-	case resp.StatusCode == http.StatusConflict:
-		return ErrConflict
-	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, resp.StatusCode)
-	}
-	if out != nil && len(data) > 0 {
-		return json.Unmarshal(data, out)
-	}
-	return nil
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
+	return resp.StatusCode, data, nil
 }
 
 // PutHost registers or refreshes this machine.

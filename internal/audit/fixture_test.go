@@ -34,6 +34,8 @@ func serverFixture(t *testing.T) *Recorder {
 	emit(Fact{Kind: HostDispatch, ActorKind: ActorWeb, Data: map[string]string{"dispatch": "crew", "status": "started"}})
 	emit(Fact{Kind: HostSchedule, ActorKind: ActorHarness, Outcome: "started",
 		Data: map[string]string{"schedule": "55555555-5555-4555-8555-555555555555", "profile": "belai:security", "status": "started"}})
+	emit(Fact{Kind: HostTeleport, ActorKind: ActorHuman, SessionID: "33333333-3333-4333-8333-333333333333", Outcome: "completed",
+		Data: map[string]string{"from": session, "status": "completed"}})
 	emit(Fact{Kind: WorkerStarted, ActorKind: ActorAgent, Actor: "belai:security", Crew: "belai:security", Repo: "belai", Outcome: "started",
 		Data: map[string]string{"worker": "security-1a2b", "state": "started"}})
 	emit(Fact{Kind: CardClaimed, ActorKind: ActorAgent, Actor: "belai:security", Crew: "belai:security", ItemID: card, Repo: "belai",

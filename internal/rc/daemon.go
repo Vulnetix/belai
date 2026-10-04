@@ -432,7 +432,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs", "teleport_backup":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -506,6 +506,17 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 			return
 		}
 		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "teleport_backup":
+		// Backs up the session's profile, the crews that list it and their
+		// members, so the host that continues the session can install them.
+		report, why := d.backupForTeleport(ctx, r)
+		if why != "" {
+			d.logf("refused teleport_backup %s: %s", sanitizeName(strings.Join(r.Profiles, ",")), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("teleport_backup: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	case "item_backup", "item_install":
 		var report, why string

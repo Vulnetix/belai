@@ -47,6 +47,7 @@ var helpExamples = []struct{ cmd, note string }{
 	{`belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"`, "pick the model"},
 	{"belai -plan", "start in read-only plan mode"},
 	{"belai -resume 3f2a", "resume a session by id or prefix"},
+	{"belai -teleport 3f2a9c10-...", "continue a session from another host, sandbox or the web"},
 	{"belai -export 3f2a", "write a session as Markdown"},
 	{"belai agent list", "agent profiles"},
 	{`belai kanban add "fix the flaky test"`, "file a card"},
@@ -63,7 +64,7 @@ type flagGroup struct {
 }
 
 var flagGroups = []flagGroup{
-	{"Session", []string{"prompt", "mode", "plan", "resume", "continue", "export", "no-transcript", "usage-json", "detect-mode", "no-git-sync"}},
+	{"Session", []string{"prompt", "mode", "plan", "resume", "continue", "teleport", "teleport-ref", "export", "no-transcript", "usage-json", "detect-mode", "no-git-sync"}},
 	{"Model", []string{"provider", "model", "effort", "firewall", "caveman", "defer-tools", "tools", "agent", "agent-create"}},
 	{"Safety", []string{
 		"guardrails", "ask-permission", "trust-dir", "dangerously-yolo-everything",

@@ -114,7 +114,7 @@ func TestKindsAndScopes(t *testing.T) {
 	if Kind("shell.run").Valid() || Kind("").Valid() {
 		t.Fatal("an unknown kind must not be valid")
 	}
-	if len(Kinds()) != 18 {
+	if len(Kinds()) != 19 {
 		t.Fatalf("%d kinds; update docs/audit.md and the server's kind table together", len(Kinds()))
 	}
 }

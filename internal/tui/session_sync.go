@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
@@ -98,6 +99,11 @@ func (a *App) startSessionSync() {
 	// The audit log goes where session sync goes: its own hash-chained facts
 	// stream (docs/audit.md), uploaded with the same client and credential.
 	a.audit = sessionsync.StartAudit(context.Background(), client, hostID, host, dir)
+	if t := a.teleported; t != nil {
+		audit.Emit(audit.Fact{Kind: audit.HostTeleport, ActorKind: audit.ActorHuman, SessionID: t.SessionID, Outcome: "completed",
+			Data: map[string]string{"from": t.OriginID, "status": "completed"}})
+		a.teleported = nil
+	}
 	// The kanban board mirrors through the same client, so it goes only
 	// where session sync goes and only with the same credential.
 	a.startKanbanSync(client, hostID)

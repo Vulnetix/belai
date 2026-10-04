@@ -1134,6 +1134,50 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   permission ask or question, and in agent mode with no carrier it is refused
   rather than answering the picker. The project layer may turn `sync.enabled`,
   `sync.remote_prompts` and `sync.remote_answers` off, never on.
+- **Teleport moves a transcript and a profile, and trusts neither.**
+  `belai -teleport` (`internal/teleport`, docs/teleport.md) continues a session of
+  the account on this host. The rules:
+  - **What moves.** The session transcript and the agent profile the session ran
+    under, with the crews that list it and their members when this host lacks
+    them. No provider, credential, setting or schedule. A scheduled profile is
+    not installed. The session's mode and active profile become the new
+    session's own record; its model is a hint applied only where this host
+    already has that provider credentialed; its plan and goal names, guardrails
+    state and working directory never carry (`session.Meta` is rebuilt, and the
+    directory is where the command ran or a worktree teleport made).
+  - **The transcript is untrusted.** It came through the backend from another
+    host. `teleport.verify` requires every line from 0 to the frozen snapshot,
+    once each and in order, with shaped ids, types and roles and bounded sizes;
+    `teleport.build` runs every content and meta string through `sanitize.Text`,
+    drops the origin's `session_meta` lines and rebuilds one root. A gap or a
+    short page is a refusal, never a partial session. `session.Store.Import` is
+    O_EXCL, so a teleport never replaces a session, and a failed teleport removes
+    what it wrote.
+  - **A profile and a crew are installed like any library install.** The one
+    installer is `internal/libinstall`, shared with the rc daemon: strict parse,
+    validated whole, no replace without the request's say-so, members before the
+    crew. Do not add a second installer.
+  - **Git is facts only and hardened.** The backend holds the origin's remote,
+    branch, abbreviated HEAD and dirty flag, and nothing of the code. The remote
+    must match this checkout; a missing commit is fetched from origin and refused
+    when still missing (`-teleport-ref` is the user's explicit override, shape
+    checked). A mismatched checkout gets a worktree under `config.WorktreesDir`
+    and is never moved. Every git call is `forge.HardenedGit`, with ids passed
+    after `--end-of-options` or `--`. The worktree is trusted for the directory
+    only, after the repository was.
+  - **The backend gates and forgets.** Every read is answered only for a ready
+    teleport row naming this target host, the same principal, and a manifest
+    entry (`belai_teleport.go`). A sandbox is never a target. Each request makes
+    a new row and a new session. A `teleport_backup` request is made by the
+    backend alone, never by the browser, and the origin host uploads only while it
+    is delivered. The row keeps ids, status and times for audit and outlives the
+    sessions it names; its `coord` column (git facts, manifest, overrides) is
+    cleared when the teleport completes, fails or expires. A session's origin is
+    read from the row, never from a field the host sends.
+  - **Ack before opening.** The new session is kept only once the backend has
+    recorded the teleport, so a session that came from another never exists
+    without its audit record. The target's `host.teleport` audit event names the
+    new session and the origin id only.
 - **Remote control starts sessions only where the host said, with asks off.**
   `belai rc` (`internal/rc`) offers only trusted projects and `--dir`
   directories (a `--dir` is trusted like `-trust-dir`: the directory only).
