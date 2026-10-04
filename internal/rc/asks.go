@@ -39,14 +39,45 @@ type askBridge struct {
 
 	mu     sync.Mutex
 	always map[string]bool
+	// off is closed when ask is turned off, to release the ask open now.
+	off chan struct{}
 }
 
 func newAskBridge(log *turnlog.Log, m AnswerMirror, wait time.Duration) *askBridge {
 	if wait <= 0 {
 		wait = DefaultAskWait
 	}
-	return &askBridge{log: log, mirror: m, wait: wait, always: map[string]bool{}}
+	return &askBridge{log: log, mirror: m, wait: wait, always: map[string]bool{}, off: make(chan struct{})}
 }
+
+// releaseOpen settles the ask open now, if any, because ask was turned off.
+// Turning ask off also turns web answers off, so an ask raised while it was on
+// could never be answered and would hold the turn for the whole wait. Belai's
+// rule for ask off is that every ask resolves to allow (AskDisabled), so the
+// open permission is allowed and a questionnaire is dismissed, each recorded in
+// the transcript so the website closes it.
+func (b *askBridge) releaseOpen() {
+	b.mu.Lock()
+	close(b.off)
+	b.off = make(chan struct{})
+	b.mu.Unlock()
+}
+
+// released is the channel releaseOpen will close for an ask that starts waiting now.
+func (b *askBridge) released() <-chan struct{} {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.off
+}
+
+// awaited is how a wait for a web answer ended.
+type awaited int
+
+const (
+	awaitedAnswer   awaited = iota // an accepted web answer
+	awaitedEnded                   // the session stopped or the wait ran out; the ask is settled
+	awaitedReleased                // ask was turned off; the caller settles it
+)
 
 // record writes an ask entry and returns its id ("" when nothing was written).
 func (b *askBridge) record(kind, content string, meta map[string]any) string {
@@ -82,9 +113,10 @@ func (b *askBridge) settle(askID, kind, source, remoteID, content string, meta m
 }
 
 // await waits for the web answer to askID. accept validates and applies one
-// answer, returning the ask_answer entry id or a refusal reason. It returns
-// false when the wait ended without an accepted answer.
-func (b *askBridge) await(ctx context.Context, askID, kind string, accept func(sessionsync.RemoteAnswer) (string, string)) bool {
+// answer, returning the ask_answer entry id or a refusal reason. off is the
+// release channel read before the ask was recorded, so an ask turned off in
+// between is not missed. It says how the wait ended.
+func (b *askBridge) await(ctx context.Context, off <-chan struct{}, askID, kind string, accept func(sessionsync.RemoteAnswer) (string, string)) awaited {
 	timer := time.NewTimer(b.wait)
 	defer timer.Stop()
 	answers := b.mirror.Answers()
@@ -92,10 +124,12 @@ func (b *askBridge) await(ctx context.Context, askID, kind string, accept func(s
 		select {
 		case <-ctx.Done():
 			b.settle(askID, kind, webask.FromHost, "", "", map[string]any{"closed": true, "reason": "the session stopped"})
-			return false
+			return awaitedEnded
 		case <-timer.C:
 			b.settle(askID, kind, webask.FromHost, "", "", map[string]any{"closed": true, "reason": "no answer arrived in time"})
-			return false
+			return awaitedEnded
+		case <-off:
+			return awaitedReleased
 		case ans, ok := <-answers:
 			if !ok {
 				answers = nil
@@ -115,7 +149,7 @@ func (b *askBridge) await(ctx context.Context, askID, kind string, accept func(s
 				continue
 			}
 			b.mirror.AckAnswer(ans.ID, sessionsync.AckAccepted, "", entryID)
-			return true
+			return awaitedAnswer
 		}
 	}
 }
@@ -133,12 +167,13 @@ func (b *askBridge) permission(ctx context.Context, ask *agent.AskRequest) bool 
 		return true
 	}
 	content, meta := webask.PermissionAsk(ask)
+	off := b.released()
 	askID := b.record(webask.KindPermission, content, meta)
 	if askID == "" {
 		return false
 	}
 	allow := false
-	b.await(ctx, askID, webask.KindPermission, func(ans sessionsync.RemoteAnswer) (string, string) {
+	got := b.await(ctx, off, askID, webask.KindPermission, func(ans sessionsync.RemoteAnswer) (string, string) {
 		decision, err := webask.ParseDecision(ans.Payload)
 		if err != nil {
 			return "", err.Error()
@@ -152,6 +187,10 @@ func (b *askBridge) permission(ctx context.Context, ask *agent.AskRequest) bool 
 		text := "permission for " + ask.Name + ": " + strings.ReplaceAll(decision, "_", " ") + " (answered on the web)"
 		return b.settle(askID, webask.KindPermission, webask.FromWeb, ans.ID, text, map[string]any{"decision": decision}), ""
 	})
+	if got == awaitedReleased {
+		b.settle(askID, webask.KindPermission, webask.FromHost, "", "permission for "+ask.Name+": allow once (ask was turned off)", map[string]any{"decision": webask.AllowOnce, "ask_off": true})
+		return true
+	}
 	return allow
 }
 
@@ -169,12 +208,13 @@ func (b *askBridge) clarify(ctx context.Context, q *clarify.Questionnaire, modeC
 	if modeChoice && len(q.Groups) > 0 {
 		content = "Mode choice: " + q.Groups[0].Context
 	}
+	off := b.released()
 	askID := b.record(kind, content, map[string]any{"questionnaire": q})
 	if askID == "" {
 		return clarify.Answers{}
 	}
 	var out clarify.Answers
-	b.await(ctx, askID, kind, func(ans sessionsync.RemoteAnswer) (string, string) {
+	got := b.await(ctx, off, askID, kind, func(ans sessionsync.RemoteAnswer) (string, string) {
 		answers, declined, err := webask.ParseClarify(*q, ans.Payload)
 		if err != nil {
 			return "", err.Error()
@@ -188,5 +228,9 @@ func (b *askBridge) clarify(ctx context.Context, q *clarify.Questionnaire, modeC
 			"answers": webask.WireAnswers(answers), "declined": declined,
 		}), ""
 	})
+	if got == awaitedReleased {
+		b.settle(askID, kind, webask.FromHost, "", "clarification dismissed (ask was turned off)", map[string]any{"closed": true, "reason": "ask was turned off", "ask_off": true})
+		return clarify.Answers{}
+	}
 	return out
 }

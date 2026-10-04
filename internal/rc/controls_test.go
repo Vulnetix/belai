@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
@@ -285,4 +286,120 @@ func (a *askingRunner) RunInputObserved(ctx context.Context, _ []run.Turn, _ age
 	a.answered, a.allowed = true, got.Allow
 	a.mu.Unlock()
 	return run.Result{}, nil
+}
+
+// Turning ask off while a permission is open allows it and closes the ask in
+// the transcript, instead of holding the turn for the whole wait with nobody
+// able to answer (web answers go off with ask).
+func TestAskBridgeAllowsTheOpenPermissionWhenAskIsTurnedOff(t *testing.T) {
+	log := testLog(t)
+	m := &answerMirror{answers: make(chan sessionsync.RemoteAnswer, 4)}
+	b := newAskBridge(log, m, time.Hour)
+	ask := &agent.AskRequest{Name: "Bash", Subject: "curl", Args: map[string]any{"command": "curl https://example.com"}}
+
+	got := make(chan bool, 1)
+	go func() { got <- b.permission(context.Background(), ask) }()
+	id := openAsk(t, log, 1)
+
+	select {
+	case <-got:
+		t.Fatal("the ask resolved before ask was turned off")
+	case <-time.After(50 * time.Millisecond):
+	}
+	b.releaseOpen()
+
+	select {
+	case allow := <-got:
+		if !allow {
+			t.Fatal("ask off must allow the open permission, as AskDisabled does")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the open ask was not released")
+	}
+	es, _ := log.Writer().Entries()
+	closed := false
+	for _, e := range es {
+		if e.Type == "ask_answer" && e.Meta["ask_id"] == id && e.Meta["decision"] == "allow_once" && e.Meta["source"] == "host" {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatal("the ask was not closed in the transcript")
+	}
+
+	// A later ask waits again: the release is for the ask open then, not a standing allow.
+	later := make(chan bool, 1)
+	go func() { later <- b.permission(context.Background(), &agent.AskRequest{Name: "Write", Subject: "x.go"}) }()
+	openAsk(t, log, 2)
+	select {
+	case <-later:
+		t.Fatal("a later ask was resolved without an answer")
+	case <-time.After(100 * time.Millisecond):
+	}
+	b.releaseOpen()
+	<-later
+}
+
+func TestAskBridgeDismissesAnOpenQuestionnaireWhenAskIsTurnedOff(t *testing.T) {
+	log := testLog(t)
+	m := &answerMirror{answers: make(chan sessionsync.RemoteAnswer, 4)}
+	b := newAskBridge(log, m, time.Hour)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if got := b.clarify(context.Background(), &clarify.Questionnaire{}, false); len(got.Items) != 0 {
+			t.Errorf("a dismissed questionnaire answered %v", got)
+		}
+	}()
+	openAsk(t, log, 1)
+	b.releaseOpen()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the open questionnaire was not released")
+	}
+}
+
+// The screenshot case: a permission is open (ask was on), the person turns ask
+// off, and the turn goes on instead of waiting out the answer nobody can give.
+func TestRunSessionAskTurnedOffWhileAPermissionIsOpenLetsTheTurnGoOn(t *testing.T) {
+	r := &askingRunner{}
+	st := testState()
+	st.Ask = true
+	ctl, err := NewController(st, sessionctl.Env{}, func(sessionctl.State) (Runner, error) { return r, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := testLog(t)
+	m := &fakeMirror{prompts: make(chan sessionsync.RemotePrompt, 4)}
+	answers := &answerMirror{answers: make(chan sessionsync.RemoteAnswer, 4)}
+	cmds := make(chan sessionsync.RemoteCommand, 4)
+	acks := &cmdAcks{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = RunSession(ctx, SessionOptions{
+			Log: log, Mirror: m, Prompt: "go", Idle: time.Hour, AskWait: time.Hour,
+			Controls: ctl, Commands: cmds, AckCommand: acks.ack, Answers: answers,
+		})
+	}()
+	openAsk(t, log, 1)
+	r.mu.Lock()
+	stuck := !r.answered
+	r.mu.Unlock()
+	if !stuck {
+		t.Fatal("the ask resolved before anyone answered or turned ask off")
+	}
+
+	cmds <- sessionsync.RemoteCommand{ID: "c1", Line: "/ask off"}
+	eventuallyRC(t, "the turn to go on", func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.answered })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.allowed {
+		t.Fatal("ask off must allow the open permission")
+	}
+	if ctl.Asks() {
+		t.Fatal("ask is still on")
+	}
 }

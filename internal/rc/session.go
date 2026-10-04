@@ -222,6 +222,12 @@ func applyCommand(o SessionOptions, c sessionsync.RemoteCommand, idle bool, brid
 	if o.Changed != nil {
 		o.Changed(state, o.Controls.Asks() && bridge != nil)
 	}
+	// Ask turned off: an ask raised while it was on can no longer be answered
+	// (web answers went off with it), so it resolves now rather than holding
+	// the turn for the whole wait.
+	if bridge != nil && !o.Controls.Asks() {
+		bridge.releaseOpen()
+	}
 }
 
 // turnFacts are the footer facts for a turn: the session's own, overlaid by
@@ -269,7 +275,16 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 			// Only an explicit web allow lets the call run; with nobody to
 			// ask, it is denied.
 			if e.AskReply != nil {
-				allow := asks && bridge != nil && bridge.permission(ctx, e.Ask)
+				allow := false
+				switch {
+				case o.Controls != nil && !o.Controls.Asks():
+					// Ask was turned off while this turn ran, after the agent
+					// session was built with asks on. Ask off resolves every ask
+					// to allow (the posture's AskDisabled), so this one does too.
+					allow = true
+				case asks && bridge != nil:
+					allow = bridge.permission(ctx, e.Ask)
+				}
 				select {
 				case e.AskReply <- agent.PermissionAskReply{Allow: allow}:
 				case <-ctx.Done():
@@ -279,7 +294,7 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		case agent.EventClarifyAskKind:
 			if e.Reply != nil {
 				var answers clarify.Answers
-				if asks && bridge != nil {
+				if asks && bridge != nil && (o.Controls == nil || o.Controls.Asks()) {
 					answers = bridge.clarify(ctx, e.Clarify, e.ModeChoice)
 				}
 				select {
