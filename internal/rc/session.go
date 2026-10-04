@@ -101,6 +101,17 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		commands = nil
 	}
 	shells := &shellQueue{}
+	// A failed composer line raises a turn of its own, so the model reads the
+	// error and offers a fix. Buffered: a burst of failures never blocks the
+	// shell goroutine, and one past the buffer is dropped (its output is still
+	// attached to the next turn).
+	analysis := make(chan sessionsync.RemotePrompt, 8)
+	analyse := func(p sessionsync.RemotePrompt) {
+		select {
+		case analysis <- p:
+		default:
+		}
+	}
 	resetIdle := func() {
 		if !idle.Stop() {
 			select {
@@ -136,12 +147,14 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					continue
 				}
 				p = q
+			case q := <-analysis:
+				p = q
 			case c, ok := <-commands:
 				if !ok {
 					commands = nil
 					continue
 				}
-				applyCommand(ctx, o, c, true, bridge, shells)
+				applyCommand(ctx, o, c, true, bridge, shells, analyse)
 				// A shell line is activity: a console left open on a sandbox
 				// keeps its session alive while it is in use.
 				if c.Shell != "" {
@@ -164,6 +177,9 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		meta := map[string]any{"source": "web", "dispatch_id": o.Dispatch}
 		if p.ID != "" {
 			meta = map[string]any{"source": "web", "remote_prompt_id": p.ID}
+		}
+		if p.Origin != "" {
+			meta = map[string]any{"source": p.Origin}
 		}
 		id := o.Log.User(text, meta)
 		if p.ID != "" {
@@ -193,12 +209,14 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 				}
 				queue = append(queue, q)
 				o.Mirror.Ack(q.ID, sessionsync.AckQueued, "", "")
+			case q := <-analysis:
+				queue = append(queue, q)
 			case c, ok := <-commands:
 				if !ok {
 					commands = nil
 					continue
 				}
-				applyCommand(ctx, o, c, false, bridge, shells)
+				applyCommand(ctx, o, c, false, bridge, shells, analyse)
 			}
 		}
 		if o.Controls != nil {
@@ -228,7 +246,7 @@ const maxTurnPaths = 1000
 
 // applyCommand applies one web control and reports it: a harness line in the
 // transcript, the ack with the new state, and the re-registration.
-func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge, shells *shellQueue) {
+func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge, shells *shellQueue, analyse func(sessionsync.RemotePrompt)) {
 	if c.Shell != "" {
 		if o.Shell == nil {
 			if o.AckCommand != nil {
@@ -236,7 +254,7 @@ func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCom
 			}
 			return
 		}
-		startShell(ctx, o, c, shells, planMode(o))
+		startShell(ctx, o, c, shells, planMode(o), analyse)
 		return
 	}
 	if o.Controls == nil {

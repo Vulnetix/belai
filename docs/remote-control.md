@@ -207,8 +207,10 @@ Two surfaces send one, and they differ only in what happens to the output:
   can answer one on the host. With no matching rule it runs, as a typed `!cmd`
   does.
 - **Same sandbox.** The line runs through the Bash tool under the OS sandbox
-  profile from `sandbox` in settings (bubblewrap on Linux), with a 30 second
-  limit. Each line is a fresh process, so a `cd` is resolved by the host
+  profile from `sandbox` in settings (bubblewrap on Linux), with a 10 minute
+  limit (the Bash tool's ceiling; a line that hits it exits 124). The page shows
+  the output as it is produced, so a long build or a sign-in that waits for a
+  browser is usable. Each line is a fresh process, so a `cd` is resolved by the host
   (`cd`, `cd PATH` and nothing else) and the page keeps the directory.
 - **Confined to the session.** The directory must be the session's directory
   or below it, after symlinks. Anything else is refused.
@@ -218,12 +220,24 @@ Two surfaces send one, and they differ only in what happens to the output:
 - **Classified.** The output is sanitised and classified like the TUI's
   `!cmd`. Only an `attach` line with a safe verdict is attached, once, to the
   next turn. The verdict is in the entry either way.
-- **What the transcript shows.** One `shell` entry per line: the output as
-  content and `command`, `shell_id` (the request id, how the page finds its
-  result), `status`, `exit_code`, `duration_ms`, `cwd`, `source`
-  (`composer` or `console`), `attached` and `verdict` in `meta`. The request is
-  acked after the entry is written: accepted when the line ran, refused with a
-  reason when it did not.
+- **What the transcript shows.** Three entry types per line, all keyed by
+  `shell_id` (the request id, how the page finds them):
+  - `shell_run`, when the process starts: `command`, `cwd`, `source`
+    (`composer` or `console`) and `attach` in `meta`.
+  - `shell_out`, while it runs: a slice of the output as content and `n`, its
+    order. Slices are batched (about every 300 ms or 8 KiB) and stop after
+    256 KiB. A resumed TUI session ignores them.
+  - `shell`, when it ends: the output as content and `command`, `shell_id`,
+    `status`, `exit_code`, `duration_ms`, `cwd`, `source`, `attached`,
+    `analysing` and `verdict` in `meta`. The request is acked after this entry
+    is written: accepted when the line ran, refused with a reason when it did
+    not (a refused line writes no `shell_run`).
+- **A failed composer line is analysed.** When an `attach` line exits non-zero,
+  or could not finish, the host raises a turn of its own (a `user` entry with
+  `source: shell`): the exit status, the attached output when the classifier
+  cleared it (withheld, with the verdict, when it did not), and an instruction
+  to find the cause, fix it with the session's tools where permissions allow,
+  or say what only the user can do. The console's lines never raise a turn.
 
 ## Project settings from the web
 
