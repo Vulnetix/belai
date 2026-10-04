@@ -2,16 +2,14 @@ package rc
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentfiles"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/libinstall"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
@@ -41,7 +39,37 @@ import (
 // and never into a repository.
 
 // versionPattern is a library version: the UTC minute it was saved.
-var versionPattern = regexp.MustCompile(`^\d{12}$`)
+var versionPattern = libinstall.VersionPattern
+
+// dispatchSource reads library versions for one delivered request: the gate is
+// the dispatch id the server checks on every read.
+type dispatchSource struct {
+	d        *Daemon
+	dispatch string
+}
+
+func (s dispatchSource) Profile(ctx context.Context, library, version string) (string, []sessionsync.FileRef, error) {
+	return s.d.o.Client.LibraryFetchFiles(ctx, s.d.o.HostID, library, version, s.dispatch)
+}
+
+func (s dispatchSource) File(ctx context.Context, sha string) ([]byte, error) {
+	return s.d.o.Client.LibraryFetchFile(ctx, s.d.o.HostID, sha, s.dispatch)
+}
+
+func (s dispatchSource) Crew(ctx context.Context, library, version string) (sessionsync.CrewFetched, error) {
+	return s.d.o.Client.CrewFetch(ctx, s.d.o.HostID, library, version, s.dispatch)
+}
+
+// installer is the shared library installer (internal/libinstall) answering one
+// request: it tells the automatic sync what it wrote, and indexes the documents
+// a profile lists from a directory this daemon offers.
+func (d *Daemon) installer(dispatch string) libinstall.Installer {
+	return libinstall.Installer{
+		Src:   dispatchSource{d: d, dispatch: dispatch},
+		Saved: d.markSynced,
+		Index: d.indexProfile,
+	}
+}
 
 // indexTimeout bounds the indexing an install runs.
 const indexTimeout = 45 * time.Second
@@ -152,7 +180,7 @@ func skippedNote(r agentfiles.Report) string {
 // installProfile reads the library version the request names and writes it as
 // a profile on this host, or says why it did not.
 func (d *Daemon) installProfile(ctx context.Context, r sessionsync.Dispatch) (string, string) {
-	p, report, why := d.installOne(ctx, r.ID, r.Library, r.Version, r.Overwrite)
+	p, report, why := d.installer(r.ID).Profile(ctx, r.Library, r.Version, r.Overwrite)
 	if why != "" {
 		return "", why
 	}
@@ -161,94 +189,6 @@ func (d *Daemon) installProfile(ctx context.Context, r sessionsync.Dispatch) (st
 		verb = "installed (replacing any profile of that name and id)"
 	}
 	return fmt.Sprintf("%s %s from version %s%s", verb, sanitize.Line(p.Name, 64), r.Version, report), ""
-}
-
-// installOne installs one library profile version, answering the request
-// dispatchID. It writes the profile's files first, then the profile, then
-// indexes the documents the profile lists, so a profile is never saved without
-// the files it names. report is a clause for the acknowledgement.
-func (d *Daemon) installOne(ctx context.Context, dispatchID, library, version string, overwrite bool) (p agentprofile.AgentProfile, report, why string) {
-	if !agentprofile.ValidID(library) || !versionPattern.MatchString(version) {
-		return p, "", "that is not a library profile and version"
-	}
-	md, refs, err := d.o.Client.LibraryFetchFiles(ctx, d.o.HostID, library, version, dispatchID)
-	if err != nil {
-		return p, "", "could not read the profile from the library: " + reason(err.Error())
-	}
-	p, err = agentprofile.ParseMarkdown([]byte(md))
-	if err != nil {
-		return p, "", "the profile is not valid here: " + reason(err.Error())
-	}
-	if p.ID != library {
-		return p, "", "the profile is not the one the request named"
-	}
-	if why := installConflict(p, overwrite); why != "" {
-		return p, "", why
-	}
-	skipped := ""
-	// A replace keeps the documents and synced files listed on this host when
-	// the library copy lists none (a version backed up before the profile had
-	// any); a copy that lists them is taken as it is.
-	if overwrite {
-		if existing, err := agentprofile.Load(p.Name); err == nil {
-			if p.Knowledge == nil {
-				p.Knowledge = existing.Knowledge
-			}
-			if sync := existing.SyncPaths(); len(sync) > 0 && len(p.SyncPaths()) == 0 {
-				if carried, ok := carrySync(p, existing, sync); ok {
-					p = carried
-				} else {
-					// Keep the library copy as it is rather than refuse a profile
-					// that was valid: say what was left behind.
-					skipped = "; this host's shared files were not carried over, because the library copy has no worktree to copy them into"
-				}
-			}
-		}
-	}
-	nfiles, why := d.installFiles(ctx, dispatchID, p, refs)
-	if why != "" {
-		return p, "", why
-	}
-	if _, err := agentprofile.Save(p); err != nil {
-		return p, "", "could not save the profile: " + reason(err.Error())
-	}
-	if saved, err := agentprofile.Load(p.Name); err == nil {
-		if out, err := agentprofile.MarshalMarkdown(saved); err == nil {
-			d.markSynced("agent", p.ID, out)
-		}
-	}
-	if nfiles > 0 {
-		report = fmt.Sprintf(", with %d file%s", nfiles, plural(nfiles, "", "s"))
-	}
-	report += skipped
-	if len(p.KnowledgePaths()) > 0 {
-		report += "; " + d.indexProfile(ctx, p.Name)
-	}
-	return p, report, ""
-}
-
-// installFiles fetches the files a library version carries and writes them into
-// the profile's own directory. A version with no files leaves the directory as
-// it is. Nothing is written until every file has been read and checked.
-func (d *Daemon) installFiles(ctx context.Context, dispatchID string, p agentprofile.AgentProfile, refs []sessionsync.FileRef) (int, string) {
-	if len(refs) == 0 {
-		return 0, ""
-	}
-	if len(refs) > agentfiles.MaxFiles {
-		return 0, "the library version lists more files than this host takes"
-	}
-	files := make([]agentfiles.File, 0, len(refs))
-	for _, ref := range refs {
-		content, err := d.o.Client.LibraryFetchFile(ctx, d.o.HostID, ref.SHA256, dispatchID)
-		if err != nil {
-			return 0, "could not read one of the profile's files from the library: " + reason(err.Error())
-		}
-		files = append(files, agentfiles.File{Path: ref.Path, Content: content, SHA256: ref.SHA256})
-	}
-	if err := agentfiles.Install(p.ID, files); err != nil {
-		return 0, "the profile's files are not ones this host will write: " + reason(err.Error())
-	}
-	return len(files), ""
 }
 
 // indexProfile indexes the documents a freshly installed profile lists, through
@@ -280,33 +220,6 @@ func (d *Daemon) indexProfile(ctx context.Context, name string) string {
 	return "indexed its documents" + out
 }
 
-// installConflict refuses an install that would replace a profile it was not
-// told to. A profile of the same name is replaced only with overwrite set and
-// only when it has the same id; a profile that holds the same id under another
-// name is never replaced.
-func installConflict(p agentprofile.AgentProfile, overwrite bool) string {
-	if agentprofile.IsBuiltin(p.Name) {
-		return "refused: that name is reserved for a built-in profile"
-	}
-	if holder, ok := agentprofile.ByID(p.ID); ok && holder.Name != p.Name {
-		return "refused: this host already has a profile with that id under the name " + sanitize.Line(holder.Name, 64)
-	}
-	existing, err := agentprofile.Load(p.Name)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return ""
-		}
-		return "could not check the existing profile: " + reason(err.Error())
-	}
-	switch {
-	case !overwrite:
-		return "this host already has a profile named " + sanitize.Line(p.Name, 64) + "; install it again with replace turned on to overwrite it"
-	case existing.ID != p.ID:
-		return "refused: the profile of that name here is a different profile (its id differs), so it is not replaced"
-	}
-	return ""
-}
-
 // remotePromptsOn reports whether this host takes requests that write from the
 // website. It reads the user's own settings and fails closed.
 func remotePromptsOn() bool {
@@ -319,28 +232,4 @@ func remotePromptsOn() bool {
 func syncProfilesOn() bool {
 	s, err := config.LoadGlobal()
 	return err == nil && s.SyncProfilesEnabled()
-}
-
-// carrySync puts this host's workspace.sync entries on a library copy that lists
-// none, for a replace. Sync needs a worktree to copy into, so a copy that does
-// not isolate in one takes the host's worktree isolation when the host has it
-// (an agent that shares files is a worktree worker). The result must still be a
-// valid profile: when it is not, carrySync reports false and the copy is left as
-// it is, so a replace never turns a valid library profile into a refusal.
-func carrySync(p, existing agentprofile.AgentProfile, sync []agentprofile.SyncSpec) (agentprofile.AgentProfile, bool) {
-	ws := agentprofile.WorkspaceSpec{}
-	if p.Workspace != nil {
-		ws = *p.Workspace
-	}
-	ws.Sync = sync
-	if (ws.Isolation == "" || ws.Isolation == agentprofile.IsolationNone) &&
-		existing.Workspace != nil && existing.Workspace.Isolation == agentprofile.IsolationWorktree {
-		ws.Isolation = agentprofile.IsolationWorktree
-	}
-	candidate := p
-	candidate.Workspace = &ws
-	if candidate.Validate() != nil {
-		return p, false
-	}
-	return candidate, true
 }

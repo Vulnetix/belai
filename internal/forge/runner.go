@@ -70,6 +70,52 @@ func execRun(ctx context.Context, dir string, env []string, argv []string) ([]by
 	return stdout.Bytes(), nil
 }
 
+// HardenedGit is every git call made for work nobody is watching (a fleet
+// worker, teleport): repository hooks and fsmonitor off (a repository's own
+// config must not run code), no file:// transport, no credential prompt, the
+// scrubbed environment, its own process group, no stdin. With gitDir set it
+// also pins --git-dir and --work-tree, so a worktree's .git file, which a
+// model can write, never decides which repository git opens.
+func HardenedGit(gitDir, workTree string, extraEnv ...string) Runner {
+	return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+		if len(argv) == 0 {
+			return nil, errors.New("forge: empty command")
+		}
+		if argv[0] == "git" {
+			pre := []string{"git",
+				"-c", "core.hooksPath=" + os.DevNull,
+				"-c", "core.fsmonitor=false",
+				"-c", "protocol.file.allow=never",
+				"-c", "credential.interactive=never",
+			}
+			if gitDir != "" {
+				pre = append(pre, "--git-dir="+gitDir, "--work-tree="+workTree)
+			}
+			argv = append(pre, argv[1:]...)
+		}
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(append(proc.ScrubbedEnv(), "GIT_TERMINAL_PROMPT=0"), extraEnv...)
+		proc.SetProcessGroup(cmd)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Run(); err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
+				msg = msg[i+1:]
+			}
+			if ctx.Err() != nil {
+				msg = "timed out"
+			}
+			if msg == "" {
+				msg = err.Error()
+			}
+			return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], Clean(msg))
+		}
+		return stdout.Bytes(), nil
+	}
+}
+
 // run calls r under a timeout and returns trimmed stdout.
 func run(ctx context.Context, r Runner, timeout time.Duration, dir string, argv ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
