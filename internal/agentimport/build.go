@@ -97,7 +97,7 @@ var toolTable = map[string]string{
 	"read": "Read", "readfile": "Read", "view": "Read", "cat": "Read", "open": "Read",
 	"grep": "Grep", "search": "Grep", "searchfiles": "Grep", "ripgrep": "Grep", "rg": "Grep", "findinfiles": "Grep",
 	"glob": "Glob", "find": "Glob", "list": "Glob", "listfiles": "Glob", "listdirectory": "Glob",
-	"ls": "LS",
+	"ls":    "LS",
 	"write": "Write", "writefile": "Write", "create": "Write", "createfile": "Write",
 	"edit": "Edit", "strreplace": "Edit", "strreplaceeditor": "Edit", "patch": "Edit", "applypatch": "Edit", "replace": "Edit", "multiedit": "Edit",
 	"bash": "Bash", "shell": "Bash", "exec": "Bash", "run": "Bash", "runcommand": "Bash", "terminal": "Bash", "execute": "Bash", "command": "Bash", "sh": "Bash",

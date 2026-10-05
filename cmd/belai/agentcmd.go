@@ -40,6 +40,10 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
   show NAME                      one profile as JSON
   validate FILE                  check a .json or .md profile
   import [-force] FILE           validate a .json or .md profile and save it
+  import -from FORMAT [-name N] [-yes] [-force] PATH
+                                 convert another harness's agent definition
+                                 (claws, nemoclaw, hermes, mini-swe, auto);
+                                 a preview unless -yes
   draft [-json] [-o FILE] PREMISE  draft a profile from a premise as markdown
                                  (every offer taken; -json: the offers and why)
   crews                          crews and their members
@@ -134,8 +138,14 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 
 	case "validate", "import":
 		force := fs.Bool("force", false, "replace an existing profile of the same name")
+		from := fs.String("from", "", "the format of a definition written for another harness: claws, nemoclaw, hermes, mini-swe or auto")
+		importName := fs.String("name", "", "with -from: the profile name to use instead of the one in the source")
+		yes := fs.Bool("yes", false, "with -from: save the profile and install its skills (without it the import is a preview)")
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-			return 2, fmt.Errorf("usage: belai agent %s FILE", cmd)
+			return 2, fmt.Errorf("usage: belai agent %s [-from FORMAT] FILE", cmd)
+		}
+		if *from != "" {
+			return agentImportForeign(cmd == "validate", *from, fs.Arg(0), *importName, *yes, *force, stdout, stderr)
 		}
 		data, err := os.ReadFile(fs.Arg(0))
 		if err != nil {

@@ -30,6 +30,8 @@ behaviour, and implementation details.
   definitions, schema, lifecycle, autonomy, the profile builder, and
   [facts](agent-profiles.md#facts) that point the cloud tools at an account, a
   cluster or a Terraform directory.
+- [Agent import](agent-import.md): convert an agent definition written for
+  another harness into a profile, with a report of what was mapped and kept.
 - [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.
@@ -89,6 +91,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Hook events with allow and deny decisions | [Hooks](hooks.md) | alpha-20260926 |
 | Desktop notifications | [Notifications](notifications.md) | alpha-20260926 |
 | Skill loading and self-authored skills | [Skills](skills.md) | alpha-20260926 |
+| Importing agent definitions | [Agent import](agent-import.md) | alpha-20261006 |
 | Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
