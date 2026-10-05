@@ -55,6 +55,11 @@ detect-mode $TEXT:
 voiceprep:
     go run ./tools/voiceprep
 
+# Check that every documentation link in a builtin skill still answers. Needs the
+# network, so it is not part of check.
+skill-links:
+    go run ./tools/skilllinks
+
 # Build ./belai for this host.
 build:
     go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}

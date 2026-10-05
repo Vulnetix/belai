@@ -566,7 +566,30 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   hidden and answer like missing ones. `SkillDraft` is an `AlwaysAsker`: it
   asks on every call whatever the rules or the ask gate say, is withheld when
   nobody can be asked, and writes exactly the previewed file. The project
-  layer may turn `skills.self_authoring` off, never on.
+  layer may turn `skills.self_authoring` off, never on. Belai's own skills
+  (`internal/skills/builtin`, one per builtin worker, the `belai-` prefix reserved
+  so the library, `SkillDraft` and a profile cannot create one) are compiled into
+  the binary and are reachable only through a profile's `skills` list
+  (`Registry.WithSkills`): an ordinary session neither lists nor loads one, and
+  the `Skill` tool refuses any name outside the list. Their text is `KindSkill`
+  and is classified like any skill; do not add an exemption because Belai wrote it.
+  A skill's `metadata` is a string map; only the `belai.*` keys are Belai's and
+  they are validated (`https` links, no fragment, no credentials). The profile's
+  own `metadata` is for people and tools: it is never rendered into a prompt, a
+  directive or the system block, and it is outside the profile hash.
+- **An import is a user's file, converted whole and never widened.**
+  `internal/agentimport` reads a Claws package, an NVIDIA NeMo Fabric agent
+  configuration, a Hermes profile or a mini-SWE-agent YAML through bounded readers
+  (no symlink, no file over 1 MiB, no credential file by name, no archive path
+  outside the archive, nothing written to disk) and produces a single-mode,
+  supervised profile that passes `agentprofile.Validate`. Tools come only from the
+  fixed table in `build.go`, and a source that names none gets the read-only set,
+  never every tool. An endpoint, a credential, an environment variable name, an MCP
+  server entry, a schedule and any worker, safety or host-local block are never
+  carried over; what has no field is metadata or only named in the report. It
+  writes nothing: `belai agent import -from` previews unless `-yes`, and installs
+  skills only through the library validator. Foreign format names stay in this
+  package and its docs.
 - **Plugins are installed by the user, validated whole, and namespaced.**
   `internal/plugins` installs only after the user confirms a full listing
   (every hook's event and command included), or `-yes` on the CLI; the TUI
