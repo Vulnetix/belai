@@ -27,6 +27,10 @@ func flushKanban(settings config.Settings, workdir string) {
 // slow or unreachable website cannot hold the turn up.
 const kanbanFirstSync = 10 * time.Second
 
+// kanbanLoopExit bounds how long stop waits for the sync loop to end. A cycle
+// is cut short by its own context, so this is a ceiling for a stuck request.
+const kanbanLoopExit = 5 * time.Second
+
 // startKanbanSync keeps a long-lived headless session's board in step with the
 // website's. A web session (belai rc-session) runs for hours, and a card filed on
 // the website after it started is on the website board but not on the host's
@@ -46,6 +50,11 @@ func startKanbanSync(ctx context.Context, board *kanban.Store, remote kanban.Rem
 	s.Start(loop)
 	return func() {
 		cancel()
+		// Let a cycle that is mid-write finish before the last push, so the two
+		// never write the board together. The loop reports Running false when it ends.
+		for deadline := time.Now().Add(kanbanLoopExit); s.Status().Running && time.Now().Before(deadline); {
+			time.Sleep(5 * time.Millisecond)
+		}
 		// ctx may already be done (a stop from the website cancels it), so the
 		// final push has a context of its own.
 		last, done := context.WithTimeout(context.Background(), 5*time.Second)
