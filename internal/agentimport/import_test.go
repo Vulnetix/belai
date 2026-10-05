@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,7 +414,7 @@ func TestArchiveEscapesAndLinksAreRefusedOrSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(noteTexts(r, Dropped), "1 link") {
+	if !strings.Contains(noteTexts(r, Dropped), "1 file(s) were not read") {
 		t.Errorf("the link was not reported: %s", noteTexts(r, Dropped))
 	}
 }
@@ -464,5 +465,143 @@ func TestParseFormat(t *testing.T) {
 	}
 	if _, err := ParseFormat("other"); err == nil {
 		t.Error("an unknown format parsed")
+	}
+}
+
+func TestAnUnmappedDenyHoldsBackTheToolsThatChangeThings(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"CLAW.md": "---\nagent:\n  id: x\n  tools:\n    allow: [read, exec, write]\n    deny: ['group:runtime']\n---\nHi\n"})
+	r, err := Import(dir, Claws, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.Profile.Tools, ",") != "Read" || len(r.MutatingTools) != 0 {
+		t.Errorf("tools = %v mutating = %v", r.Profile.Tools, r.MutatingTools)
+	}
+	if !strings.Contains(noteTexts(r, Warning), "group:runtime") || !strings.Contains(noteTexts(r, Warning), "left out for that reason") {
+		t.Errorf("warnings = %s", noteTexts(r, Warning))
+	}
+}
+
+func TestNotesCarryNoTerminalEscapes(t *testing.T) {
+	dir := t.TempDir()
+	// A YAML key whose escape sequences decode to ESC and BEL.
+	data := "---\nagent: {id: x}\n\"" + `\u001b]0;pwn\u0007key` + "\": 1\n---\nHi\n"
+	write(t, dir, map[string]string{"CLAW.md": data})
+	r, err := Import(dir, Claws, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range r.Notes {
+		if strings.ContainsAny(n.Field+n.Text, "\x1b\x07") {
+			t.Errorf("a note holds a control character: %q %q", n.Field, n.Text)
+		}
+	}
+}
+
+func TestMetadataStaysInsideTheLimitsWhateverTheSource(t *testing.T) {
+	var roles strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&roles, "  role%02d-%s: {provider: acme, model: %s}\n", i, strings.Repeat("n", 50), strings.Repeat("m", 120))
+	}
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"a.yaml": "schema_version: '1'\nmetadata: {name: big}\nruntime: {}\ninstructions: {system: {content: hi}}\nmodels:\n" + roles.String()})
+	r, err := Import(filepath.Join(dir, "a.yaml"), Nemoclaw, Options{})
+	if err != nil {
+		t.Fatalf("a crafted source refused the whole import: %v", err)
+	}
+	total := 0
+	for k, v := range r.Profile.Metadata {
+		total += len(k) + len(v)
+		if len(k) > 64 {
+			t.Errorf("key %q is over 64 bytes", k)
+		}
+	}
+	if total > 16384 || len(r.Profile.Metadata) > 32 {
+		t.Errorf("metadata = %d entries, %d bytes", len(r.Profile.Metadata), total)
+	}
+	assertPlain(t, r)
+}
+
+func TestFabricNeverPicksAnEmbeddingRoleAsTheChatModel(t *testing.T) {
+	dir := t.TempDir()
+	doc := "schema_version: '1'\nmetadata: {name: x}\nruntime: {}\ninstructions: {system: {content: hi}}\nmodels:\n  embedding: {provider: openai, model: text-embedding-3-small}\n  reasoning: {provider: openai, model: gpt-5}\n"
+	write(t, dir, map[string]string{"a.yaml": doc})
+	r, err := Import(filepath.Join(dir, "a.yaml"), Nemoclaw, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Profile.Model != "gpt-5" {
+		t.Errorf("model = %q", r.Profile.Model)
+	}
+	write(t, dir, map[string]string{"b.yaml": strings.Replace(doc, "reasoning", "extra", 1)})
+	r, err = Import(filepath.Join(dir, "b.yaml"), Nemoclaw, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Profile.Model != "" || r.Profile.Metadata["fabric.models.embedding"] == "" {
+		t.Errorf("model %q metadata %v", r.Profile.Model, r.Profile.Metadata)
+	}
+}
+
+func TestKeepDoesNotClaimWhatItDidNotStore(t *testing.T) {
+	b := newBuilder(Claws, "x", Options{})
+	b.keep("f", "k1", "\x1b")
+	for _, n := range b.notes {
+		if n.Kind == Kept {
+			t.Errorf("a note says a value was kept: %+v", n)
+		}
+	}
+}
+
+func TestAnOversizedRequiredFileIsNamed(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"SOUL.md": strings.Repeat("a", maxFileBytes+1), "profile.yaml": "description: d\n"})
+	if _, err := Import(dir, Hermes, Options{}); err == nil || !strings.Contains(err.Error(), "SOUL.md is over") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestLargeSkippedFilesDoNotBreakAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	arch := filepath.Join(dir, "p.tgz")
+	os.WriteFile(arch, tarGz(t, []tar.Header{{Name: "state.db"}, {Name: "SOUL.md"}}, []string{strings.Repeat("x", 10<<20), "Be careful."}), 0o600)
+	r, err := Import(arch, Hermes, Options{})
+	if err != nil {
+		t.Fatalf("a large database file broke the import: %v", err)
+	}
+	if !strings.Contains(noteTexts(r, Dropped), "not read") {
+		t.Errorf("dropped = %s", noteTexts(r, Dropped))
+	}
+}
+
+func TestDuplicateSkillsAreImportedOnce(t *testing.T) {
+	dir := t.TempDir()
+	doc := "---\nname: dup\ndescription: Does a thing carefully\n---\n\nSteps.\n"
+	write(t, dir, map[string]string{"CLAW.md": "---\nagent: {id: x}\n---\nHi\n", "skills/a/SKILL.md": doc, "skills/b/SKILL.md": doc})
+	r, err := Import(dir, Claws, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Skills) != 1 || !strings.Contains(noteTexts(r, Dropped), "already found") {
+		t.Errorf("skills %+v dropped %s", r.Skills, noteTexts(r, Dropped))
+	}
+}
+
+func TestSourceNames(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"SOUL.md": "Hi.\n"})
+	r, err := Import(dir, Hermes, Options{Name: "My Agent!"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Profile.Name != "my-agent" || !strings.Contains(noteTexts(r, Warning), "was changed") {
+		t.Errorf("name %q warnings %s", r.Profile.Name, noteTexts(r, Warning))
+	}
+	upper := filepath.Join(dir, "X.TAR.GZ")
+	os.WriteFile(upper, tarGz(t, []tar.Header{{Name: "SOUL.md"}}, []string{"Hi."}), 0o600)
+	r, err = Import(upper, Hermes, Options{})
+	if err != nil || r.Profile.Name != "x" {
+		t.Errorf("name %q err %v", r.Profile.Name, err)
 	}
 }

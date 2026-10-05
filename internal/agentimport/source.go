@@ -17,10 +17,14 @@ import (
 
 // Reader limits. A definition is a few text files; anything near these is not one.
 const (
-	maxFiles      = 300
+	maxFiles      = 1000
 	maxFileBytes  = 1 << 20
 	maxTotalBytes = 8 << 20
 	maxDepth      = 6
+	// maxExpanded bounds what an archive may decompress to, kept or not, so a
+	// compression bomb is cut off while an export carrying a large database file
+	// that is skipped still reads.
+	maxExpanded = 256 << 20
 )
 
 // tree is the files of an import, keyed by slash-separated path relative to its
@@ -31,9 +35,22 @@ type tree struct {
 	// base is the name of the file, directory or archive the tree came from,
 	// without its extension.
 	base string
-	// skipped counts entries left out on purpose: links, special files and
-	// credential files.
+	// skipped counts entries left out on purpose: links, special files,
+	// credential files and files over the size limit.
 	skipped int
+	// oversized names the files left out only for their size, so a missing
+	// required file can say why.
+	oversized []string
+}
+
+// missing is the error for a file an adapter needs and the tree does not hold.
+func (t *tree) missing(name string) error {
+	for _, o := range t.oversized {
+		if o == name || strings.HasSuffix(o, "/"+name) {
+			return fmt.Errorf("%s is over %d bytes and was not read", name, maxFileBytes)
+		}
+	}
+	return fmt.Errorf("no %s in the source", name)
 }
 
 func (t *tree) has(name string) bool { _, ok := t.files[name]; return ok }
@@ -58,13 +75,13 @@ func (t *tree) names() []string {
 func secretName(name string) bool {
 	n := strings.ToLower(path.Base(name))
 	switch n {
-	case "auth.json", "credentials", "credentials.json", "secrets.json", "secrets.yaml", "secrets.yml",
-		".netrc", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "id_ecdsa", "token", "tokens.json":
+	case "auth.json", "credentials", "credentials.json", ".credentials.json", "secrets.json", "secrets.yaml", "secrets.yml",
+		".netrc", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "id_ecdsa", "token", "token.json", "tokens.json":
 		return true
 	}
 	return n == ".env" || strings.HasPrefix(n, ".env.") ||
 		strings.HasSuffix(n, ".pem") || strings.HasSuffix(n, ".key") || strings.HasSuffix(n, ".p12") ||
-		strings.HasSuffix(n, ".pfx") || strings.HasSuffix(n, ".token")
+		strings.HasSuffix(n, ".pfx") || strings.HasSuffix(n, ".token") || strings.HasSuffix(n, ".secret") || strings.HasSuffix(n, ".secrets")
 }
 
 // load reads path into a tree. A symbolic link is refused, so the file read is
@@ -80,12 +97,19 @@ func load(p string) (*tree, error) {
 	t := &tree{files: map[string][]byte{}}
 	switch {
 	case fi.IsDir():
-		t.base = filepath.Base(filepath.Clean(p))
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, err
+		}
+		t.base = filepath.Base(abs)
 		return t, t.readDir(p)
 	case fi.Mode().IsRegular():
 		lower := strings.ToLower(fi.Name())
 		if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
-			t.base = strings.TrimSuffix(strings.TrimSuffix(fi.Name(), filepath.Ext(fi.Name())), ".tar")
+			t.base = fi.Name()[:len(fi.Name())-len(filepath.Ext(fi.Name()))]
+			if strings.HasSuffix(strings.ToLower(t.base), ".tar") {
+				t.base = t.base[:len(t.base)-len(".tar")]
+			}
 			f, err := os.Open(p)
 			if err != nil {
 				return nil, err
@@ -115,7 +139,9 @@ func (t *tree) add(rel string, data []byte, total *int) error {
 		return fmt.Errorf("more than %d files", maxFiles)
 	}
 	if len(data) > maxFileBytes {
-		return fmt.Errorf("%s is over %d bytes", rel, maxFileBytes)
+		t.skipped++
+		t.oversized = append(t.oversized, rel)
+		return nil
 	}
 	*total += len(data)
 	if *total > maxTotalBytes {
@@ -129,7 +155,14 @@ func (t *tree) readDir(root string) error {
 	total := 0
 	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			// A directory or file that cannot be read is left out, not a reason
+			// to refuse the rest.
+			if d != nil && d.IsDir() {
+				t.skipped++
+				return filepath.SkipDir
+			}
+			t.skipped++
+			return nil
 		}
 		rel, err := filepath.Rel(root, p)
 		if err != nil {
@@ -155,11 +188,13 @@ func (t *tree) readDir(root string) error {
 		}
 		if info.Size() > maxFileBytes {
 			t.skipped++
+			t.oversized = append(t.oversized, rel)
 			return nil
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {
-			return err
+			t.skipped++
+			return nil
 		}
 		return t.add(rel, data, &total)
 	})
@@ -174,7 +209,7 @@ func (t *tree) readArchive(r io.Reader) error {
 		return fmt.Errorf("not a gzip archive: %w", err)
 	}
 	defer zr.Close()
-	tr := tar.NewReader(io.LimitReader(zr, maxTotalBytes+(1<<20)))
+	tr := tar.NewReader(&cappedReader{r: zr, left: maxExpanded})
 	total := 0
 	for {
 		h, err := tr.Next()
@@ -189,7 +224,7 @@ func (t *tree) readArchive(r io.Reader) error {
 			continue
 		}
 		if path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsRune(name, 0) {
-			return fmt.Errorf("the archive holds a path outside itself: %q", clipText(h.Name, 60))
+			return fmt.Errorf("the archive holds a path outside itself: %q", line(h.Name, 60))
 		}
 		switch h.Typeflag {
 		case tar.TypeDir:
@@ -205,6 +240,7 @@ func (t *tree) readArchive(r io.Reader) error {
 		}
 		if h.Size > maxFileBytes {
 			t.skipped++
+			t.oversized = append(t.oversized, name)
 			continue
 		}
 		var buf bytes.Buffer
@@ -245,6 +281,25 @@ func (t *tree) stripSingleRoot() {
 	if t.base == "" {
 		t.base = root
 	}
+}
+
+// cappedReader fails a read once more than left bytes have been returned, so a
+// decompression bomb ends in an error, never in an exhausted machine.
+type cappedReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, fmt.Errorf("the archive expands to more than %d MiB", maxExpanded>>20)
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 func clipText(s string, n int) string {

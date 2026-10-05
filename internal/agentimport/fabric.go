@@ -33,16 +33,19 @@ func importFabric(t *tree, o Options) (Result, error) {
 	}
 
 	if models := d.sub("models"); len(models) > 0 {
-		roles := models.keys()
-		pick := roles[0]
-		for _, pref := range []string{"default", "main", "primary", "agent"} {
-			if _, ok := models[pref]; ok {
-				pick = pref
-				break
+		var roles []string
+		for _, r := range models.keys() {
+			if models.sub(r) != nil {
+				roles = append(roles, r)
 			}
 		}
+		pick := chatRole(roles)
 		m := models.sub(pick)
-		b.setModel("models."+pick, m.str("provider"), m.str("model"))
+		if pick != "" {
+			b.setModel("models."+pick, m.str("provider"), m.str("model"))
+		} else if len(roles) > 0 {
+			b.note(Warning, "models", "no model role looks like the one that chats (default, main, chat...), so the profile uses the session's model")
+		}
 		for _, r := range roles {
 			if r == pick {
 				continue
@@ -99,6 +102,7 @@ func importFabric(t *tree, o Options) (Result, error) {
 			}
 		}
 	}
+	b.noteSkipped(t)
 	known := map[string]bool{"schema_version": true, "metadata": true, "models": true, "instructions": true, "tools": true, "runtime": true, "mcp": true, "skills": true}
 	var rest []string
 	for _, k := range d.keys() {
@@ -143,4 +147,32 @@ func pickYAML(t *tree, match func(doc) bool) string {
 		return found[i] < found[j]
 	})
 	return found[0]
+}
+
+// chatRole picks the model role that does the agent's talking: a conventional
+// name first, then the only role there is. A role that looks like an embedding,
+// a reranker or a guard model is never chosen, and with several unnamed roles
+// none is, so the profile inherits the session's model rather than a guess.
+func chatRole(roles []string) string {
+	for _, pref := range []string{"default", "main", "primary", "agent", "chat", "llm", "orchestrator", "reasoning", "assistant"} {
+		for _, r := range roles {
+			if strings.EqualFold(r, pref) {
+				return r
+			}
+		}
+	}
+	if len(roles) == 1 && !auxiliaryRole(roles[0]) {
+		return roles[0]
+	}
+	return ""
+}
+
+func auxiliaryRole(r string) bool {
+	r = strings.ToLower(r)
+	for _, w := range []string{"embed", "rerank", "guard", "judge", "classif", "vision", "speech", "audio", "image"} {
+		if strings.Contains(r, w) {
+			return true
+		}
+	}
+	return false
 }

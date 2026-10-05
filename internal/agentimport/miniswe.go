@@ -63,6 +63,7 @@ func importMiniSWE(t *tree, o Options) (Result, error) {
 	// The agent's only tool is a shell.
 	b.addTools("tools", []string{"read", "grep", "glob", "bash"}, nil)
 	b.note(Warning, "tools", "the source agent works through a shell, so the profile gets Bash; each command still asks under Belai's permission rules")
+	b.noteSkipped(t)
 	known := map[string]bool{"agent": true, "model": true, "environment": true}
 	var rest []string
 	for _, k := range d.keys() {

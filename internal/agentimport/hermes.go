@@ -13,7 +13,7 @@ import (
 func importHermes(t *tree, o Options) (Result, error) {
 	soul, ok := t.text("SOUL.md")
 	if !ok {
-		return Result{}, fmt.Errorf("no SOUL.md in the source")
+		return Result{}, t.missing("SOUL.md")
 	}
 	b := newBuilder(Hermes, t.base, o)
 	profile := doc(nil)
@@ -68,9 +68,7 @@ func importHermes(t *tree, o Options) (Result, error) {
 	if mem > 0 {
 		b.note(Dropped, "memories/", "%d memory file(s) are the user's own and are not imported", mem)
 	}
-	if t.skipped > 0 {
-		b.note(Dropped, "files", "%d link, special or credential file(s) were not read", t.skipped)
-	}
+	b.noteSkipped(t)
 	b.collectSkills(t, "skills")
 	return b.finish()
 }

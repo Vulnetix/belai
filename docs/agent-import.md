@@ -30,12 +30,13 @@ belai agent validate -from mini-swe ./default.yaml       # convert, print, save 
 Without `-yes` an import is a preview: it prints what became of every part of the
 source and writes nothing. With `-yes` it installs the skills that came with the
 definition (under the [library's rules](library-items.md#skills)) and saves the
-profile. A profile of the same name needs `-force`, or `-name` to save it under
-another one. `-from auto` (or `-from` with no format) picks the format from the files.
+profile. A profile of the same name needs `-force` (which is for the profile only), or `-name` to
+save it under another one. `-from auto` picks the format from the files.
 
 The report has four parts: what was **mapped** to a profile field, what is **kept in
 the profile's metadata**, what was **not imported**, and anything to **read before
-saving**. The tools line marks any tool that can change files or run commands.
+saving**. The tools line marks any tool that can change files or run commands, and any that sends
+text off this machine (`WebFetch`, `WebSearch`).
 
 ## What is mapped
 
@@ -68,10 +69,22 @@ A definition that names no tool Belai knows, or none at all, gets `Read`, `Grep`
 
 ## Edge cases
 
-- A symbolic link given as the source is refused. A link inside a directory or an
-  archive is skipped and counted in the report.
-- Files over 1 MiB, more than 300 files, more than 8 MiB in all and archive entries
-  that leave the archive (`..` or an absolute path) are refused.
+- A symbolic link given as the source is refused. A link, a special file, a credential
+  file, a file over 1 MiB or a file that cannot be read inside a directory or an archive
+  is skipped and counted in the report; a single file over 1 MiB given by name is
+  refused, and so is a required file (`SOUL.md`, `CLAW.md`) that was skipped for size.
+- More than 1000 files kept, more than 8 MiB kept, an archive that expands past 256 MiB
+  and archive entries that leave the archive (`..` or an absolute path) are refused.
+- Skills that come with a definition are installed only when the host has no skill of
+  that name, whatever `-force` says; one the host already has is left alone and is not
+  named in the profile. The profile is saved first, so a refused name leaves nothing
+  installed.
+- A tool the source denies that Belai has no name for makes the import hold back the
+  tools that change things (`Write`, `Edit`, `Bash`, `Task`), since it cannot tell what
+  the deny covers; the report says which.
+- When the source has several model roles, the profile takes the one that chats
+  (`default`, `main`, `chat`...) and never an embedding or reranking role; with no clear
+  choice it inherits the session's model.
 - A Claws `CLAW.md` with an empty body uses the `SOUL.md` it points to.
 - mini-SWE templates keep their `{{ }}` placeholders; Belai does not fill them, and the
   report says so.

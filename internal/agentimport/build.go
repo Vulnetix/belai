@@ -80,6 +80,8 @@ const (
 	maxPrompt     = 32 << 10
 	maxIterations = 200
 	maxMetaLine   = 1000
+	// metaBudget keeps the metadata inside the profile limit (16 KiB) with room.
+	metaBudget = 15000
 )
 
 // readOnlyTools is what an imported definition gets when it names no tool Belai
@@ -123,6 +125,8 @@ type builder struct {
 	// toolsSet is true when the source said which tools to use.
 	toolsSet bool
 	srcName  string
+	// metaBytes is the size of the metadata so far.
+	metaBytes int
 }
 
 func newBuilder(f Format, srcName string, o Options) *builder {
@@ -134,7 +138,9 @@ func newBuilder(f Format, srcName string, o Options) *builder {
 }
 
 func (b *builder) note(k NoteKind, field, format string, args ...any) {
-	b.notes = append(b.notes, Note{Kind: k, Field: field, Text: fmt.Sprintf(format, args...)})
+	// A field or a value in a note may be a key or a path from the source, so the
+	// note is cleaned of terminal escapes and control characters whatever made it.
+	b.notes = append(b.notes, Note{Kind: k, Field: line(field, 120), Text: line(fmt.Sprintf(format, args...), 400)})
 }
 
 // line cleans a source value to one short line.
@@ -142,29 +148,43 @@ func line(s string, n int) string { return sanitize.Line(s, n) }
 
 // metaSet keeps a source value in the profile's metadata under key, as one clean
 // line. The key is the harness's; the value is cleaned and cut.
-func (b *builder) metaSet(key, val string) {
+func (b *builder) metaSet(key, val string) bool {
 	val = line(val, maxMetaLine)
 	if val == "" {
-		return
+		return false
 	}
-	if _, ok := b.meta[key]; !ok && len(b.meta) >= 32 {
+	if len(key) > 64 {
+		key = key[:64]
+	}
+	old, exists := b.meta[key]
+	if !exists && len(b.meta) >= 32 {
 		b.note(Dropped, key, "not kept: a profile holds at most 32 metadata entries")
-		return
+		return false
+	}
+	if b.metaBytes-len(old)+len(key)+len(val) > metaBudget {
+		b.note(Dropped, key, "not kept: the metadata would be over %d bytes", metaBudget)
+		return false
+	}
+	b.metaBytes += len(key) + len(val) - len(old)
+	if exists {
+		b.metaBytes -= len(key)
 	}
 	b.meta[key] = val
+	return true
 }
 
 // keep records a source value in metadata and in the report.
 func (b *builder) keep(field, key, val string) {
-	before := len(b.meta)
-	b.metaSet(key, val)
-	if len(b.meta) > before || b.meta[key] != "" {
+	if b.metaSet(key, val) {
 		b.note(Kept, field, "kept in metadata as %s", key)
 	}
 }
 
 func (b *builder) setName(raw string) {
 	if b.opts.Name != "" {
+		if profileName(b.opts.Name) != b.opts.Name {
+			b.note(Warning, "name", "the name %q was changed to %q: a profile name is lower case letters, digits, dot, underscore and hyphen", line(b.opts.Name, 60), profileName(b.opts.Name))
+		}
 		raw = b.opts.Name
 	}
 	b.p.Name = profileName(raw)
@@ -263,7 +283,12 @@ func (b *builder) addTools(field string, names []string, denied []string) {
 	for _, t := range b.tools {
 		have[t] = true
 	}
-	var unknown []string
+	var unknown, unknownDeny []string
+	for _, d := range denied {
+		if _, ok := toolTable[toolKey(d)]; !ok {
+			unknownDeny = append(unknownDeny, line(d, 40))
+		}
+	}
 	for _, n := range names {
 		t, ok := toolTable[toolKey(n)]
 		switch {
@@ -278,6 +303,25 @@ func (b *builder) addTools(field string, names []string, denied []string) {
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
 		b.note(Dropped, field, "tools Belai has no match for: %s", strings.Join(capList(unknown, 12), ", "))
+	}
+	if len(unknownDeny) > 0 {
+		sort.Strings(unknownDeny)
+		// A denied tool Belai cannot name might be one of the tools just allowed, so
+		// the tools that change things are held back rather than granted on a guess.
+		kept := b.tools[:0]
+		var held []string
+		for _, t := range b.tools {
+			if mutatingTools[t] {
+				held = append(held, t)
+				continue
+			}
+			kept = append(kept, t)
+		}
+		b.tools = kept
+		b.note(Warning, field, "the source denies tools Belai has no name for (%s), so it cannot tell what they cover", strings.Join(capList(unknownDeny, 12), ", "))
+		if len(held) > 0 {
+			b.note(Warning, field, "%s left out for that reason; add them to the profile's tools yourself if you want them", strings.Join(held, ", "))
+		}
 	}
 }
 
@@ -365,7 +409,22 @@ func (b *builder) collectSkills(t *tree, root string) {
 			b.note(Dropped, n, "skill not imported: a profile names at most %d skills", agentprofile.MaxSkills)
 			continue
 		}
+		dup := false
+		for _, have := range b.skills {
+			dup = dup || have.Name == it.Name
+		}
+		if dup {
+			b.note(Dropped, n, "skill not imported: a skill named %s was already found", it.Name)
+			continue
+		}
 		b.skills = append(b.skills, Skill{Name: it.Name, Doc: it.Doc})
 		b.note(Mapped, n, "skill %s will be installed and named in the profile", it.Name)
+	}
+}
+
+// noteSkipped reports the files the reader left out, whatever the format.
+func (b *builder) noteSkipped(t *tree) {
+	if t.skipped > 0 {
+		b.note(Dropped, "files", "%d file(s) were not read: links, special files, credential files, files over %d bytes and unreadable ones", t.skipped, maxFileBytes)
 	}
 }

@@ -11,7 +11,7 @@ import (
 func importClaws(t *tree, o Options) (Result, error) {
 	name := findFile(t, "CLAW.md")
 	if name == "" {
-		return Result{}, fmt.Errorf("no CLAW.md in the source")
+		return Result{}, t.missing("CLAW.md")
 	}
 	text, _ := t.text(name)
 	fm, body, err := frontMatter(text)
@@ -98,20 +98,22 @@ func importClaws(t *tree, o Options) (Result, error) {
 		b.note(Dropped, "mcpServers", "MCP servers (%s) are the user's own settings in Belai and are never taken from a definition", strings.Join(capList(mcp.keys(), 8), ", "))
 	}
 	if jobs, ok := fm["cronJobs"].([]any); ok && len(jobs) > 0 {
+		kept := 0
 		for _, x := range jobs {
 			if m, ok := x.(map[string]any); ok {
 				d := doc(m)
-				if id, cron := d.str("id"), d.sub("schedule").str("cron"); id != "" && cron != "" {
-					b.metaSet("claws.cron."+profileName(id), cron)
+				if id, cron := profileName(d.str("id")), d.sub("schedule").str("cron"); id != "" && cron != "" && b.metaSet("claws.cron."+id, cron) {
+					kept++
 				}
 			}
 		}
-		b.note(Dropped, "cronJobs", "%d cron job(s) are not turned on; the schedules are kept in metadata, and a scheduled agent is something you set up yourself", len(jobs))
+		b.note(Dropped, "cronJobs", "%d cron job(s) are not turned on (%d schedule(s) kept in metadata); a scheduled agent is something you set up yourself", len(jobs), kept)
 	}
 	if ws := fm.sub("workspace"); ws != nil {
 		b.note(Dropped, "workspace", "workspace files are not copied")
 	}
 	b.collectSkills(t, "skills")
+	b.noteSkipped(t)
 	known := map[string]bool{"schemaVersion": true, "agent": true, "workspace": true, "packages": true, "mcpServers": true, "cronJobs": true}
 	var unknown []string
 	for _, k := range fm.keys() {
