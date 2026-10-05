@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
@@ -397,5 +398,30 @@ func TestSameRepoMatchesTheRepositoryAndItsSubdirectories(t *testing.T) {
 	}
 	if sameRepo(repo, filepath.Dir(repo)) || sameRepo(repo, repo+"-other") || sameRepo("", repo) {
 		t.Fatal("a sibling or parent is not the repository")
+	}
+}
+
+func TestScheduleObserverMapsStoppedWorkers(t *testing.T) {
+	h := newSchedHarness(t)
+	h.add(schedA, "*/15 * * * *")
+	runAt := h.now.UnixMilli()
+	next := h.now.Add(15 * time.Minute)
+	if err := h.st.RecordRun(schedA, h.now, schedule.StatusStarted, next); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Save(fleet.Record{ID: "w1", Profile: "builder", Repo: h.dir, State: fleet.StateStopped, Done: 2, Started: runAt + 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.d.observeScheduleRuns(context.Background())
+
+	got := h.get(schedA)
+	if got.LastStatus != schedule.StatusWorked {
+		t.Fatalf("observer status = %q, want %q", got.LastStatus, schedule.StatusWorked)
 	}
 }

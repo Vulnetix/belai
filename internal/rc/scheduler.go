@@ -81,6 +81,7 @@ func (d *Daemon) scheduleTick(ctx context.Context) {
 		d.logf("schedules: %d change%s from the website", n, plural(n, "", "s"))
 	}
 	d.fireDue(ctx, d.now())
+	d.observeScheduleRuns(ctx)
 	d.noteScheduleSync(ctx, "push", schedule.Push(ctx, d.o.Schedules, remote, d.o.HostID))
 }
 
@@ -213,6 +214,85 @@ func startStatus(reason string) string {
 		return schedule.StatusRefusedProfile
 	}
 	return schedule.StatusError
+}
+
+// observeScheduleRuns looks at schedules whose last status is "started" and
+// updates them from the fleet registry once the worker has stopped.
+func (d *Daemon) observeScheduleRuns(ctx context.Context) {
+	recs, err := d.o.Schedules.Live()
+	if err != nil {
+		d.logf("schedules: %v", err)
+		return
+	}
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		d.logf("schedules: fleet registry: %v", err)
+		return
+	}
+	fleetRecs, err := reg.List()
+	if err != nil {
+		d.logf("schedules: fleet list: %v", err)
+		return
+	}
+	for _, r := range recs {
+		if ctx.Err() != nil {
+			return
+		}
+		if r.LastStatus != schedule.StatusStarted || r.LastRunAt == 0 {
+			continue
+		}
+		var match *fleet.Record
+		stillLive := false
+		for i := range fleetRecs {
+			fr := &fleetRecs[i]
+			if fr.Profile != r.Profile || !sameRepo(fr.Repo, r.Dir) {
+				continue
+			}
+			if fr.Started < r.LastRunAt {
+				continue
+			}
+			if fr.State.Live() {
+				stillLive = true
+				break
+			}
+			if match == nil || fr.Started > match.Started {
+				match = fr
+			}
+		}
+		if stillLive || match == nil {
+			continue
+		}
+		status := workerOutcomeStatus(*match)
+		if err := d.o.Schedules.SetStatus(r.ID, status); err != nil {
+			d.logf("schedules: %v", err)
+			continue
+		}
+		d.auditSchedule(r, status)
+	}
+}
+
+// workerOutcomeStatus maps a stopped fleet record to a schedule status.
+func workerOutcomeStatus(fr fleet.Record) string {
+	switch fr.State {
+	case fleet.StateStopped:
+		if fr.Done > 0 {
+			return schedule.StatusWorked
+		}
+		if fr.Failed > 0 {
+			return schedule.StatusWorkerFailed
+		}
+		return schedule.StatusDrained
+	case fleet.StateFailed:
+		return schedule.StatusWorkerFailed
+	default:
+		if fr.Failed > 0 {
+			return schedule.StatusWorkerFailed
+		}
+		if fr.Done > 0 {
+			return schedule.StatusWorked
+		}
+		return schedule.StatusDrained
+	}
 }
 
 func (d *Daemon) auditSchedule(r schedule.Record, status string) {

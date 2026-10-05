@@ -62,6 +62,9 @@ const (
 	StatusRefusedProfile  = "refused_profile"
 	StatusRefusedCron     = "refused_cron"
 	StatusRefusedDisabled = "refused_disabled"
+	StatusDrained         = "drained"
+	StatusWorked          = "worked"
+	StatusWorkerFailed    = "worker_failed"
 	StatusError           = "error"
 )
 
@@ -69,7 +72,8 @@ const (
 func ValidStatus(s string) bool {
 	switch s {
 	case "", StatusStarted, StatusSkippedBusy, StatusRefusedCap, StatusRefusedDir,
-		StatusRefusedProfile, StatusRefusedCron, StatusRefusedDisabled, StatusError:
+		StatusRefusedProfile, StatusRefusedCron, StatusRefusedDisabled,
+		StatusDrained, StatusWorked, StatusWorkerFailed, StatusError:
 		return true
 	}
 	return false

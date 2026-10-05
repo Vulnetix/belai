@@ -365,10 +365,13 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
   because the stored schedule is what starts it. The website supplies no prompt,
   model, posture or permission.
 - **What it records.** Before it fires, the daemon writes the run time and the
-  next run, so a crash can skip a run but never fire it twice. The outcome is one
-  of `started`, `skipped_busy` (a worker of that profile is still working in that
-  repository), `refused_cap` (the worker cap), `refused_disabled`
-  (`agents.enabled` is off) or `error`. A refused run waits for the next tick.
+  next run, so a crash can skip a run but never fire it twice. The immediate start
+  outcome is one of `started`, `skipped_busy` (a worker of that profile is still
+  working in that repository), `refused_cap` (the worker cap), `refused_disabled`
+  (`agents.enabled` is off) or `error`. Once the worker stops, the daemon updates
+  a `started` run to `worked` (it finished items), `drained` (nothing was left to
+  claim) or `worker_failed` (it stopped with an error). A refused run waits for
+  the next tick.
 - **What it refuses.** A schedule whose cron does not parse, whose directory is
   not offered or whose profile is not a worker profile in this host's catalogue
   is turned off with `refused_cron`, `refused_dir` or `refused_profile`, and the

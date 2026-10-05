@@ -448,7 +448,9 @@ sync through the same client the way the board does, under
 pulls changes after a version cursor and pushes in batches of up to 100. The
 definition is last-writer-wins on its update time; the run record (last run,
 status, next run) is written only by the host, and a pulled schedule never
-replaces it. A text field from the website is cleaned before it is stored.
+replaces it. After a run the status is `started`, then `worked`, `drained` or
+`worker_failed` once the worker stops. A text field from the website is cleaned
+before it is stored.
 
 ## The kanban board
 

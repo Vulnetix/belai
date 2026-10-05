@@ -46,7 +46,7 @@ the harness read itself, and nothing else can be recorded.
 | host | `host.rc_online`, `host.rc_offline` | `belai rc` starts and stops |
 | host | `host.dispatch` | the host answers a request from the website (`start`, `stop`, `worker`, `crew`, `pause`, `resume`, `profile_backup`, `profile_install`, `crew_backup`, `crew_install`, `avatar`, `item_backup`, `item_install`, `provider_keys_install`, `provider_keys_remove`, `library_sync`, `project_prefs`, `teleport_backup`, `teleport_code`) |
 | host | `host.teleport` | this host opened a session teleported in from another (`belai -teleport`); the event names the new session, and `from` is the origin session |
-| host | `host.schedule` | `belai rc` fires a stored schedule, skips or is refused a run, or turns a schedule off because it cannot accept it |
+| host | `host.schedule` | `belai rc` fires, skips or refuses a stored schedule, updates it to `worked`/`drained`/`worker_failed`, or turns a schedule off because it cannot accept it |
 | agent | `worker.started`, `worker.state`, `worker.stopped` | a worker starts, is paused or resumed, and stops |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |

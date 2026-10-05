@@ -221,7 +221,9 @@ func (s *Store) Merge(remote []Record, cursor int64) (int, error) {
 				if r.Deleted || len(f.Records) >= maxRecords {
 					continue
 				}
-				r.NextRunAt, r.LastRunAt, r.LastStatus = 0, 0, ""
+				// A record the host has never seen can adopt the server's run
+				// record, but NextRunAt is always recomputed locally.
+				r.NextRunAt = 0
 				r.Dirty, r.Rev = true, 1
 				idx[r.ID] = len(f.Records)
 				f.Records = append(f.Records, r)

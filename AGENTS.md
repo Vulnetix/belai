@@ -1348,9 +1348,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   off with a status, never applied. The run record (last run, status, next run)
   is written only by the host and a pull never replaces it. A run missed while
   the daemon was down is skipped, a schedule fires at most once per cron tick,
-  and the run is recorded before it fires so a crash cannot double fire. Text
-  pulled from the website is cleaned before it is stored, and `schedules.json`
-  is private (0600). Every firing and refusal is a `host.schedule` audit event.
+  and the start is recorded before it fires so a crash cannot double fire. Once
+  a started worker stops, the status is updated to `worked`, `drained` or
+  `worker_failed`. Text pulled from the website is cleaned before it is stored,
+  and `schedules.json` is private (0600). Every firing, outcome update and
+  refusal is a `host.schedule` audit event.
 - **A web profile install is the user's own action, and is validated as a
   profile.** The
   website keeps a library of agent profiles (versions in S3, indexed per

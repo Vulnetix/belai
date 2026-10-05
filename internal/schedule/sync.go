@@ -96,12 +96,18 @@ func ToWire(r Record) sessionsync.Schedule {
 	return w
 }
 
-// FromWire converts a wire schedule. The run record is left out on purpose:
-// it is the host's, and Merge never takes it from a pull. The result is
-// cleaned by Merge.
+// FromWire converts a wire schedule. The run record travels with the wire
+// record so a host that has never seen an id can adopt the server's run
+// history; Merge clears NextRunAt regardless, so rebaseSchedules still skips
+// missed runs. The result is cleaned by Merge.
 func FromWire(w sessionsync.Schedule) Record {
-	return Record{
+	r := Record{
 		ID: w.ID, Profile: w.Profile, Cron: w.Cron, Dir: w.Dir, Enabled: w.Enabled,
 		Created: w.CreatedAt, Updated: w.UpdatedAt, ServerVersion: w.Version, Deleted: w.Deleted,
+		LastStatus: w.LastStatus,
 	}
+	if w.LastRunAt != nil {
+		r.LastRunAt = *w.LastRunAt
+	}
+	return r
 }

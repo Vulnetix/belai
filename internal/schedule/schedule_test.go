@@ -209,12 +209,16 @@ func TestMergeTombstonesAndNewRecords(t *testing.T) {
 	st := testStore(t)
 	web := rec(idB)
 	web.Updated, web.ServerVersion = t0.UnixMilli(), 1
+	web.LastRunAt, web.LastStatus = t0.UnixMilli(), StatusStarted
 	n, err := st.Merge([]Record{web}, 1)
 	if err != nil || n != 1 {
 		t.Fatalf("new record: %d %v", n, err)
 	}
 	if got := mustGet(t, st, idB); got.NextRunAt != 0 || !got.Dirty {
-		t.Fatalf("a record from the website starts with no run record: %+v", got)
+		t.Fatalf("a record from the website starts with no next run: %+v", got)
+	}
+	if got := mustGet(t, st, idB); got.LastRunAt == 0 || got.LastStatus != StatusStarted {
+		t.Fatalf("a new record must adopt the server's run record: %+v", got)
 	}
 	gone := web
 	gone.Deleted, gone.Updated, gone.ServerVersion = true, t0.UnixMilli()+1, 2
@@ -323,8 +327,8 @@ func TestWireRoundTripDropsTheRunRecordOnPull(t *testing.T) {
 		t.Fatalf("ToWire = %+v", w)
 	}
 	back := FromWire(w)
-	if back.LastRunAt != 0 || back.NextRunAt != 0 || back.LastStatus != "" || back.Updated != 7 {
-		t.Fatalf("FromWire must not carry the run record: %+v", back)
+	if back.LastRunAt != 5 || back.NextRunAt != 0 || back.LastStatus != StatusStarted || back.Updated != 7 {
+		t.Fatalf("FromWire must carry the run record but not the next run: %+v", back)
 	}
 	if w := ToWire(rec(idB)); w.LastRunAt != nil || w.NextRunAt != nil {
 		t.Fatal("a schedule that never ran sends no run times")
