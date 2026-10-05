@@ -87,6 +87,7 @@ prompt runs with it.
 | `request_coverage` | Files a gap card for a request clause whose covering tasks do not seem to do it | Shipped |
 | `knowledge_topics` | Labels each indexed document with the topics it is about, by scoring a sample of its text against a vocabulary of about three hundred in one request | Shipped |
 | `agent_pick` | In Auto mode, engages one of your agent profiles when it is a clear fit for a general request | Shipped |
+| `teleport_verify` | Rates a replayed teleport checkout against the origin host's summary as verified, incomplete or failed, settles a clear verdict without the model verifier, and otherwise hands the scores to it as a hint | Shipped |
 
 ## Scores and thresholds
 
@@ -104,6 +105,7 @@ with the default shown; a job reads the value from your settings:
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
 | | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
 | | `goal_complete_at`, `goal_rival_max`, `goal_not_started_at` | 0.90, 0.20, 0.85 | A goal pass is clearly complete at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly not started at `goal_not_started_at` with the same limit; `goal_complete_at` cannot be set below 0.5 and `goal_rival_max` cannot exceed 0.5 |
+| | `goal_complete_at`, `goal_rival_max` (shared) | 0.90, 0.20 | `teleport_verify` reads the goal judge's two cut-offs: a replay is clearly verified at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly failed in the mirror case |
 | | `topic_at` | 0.70 | The knowledge index labels a document with a topic the backend scores at or above this; it cannot be set below 0.5 |
 | | `clear_at`, `align_at`, `cover_at` | 0.50, 0.40, 0.40 | A delivery handoff rated below `clear_at` goes to review, a gate below `align_at` is flagged, and a clause whose tasks all rate below `cover_at` gets a gap card. They only narrow, so raising one means more review |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
@@ -601,6 +603,32 @@ against one criterion, so a clear case needs no chat-model call.
 
 Recorded as a `goal_judge` event: `complete`, `not_started` or `unclear`, and
 the three scores in percent. Never the goal, the list or any evidence.
+
+## Teleport verify
+
+When a [teleport's replay](teleport.md#code) ends with a checkout that does not
+match the origin's tree exactly (an exact match is verified by the harness and
+never reaches this job), the harness asks the decision backend to rate the
+checkout against the origin model's summary on three options: `verified`,
+`incomplete` and `failed`.
+
+- **What the backend sees.** The origin's summary and the harness's own check
+  (how many patched files are identical to the origin's, which differ, which are
+  missing, which were changed that the origin did not change), all as
+  `DecisionText`. Never a file's contents, the patch or a tool's output.
+- **The decision.** It reads the goal judge's two cut-offs: `verified` is clear at
+  `goal_complete_at` (0.90) with both rivals at or below `goal_rival_max` (0.20),
+  and `failed` is the mirror. A lead for `incomplete` is reported as incomplete.
+  An unanswered option is unknown.
+- **When it is not clear.** A contested score, an error or a missing backend sends
+  the check to the model verifier (`teleport_verify` in
+  [role-manager.md](role-manager.md#teleport-roles)) with the scores as a prior.
+- **What it never changes.** A verified rating is not accepted for a file the
+  checkout lacks, a failed rating only stops further model passes, and neither
+  runs a command or approves a call. The replay's model has file tools only.
+
+Recorded as a `teleport_verify` event: `verified`, `incomplete`, `failed` or
+`unclear`, and the three scores in percent. Never the summary or a path.
 
 ## Delivery crew jobs
 

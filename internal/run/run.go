@@ -623,20 +623,22 @@ type RoutingConfig struct {
 // plan mode's pre-planning latency. Compaction stays on the main model, whose
 // quality shapes the agent's later work.
 var fastUseCases = map[string]bool{
-	rolemanager.UseCaseModeEval:       true,
-	rolemanager.UseCaseSessionName:    true,
-	rolemanager.UseCaseGoalEval:       true,
-	rolemanager.UseCasePlanEval:       true,
-	rolemanager.UseCaseAgentEval:      true,
-	rolemanager.UseCaseGoalContract:   true,
-	rolemanager.UseCaseClarify:        true,
-	rolemanager.UseCaseDepChange:      true,
-	rolemanager.UseCaseWebFetch:       true,
-	rolemanager.UseCaseBashReplan:     true,
-	rolemanager.UseCaseTestReport:     true,
-	rolemanager.UseCaseVoiceCleanup:   true,
-	rolemanager.UseCaseGateDraft:      true,
-	rolemanager.UseCaseDeliveryReport: true,
+	rolemanager.UseCaseModeEval:        true,
+	rolemanager.UseCaseSessionName:     true,
+	rolemanager.UseCaseGoalEval:        true,
+	rolemanager.UseCasePlanEval:        true,
+	rolemanager.UseCaseAgentEval:       true,
+	rolemanager.UseCaseGoalContract:    true,
+	rolemanager.UseCaseClarify:         true,
+	rolemanager.UseCaseDepChange:       true,
+	rolemanager.UseCaseWebFetch:        true,
+	rolemanager.UseCaseBashReplan:      true,
+	rolemanager.UseCaseTestReport:      true,
+	rolemanager.UseCaseVoiceCleanup:    true,
+	rolemanager.UseCaseGateDraft:       true,
+	rolemanager.UseCaseDeliveryReport:  true,
+	rolemanager.UseCaseTeleportDistill: true,
+	rolemanager.UseCaseTeleportVerify:  true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.

@@ -454,6 +454,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevRequestCoverage: "jev request coverage",
 	config.JevKnowledgeTopics: "jev knowledge topics",
 	config.JevAgentPick:       "jev agent pick",
+	config.JevTeleportVerify:  "jev teleport verify",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -472,6 +473,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevRequestCoverage: "file a gap card for a request clause whose covering tasks do not seem to do it",
 	config.JevKnowledgeTopics: "label indexed documents with the topics they are about, by showing the backend a sample of each document's text",
 	config.JevAgentPick:       "in auto mode, engage one of your agent profiles when it is a clear fit for a general request",
+	config.JevTeleportVerify:  "rate a teleport replay against the origin's summary, accepting it only when clear, and otherwise ask the model verifier with the scores as a hint",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

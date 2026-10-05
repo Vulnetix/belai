@@ -81,6 +81,9 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// A script's output is composed of text already admitted per nested
 		// call (docs/code-mode.md).
 		KindCode: false,
+		// A teleport replay's hand-over is another host's model's text and the
+		// parts of a patch from another host's working tree.
+		KindTeleport: true,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

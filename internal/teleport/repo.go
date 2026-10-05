@@ -61,10 +61,23 @@ type checkout struct {
 	Notices []string
 }
 
+// errUnreachable is the cause of a commit this repository does not have even
+// after fetching origin, so the caller can tell it from a mismatched checkout.
+var errUnreachable = errors.New("commit not in this repository")
+
+type unreachableError struct{ msg string }
+
+func (e unreachableError) Error() string        { return e.msg }
+func (e unreachableError) Is(target error) bool { return target == errUnreachable }
+
 // plan holds what the repository work needs.
 type plan struct {
 	workdir  string
 	override string
+	// force always makes a worktree, even when the checkout is already at the
+	// commit: a replay applies a patch, which must never touch the checkout the
+	// user is in.
+	force    bool
 	newID    string
 	run      forge.Runner
 	worktree string // the directory worktrees go under
@@ -138,11 +151,11 @@ func (p plan) prepare(ctx context.Context, og originGit) (checkout, error) {
 			if p.override != "" {
 				return out, fmt.Errorf("%s is not in this repository, even after fetching origin", sanitize.Line(p.override, 60))
 			}
-			return out, fmt.Errorf("the origin session was at commit %s, which this repository does not have even after fetching origin; push that branch from the origin host and try again, or pick a ref with -teleport-ref", want)
+			return out, unreachableError{fmt.Sprintf("the origin session was at commit %s, which this repository does not have even after fetching origin; push that branch from the origin host and try again, or pick a ref with -teleport-ref", want)}
 		}
 	}
 	head, err := p.git(ctx, root, "rev-parse", "HEAD")
-	if err == nil && head == sha {
+	if err == nil && head == sha && !p.force {
 		return out, nil
 	}
 

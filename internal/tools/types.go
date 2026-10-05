@@ -99,6 +99,12 @@ const (
 	// literals and is sanitise-only. It is not read-only: the script may have
 	// edited files, so it runs on the sequential path.
 	KindCode Kind = "code"
+	// KindTeleport is a teleport replay's hand-over: the origin host's model's
+	// summary and instructions and the parts of a patch that did not apply, text
+	// from another host that always classifies (agent.TeleportReplay). It is not
+	// the result of any tool, so it is not read-only and never joins the
+	// concurrent fan-out.
+	KindTeleport Kind = "teleport"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -109,7 +115,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload, KindScreenshot, KindFetched, KindCode,
+	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent

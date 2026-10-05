@@ -158,6 +158,7 @@ func main() {
 	continueLast := flag.String("continue", "", "continue the most recent session for this project")
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
 	teleportID := flag.String("teleport", "", "continue a session of your account from another host, sandbox or the web: its transcript and any agent profile it needs are fetched, and the session opens here under a new id (the original carries on)")
+	teleportPush := flag.Bool("teleport-push", false, "with -teleport, agree that the origin host may push the session's uncommitted and unpushed changes to the forge as one belai/teleport/<id> branch, which this host then fetches; without it they are sent as a patch and replayed here")
 	teleportRef := flag.String("teleport-ref", "", "with -teleport, check out this ref or commit instead of the one the session was at")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
 	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
@@ -202,6 +203,10 @@ func main() {
 	}
 	if *teleportRef != "" && *teleportID == "" {
 		fmt.Fprintln(os.Stderr, "belai: -teleport-ref needs -teleport")
+		exitProcess(2)
+	}
+	if *teleportPush && *teleportID == "" {
+		fmt.Fprintln(os.Stderr, "belai: -teleport-push needs -teleport")
 		exitProcess(2)
 	}
 	if *teleportID != "" {
@@ -368,7 +373,7 @@ func main() {
 	if *teleportID != "" {
 		// After the trust gate, so the repository is one the user trusted, and
 		// before the TUI, so a refusal exits non-zero with its reason.
-		res, tp, err := runTeleport(ctx, workdir, *teleportID, *teleportRef, os.Stderr)
+		res, tp, err := runTeleport(ctx, workdir, *teleportID, *teleportRef, *teleportPush, *provider, *model, os.Stderr)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			exitProcess(1)

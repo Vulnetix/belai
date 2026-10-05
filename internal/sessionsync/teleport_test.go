@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,12 +15,15 @@ import (
 // teleport, and records what it was asked.
 type teleportSite struct {
 	seen   []string
+	bodies []string
 	status int
 	body   string
 }
 
 func (s *teleportSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.seen = append(s.seen, r.Method+" "+strings.TrimPrefix(r.URL.RequestURI(), "/api/site/v1/belai"))
+	b, _ := io.ReadAll(r.Body)
+	s.bodies = append(s.bodies, string(b))
 	if r.Header.Get("Authorization") != "ApiKey o:k" {
 		http.Error(w, "no", http.StatusUnauthorized)
 		return
@@ -47,7 +51,7 @@ func TestTeleportCreateGetAndAckSpeakTheServersShapes(t *testing.T) {
 	c := teleportClient(t, s)
 	ctx := context.Background()
 
-	tp, err := c.TeleportCreate(ctx, "host 1", "abcd1234")
+	tp, err := c.TeleportCreate(ctx, "host 1", "abcd1234", false)
 	if err != nil || tp.ID != "t1" || tp.SnapshotSeq != 4 || tp.Status != TeleportReady {
 		t.Fatalf("create = %+v %v", tp, err)
 	}
@@ -85,7 +89,7 @@ func TestTeleportEntriesAskForTheNextPageAfterASeq(t *testing.T) {
 func TestTeleportRefusalsCarryTheServersReasonCleaned(t *testing.T) {
 	s := &teleportSite{status: http.StatusConflict, body: "{\"error\":\"a sandbox has no terminal\\n\\u001b[31mred\"}"}
 	c := teleportClient(t, s)
-	_, err := c.TeleportCreate(context.Background(), "h", "abcd1234")
+	_, err := c.TeleportCreate(context.Background(), "h", "abcd1234", false)
 	var te *TeleportError
 	if !errors.As(err, &te) || te.Status != http.StatusConflict || strings.ContainsAny(te.Reason, "\x1b\n") || !strings.Contains(te.Reason, "a sandbox has no terminal") {
 		t.Fatalf("err = %#v", err)
@@ -119,5 +123,50 @@ func TestTeleportFileDecodesAndBoundsWhatItReads(t *testing.T) {
 	s.body = `{"contentBase64":"` + base64.StdEncoding.EncodeToString(make([]byte, MaxLibraryFile+1)) + `"}`
 	if _, err := c.TeleportFile(context.Background(), "h", "t1", "x"); err == nil {
 		t.Fatal("an oversized file was accepted")
+	}
+}
+
+func TestTeleportCreateCarriesThePushAgreementOnlyWhenGiven(t *testing.T) {
+	s := &teleportSite{body: `{"teleport":{"id":"t1","originSessionId":"o1","status":"syncing_code","snapshotSeq":4}}`}
+	c := teleportClient(t, s)
+
+	if _, err := c.TeleportCreate(context.Background(), "h", "abcd1234", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.TeleportCreate(context.Background(), "h", "abcd1234", true); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(s.bodies[0], "push") || !strings.Contains(s.bodies[1], `"push":true`) {
+		t.Fatalf("bodies = %q", s.bodies)
+	}
+}
+
+func TestTeleportCodeSpeaksTheServersShapes(t *testing.T) {
+	s := &teleportSite{body: `{"ok":true,"teleport":{"id":"t1","status":"ready"},"code":{"mode":"replay","reason":"r","base":"b","tree":"t","patch":"p","summary":"s","instructions":"i","files":[{"path":"a.go","status":"added","added":1,"removed":0}],"skipped":[{"path":".env","reason":"credentials"}]}}`}
+	c := teleportClient(t, s)
+	ctx := context.Background()
+
+	if err := c.TeleportCodePut(ctx, "host 1", "t1", "d 1", TeleportCode{Mode: CodeReplay, Base: "b", Tree: "t", Patch: "p", Summary: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.TeleportReplay(ctx, "host 1", "t1", "fetch failed\n\u001b[31m"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := c.TeleportGet(ctx, "host 1", "t1")
+	if err != nil || st.Code == nil || st.Code.Mode != CodeReplay || st.Code.Patch != "p" || len(st.Code.Files) != 1 || st.Code.Skipped[0].Reason != "credentials" {
+		t.Fatalf("get = %+v %v", st, err)
+	}
+	want := []string{
+		"PUT /hosts/host%201/teleports/t1/code?dispatch=d+1",
+		"POST /hosts/host%201/teleports/t1/replay",
+		"GET /hosts/host%201/teleports/t1",
+	}
+	for i, w := range want {
+		if s.seen[i] != w {
+			t.Errorf("request %d = %q, want %q", i, s.seen[i], w)
+		}
+	}
+	if strings.ContainsAny(s.bodies[1], "\x1b\n") {
+		t.Errorf("the replay reason was not cleaned: %q", s.bodies[1])
 	}
 }

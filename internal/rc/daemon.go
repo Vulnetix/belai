@@ -19,11 +19,13 @@ import (
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/teleport/changes"
 )
 
 // DefaultMax is how many sessions a daemon runs at once unless told otherwise.
@@ -93,6 +95,16 @@ type Options struct {
 	// it; a profile install does not, being the user's own action). It reads the
 	// global settings and fails closed unless a test replaces it.
 	RemotePrompts func() bool
+	// TeleportPush is this host's push policy for a teleport (config.TeleportPush*:
+	// the user's teleport.push, read from the global settings each time); nil is ask.
+	TeleportPush func() string
+	// TeleportGit builds the git runners a teleport_code request reads and pushes
+	// with; nil is the hardened default (changes.Hardened). Tests replace it.
+	TeleportGit changes.Runners
+	// Distill writes the hand-over of a replay's changes with this host's model
+	// (the teleport_distill role). nil, or a model that gives nothing usable, is the
+	// harness's file list.
+	Distill func(ctx context.Context, files []rolemanager.TeleportFile, skipped []string, patch string) rolemanager.Distilled
 	// DrawAvatar draws a customised Pix with this host's main model for an
 	// "avatar" request. It returns the SVG, or the reason it could not (harness
 	// text). nil means this daemon has no model to draw with and refuses.
@@ -186,6 +198,8 @@ type Daemon struct {
 	wg       sync.WaitGroup
 	// avatarSlot holds one token while an avatar is being drawn.
 	avatarSlot chan struct{}
+	// codeSlot holds a token for each teleport_code request being answered.
+	codeSlot chan struct{}
 	// libsync is the automatic sync's memory of what it has settled (autosync.go).
 	libsync *libSyncState
 }
@@ -289,7 +303,7 @@ func New(o Options) (*Daemon, error) {
 		o.LibrarySyncEvery = DefaultLibrarySyncEvery
 	}
 	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
-		libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
+		codeSlot: make(chan struct{}, 2), libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -443,7 +457,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs", "teleport_backup":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs", "teleport_backup", "teleport_code":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -529,6 +543,9 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("teleport_backup: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "teleport_code":
+		// Answered in the background, so a model's hand-over never holds the queue.
+		d.startTeleportCode(ctx, r, ack)
 	case "item_backup", "item_install":
 		var report, why string
 		if r.Kind == "item_backup" {

@@ -252,7 +252,7 @@ Business rules and edge cases:
   available on the classifier picker only.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
-  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft` and `delivery_report`. Unknown keys may be stored
+  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill` and `teleport_verify`. Unknown keys may be stored
   but are not consulted.
 - **Candidates are validated.** A use-case target must set at least one of
   `provider` or `model`. Provider names are validated against the built-in and
@@ -304,7 +304,7 @@ Business rules and edge cases:
   the agent's later work. The `test_report` role, which writes the short report
   after a passing [post-end test pass](testing.md#pass-the-report), is a fast
   use case too, and falls back to a harness-composed line when the fast model is
-  unavailable. The delivery crew's `gate_draft` and `delivery_report` roles are fast use cases too, each with a harness-composed fallback (see [Delivery role payloads](role-manager.md#delivery-role-payloads)).
+  unavailable. The delivery crew's `gate_draft` and `delivery_report` roles are fast use cases too, each with a harness-composed fallback (see [Delivery role payloads](role-manager.md#delivery-role-payloads)). A teleport's `teleport_distill` and `teleport_verify` are fast use cases too (see [Teleport roles](role-manager.md#teleport-roles)).
 - **Precedence per use case:** a fast use case goes to the fast tier whenever
   one exists, under `defined` and `routed` alike. Under `routed` it skips Jev
   entirely: no Decisions call, no `route_fallback`, and no pool candidate,

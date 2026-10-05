@@ -46,7 +46,7 @@ var allEvents = []Event{
 	EventExploreLocate,
 	EventVoiceCommand,
 	EventRequestScale,
-	EventAgentPick,
+	EventAgentPick, EventTeleportDistill, EventTeleportVerify,
 	EventKnowledgeTopics,
 	EventGoalJudge,
 	EventGateDraft,

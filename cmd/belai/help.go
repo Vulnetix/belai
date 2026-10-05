@@ -64,7 +64,7 @@ type flagGroup struct {
 }
 
 var flagGroups = []flagGroup{
-	{"Session", []string{"prompt", "mode", "plan", "resume", "continue", "teleport", "teleport-ref", "export", "no-transcript", "usage-json", "detect-mode", "no-git-sync"}},
+	{"Session", []string{"prompt", "mode", "plan", "resume", "continue", "teleport", "teleport-ref", "teleport-push", "export", "no-transcript", "usage-json", "detect-mode", "no-git-sync"}},
 	{"Model", []string{"provider", "model", "effort", "firewall", "caveman", "defer-tools", "tools", "agent", "agent-create"}},
 	{"Safety", []string{
 		"guardrails", "ask-permission", "trust-dir", "dangerously-yolo-everything",
