@@ -2,6 +2,7 @@ package rolemanager
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,17 +78,21 @@ func RecordSecurityPhaseTimed(subject, verdict, model string, took time.Duration
 	recordTimed(EventSecurityPhase, verdict, subject, "", 0, model, took)
 }
 
-// RecordSecurityFallback emits a security-fallback event: the Jev security
-// classifier could not settle a verdict (an in-band probability, or a
+// RecordSecurityFallback emits a security-fallback event: the decision-model
+// security classifier (decider is its backend identity) could not settle a verdict (an in-band probability, or a
 // malformed or missing answer) and handed off to the fallback classifier, the
-// agent model. The event carries no model identity of its own: the TUI
+// agent model. The event carries no Model of its own: the TUI
 // attributes an activity with an empty Model to the agent model, which is
 // exactly the model that ruled on the fallback.
-func RecordSecurityFallback() {
-	recordModel(EventSecurityFallback, "fallback", "security", "", 0, "")
+func RecordSecurityFallback(decider string) {
+	detail := ""
+	if f := strings.Join(strings.Fields(decider), "_"); f != "" {
+		detail = "decider=" + f
+	}
+	recordModel(EventSecurityFallback, "fallback", "security", detail, 0, "")
 }
 
-// RecordRouteFallback emits a route-fallback event: Jev did not settle which
+// RecordRouteFallback emits a route-fallback event: the decision model did not settle which
 // model serves useCase, and the defined model serves it instead. A non-nil
 // status marks a failed Decisions call and carries its HTTP status (0 when no
 // response arrived); a nil status is an inconclusive reply. Only the status

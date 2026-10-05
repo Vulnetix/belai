@@ -15,7 +15,7 @@ func TestRecordSecurityPhaseAndFallbacks(t *testing.T) {
 
 	RecordSecurityPhase("phase 2", string(SentinelJailbreak), "embedded/x")
 	RecordSecurityPhaseTimed("phase 1", string(SentinelSafe), "embedded/y", 12*time.Millisecond)
-	RecordSecurityFallback()
+	RecordSecurityFallback("clef/test")
 	status := 503
 	RecordRouteFallback(UseCaseModeEval, &status, "m", 3*time.Millisecond)
 	RecordRouteFallback(UseCaseGoalEval, nil, "m2", 0)
@@ -23,7 +23,7 @@ func TestRecordSecurityPhaseAndFallbacks(t *testing.T) {
 	want := []Activity{
 		{Event: EventSecurityPhase, Verdict: string(SentinelJailbreak), Subject: "phase 2", Model: "embedded/x"},
 		{Event: EventSecurityPhase, Verdict: string(SentinelSafe), Subject: "phase 1", Model: "embedded/y", Duration: 12 * time.Millisecond},
-		{Event: EventSecurityFallback, Verdict: "fallback", Subject: "security"},
+		{Event: EventSecurityFallback, Verdict: "fallback", Subject: "security", Detail: "decider=clef/test"},
 		{Event: EventRouteFallback, Verdict: "error", Subject: UseCaseModeEval, Model: "m", Detail: "status=503", Duration: 3 * time.Millisecond},
 		{Event: EventRouteFallback, Verdict: "inconclusive", Subject: UseCaseGoalEval, Model: "m2"},
 	}
