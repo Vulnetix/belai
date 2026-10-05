@@ -167,7 +167,7 @@ func settingsGroupOf(key string) string {
 	}
 	switch key {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
-		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "show_session_names":
+		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "show_session_names", "idle_pane":
 		return "display"
 	case "max_agents", "plan_explore", "goal_explore":
 		return "agents"
@@ -386,6 +386,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_edits", label: "file edits", kind: "toggle", value: editsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_internal_work", label: "internal work", kind: "choose", opts: []string{"hidden", "decisions", "security", "all"}, value: s.InternalWorkLevel(), src: sourceLabel(origin["ui"])},
 		{key: "layout", label: "layout", kind: "choose", opts: config.LayoutNames, value: s.Layout(), src: sourceLabel(origin["ui"]), help: "clean is the usual thread; chronological places every late row by the time it happened and shows the time on each row"},
+		{key: "idle_pane", label: "empty composer pane", kind: "choose", opts: config.IdlePaneNames, value: s.IdlePane(), src: sourceLabel(origin["ui"]), help: "the one pane shown above an empty composer while the chat is idle: none, the kanban board, or a runs panel tab (activity, helpers, processes, crew, git, ci, intel). It goes away when you type; none by default"},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -1035,6 +1036,13 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.Layout = &next
+		case "idle_pane":
+			idx := indexOfString(opts, s.IdlePane())
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			next := opts[(idx+1)%len(opts)]
+			s.UI.IdlePane = &next
 		case "tests.post_end":
 			if s.Tests == nil {
 				s.Tests = &config.TestsSettings{}
@@ -1134,6 +1142,10 @@ func (a *App) unsetSetting(key string) error {
 		case "layout":
 			if s.UI != nil {
 				s.UI.Layout = nil
+			}
+		case "idle_pane":
+			if s.UI != nil {
+				s.UI.IdlePane = nil
 			}
 		case "show_todos":
 			if s.UI != nil {

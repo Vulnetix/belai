@@ -127,7 +127,9 @@ wrap-up directive:
 
 ### The pane
 
-When nothing is running and the composer is empty, a pane above the composer
+With the empty composer pane set to `kanban` (`ui.idle_pane`, row `empty composer pane`
+in `/settings`; the default is `none`, see [settings](settings.md#empty-composer-pane)),
+when nothing is running and the composer is empty, a pane above the composer
 lists this project's backlog, review and blocked items:
 
 - Each row is colour-coded: backlog grey, review amber, blocked red.
@@ -306,7 +308,8 @@ colours. You can move, edit, add and delete items there.
 ```
 
 `kanban` turns the whole feature on or off: the tools, the directive, the
-wrap-up, the pane, `/kanban` and sync. It is on by default. A project's
+wrap-up, the pane, `/kanban` and sync. It is on by default; the pane itself
+shows only when `ui.idle_pane` is `kanban`. A project's
 `.vulnetix/settings.json` may turn it off, but never on.
 
 ## Security

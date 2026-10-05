@@ -739,6 +739,12 @@ type App struct {
 	runsTab    int  // 0 == activity, 1 == subagents, 2 == processes
 	runsSel    int  // selected item index (into runsItems())
 	runsScroll int  // first visible item when the list is windowed
+	// runsIdle marks a panel that ui.idle_pane opened above an empty composer.
+	// idleArmed lets the next empty, quiet composer open it; idleSeen is the
+	// setting last acted on (idle_pane.go).
+	runsIdle  bool
+	idleArmed bool
+	idleSeen  string
 
 	// runsOutput is the full-screen reader for one run's output.
 	runsOutput runsOutputState
@@ -2293,6 +2299,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if vc := a.syncVoice(); vc != nil {
 		cmd = tea.Batch(cmd, vc)
 	}
+	if ic := a.syncIdlePane(); ic != nil {
+		cmd = tea.Batch(cmd, ic)
+	}
 	return model, cmd
 }
 
@@ -2794,6 +2803,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			if a.runsOpen && a.runsTab != tabIntel {
+				a.runsIdle = false
 				a.runsTab, a.runsSel, a.runsScroll = tabIntel, 0, 0
 				a.runsFocus = true
 				return a, nil
@@ -3090,7 +3100,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	case "down":
 		// Down on an empty composer browses the kanban pane; up stays
 		// prompt history.
-		if a.focusKanbanPane() {
+		if a.focusKanbanPane() || a.takeIdleRuns() {
 			return nil
 		}
 		return a.forwardToEditor(m)

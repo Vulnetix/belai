@@ -38,7 +38,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Group | Rows |
 | --- | --- |
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task` |
-| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `todo panel`, `mouse capture`, `session names` |
+| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `mouse capture`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
@@ -61,6 +61,25 @@ write the same record.
 | `chronological` | Strict time order. A notice an event raised is placed by the event's time too (never behind the rows already written, so each is written once), nothing is held below a streaming reply, and the blank line above each panel shows that panel's time as `HH:MM:SS`. A row with no recorded time shows none. |
 
 An unknown value reads as `clean`. A project layer may set it either way.
+
+### Empty composer pane
+
+`ui.idle_pane` (the `empty composer pane` row in Display) picks the one pane
+shown above an empty composer while the chat is idle. It is display only: it
+reads nothing the pane would not show and changes no permission.
+
+| Value | What shows |
+| --- | --- |
+| `none` (default) | Nothing: the composer sits on its own. |
+| `kanban` | The [kanban pane](kanban.md#the-pane): open items, colour-coded. |
+| `activity`, `helpers`, `processes`, `crew`, `git`, `ci`, `intel` | That tab of the runs panel, opened unfocused. A tab that is not offered (`ci` without a pull request, `intel` with `ui.intel` off, `kanban`-board tabs with the board off) shows nothing. |
+
+The pane goes away as soon as you type, attach or start a turn, and comes back
+when the composer is empty and the chat idle again. `↓` or `f9` on an empty
+composer takes the keyboard in the pane; from then on it is an ordinary runs
+panel, so typing leaves it open until you close it with `f9`. A pane you
+close stays closed until the composer is next used. An unknown value reads as
+`none`. A project layer may set it either way.
 
 **The two Jev groups exist only while a decision backend is configured**
 (`Settings.JevConfigured`). Without one they are hidden, not greyed, because no
