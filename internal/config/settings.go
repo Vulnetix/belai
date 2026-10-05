@@ -1201,6 +1201,10 @@ type UISettings struct {
 	// Intel shows the session intelligence slot in the footer's budget cycle
 	// and offers the intel pane on f12. Default on. See IntelEnabled.
 	Intel *bool `json:"intel,omitempty"`
+	// IdlePane picks the one pane shown above an empty composer while the chat
+	// is idle: "none" (the default) or one of IdlePaneNames. It is display
+	// only. See Settings.IdlePane.
+	IdlePane *string `json:"idle_pane,omitempty"`
 	// ClipboardImages lets ctrl+v and /paste-image attach an image from the
 	// system clipboard. Default on. The project layer may turn it off, never
 	// on (docs/image-attachments.md).
@@ -1258,6 +1262,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.Intel != nil {
 		u.Intel = from.Intel
+	}
+	if from.IdlePane != nil {
+		u.IdlePane = from.IdlePane
 	}
 	if from.ClipboardImages != nil {
 		u.ClipboardImages = from.ClipboardImages
@@ -1596,6 +1603,44 @@ func (s Settings) Layout() string {
 		return LayoutChronological
 	}
 	return LayoutClean
+}
+
+// IdlePane values for ui.idle_pane: the pane shown above an empty composer.
+// The names after IdlePaneNone are the runs panel's tabs (kanban is drawn by
+// its own composer pane).
+const (
+	IdlePaneNone      = "none"
+	IdlePaneKanban    = "kanban"
+	IdlePaneActivity  = "activity"
+	IdlePaneHelpers   = "helpers"
+	IdlePaneProcesses = "processes"
+	IdlePaneCrew      = "crew"
+	IdlePaneGit       = "git"
+	IdlePaneCI        = "ci"
+	IdlePaneIntel     = "intel"
+)
+
+// IdlePaneNames lists the idle panes in the order the settings screen cycles
+// them, none first.
+var IdlePaneNames = []string{
+	IdlePaneNone, IdlePaneKanban, IdlePaneActivity, IdlePaneHelpers,
+	IdlePaneProcesses, IdlePaneCrew, IdlePaneGit, IdlePaneCI, IdlePaneIntel,
+}
+
+// IdlePane returns the pane shown above an empty idle composer as a
+// normalised name. The default is none, and an unrecognised value reads as
+// none. It is display-only: no gate, rule or record depends on it.
+func (s Settings) IdlePane() string {
+	if s.UI == nil || s.UI.IdlePane == nil {
+		return IdlePaneNone
+	}
+	v := strings.ToLower(strings.TrimSpace(*s.UI.IdlePane))
+	for _, n := range IdlePaneNames {
+		if n == v {
+			return v
+		}
+	}
+	return IdlePaneNone
 }
 
 // ToolCallsVisible reports whether tool-call rows render. Default true.
