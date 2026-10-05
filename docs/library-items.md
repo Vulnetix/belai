@@ -490,9 +490,16 @@ under these rules:
   stored: c (the library holds no usable key for it)`. When nothing is stored the request
   is refused with those reasons.
 - **The switch is `sync.providers`.** With it off the request is refused before the
-  library is asked for anything. A refused request, an unreachable library, a 403 (not
-  TLS), a 409 (already delivered), a 502 or 503 (key storage unavailable) and a 404 each
-  have their own reason, and none stores anything.
+  library is asked for anything. A refused request, an unreachable library, a 403 that
+  names TLS, a 409 (already delivered), a 502 or 503 (key storage unavailable) and a 404
+  each have their own reason, and none stores anything.
+- **A 403 is the TLS refusal only when its `{"error": ...}` text says TLS.** The library
+  sends exactly one 403 on this route, "provider keys are only sent over TLS", but a
+  Cloudflare WAF block or the egress gateway's bare 403 look the same by status alone. Any
+  other 403, with an empty, HTML or unrelated body, is reported as `HTTP 403` and never as
+  a TLS problem, so the user does not go looking for one. The body is read through the
+  client's size cap, only the error text is looked at, and nothing from it reaches the
+  reason.
 
 The library logs the host, the request and the slugs of each release, never a key.
 

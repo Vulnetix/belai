@@ -295,6 +295,14 @@ CLI's credential.
 - The TUI pulls the website's changes every 15 seconds, when `/kanban` opens,
   and on `r`.
 - A headless `-prompt` run, or an ACP connection, pushes once as it exits.
+- A web session (`belai rc-session`, started by `belai rc` for the website) runs for
+  hours, so it pulls the website's board once before its first turn, keeps pulling every
+  15 seconds like the TUI, and pushes what it changed when it ends. Without that, a card
+  filed on the website after the session started would never reach `KanbanSearch`. It
+  needs the same settings as any sync (`kanban` and `sync` on, a usable CLI
+  credential); with those off it keeps only its local board. An unreachable website does
+  not delay the first turn by more than 10 seconds or fail the session. A fleet worker
+  pulls once per poll instead.
 - Conflicts resolve per item: the most recent change wins. A newer local change
   that has not been pushed yet survives a pull. Histories are merged.
 

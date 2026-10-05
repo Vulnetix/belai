@@ -99,7 +99,10 @@ One pass of the worker loop:
    opposite: the worker exits once nothing is left to claim even when its
    profile has a `schedule`. `belai rc` passes it when a stored schedule fires
    a worker (see [remote-control.md](remote-control.md#scheduled-agents)),
-   because the stored schedule is what starts it each time.
+   because the stored schedule is what starts it each time. Once that worker
+   has stopped, `belai rc` reads its registry record and reports the outcome on
+   the schedule: `worked` when `Done` counted items, `worker_failed` when it
+   failed or its process died, `drained` when it stopped with nothing to claim.
 
 ### Finding work: `kanban.survey`
 

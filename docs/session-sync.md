@@ -462,6 +462,9 @@ only while session sync can run.
 - **Pulling.** The TUI pulls the website's changes every 15 seconds.
 - **Headless and ACP.** Unlike transcripts, their kanban writes are pushed
   once as the run or connection ends.
+- **Web sessions.** `belai rc-session` pulls once before its first turn and then
+  every 15 seconds, the way the TUI does, and pushes once more as it ends. See
+  [kanban.md](kanban.md).
 
 Server side:
 
