@@ -791,6 +791,41 @@ Each outcome is a role-manager activity, `gate_draft` (`drafted` or `fallback`)
 or `delivery_report` (`reported` or `fallback`), with the serving model. Neither
 records a card, a gate or a note.
 
+### Teleport roles
+
+Two fast-tier roles serve a [teleport's code replay](teleport.md#code). Both are
+tool-less turns with no skills or agent block, both sanitise every input, and the
+first has a harness-composed fallback, so a missing or weak model never costs a
+teleport its changes.
+
+**`teleport_distill`** runs on the origin host. `rolemanager.BuildTeleportDistillPayload`
+shows the role the complete list of changed files (path, status, lines added and
+removed), the names of the files left out on purpose and the patch (capped at
+24,000 runes, with a note when it is cut), described as data from a repository. It
+asks for exactly two sections: `## Summary` (at most 120 words, what must be true
+when the change is done) and `## Instructions` (one `- path (status): …` entry per
+file, precise enough to make the edit without the patch, with no secrets).
+`rolemanager.ParseTeleportDistill` needs both sections non-empty, sanitises them and
+caps them at 2,000 and 16,000 runes. `rolemanager.DistillTeleport` never fails: no
+classifier, a transport error or an unusable reply returns
+`rolemanager.ComposeTeleportFallback`, which lists the files in words from harness
+facts only (no patch text). Recorded as a `teleport_distill` event (`drafted` or
+`fallback`), with the file count only.
+
+**`teleport_verify`** runs on the target host after a replay pass whose tree does
+not match the origin's exactly. A decision backend rates first (the
+[`teleport_verify`](jev-jobs.md#teleport-verify) job); this role is the model
+fallback. `rolemanager.EvaluateTeleport` shows the model the origin model's
+summary (untrusted, sanitised) and the harness's own check (files identical to the
+origin's, files that differ, files missing, files changed that the origin did not
+change: paths and counts only), plus the backend's scores as a prior when it
+rated and could not settle. It must answer one sentinel, `TELEPORT_VERIFIED`,
+`TELEPORT_INCOMPLETE` or `TELEPORT_FAILED` (labels in `labels.go`). A malformed reply
+is re-asked once with the rejected text and the accepted tokens quoted back; one
+that is still malformed fails closed to `TELEPORT_INCOMPLETE` with
+`ErrMalformedTeleportVerify`, so a replay is never called verified by accident. The
+harness never accepts a verified rating for a file the checkout lacks.
+
 ### Classifier payload invariants
 
 Every classifier payload builder keeps the classifier turn tool-less, skill-less,
@@ -1555,7 +1590,7 @@ The plan text never enters the system block; only harness-computed metadata
 
 ### Auto mode
 
-`shift+tab` cycles agent, plan, goal, then **auto**, and `/mode auto` sets it
+`shift+tab` cycles agent, plan, goal, code, then **auto**, and `/mode auto` sets it
 directly. Auto is not a fourth `modes.Mode`: it is the absence of a sticky
 choice (`App.modeAuto`, with `modeSticky` and `modeExplicit` both false), so
 every prompt goes through mode and intent detection as it does in a fresh

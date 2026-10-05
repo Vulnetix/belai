@@ -278,7 +278,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
 		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
-		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd),
+		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd), Distill: rcDistill(wd), TeleportPush: teleportPushPolicy(wd),
 		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
 		Shell: *webShell,
 	})

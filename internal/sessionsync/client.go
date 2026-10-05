@@ -407,6 +407,11 @@ type Dispatch struct {
 	Library   string `json:"library,omitempty"`
 	Version   string `json:"version,omitempty"`
 	Overwrite bool   `json:"overwrite,omitempty"`
+	// A "teleport_code" request names its teleport in Teleport, and says in Push
+	// that the target's user agreed to a teleport branch, and in Replay that the
+	// forge is not to be tried (the target could not fetch the branch).
+	Push   bool `json:"push,omitempty"`
+	Replay bool `json:"replay,omitempty"`
 	// An "avatar" request names the agent creator whose avatar to draw.
 	Creator string `json:"creator,omitempty"`
 	// A "crew_install" request names a library crew and version in Library and

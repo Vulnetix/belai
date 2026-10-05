@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,13 +31,16 @@ import (
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/teleport/changes"
+	"github.com/vulnetix/belai/internal/teleport/replay"
 	"github.com/vulnetix/belai/internal/version"
 )
 
 // API is the backend half of a teleport. *sessionsync.Client is the real one.
 type API interface {
 	PutHost(ctx context.Context, hostID string, h sessionsync.Host) error
-	TeleportCreate(ctx context.Context, hostID, ref string) (sessionsync.Teleport, error)
+	TeleportCreate(ctx context.Context, hostID, ref string, push bool) (sessionsync.Teleport, error)
+	TeleportReplay(ctx context.Context, hostID, tid, reason string) error
 	TeleportGet(ctx context.Context, hostID, tid string) (sessionsync.TeleportState, error)
 	TeleportEntries(ctx context.Context, hostID, tid string, after int64) ([]sessionsync.Entry, error)
 	TeleportProfile(ctx context.Context, hostID, tid, profileID, version string) (string, []sessionsync.FileRef, error)
@@ -49,6 +53,10 @@ type API interface {
 type Options struct {
 	// Ref is the session id, or a unique prefix of one, from the command line.
 	Ref string
+	// Push is the user's agreement that the origin host may push the session's
+	// uncommitted and unpushed changes to the forge as one teleport branch
+	// (-teleport-push). Without it the origin host decides by its own setting.
+	Push bool
 	// RefOverride is -teleport-ref: a ref or commit to check out instead of the
 	// one the origin session was at.
 	RefOverride string
@@ -86,6 +94,18 @@ type Result struct {
 	TeleportID string
 	// Notices are one-line facts for the user to read when the session opens.
 	Notices []string
+	// Replay is set when the session's code could not be coordinated over the
+	// forge: the changes, as a patch and the origin model's hand-over, for the
+	// caller to replay in Dir before the session opens (internal/teleport/replay).
+	// Run has already told the user why, and has not applied any of it.
+	Replay *Replay
+}
+
+// Replay is the code half of a teleport that goes through a replay.
+type Replay struct {
+	// Dir is the worktree the replay runs in, at the commit the changes build on.
+	Dir  string
+	Plan replay.Plan
 }
 
 const (
@@ -114,7 +134,7 @@ func Run(ctx context.Context, o Options) (res Result, err error) {
 	if err := o.API.PutHost(ctx, o.HostID, o.Host); err != nil {
 		return res, fmt.Errorf("register this host: %w", reason(err))
 	}
-	tp, err := o.API.TeleportCreate(ctx, o.HostID, o.Ref)
+	tp, err := o.API.TeleportCreate(ctx, o.HostID, o.Ref, o.Push)
 	if err != nil {
 		return res, reason(err)
 	}
@@ -146,7 +166,7 @@ func Run(ctx context.Context, o Options) (res Result, err error) {
 		return res, err
 	}
 
-	co, err := p.prepare(ctx, og)
+	co, rp, err := o.prepareCode(ctx, tp, state, p, og, false)
 	if err != nil {
 		return res, err
 	}
@@ -155,6 +175,10 @@ func Run(ctx context.Context, o Options) (res Result, err error) {
 		say("created a worktree at the commit the session was at")
 	}
 	res.Notices = append(res.Notices, co.Notices...)
+	if rp != nil {
+		res.Replay = &Replay{Dir: co.Dir, Plan: *rp}
+		say(rp.Notice())
+	}
 
 	res.Notices = append(res.Notices, o.install(ctx, tp.ID, state.Manifest)...)
 
@@ -259,7 +283,7 @@ func (o Options) undo(m *madeThings, p plan) {
 func (o Options) await(ctx context.Context, tp sessionsync.Teleport) (sessionsync.TeleportState, error) {
 	deadline := time.Now().Add(o.Wait)
 	cur := tp
-	told := false
+	told, toldCode := false, false
 	for {
 		switch cur.Status {
 		case sessionsync.TeleportReady:
@@ -288,6 +312,10 @@ func (o Options) await(ctx context.Context, tp sessionsync.Teleport) (sessionsyn
 		if cur.Status == sessionsync.TeleportBackingUp && !told {
 			o.say("waiting for the origin host to back up its agent profile")
 			told = true
+		}
+		if cur.Status == sessionsync.TeleportSyncingCode && !toldCode {
+			o.say("waiting for the origin host to move its uncommitted and unpushed changes")
+			toldCode = true
 		}
 		if time.Now().After(deadline) {
 			return sessionsync.TeleportState{}, errors.New("the origin host did not answer in time; is belai rc running there?")
@@ -410,4 +438,125 @@ func (s source) File(ctx context.Context, sha string) ([]byte, error) {
 
 func (s source) Crew(ctx context.Context, library, ver string) (sessionsync.CrewFetched, error) {
 	return s.o.API.TeleportCrew(ctx, s.o.HostID, s.tid, library, ver)
+}
+
+var treeShape = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// prepareCode decides where the session runs and what happens to its code, from
+// the code half the origin sent (docs/teleport.md "Code"):
+//
+//   - none, or no code half: the checkout is prepared as before, and the user is
+//     told why the origin's own changes did not come, when the origin said so.
+//   - branch: the origin pushed one belai/teleport/<id> branch. The target
+//     fetches it and works in a worktree at its commit. A branch that cannot be
+//     fetched here is not an error: the target asks for the replay instead, once.
+//   - replay: the forge was not used. The target makes a worktree at the commit the
+//     changes build on, and returns the plan for the caller to replay in it.
+//
+// Nothing the origin sent has been applied or run when this returns.
+func (o Options) prepareCode(ctx context.Context, tp sessionsync.Teleport, st sessionsync.TeleportState, p plan, og originGit, asked bool) (checkout, *replay.Plan, error) {
+	c := st.Code
+	if c == nil {
+		co, err := p.prepare(ctx, og)
+		return co, nil, err
+	}
+	switch c.Mode {
+	case sessionsync.CodeBranch:
+		if !branchShape.MatchString(c.Branch) || !treeShape.MatchString(c.Commit) {
+			return checkout{}, nil, errors.New("the origin host named a teleport branch that is not one")
+		}
+		bg := og
+		bg.Head, bg.Branch, bg.Dirty, bg.Detached = c.Commit, c.Branch, false, false
+		co, err := p.prepare(ctx, bg)
+		if err == nil {
+			co.Notices = append(co.Notices, "the origin host's uncommitted and unpushed changes were pushed as the branch "+sanitize.Line(c.Branch, 80)+" on the forge, and this session runs in a worktree at that commit; delete the branch there when you no longer need it")
+			return co, nil, nil
+		}
+		if !errors.Is(err, errUnreachable) || asked {
+			return co, nil, err
+		}
+		o.say("the teleport branch could not be fetched here, so the origin host is asked to send the changes instead")
+		if rerr := o.API.TeleportReplay(ctx, o.HostID, tp.ID, "it is not reachable from this checkout"); rerr != nil {
+			return co, nil, fmt.Errorf("%w; the replay could not be requested either: %v", err, reason(rerr))
+		}
+		next, werr := o.await(ctx, tp)
+		if werr != nil {
+			return co, nil, werr
+		}
+		return o.prepareCode(ctx, tp, next, p, og, true)
+	case sessionsync.CodeReplay:
+		plan, err := replayPlan(c)
+		if err != nil {
+			return checkout{}, nil, err
+		}
+		bg := og
+		bg.Head, bg.Dirty = c.Base, false
+		p.force = true
+		co, err := p.prepare(ctx, bg)
+		if err != nil {
+			if errors.Is(err, errUnreachable) {
+				return co, nil, fmt.Errorf("the changes build on commit %s, which this repository does not have even after fetching origin; fetch or push that branch and try again", sanitize.Line(c.Base, 40))
+			}
+			return co, nil, err
+		}
+		co.Notices = append(co.Notices, fmt.Sprintf("the origin host's uncommitted and unpushed changes (%d file%s) are being replayed in this worktree", len(plan.Files), pluralS(len(plan.Files))))
+		for _, s := range plan.Skipped {
+			co.Notices = append(co.Notices, "left out of the replay: "+s.Path+" ("+s.Reason+")")
+		}
+		return co, &plan, nil
+	default:
+		bg := og
+		bg.Dirty = false
+		co, err := p.prepare(ctx, bg)
+		why := sanitize.Line(c.Reason, 240)
+		if why == "" {
+			why = "the origin host did not move them"
+		}
+		co.Notices = append(co.Notices, "the origin session's uncommitted and unpushed changes are not here: "+why)
+		return co, nil, err
+	}
+}
+
+var branchShape = regexp.MustCompile(`^belai/teleport/[0-9a-f]{8}$`)
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// replayPlan checks a replay result and turns it into the plan the replay runs:
+// ids with the shape of git object ids, a patch within the bound, a file list
+// whose paths the patch may carry, and every text field cleaned of delimiter
+// markup. A result that fails is refused whole.
+func replayPlan(c *sessionsync.TeleportCode) (replay.Plan, error) {
+	if !treeShape.MatchString(c.Base) || !treeShape.MatchString(c.Tree) {
+		return replay.Plan{}, errors.New("the origin host sent changes with no usable commit or tree id")
+	}
+	if c.Patch == "" || len(c.Patch) > changes.MaxPatchBytes {
+		return replay.Plan{}, errors.New("the origin host sent changes that are empty or larger than a teleport carries")
+	}
+	p := replay.Plan{
+		Reason: sanitize.Line(c.Reason, 240), Summary: sanitize.Text(c.Summary), Instructions: sanitize.Text(c.Instructions),
+		Base: c.Base, Tree: c.Tree, Patch: c.Patch,
+	}
+	for _, f := range c.Files {
+		if len(p.Files) >= changes.MaxFiles || !changes.SafePath(f.Path) {
+			continue
+		}
+		switch f.Status {
+		case "added", "modified", "deleted":
+		default:
+			continue
+		}
+		p.Files = append(p.Files, changes.File{Path: f.Path, Status: f.Status, Added: max(f.Added, 0), Removed: max(f.Removed, 0)})
+	}
+	for i, k := range c.Skipped {
+		if i >= 50 {
+			break
+		}
+		p.Skipped = append(p.Skipped, changes.Skip{Path: sanitize.Line(k.Path, 200), Reason: sanitize.Line(k.Reason, 40)})
+	}
+	return p, nil
 }

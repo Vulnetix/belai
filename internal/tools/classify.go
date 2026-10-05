@@ -65,6 +65,7 @@ var classifierKinds = map[Kind]bool{
 	KindMCP:        true,
 	KindKanban:     true,
 	KindOffload:    true,
+	KindTeleport:   true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

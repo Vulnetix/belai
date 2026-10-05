@@ -403,6 +403,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindScreenshot: false,
 		// A script may edit files, so it is mutating.
 		KindCode: false,
+		// No tool carries KindTeleport; it stays off the read-only list.
+		KindTeleport: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

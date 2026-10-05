@@ -40,6 +40,12 @@ type fakeAPI struct {
 
 	puts, gets int
 	acks       []ack
+
+	// pushed is the consent the create call carried; replays are the reasons the
+	// target asked for a replay, and afterReplay the states served once it did.
+	pushed      bool
+	replays     []string
+	afterReplay []sessionsync.TeleportState
 }
 
 type ack struct{ status, session, reason string }
@@ -51,8 +57,19 @@ func (f *fakeAPI) PutHost(context.Context, string, sessionsync.Host) error {
 	return nil
 }
 
-func (f *fakeAPI) TeleportCreate(_ context.Context, _, _ string) (sessionsync.Teleport, error) {
+func (f *fakeAPI) TeleportCreate(_ context.Context, _, _ string, push bool) (sessionsync.Teleport, error) {
+	f.pushed = push
 	return f.tp, f.createEr
+}
+
+func (f *fakeAPI) TeleportReplay(_ context.Context, _, _, why string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.replays = append(f.replays, why)
+	if len(f.afterReplay) > 0 {
+		f.states, f.gets = f.afterReplay, 0
+	}
+	return nil
 }
 
 func (f *fakeAPI) TeleportGet(context.Context, string, string) (sessionsync.TeleportState, error) {

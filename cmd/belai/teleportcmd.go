@@ -20,7 +20,7 @@ import (
 // it. workdir is a trusted directory. The session runs there, or in a worktree
 // at the commit it was at, which this host trusts because it lies inside a
 // repository the user already trusted.
-func runTeleport(ctx context.Context, workdir, ref, override string, stderr io.Writer) (teleport.Result, *tui.Teleported, error) {
+func runTeleport(ctx context.Context, workdir, ref, override string, push bool, providerFlag, modelFlag string, stderr io.Writer) (teleport.Result, *tui.Teleported, error) {
 	client, err := rcClient(workdir)
 	if err != nil {
 		return teleport.Result{}, nil, fmt.Errorf("teleport: %w", err)
@@ -37,8 +37,15 @@ func runTeleport(ctx context.Context, workdir, ref, override string, stderr io.W
 	if err != nil {
 		return teleport.Result{}, nil, fmt.Errorf("teleport: %w", err)
 	}
+	// The user's agreement that the origin host may push a teleport branch is the
+	// flag, or their own teleport.push setting here. The origin host decides for
+	// itself by its own setting too (docs/teleport.md).
+	if settings, serr := config.LoadMerged(workdir); serr == nil && settings.TeleportPushPolicy() == config.TeleportPushAllow {
+		push = true
+	}
 	res, err := teleport.Run(ctx, teleport.Options{
 		Ref:         ref,
+		Push:        push,
 		RefOverride: override,
 		Workdir:     workdir,
 		API:         client,
@@ -50,6 +57,13 @@ func runTeleport(ctx context.Context, workdir, ref, override string, stderr io.W
 	})
 	if err != nil {
 		return res, nil, fmt.Errorf("teleport: %w", err)
+	}
+	// The code the forge could not carry is replayed here before the terminal UI
+	// opens, so the session starts on the finished checkout. The outcome is a
+	// notice, never a failure: the teleported session exists either way.
+	if res.Replay != nil {
+		out := runTeleportReplay(ctx, res.Replay, providerFlag, modelFlag, stderr)
+		res.Notices = append(res.Notices, out.Summary)
 	}
 	return res, &tui.Teleported{OriginID: res.OriginID, SessionID: res.SessionID, Notices: res.Notices}, nil
 }

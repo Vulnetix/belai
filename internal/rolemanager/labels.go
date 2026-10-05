@@ -55,6 +55,23 @@ func (s GoalSentinel) Label() string {
 	return string(s)
 }
 
+// TeleportSentinelLabels maps each teleport-verifier sentinel to a concise,
+// human-readable statement. Maintain parity with the TeleportSentinel constants.
+var TeleportSentinelLabels = map[TeleportSentinel]string{
+	TeleportVerified:   "replayed changes match the origin",
+	TeleportIncomplete: "replayed changes are incomplete; another pass allowed",
+	TeleportFailed:     "replayed changes do not match the origin",
+}
+
+// Label returns the human-readable statement for a teleport sentinel.
+// Unknown sentinels return their raw token.
+func (s TeleportSentinel) Label() string {
+	if l, ok := TeleportSentinelLabels[s]; ok {
+		return l
+	}
+	return string(s)
+}
+
 // DepSentinelLabels maps each dependency-change sentinel to a concise,
 // human-readable statement. Maintain parity with the DepSentinel constants.
 var DepSentinelLabels = map[DepSentinel]string{

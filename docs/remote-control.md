@@ -383,9 +383,10 @@ The website keeps a library of agent profiles and crews so they survive the
 machine they came from. Four requests reach them on this host, all through the
 dispatch queue and all carrying identifiers only: `profile_backup` and
 `profile_install` for an agent, `crew_backup` and `crew_install` for a crew
-(see [Crews](#crews) below). A fifth, `teleport_backup`, is not a person's
-action: the backend sends it to the origin host of a `belai -teleport` so the
-library holds the session's profile (see [teleport.md](teleport.md)):
+(see [Crews](#crews) below). Two more, `teleport_backup` and `teleport_code`, are not
+a person's action: the backend sends them to the origin host of a `belai
+-teleport`, so the library holds the session's profile and the target gets its
+uncommitted and unpushed code (see [teleport.md](teleport.md)):
 
 - **`profile_backup`** names one of this host's profiles. The daemon exports it
   as markdown (the same form `belai agent import` reads, with its `id`, display
@@ -402,6 +403,17 @@ library holds the session's profile (see [teleport.md](teleport.md)):
   24 uploads. It writes nothing here. A crew or member that cannot be backed up
   is reported and does not stop the profile's backup, which is the part the
   teleport needs. Built-in profiles and crews are not uploaded.
+
+- **`teleport_code`** names a teleport, the session's directory, whether the
+  target's user agreed to a branch (`push`) and whether the forge is not to be
+  tried (`replay`). The daemon re-checks the directory against its own list,
+  reads the working tree with hardened git (nothing in the checkout, its index or
+  its refs changes), and answers in the background so a model's hand-over never
+  holds the queue: a `belai/teleport/<id>` branch when `teleport.push` and the
+  user's agreement allow one, otherwise the patch with a summary and per-file
+  instructions from the fast model's `teleport_distill` role. Credential files,
+  binaries, large files, links and ignored files never leave. See the Code section
+  of [teleport.md](teleport.md#code).
 
 - **`profile_install`** names a library profile and one of its versions, and
   whether it may replace a profile here. The daemon reads that version from the

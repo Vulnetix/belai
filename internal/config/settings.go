@@ -110,6 +110,10 @@ type Settings struct {
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
 	Notifications *NotificationSettings `json:"notifications,omitempty"`
+	// Teleport configures how this host takes part in a teleport's code
+	// transfer (docs/teleport.md). A per-user preference: the project layer cannot
+	// let a host push a branch to a forge.
+	Teleport *TeleportSettings `json:"teleport,omitempty"`
 	// Voice configures speech input to the composer (docs/voice.md). A
 	// per-user preference: the project layer cannot turn the microphone on,
 	// pick the capture device or make dictation send itself.
@@ -424,6 +428,44 @@ type HooksSettings struct {
 	// Enabled runs hooks. Default true; a repo-visible project layer may
 	// turn it off, never on.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// TeleportSettings configures a host's part in moving a session's code.
+type TeleportSettings struct {
+	// Push says whether this host, as the origin of a teleport, may push the
+	// session's uncommitted and unpushed changes to the forge as one
+	// belai/teleport/<id> branch so the target can fetch them: "ask" (the
+	// default) pushes only when the target's user agreed with -teleport-push,
+	// "allow" pushes whenever a teleport asks, and "never" never does, so the
+	// changes always go to the target as a patch for a replay. Any other value is
+	// "never".
+	Push string `json:"push,omitempty"`
+}
+
+// Teleport push policies.
+const (
+	TeleportPushAsk   = "ask"
+	TeleportPushAllow = "allow"
+	TeleportPushNever = "never"
+)
+
+// TeleportPushPolicy returns the host's push policy: ask when unset, and never
+// for a value that is not one of the three.
+func (s Settings) TeleportPushPolicy() string {
+	if s.Teleport == nil || s.Teleport.Push == "" {
+		return TeleportPushAsk
+	}
+	switch s.Teleport.Push {
+	case TeleportPushAsk, TeleportPushAllow, TeleportPushNever:
+		return s.Teleport.Push
+	}
+	return TeleportPushNever
+}
+
+func (s *TeleportSettings) merge(from *TeleportSettings) {
+	if from.Push != "" {
+		s.Push = from.Push
+	}
 }
 
 // NotificationSettings configures desktop notifications.

@@ -85,6 +85,12 @@ const JevKnowledgeTopics JevJob = "knowledge_topics"
 // mode, a permission or a gate.
 const JevAgentPick JevJob = "agent_pick"
 
+// JevTeleportVerify rates a replayed teleport checkout against the origin
+// host's summary as verified, incomplete or failed. A clear answer settles the
+// check; anything else goes to the model verifier with the scores as a hint. It
+// never replaces the exact tree comparison, which settles a replay without it.
+const JevTeleportVerify JevJob = "teleport_verify"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -104,6 +110,7 @@ var JevJobs = []JevJob{
 	JevRequestCoverage,
 	JevKnowledgeTopics,
 	JevAgentPick,
+	JevTeleportVerify,
 }
 
 // LocatePreview values for jev.locate_previews.

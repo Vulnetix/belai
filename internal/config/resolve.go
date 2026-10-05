@@ -329,6 +329,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
 	}
+	if s.Teleport != nil && src != SourceProject {
+		// Whether this host may push a branch for a teleport is the user's
+		// alone: a repository cannot make a host publish to its forge.
+		if e.Settings.Teleport == nil {
+			e.Settings.Teleport = &TeleportSettings{}
+		}
+		e.Settings.Teleport.merge(s.Teleport)
+		e.Origin["teleport"] = src
+	}
 	if s.Voice != nil && src != SourceProject {
 		// The microphone is the user's alone: a repository cannot switch it
 		// on, name its device or make what is dictated send itself.

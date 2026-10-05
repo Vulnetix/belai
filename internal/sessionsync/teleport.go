@@ -28,10 +28,13 @@ import (
 const (
 	TeleportRequested = "requested"
 	TeleportBackingUp = "backing_up"
-	TeleportReady     = "ready"
-	TeleportCompleted = "completed"
-	TeleportFailed    = "failed"
-	TeleportExpired   = "expired"
+	// TeleportSyncingCode is the row while the origin host is asked for its
+	// uncommitted and unpushed changes (docs/teleport.md "Code").
+	TeleportSyncingCode = "syncing_code"
+	TeleportReady       = "ready"
+	TeleportCompleted   = "completed"
+	TeleportFailed      = "failed"
+	TeleportExpired     = "expired"
 )
 
 const (
@@ -81,13 +84,62 @@ type TeleportOverrides struct {
 	Provider string `json:"provider"`
 }
 
-// TeleportState is a teleport as the target reads it. Git, Overrides and
-// Manifest are set only once the status is ready.
+// Code modes, equal to the server's (vdb-site belai_teleport_code.go).
+const (
+	// CodeNone: nothing to move, or the origin could not read its changes (Reason).
+	CodeNone = "none"
+	// CodeBranch: the origin pushed one branch and the target fetches it.
+	CodeBranch = "branch"
+	// CodeReplay: the forge was not used, so the origin sent a patch and its
+	// model's hand-over, and the target replays them.
+	CodeReplay = "replay"
+)
+
+// TeleportCodeFile is one file the patch changes, as the origin counted it.
+type TeleportCodeFile struct {
+	Path    string `json:"path"`
+	Status  string `json:"status"`
+	Added   int    `json:"added"`
+	Removed int    `json:"removed"`
+}
+
+// TeleportCodeSkip is a changed file left out of the patch, and why.
+type TeleportCodeSkip struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// TeleportCode is the code half of a teleport: what the origin host did with
+// the session's uncommitted and unpushed changes. Everything in it is third-party
+// text from another host's working tree and model, so the target checks it
+// (internal/teleport) before any of it reaches git or a model.
+type TeleportCode struct {
+	Mode   string `json:"mode"`
+	Reason string `json:"reason,omitempty"`
+	// Branch and Commit are the pushed teleport branch (mode branch).
+	Branch string `json:"branch,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	// Base is the last pushed commit the changes build on, Head the commit the
+	// origin had checked out and Tree the tree object of its final state.
+	Base string `json:"base,omitempty"`
+	Head string `json:"head,omitempty"`
+	Tree string `json:"tree,omitempty"`
+	// Patch, Summary and Instructions are a replay's hand-over (mode replay).
+	Patch        string             `json:"patch,omitempty"`
+	Summary      string             `json:"summary,omitempty"`
+	Instructions string             `json:"instructions,omitempty"`
+	Files        []TeleportCodeFile `json:"files,omitempty"`
+	Skipped      []TeleportCodeSkip `json:"skipped,omitempty"`
+}
+
+// TeleportState is a teleport as the target reads it. Git, Overrides, Manifest
+// and Code are set only once the status is ready.
 type TeleportState struct {
 	Teleport  Teleport          `json:"teleport"`
 	Git       json.RawMessage   `json:"git"`
 	Overrides TeleportOverrides `json:"overrides"`
 	Manifest  TeleportManifest  `json:"manifest"`
+	Code      *TeleportCode     `json:"code"`
 }
 
 // TeleportError is a refusal the server explained. Reason is cleaned text.
@@ -141,13 +193,33 @@ func teleportPath(hostID, tid string, rest string) string {
 }
 
 // TeleportCreate asks to continue the session ref (a full id or a unique
-// prefix) on hostID. Every call makes a new teleport.
-func (c *Client) TeleportCreate(ctx context.Context, hostID, ref string) (Teleport, error) {
+// prefix) on hostID. Every call makes a new teleport. push is the user's
+// agreement that the origin host may push a teleport branch to the forge.
+func (c *Client) TeleportCreate(ctx context.Context, hostID, ref string, push bool) (Teleport, error) {
 	var out struct {
 		Teleport Teleport `json:"teleport"`
 	}
-	err := c.teleportDo(ctx, http.MethodPost, teleportPath(hostID, "", ""), map[string]string{"sessionId": ref}, &out, requestTimeout)
+	body := map[string]any{"sessionId": ref}
+	if push {
+		body["push"] = true
+	}
+	err := c.teleportDo(ctx, http.MethodPost, teleportPath(hostID, "", ""), body, &out, requestTimeout)
 	return out.Teleport, err
+}
+
+// TeleportReplay tells the backend the target could not fetch the teleport
+// branch, so the origin host is asked again to send a patch for a replay.
+func (c *Client) TeleportReplay(ctx context.Context, hostID, tid, reason string) error {
+	in := map[string]string{"reason": sanitize.Line(reason, maxTeleportReason)}
+	return c.teleportDo(ctx, http.MethodPost, teleportPath(hostID, "/"+url.PathEscape(tid), "/replay"), in, nil, requestTimeout)
+}
+
+// TeleportCodePut is the origin host's answer to a teleport_code request:
+// what it did with the session's changes. The backend takes it only for the
+// request the host was handed (dispatch) and only from this host.
+func (c *Client) TeleportCodePut(ctx context.Context, hostID, tid, dispatch string, code TeleportCode) error {
+	rest := "/code?dispatch=" + url.QueryEscape(dispatch)
+	return c.teleportDo(ctx, http.MethodPut, teleportPath(hostID, "/"+url.PathEscape(tid), rest), code, nil, 2*requestTimeout)
 }
 
 // TeleportGet reads a teleport's status, and once it is ready its git facts,

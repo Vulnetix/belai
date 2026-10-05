@@ -44,7 +44,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
-  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
@@ -480,6 +480,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   only. Anything else, an error or a timeout goes to the model judge with the
   scores as a harness line and an instruction to accept completion only when
   tools showed a check. A complete verdict still meets the verification gate.
+  Teleport verify (`teleport_verify`, `jev/teleport.go`) sees the origin model's summary as `DecisionText` and the harness's own check of a replayed checkout (paths and counts), never the patch, a file's contents or a tool's output. It reads the goal judge's cut-offs (`goal_complete_at`, `goal_rival_max`), only ever rates a checkout the exact tree comparison did not already verify, and a verified rating is never accepted for a file the checkout lacks; anything unclear goes to the model sentinel.
 - **Every role-manager decision is written to the session record.**
   `Activity.Record` builds a `rolemanager` entry for every event, shown or
   hidden, and `rolemanager.AddSink` delivers activities losslessly and in
@@ -1179,12 +1180,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   permission ask or question, and in agent mode with no carrier it is refused
   rather than answering the picker. The project layer may turn `sync.enabled`,
   `sync.remote_prompts` and `sync.remote_answers` off, never on.
-- **Teleport moves a transcript and a profile, and trusts neither.**
+- **Teleport moves a transcript, a profile and code, and trusts none of them.**
   `belai -teleport` (`internal/teleport`, docs/teleport.md) continues a session of
   the account on this host. The rules:
-  - **What moves.** The session transcript and the agent profile the session ran
-    under, with the crews that list it and their members when this host lacks
-    them. No provider, credential, setting or schedule. A scheduled profile is
+  - **What moves.** The session transcript, the agent profile the session ran
+    under with the crews that list it and their members when this host lacks
+    them, and the code the session changed (the Code bullet below). No provider,
+    credential, setting or schedule. A scheduled profile is
     not installed. The session's mode and active profile become the new
     session's own record; its model is a hint applied only where this host
     already has that provider credentialed; its plan and goal names, guardrails
@@ -1202,8 +1204,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     installer is `internal/libinstall`, shared with the rc daemon: strict parse,
     validated whole, no replace without the request's say-so, members before the
     crew. Do not add a second installer.
-  - **Git is facts only and hardened.** The backend holds the origin's remote,
-    branch, abbreviated HEAD and dirty flag, and nothing of the code. The remote
+  - **Git is hardened.** The session's git facts are the origin's remote,
+    branch, abbreviated HEAD and dirty flag; its code travels only as the Code
+    bullet says. The remote
     must match this checkout; a missing commit is fetched from origin and refused
     when still missing (`-teleport-ref` is the user's explicit override, shape
     checked). A mismatched checkout gets a worktree under `config.WorktreesDir`
@@ -1216,13 +1219,63 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     a new row and a new session. A `teleport_backup` request is made by the
     backend alone, never by the browser, and the origin host uploads only while it
     is delivered. The row keeps ids, status and times for audit and outlives the
-    sessions it names; its `coord` column (git facts, manifest, overrides) is
-    cleared when the teleport completes, fails or expires. A session's origin is
-    read from the row, never from a field the host sends.
+    sessions it names; its `coord` column (git facts, manifest, overrides, the
+    code result) is cleared when the teleport completes, fails or expires. A
+    session's origin is read from the row, never from a field the host sends.
   - **Ack before opening.** The new session is kept only once the backend has
     recorded the teleport, so a session that came from another never exists
     without its audit record. The target's `host.teleport` audit event names the
     new session and the origin id only.
+  - **Code goes by a branch the origin pushed, or by a replay the target
+    finishes, and never by trust.** A `teleport_code` request (made by the
+    backend alone, answered by an upload only the delivered request can make,
+    status `syncing_code`) asks the origin host to read its own working tree. The
+    request carries identifiers only (the teleport, the session's directory, the
+    user's agreement to a branch, whether the forge is not to be tried); the
+    daemon re-checks the directory against its own list and never reads a path
+    from the request. It never fails a teleport: the transcript and profile
+    move regardless and the target says why the changes did not.
+    - **What may leave the origin** is decided by the origin host
+      (`internal/teleport/changes`): a credential-bearing file (the locate
+      eligibility names), a binary, a file over 256 KiB, a symbolic link, a path
+      outside `[A-Za-z0-9._@+/-]`, anything inside `.git` or `.vulnetix` and
+      anything git ignores never travel; the final state is built in a throwaway
+      index, so the checkout, its index and its refs are never changed. A patch
+      over 512 KiB or 200 files is not sent.
+    - **A push is the user's and the host's.** `teleport.push` (`ask` by default,
+      `allow`, `never`; user layers only, `resolve.go` drops the project layer)
+      and the target user's `-teleport-push` decide it: `ask` pushes only with the
+      flag, `allow` whenever asked, `never` never; any other value is `never`. It
+      pushes one commit by an explicit refspec to `origin` as
+      `belai/teleport/<id>` and nothing else, never a user's branch, never forced.
+      A target that cannot fetch the branch asks once for a replay, and the
+      origin then does not push.
+    - **A replay is untrusted from the first byte.** The patch is parsed against
+      a closed grammar (`changes.ParsePatch`: no rename, copy, binary patch, symlink
+      or submodule mode, no mode but 100644 and 100755, no path outside the
+      repository or inside `.git` or `.vulnetix`, hunk counts exact) and applied
+      by git file by file in a worktree the teleport made, never the user's
+      checkout, which refuses a path through a symlink. Do not add a second patch
+      parser or apply a patch another way.
+    - **The hand-over is another host's model's text.** The origin's summary and
+      instructions and the parts of the patch that did not apply reach the target's
+      model only as `agent.TeleportReplay`, a sanitised attachment classified
+      unconditionally (`tools.KindTeleport` is in `classifierKinds`, withheld means
+      not replayed), never as prompt text, a directive or part of the system
+      block; the harness's own facts (paths, counts) ride in the directive. The
+      replay session has file tools only (`Read`, `Write`, `Edit`, `Grep`, `Glob`,
+      `LS`) so no word of the hand-over can run a command or reach the network.
+      Do not widen `replayTools`.
+    - **Verification is the harness's, then a decision's.** An exact match of the
+      checkout's tree to the origin's (`changes.Matches`) is verified without a
+      model. Otherwise `teleport_verify` (`internal/rolemanager/jev/teleport.go`,
+      the goal judge's cut-offs) rates the origin's summary and harness facts
+      (paths and counts), then the model sentinel (`TELEPORT_VERIFIED`,
+      `TELEPORT_INCOMPLETE`, `TELEPORT_FAILED`) is the fallback. A malformed
+      verdict is incomplete, a verified rating is never accepted for a file the
+      checkout lacks, and at most three model passes run. The `teleport_distill`
+      role writes the hand-over from the file list and the patch (capped) with a
+      harness fallback that holds no patch text.
 - **Remote control starts sessions only where the host said, with asks off.**
   `belai rc` (`internal/rc`) offers only trusted projects and `--dir`
   directories (a `--dir` is trusted like `-trust-dir`: the directory only).

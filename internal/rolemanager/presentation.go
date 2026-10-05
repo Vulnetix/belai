@@ -178,6 +178,8 @@ var presentations = map[Event]presentation{
 	EventKnowledgeTopics:           {CategoryContext, "topics"},
 	EventGoalJudge:                 {CategoryMode, "goaljudge"},
 	EventGateDraft:                 {CategoryContext, "gatedraft"},
+	EventTeleportDistill:           {CategoryContext, "teleport"},
+	EventTeleportVerify:            {CategoryCode, "teleportverify"},
 	EventDeliveryReport:            {CategoryContext, "delivery"},
 	EventHandoffClarity:            {CategoryCode, "clarity"},
 	EventGateAlignment:             {CategoryCode, "align"},

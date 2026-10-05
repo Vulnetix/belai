@@ -824,6 +824,10 @@ type TurnInput struct {
 	// carrier or a directive; the goal evaluator sees it as untrusted
 	// evidence.
 	KanbanItem string
+	// TeleportReplay is the hand-over of a teleport's code replay: another
+	// host's summary, instructions and the patch parts that did not apply. It
+	// rides as a gated attachment like KanbanItem, never as prompt text.
+	TeleportReplay *TeleportReplay
 	// NoGoalDraft skips the goal-contract draft: the prompt is a harness
 	// constant (a worker's "complete the attached item"), so a drafted
 	// contract would add nothing.
@@ -1091,6 +1095,14 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 			ctxText = ctxText[:maxGoalContext]
 		}
 		s.turnGoalContext = ctxText
+	}
+
+	if in.TeleportReplay != nil {
+		att, err := s.teleportAttachment(ctx, pipe, in.TeleportReplay)
+		if err != nil {
+			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, err
+		}
+		in.Attachments = append(append([]run.Attachment{}, in.Attachments...), att)
 	}
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
