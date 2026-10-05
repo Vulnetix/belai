@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -401,27 +402,109 @@ func TestSameRepoMatchesTheRepositoryAndItsSubdirectories(t *testing.T) {
 	}
 }
 
-func TestScheduleObserverMapsStoppedWorkers(t *testing.T) {
+// observed runs one schedule that has just started a worker, saves the fleet records
+// the worker left, runs the observer once and returns the schedule.
+func observed(t *testing.T, recs func(runAt int64, dir string) []fleet.Record) (*schedHarness, schedule.Record) {
+	t.Helper()
 	h := newSchedHarness(t)
 	h.add(schedA, "*/15 * * * *")
 	runAt := h.now.UnixMilli()
-	next := h.now.Add(15 * time.Minute)
-	if err := h.st.RecordRun(schedA, h.now, schedule.StatusStarted, next); err != nil {
+	if err := h.st.RecordRun(schedA, h.now, schedule.StatusStarted, h.now.Add(15*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-
 	reg, err := fleet.OpenRegistry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.Save(fleet.Record{ID: "w1", Profile: "builder", Repo: h.dir, State: fleet.StateStopped, Done: 2, Started: runAt + 100}); err != nil {
-		t.Fatal(err)
+	for _, r := range recs(runAt, h.dir) {
+		if err := reg.Save(r); err != nil {
+			t.Fatal(err)
+		}
 	}
-
 	h.d.observeScheduleRuns(context.Background())
 
-	got := h.get(schedA)
+	return h, h.get(schedA)
+}
+
+func TestScheduleObserverReportsWhatTheStoppedWorkerDid(t *testing.T) {
+	for name, tc := range map[string]struct {
+		rec  fleet.Record
+		want string
+	}{
+		"finished items":       {fleet.Record{State: fleet.StateStopped, Done: 2}, schedule.StatusWorked},
+		"finished and failed":  {fleet.Record{State: fleet.StateStopped, Done: 1, Failed: 1}, schedule.StatusWorked},
+		"nothing to claim":     {fleet.Record{State: fleet.StateStopped}, schedule.StatusDrained},
+		"items that failed":    {fleet.Record{State: fleet.StateStopped, Failed: 2}, schedule.StatusWorkerFailed},
+		"the process died":     {fleet.Record{State: fleet.StateFailed, Reason: "the worker process exited without stopping"}, schedule.StatusWorkerFailed},
+		"died after some work": {fleet.Record{State: fleet.StateFailed, Done: 3}, schedule.StatusWorkerFailed},
+	} {
+		_, got := observed(t, func(runAt int64, dir string) []fleet.Record {
+			r := tc.rec
+			r.ID, r.Profile, r.Repo, r.Started = "w1", "builder", dir, runAt+100
+
+			return []fleet.Record{r}
+		})
+		if got.LastStatus != tc.want {
+			t.Errorf("%s: status = %q, want %q", name, got.LastStatus, tc.want)
+		}
+		if got.LastRunAt == 0 {
+			t.Errorf("%s: the run time was lost", name)
+		}
+	}
+}
+
+// Anything that is not this run's stopped worker leaves "started" alone, so the
+// next tick looks again and a later run's status is never replaced by an earlier one's.
+func TestScheduleObserverLeavesAScheduleWhoseWorkerHasNotFinished(t *testing.T) {
+	for name, mk := range map[string]func(runAt int64, dir string) []fleet.Record{
+		"still working": func(runAt int64, dir string) []fleet.Record {
+			return []fleet.Record{{ID: "w1", Profile: "builder", Repo: dir, State: fleet.StateWorking, PID: os.Getpid(), Started: runAt + 100}}
+		},
+		"still idle": func(runAt int64, dir string) []fleet.Record {
+			return []fleet.Record{{ID: "w1", Profile: "builder", Repo: dir, State: fleet.StateIdle, PID: os.Getpid(), Started: runAt + 100}}
+		},
+		"a worker from before this run": func(runAt int64, dir string) []fleet.Record {
+			return []fleet.Record{{ID: "w1", Profile: "builder", Repo: dir, State: fleet.StateStopped, Done: 5, Started: runAt - 60_000}}
+		},
+		"another profile": func(runAt int64, dir string) []fleet.Record {
+			return []fleet.Record{{ID: "w1", Profile: "scout", Repo: dir, State: fleet.StateStopped, Done: 5, Started: runAt + 100}}
+		},
+		"another repository": func(runAt int64, _ string) []fleet.Record {
+			return []fleet.Record{{ID: "w1", Profile: "builder", Repo: "/elsewhere/repo", State: fleet.StateStopped, Done: 5, Started: runAt + 100}}
+		},
+		"no worker at all": func(int64, string) []fleet.Record { return nil },
+		"an old stopped worker beside a live one": func(runAt int64, dir string) []fleet.Record {
+			return []fleet.Record{
+				{ID: "w1", Profile: "builder", Repo: dir, State: fleet.StateStopped, Done: 5, Started: runAt + 50},
+				{ID: "w2", Profile: "builder", Repo: dir, State: fleet.StateWorking, PID: os.Getpid(), Started: runAt + 200},
+			}
+		},
+	} {
+		if _, got := observed(t, mk); got.LastStatus != schedule.StatusStarted {
+			t.Errorf("%s: status = %q, want it left at started", name, got.LastStatus)
+		}
+	}
+}
+
+// A schedule that is not waiting on a worker is not touched, and a second look at
+// one that was already reported changes nothing.
+func TestScheduleObserverReportsOnceAndSkipsFinishedSchedules(t *testing.T) {
+	h, got := observed(t, func(runAt int64, dir string) []fleet.Record {
+		return []fleet.Record{{ID: "w1", Profile: "builder", Repo: dir, State: fleet.StateStopped, Done: 1, Started: runAt + 100}}
+	})
 	if got.LastStatus != schedule.StatusWorked {
-		t.Fatalf("observer status = %q, want %q", got.LastStatus, schedule.StatusWorked)
+		t.Fatalf("first look = %q", got.LastStatus)
+	}
+	// A later worker for the same schedule must not rewrite what was already reported.
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Save(fleet.Record{ID: "w2", Profile: "builder", Repo: h.dir, State: fleet.StateStopped, Failed: 1, Started: got.LastRunAt + 5_000}); err != nil {
+		t.Fatal(err)
+	}
+	h.d.observeScheduleRuns(context.Background())
+	if again := h.get(schedA); again.LastStatus != schedule.StatusWorked {
+		t.Fatalf("a reported run was rewritten to %q", again.LastStatus)
 	}
 }

@@ -219,10 +219,19 @@ func startStatus(reason string) string {
 // observeScheduleRuns looks at schedules whose last status is "started" and
 // updates them from the fleet registry once the worker has stopped.
 func (d *Daemon) observeScheduleRuns(ctx context.Context) {
-	recs, err := d.o.Schedules.Live()
+	all, err := d.o.Schedules.Live()
 	if err != nil {
 		d.logf("schedules: %v", err)
 		return
+	}
+	var recs []schedule.Record
+	for _, r := range all {
+		if r.LastStatus == schedule.StatusStarted && r.LastRunAt != 0 {
+			recs = append(recs, r)
+		}
+	}
+	if len(recs) == 0 {
+		return // the usual tick: nothing is waiting on a worker, so the registry is not read
 	}
 	reg, err := fleet.OpenRegistry(nil)
 	if err != nil {
@@ -237,9 +246,6 @@ func (d *Daemon) observeScheduleRuns(ctx context.Context) {
 	for _, r := range recs {
 		if ctx.Err() != nil {
 			return
-		}
-		if r.LastStatus != schedule.StatusStarted || r.LastRunAt == 0 {
-			continue
 		}
 		var match *fleet.Record
 		stillLive := false
