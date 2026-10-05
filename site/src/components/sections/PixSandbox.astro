@@ -13,7 +13,7 @@ import nixLogo from '../../assets/logos/nix.svg';
 // Worker that launches it.
 
 const sealText =
-  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly. The sandbox answers the instance-metadata address 169.254.169.254 itself, from inside the container, with a fixed list of safe facts under /pix/v1/ (the sandbox, Vulnetix, Belai, the launch, the session limits, the models and the settings) and never a credential, key or organisation id; every other path is a 404, so cloud tools find no credentials there. The Pix Sandbox build of Belai reads it once, checks each value, and puts the stable facts in the system prompt of the model, which no other build does.';
+  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly. The sandbox answers the instance-metadata address 169.254.169.254 itself, from inside the container, with a fixed list of safe facts under /pix/v1/ (the sandbox, Vulnetix, Belai, the launch, the session limits, the models and the settings) and never a credential, key or organisation id; every other path is a 404, so cloud tools find no credentials there. The Pix Sandbox build of Belai reads it once, checks each value, and puts the stable facts in the system prompt of the model, which no other build does. A decision tool for the agent: the same build has one built-in MCP server, clef, whose nine tools ask the decision model for a true or false answer, an enum pick, confidence weights or an ordering. Clef only scores, and Belai does the rest with fixed arithmetic, so the same answers always give the same ranking, ties keep the order you gave, and a result is numbers and your own options, never model text. It runs on the same Clef path as guardrails, with no new key or destination, stays an ordinary MCP tool that is classified, and exists in no other build.';
 
 const firewalls = [
   {
@@ -164,6 +164,39 @@ const metadataPaths: [path: string, what: string][] = [
   ['/pix/v1/model', 'the decision model, the built-in model labels and the monthly token allowance'],
   ['/pix/v1/settings', 'the egress mode, packs, extensions and reserve percent'],
 ];
+// The built-in clef MCP (internal/clefmcp in the Belai repository, compiled only
+// with -tags belai_sandbox). Names, limits and rules come from
+// docs/pix-sandbox.md#the-decider-mcp.
+const deciderTools: [name: string, tag: string, body: string][] = [
+  ['decide_boolean', 'true or false', 'One proposition in; answer, p_true, confidence and margin out. Takes an optional threshold.'],
+  ['gate_decision', 'true or false · with a bar', 'Returns pass, fail or uncertain against a min_confidence. A weak answer is never a pass.'],
+  ['decide_enum', 'pick one', 'One choice over 2 to 255 options; the choice, a weight for every option, confidence and margin.'],
+  ['weigh_options', 'weights', 'A confidence weight for every option, summing to 1, without choosing one.'],
+  ['rank_options', 'ordering', 'Every option, best first, from one model call. Ties keep the order you gave.'],
+  ['top_k_options', 'shortlist', 'The best k options in order, and how many were left out.'],
+  ['compare_pair', 'a or b', 'The winner of two candidates, both weights and the margin. A tie goes to a and says so.'],
+  ['rank_pairwise', 'ordering · pair by pair', 'Orders 2 to 11 items by comparing every pair, then counting wins. Slower, and finer for close calls.'],
+  ['decide_batch', 'up to 64 questions', 'Mixed boolean and enum questions about one context, in one model request.'],
+];
+
+const deciderRules: [title: string, body: string][] = [
+  ['The model scores, Belai decides', 'Clef returns probabilities. Weights are normalised to sum to 1, every number is rounded to four places, and the ranking is a stable sort, so the same answers always give the same order.'],
+  ['Numbers and your own words', 'A result is JSON Belai builds from the probabilities and the options you passed. It holds no model text, and a failure is a fixed error code, never the backend\'s message or a guessed true.'],
+  ['Clef limits, checked first', 'At most 255 options and 64 questions a request. Empty or repeated options, too many items and unknown arguments are refused before any model call.'],
+  ['Still an MCP tool', 'Each tool is mcp__clef__name with the same permission kind as any server tool: classified, and allowed by a rule the sandbox launches with, not by an exemption.'],
+];
+
+const deciderSample = `rank_options
+  question: "Which file should I read first to fix the failing test"
+  options:  ["a.go", "b.go", "c.go"]
+
+{
+  "ranking": [
+    { "rank": 1, "option": "b.go", "weight": 0.6012 },
+    { "rank": 2, "option": "a.go", "weight": 0.3105 },
+    { "rank": 3, "option": "c.go", "weight": 0.0883 }
+  ]
+}`;
 ---
 
 <SealedSection id="pix-sandbox" label="pix sandbox" sealText={sealText}>
@@ -375,6 +408,50 @@ const metadataPaths: [path: string, what: string][] = [
     </div>
     <div class="min-w-0 @4xl:col-span-7">
       <pre class="mono overflow-x-auto rounded-xl border border-vx-ink p-4 text-xs leading-relaxed" aria-label="The environment block the model sees"><code>{promptSample}</code></pre>
+    </div>
+  </div>
+
+  <SubHead id="pix-decider" title="A decision tool for the agent">
+    The Pix Sandbox build has one built-in MCP server, clef. An agent calls it for a true or false answer, an enum pick,
+    confidence weights or an ordering, and gets numbers back instead of a guess in prose.
+  </SubHead>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {deciderTools.map(([name, tag, body]) => (
+      <article class="flex flex-col rounded-xl border border-vx-ink p-5">
+        <span class="h-1 w-10 rounded-full bg-cf-orange"></span>
+        <h4 class="mono mt-3 text-lg font-bold">{name}</h4>
+        <p class="mono mt-1 text-xs text-vx-ink/60">{tag}</p>
+        <p class="mt-3 text-sm text-vx-ink/80">{body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Deterministic on top of Clef</h3>
+      <p class="mt-3 text-vx-ink/80">
+        It runs on the same Clef path as the guardrails, through the sandbox Worker, so it adds no key and no new
+        destination. The server is compiled into the Pix Sandbox build only; no other Belai has it.
+      </p>
+      <ul class="mt-4 grid list-none gap-3 p-0 text-sm">
+        {deciderRules.map(([title, body]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold">{title}</span>
+            <span class="mt-1 block text-vx-ink/80">{body}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">One call, one ordering</h3>
+      <p class="mt-3 text-vx-ink/80">
+        A sample call and its result. Equal weights keep the order you gave, so asking again with the same answers
+        returns the same ranking.
+      </p>
+      <pre class="mono mt-4 overflow-x-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="A sample rank_options call and its result"><code>{deciderSample}</code></pre>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        The contract, with every limit, is in <a class="underline" href="https://github.com/Vulnetix/belai/blob/main/docs/pix-sandbox.md#the-decider-mcp">docs/pix-sandbox.md</a>.
+      </p>
     </div>
   </div>
 

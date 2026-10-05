@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/jsonrpc"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -62,6 +63,11 @@ type Options struct {
 	// resolves a "vulnetix:cli" header reference on every dial, so a later
 	// login takes effect on restart. nil leaves the reference unresolved.
 	VulnetixAuth func() (string, error)
+	// Builtins are servers compiled into this binary, by name. Each runs
+	// in-process and is offered whatever the user's settings say: a settings
+	// entry of the same name is ignored, and Upsert and Remove refuse the
+	// name. It is nil in every build that has none (docs/mcp.md).
+	Builtins map[string]jsonrpc.Handler
 }
 
 // VulnetixCLIRef is the header value that stands for the Vulnetix CLI's
@@ -148,11 +154,23 @@ func Start(ctx context.Context, cfg *config.MCPSettings, opts Options) *Manager 
 // server has connected or failed.
 func StartAsync(ctx context.Context, cfg *config.MCPSettings, opts Options) *Manager {
 	m := &Manager{opts: opts, servers: map[string]*server{}}
+	wg := &m.ready
+	for name, h := range opts.Builtins {
+		s := &server{name: name, cfg: config.MCPServer{Transport: BuiltinTransport}}
+		m.servers[name] = s
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.connect(ctx, s, h)
+		}()
+	}
 	if cfg == nil {
 		return m
 	}
-	wg := &m.ready
 	for name, sc := range cfg.Servers {
+		if _, builtin := opts.Builtins[name]; builtin {
+			continue
+		}
 		s := &server{name: name, cfg: sc}
 		m.servers[name] = s
 		if sc.Disabled {
@@ -161,7 +179,7 @@ func StartAsync(ctx context.Context, cfg *config.MCPSettings, opts Options) *Man
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			m.connect(ctx, s)
+			m.connect(ctx, s, nil)
 		}()
 	}
 	return m
@@ -174,22 +192,38 @@ func (m *Manager) Wait() {
 	}
 }
 
-func (m *Manager) connect(ctx context.Context, s *server) {
-	c, ts, err := m.dial(ctx, s.name, s.cfg)
+// connect dials s; a non-nil h runs the server in-process instead.
+func (m *Manager) connect(ctx context.Context, s *server, h jsonrpc.Handler) {
+	c, ts, err := m.dial(ctx, s.name, s.cfg, h)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s.client, s.tools, s.err = c, ts, err
 }
 
-func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer) (*Client, []tools.Tool, error) {
+func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer, h jsonrpc.Handler) (*Client, []tools.Tool, error) {
 	if !serverNameRE.MatchString(name) {
 		return nil, nil, fmt.Errorf("server name %q must be letters, digits, _ or - (at most 32)", name)
 	}
 	var t transport
+	switch {
+	case h != nil:
+		t = newInproc(h)
+	default:
+		var err error
+		if t, err = m.dialRemote(sc); err != nil {
+			return nil, nil, err
+		}
+	}
+	return m.finishDial(ctx, name, sc, t)
+}
+
+// dialRemote opens the stdio or http transport a settings entry names.
+func (m *Manager) dialRemote(sc config.MCPServer) (transport, error) {
+	var t transport
 	switch sc.Transport {
 	case "", "stdio":
 		if strings.TrimSpace(sc.Command) == "" {
-			return nil, nil, fmt.Errorf("stdio server needs a command")
+			return nil, fmt.Errorf("stdio server needs a command")
 		}
 		var pol *sandbox.Policy
 		if sc.Sandbox && m.opts.Sandbox != nil {
@@ -198,12 +232,12 @@ func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer) (*
 		}
 		st, err := startStdio(sc.Command, sc.Args, sc.Env, m.opts.Workdir, pol)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		t = st
 	case "http":
 		if !strings.HasPrefix(sc.URL, "https://") && !strings.HasPrefix(sc.URL, "http://") {
-			return nil, nil, fmt.Errorf("http server needs an http(s) url")
+			return nil, fmt.Errorf("http server needs an http(s) url")
 		}
 		hc := m.opts.HTTPClient
 		if hc == nil {
@@ -211,12 +245,17 @@ func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer) (*
 		}
 		headers, err := m.resolveHeaders(sc.URL, sc.Headers)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		t = newHTTP(sc.URL, headers, hc)
 	default:
-		return nil, nil, fmt.Errorf("unknown transport %q (want stdio or http)", sc.Transport)
+		return nil, fmt.Errorf("unknown transport %q (want stdio or http)", sc.Transport)
 	}
+	return t, nil
+}
+
+// finishDial handshakes over t and builds the server's tools.
+func (m *Manager) finishDial(ctx context.Context, name string, sc config.MCPServer, t transport) (*Client, []tools.Tool, error) {
 	c := &Client{name: name, t: t}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
@@ -325,7 +364,7 @@ func (m *Manager) Restart(ctx context.Context, name string) error {
 	if s.cfg.Disabled {
 		return fmt.Errorf("MCP server %q is disabled in settings", name)
 	}
-	m.connect(ctx, s)
+	m.connect(ctx, s, m.opts.Builtins[name])
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return s.err
@@ -338,6 +377,9 @@ func (m *Manager) Upsert(ctx context.Context, name string, sc config.MCPServer) 
 	if m == nil {
 		return fmt.Errorf("MCP is not running in this session")
 	}
+	if _, builtin := m.opts.Builtins[name]; builtin {
+		return fmt.Errorf("MCP server %q is built in and cannot be replaced", name)
+	}
 	m.mu.Lock()
 	if old, ok := m.servers[name]; ok && old.client != nil {
 		_ = old.client.Close()
@@ -348,7 +390,7 @@ func (m *Manager) Upsert(ctx context.Context, name string, sc config.MCPServer) 
 	if sc.Disabled {
 		return nil
 	}
-	m.connect(ctx, s)
+	m.connect(ctx, s, nil)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return s.err
@@ -357,6 +399,9 @@ func (m *Manager) Upsert(ctx context.Context, name string, sc config.MCPServer) 
 // Remove stops one server and forgets it.
 func (m *Manager) Remove(name string) {
 	if m == nil {
+		return
+	}
+	if _, builtin := m.opts.Builtins[name]; builtin {
 		return
 	}
 	m.mu.Lock()
