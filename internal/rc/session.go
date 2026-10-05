@@ -38,6 +38,9 @@ type SessionOptions struct {
 	Dispatch string
 	Prompt   string
 	Mode     modes.Mode
+	// Profile is the agent profile engaged for agent-mode turns (a start
+	// request's choice, validated by the daemon and again by the child).
+	Profile string
 	// Idle ends the session when no prompt has arrived for this long after
 	// its last turn.
 	Idle time.Duration
@@ -373,7 +376,11 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		o.Log.Observe(e)
 		o.Mirror.Nudge()
 	}
-	res, err := agentRunner.RunInputObserved(ctx, history, agent.TurnInput{Prompt: text, Attachments: attachments, ForceMode: mode}, emit)
+	in := agent.TurnInput{Prompt: text, Attachments: attachments, ForceMode: mode}
+	if o.Profile != "" && mode == modes.ModeAgent {
+		in.ForceAgent = o.Profile
+	}
+	res, err := agentRunner.RunInputObserved(ctx, history, in, emit)
 	state := "ended"
 	switch {
 	case ctx.Err() != nil:

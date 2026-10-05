@@ -94,25 +94,37 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   resolves them: `provider` and `model` in settings, then the model last chosen
   in the TUI (`state.json`), then the built-in default. When `routing.kind` is
   `routed` the routing table picks the model per turn, as in the TUI. The
-  website picks the directory, the prompt and optionally the mode (agent, plan
-  or goal), and may name a provider, a model and an effort for that one session
-  (see below). A model named on the web overrides routing for the session.
+  website picks the directory, the prompt and optionally the mode (agent, plan,
+  goal or code), and may name a provider, a model and an effort for that one
+  session (see below). A model named on the web overrides routing for the
+  session. In agent mode it may also name an agent profile the host offers; the
+  session then works as that profile does in the TUI (its instructions and the
+  tools it allows), through the same `ForceAgent` a typed `@profile` uses.
 - **What the website can offer.** The daemon advertises the model a session gets
   by default, whether it is routed, and the providers this host holds
   credentials for with the models each lists (the compiled-in catalogue plus
   the model last chosen here). Names only, never a key or an endpoint. The New
   session dialog shows them; a request that names a provider the host has no
   credentials for is refused, by the website and again by the daemon. An older
-  daemon advertises nothing, and the dialog then offers no model choice.
+  daemon advertises nothing, and the dialog then offers no model choice. The
+  same advertisement lists the **agent profiles** a session can be engaged with
+  (`rc.SessionAgents`: the flat profiles the TUI's picker offers, built-ins
+  first, and the single-mode agent definitions they do not shadow), by name,
+  never a prompt or a tool list. The dialog shows the picker in agent mode only.
+  A request names a profile only in agent mode and only one the host offered,
+  and the daemon checks both again; the name is passed to `belai rc-session
+  -profile`, which loads the profile on this host, narrows the tools to its
+  allowlist and engages it for agent-mode turns. An older daemon offers none.
 - Web prompts sent while a turn runs wait their turn and show as queued.
 - It ends after `--idle` (default 30 minutes) without a prompt, when you press
   **Stop session** on the website, or when remote control stops.
 - **The command is the daemon's, not yours.** `belai rc-session` needs
   `-session-id` (the id the daemon minted for the session) and `-dispatch` (the
   website request it answers) and refuses to start without both, with `-mode`
-  (`agent`, `plan` or `goal`, otherwise classified from the prompt), `-idle`,
-  `-provider`, `-model` and `-effort`, and `-git-sync on|off` (the daemon passes
-  them only when the web request named them) optional. `-controls` and
+  (`agent`, `plan`, `goal` or `code`, otherwise classified from the prompt), `-idle`,
+  `-provider`, `-model` and `-effort`, `-profile` (an agent profile, with `-mode
+  agent`), and `-git-sync on|off` (the daemon passes them only when the web
+  request named them) optional. `-controls` and
   `-allow-guardrails-off` are the daemon's own `--web-controls` and
   `--web-allow-guardrails-off`, and `-shell` its `--web-shell`, passed on to
   every session it starts. Typing it yourself starts nothing the website knows about. The
@@ -314,7 +326,14 @@ predict what will happen to them:
   `belai agent start NAME` or `belai agent start -crew NAME` there, which
   applies the trust check, the preflight and the worker cap
   (`agents.max_workers`, or an explicit `--max`) as it does in a terminal. The ack is `started` with the command's report, or
-  `refused` with its error. A `crew` request with `fill` set runs
+  `refused` with its error. A request may name a `provider` and a `model`; the
+  daemon checks them as it does a session's (a provider this host holds
+  credentials for, values that cannot read as flags) and passes them as
+  `belai agent start -provider P -model M`. Left out, the workers run on the
+  host's own default, which is why the website starts a Pix sandbox's workers on
+  that sandbox's own default (its launch config's model, else the first provider
+  its vault grants, else Pix Smart) rather than on an OpenAI default it holds no
+  key for. A `crew` request with `fill` set runs
   `belai agent start -crew NAME -fill` instead, which starts only the replicas the
   crew lacks in that directory (the Crews tab's "Start the missing worker").
 

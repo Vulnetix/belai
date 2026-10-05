@@ -1141,7 +1141,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		SessionID: t.SessionID, AskDisabled: &askOff, MCP: mcpMgr,
 		Kanban: store, KanbanSource: src, Claim: t.Claim,
 		Narrow: func(r *tools.Registry) *tools.Registry {
-			r = narrow(r, p.Tools)
+			r = NarrowTools(r, p.Tools)
 			if t.Setup != "" {
 				// No worktree isolates this turn from the checkout: the
 				// profile's tools, read-only (Bash becomes the read-only
@@ -1240,7 +1240,10 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 
 // narrow applies a profile's tools allowlist. mcp__server__* matches every
 // tool of that server. An empty allowlist keeps the full surface.
-func narrow(r *tools.Registry, allow []string) *tools.Registry {
+// NarrowTools keeps the registry's tools an agent profile's allowlist names (an
+// `mcp__server__*` entry covers that server's tools); an empty allowlist keeps
+// them all. A fleet worker and a web session engaged with a profile share it.
+func NarrowTools(r *tools.Registry, allow []string) *tools.Registry {
 	if len(allow) == 0 {
 		return r
 	}

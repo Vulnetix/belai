@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/libstore"
+	"github.com/vulnetix/belai/internal/profiles"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -27,7 +28,9 @@ type Inventory struct {
 	MaxWorkers int
 	Profiles   []sessionsync.RCProfile
 	Crews      []sessionsync.RCCrew
-	Workers    []sessionsync.RCWorker
+	// Agents are the agent profiles a web session may be started with.
+	Agents  []sessionsync.RCAgent
+	Workers []sessionsync.RCWorker
 	// Items are the library items this host holds, for the kinds whose sync
 	// switch is on: kind, name and hash, never a document.
 	Items []sessionsync.RCItem
@@ -55,11 +58,12 @@ func (i Inventory) catalogueHash() string {
 		M int
 		P []sessionsync.RCProfile
 		C []sessionsync.RCCrew
+		A []sessionsync.RCAgent
 		I []sessionsync.RCItem
 		D *sessionsync.RCModels
 		K []sessionsync.RCKnowledge
 		F map[string]DirPrefs
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Items, i.Models, i.Knowledge, i.Prefs})
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Agents, i.Items, i.Models, i.Knowledge, i.Prefs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -92,6 +96,7 @@ func LocalInventory() Inventory {
 		}
 		inv.Crews = append(inv.Crews, rc)
 	}
+	inv.Agents = SessionAgents()
 	inv.Items = localInventoryItems()
 	inv.Models = LocalModels()
 	inv.Workers = localWorkers()
@@ -120,6 +125,56 @@ func localInventoryItems() []sessionsync.RCItem {
 	}
 	return out
 }
+
+// maxInvAgents bounds the agent profiles one host advertises.
+const maxInvAgents = 64
+
+// SessionAgents lists the agent profiles a web session can be started with:
+// the flat profiles the TUI's picker offers (built-ins first, then the user's)
+// and the single-mode agent definitions it does not already shadow. A worker,
+// loop, monitor or scheduled definition runs on its own and is not a choice for
+// a session someone talks to. Names only; the host checks the name again when
+// the request arrives.
+func SessionAgents() []sessionsync.RCAgent {
+	look := map[string]string{}
+	var defs []agentprofile.AgentProfile
+	if ps, err := agentprofile.List(); err == nil {
+		for _, p := range ps {
+			look[p.Name] = p.DisplayName
+			if p.Mode == agentprofile.ModeSingle || p.Mode == "" {
+				defs = append(defs, p)
+			}
+		}
+	}
+	var out []sessionsync.RCAgent
+	seen := map[string]bool{}
+	add := func(name string, builtin bool) {
+		if name == "" || seen[name] || len(out) >= maxInvAgents || !ValidAgentName(name) {
+			return
+		}
+		seen[name] = true
+		out = append(out, sessionsync.RCAgent{Name: name, Builtin: builtin, DisplayName: look[name]})
+	}
+	if flat, err := profiles.List(); err == nil {
+		sort.Slice(flat, func(a, b int) bool {
+			if flat[a].Builtin != flat[b].Builtin {
+				return flat[a].Builtin
+			}
+			return flat[a].Name < flat[b].Name
+		})
+		for _, p := range flat {
+			add(p.Name, p.Builtin)
+		}
+	}
+	for _, p := range defs {
+		add(p.Name, p.Builtin)
+	}
+	return out
+}
+
+// ValidAgentName reports whether name can be an agent profile name in a start
+// request: it starts with a letter or digit, so it can never read as a flag.
+func ValidAgentName(name string) bool { return workerName.MatchString(name) }
 
 // RecentWorkers is how long a stopped or failed worker stays on the
 // website after it ends, so its exit reason and last log lines can be read.
