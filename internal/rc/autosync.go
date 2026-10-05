@@ -312,12 +312,14 @@ func (d *Daemon) runLibrarySync(ctx context.Context, force bool, t *syncTally) e
 func (d *Daemon) syncBatch(ctx context.Context, batch []localItem, now time.Time, t *syncTally) error {
 	byKey := map[string]localItem{}
 	var agents, crews []sessionsync.SyncItem
+	// The hash an agent is asked about is the one the inventory reports (libhash.go).
+	held := readLibraryHashes()
 	var items []sessionsync.SyncItemRef
 	for _, it := range batch {
 		byKey[syncKey(it.kind, it.id)] = it
 		switch {
 		case it.kind == "agent":
-			agents = append(agents, sessionsync.SyncItem{ID: it.id, SHA256: hashOf(it.data)})
+			agents = append(agents, sessionsync.SyncItem{ID: it.id, SHA256: hashFor(held, it.id, hashOf(it.data))})
 		case it.kind == "crew":
 			crews = append(crews, sessionsync.SyncItem{ID: it.id, SHA256: hashOf(it.data)})
 		default:
@@ -458,6 +460,9 @@ func (d *Daemon) syncRecovered() {
 	}
 }
 
+// marshalProfile renders a profile as markdown. It is a variable so a test can count renders.
+var marshalProfile = agentprofile.MarshalMarkdown
+
 // profileDocument is the markdown the library stores for a profile, or false
 // for one that is never synced: a built-in or plugin profile, one without a
 // file or a valid id, or one over the library's size limit. The automatic sync
@@ -467,7 +472,7 @@ func profileDocument(p agentprofile.AgentProfile) ([]byte, bool) {
 	if p.Builtin || p.File == "" || !agentprofile.ValidID(p.ID) {
 		return nil, false
 	}
-	md, err := agentprofile.MarshalMarkdown(p)
+	md, err := marshalProfile(p)
 	if err != nil || len(md) > sessionsync.MaxLibraryProfile {
 		return nil, false
 	}

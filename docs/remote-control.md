@@ -568,6 +568,25 @@ built-in crew, a profile or crew without an id or over the library size limit, a
 any of them with `sync.profiles` off carry none, and an older daemon sends none, so
 the website reads the version as not reported rather than current.
 
+What the hash is, exactly: the library stores a profile's markdown as it was given,
+so a version written in the website's editor is stored as the editor wrote it, while
+Belai renders a profile back in its own key order and JSON escaping (Go writes `<`,
+`>` and `&` inside a string as unicode escapes, which JavaScript's `JSON.stringify`
+does not, and the editor puts `knowledge` before `kanban` where Belai puts it last).
+The two differ for such a version,
+so when the daemon installs a library profile it keeps, in
+`~/.vulnetix/belai/rc/library-hashes.json`, the hash of the exact bytes the library
+held next to the hash of what it rendered. While the profile still renders the same,
+the advertisement and the sync report the library's hash, so an unedited install
+reads as that library version and the server answers `current`, not `push`. Once the
+profile is edited they report the hash of what is there, which no library version
+has, so the website reads it as edited on the host. A profile with no record (written
+by hand, backed up from this host, installed by an older Belai) reports the hash of
+its render, which is the bytes a push stores. A crew needs no record: the library
+stores a crew in Belai's canonical JSON. The golden vectors in
+`internal/rc/golden_hash_test.go` pin the bytes and digests of a profile and a crew,
+and vdb-site's `TestBelaiGoldenLibraryHashes` (`belai_golden_hash_test.go`) holds the same literals.
+
 A **`library_sync`** request carries nothing but its id. The daemon runs one pass of
 the automatic sync above at once, asking about every profile, crew and item whose
 switch is on, settled or not, and acknowledges with counts only ("2 pushed, 14
@@ -620,7 +639,9 @@ avatar id, so the website can draw the agent. They are presentation only.
 | With every sync switch off a `library_sync` request is refused and says so; a website that does not know the sync routes is reported in plain words | `TestLibrarySyncNowRefusesWithEverySwitchOffAndSaysWhyOnError` |
 | An offered directory carries `remote`, `host`, `provider`, `branch` and `defaultBranch` only when they have an identifier shape, read from the repository's files; a remote with credentials keeps none of them | `TestDirGitCarriesIdentifierFactsAndNoCredential` |
 | A directory that is not a checkout, a local-path origin, a detached HEAD and an odd branch name add nothing; the scp form of a remote is read | `TestDirGitLeavesOutWhatIsNotAForgeCheckout` |
-| A worker profile and a crew in the advertisement carry the hash of the document the library would store, built from the same bytes the automatic sync hashes, and none while `sync.profiles` is off or for a built-in | `TestInventoryCarriesTheHashOfAStoredProfileAndCrew`, `TestInventoryHashFollowsTheStoredBytes`, `TestInventoryHashIsOmittedWithProfileSyncOff` |
+| A worker profile and a crew in the advertisement carry the hash of the document the library would store, built from the same bytes the automatic sync hashes, and none while `sync.profiles` is off or for a built-in | `TestInventoryCarriesTheHashOfAStoredProfileAndCrew`, `TestInventoryHashFollowsTheStoredBytes`, `TestInventoryHashIsOmittedWithProfileSyncOff`, `TestInventoryRendersNoProfileWithProfileSyncOff` |
+| An installed library profile reports the library's hash for the bytes it installed while it is unedited, and the hash of what is there after an edit; the sync asks the server with the same hash; the render of a console-written agent is not the library's bytes | `TestARenderOfAConsoleAgentIsNotTheBytesTheLibraryHolds`, `TestAnInstalledAgentReportsTheLibraryHashUntilItIsEdited`, `TestSyncAsksWithTheLibraryHashForAnUneditedInstall`, `TestNoRecordIsKeptWhenTheRenderIsTheLibraryBytes` |
+| A fixed profile and crew render to the golden bytes and digests that vdb-site holds as the same literals | `TestGoldenProfileRenderAndHash`, `TestGoldenCrewRenderAndHash` |
 | The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
 
 ## Files

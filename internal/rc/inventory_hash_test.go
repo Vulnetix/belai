@@ -112,3 +112,37 @@ func TestInventoryHashIsOmittedWithProfileSyncOff(t *testing.T) {
 		}
 	}
 }
+
+// With sync.profiles off the heartbeat renders and hashes nothing: the flag is
+// tested before the document is built, not after.
+func TestInventoryRendersNoProfileWithProfileSyncOff(t *testing.T) {
+	home(t)
+	if _, err := agentprofile.Save(worker("log", libID)); err != nil {
+		t.Fatal(err)
+	}
+	renders := 0
+	orig := marshalProfile
+	marshalProfile = func(p agentprofile.AgentProfile) ([]byte, error) {
+		renders++
+		return orig(p)
+	}
+	t.Cleanup(func() { marshalProfile = orig })
+
+	LocalInventory()
+	if renders == 0 {
+		t.Fatal("with sync.profiles on, the inventory renders the profile it hashes")
+	}
+
+	off := false
+	if err := config.Mutate(config.ScopeGlobal, "", func(s *config.Settings) error {
+		s.Sync = &config.SyncSettings{Profiles: &off}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	renders = 0
+	LocalInventory()
+	if renders != 0 {
+		t.Fatalf("the inventory rendered %d profile(s) with sync.profiles off", renders)
+	}
+}

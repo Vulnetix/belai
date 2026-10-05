@@ -47,6 +47,12 @@ type Installer struct {
 	// Saved, when set, is told about each profile ("agent") and crew ("crew")
 	// written, with its canonical bytes, so a running sync does not push it back.
 	Saved func(kind, id string, data []byte)
+	// Fetched, when set, is told about each profile ("agent") installed, with the
+	// exact bytes the library holds for the installed version and the bytes this
+	// host now renders for it. They differ when the library copy was written
+	// elsewhere (the console), so the host can report the library's hash for a
+	// profile that has not been edited since.
+	Fetched func(kind, id string, library, rendered []byte)
 	// Index, when set, runs after a profile that lists documents is saved and
 	// returns a clause for the report.
 	Index func(ctx context.Context, name string) string
@@ -110,9 +116,14 @@ func (i Installer) Profile(ctx context.Context, library, version string, overwri
 	if _, err := agentprofile.Save(p); err != nil {
 		return p, "", "could not save the profile: " + reason(err.Error())
 	}
-	if saved, err := agentprofile.Load(p.Name); err == nil && i.Saved != nil {
+	if saved, err := agentprofile.Load(p.Name); err == nil {
 		if out, err := agentprofile.MarshalMarkdown(saved); err == nil {
-			i.Saved("agent", p.ID, out)
+			if i.Saved != nil {
+				i.Saved("agent", p.ID, out)
+			}
+			if i.Fetched != nil {
+				i.Fetched("agent", p.ID, []byte(md), out)
+			}
 		}
 	}
 	if nfiles > 0 {

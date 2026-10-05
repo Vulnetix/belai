@@ -65,9 +65,10 @@ func (s dispatchSource) Crew(ctx context.Context, library, version string) (sess
 // a profile lists from a directory this daemon offers.
 func (d *Daemon) installer(dispatch string) libinstall.Installer {
 	return libinstall.Installer{
-		Src:   dispatchSource{d: d, dispatch: dispatch},
-		Saved: d.markSynced,
-		Index: d.indexProfile,
+		Src:     dispatchSource{d: d, dispatch: dispatch},
+		Saved:   d.markSynced,
+		Fetched: recordLibraryHash,
+		Index:   d.indexProfile,
 	}
 }
 

@@ -74,9 +74,13 @@ func LocalInventory() Inventory {
 	var inv Inventory
 	// The hash of a profile or crew travels only while sync.profiles is on, as an item's does.
 	hashes := false
+	var held map[string]libHashEntry
 	if s, err := config.LoadGlobal(); err == nil {
 		inv.MaxWorkers = s.MaxWorkers()
 		hashes = s.SyncProfilesEnabled()
+		if hashes {
+			held = readLibraryHashes()
+		}
 	} else {
 		inv.MaxWorkers = config.DefaultMaxWorkers
 	}
@@ -86,8 +90,11 @@ func LocalInventory() Inventory {
 				continue
 			}
 			sum := profileSummary(p)
-			if md, ok := profileDocument(p); ok && hashes {
-				sum.SHA256 = hashOf(md)
+			// Tested first: with sync.profiles off nothing is rendered or hashed.
+			if hashes {
+				if md, ok := profileDocument(p); ok {
+					sum.SHA256 = hashFor(held, p.ID, hashOf(md))
+				}
 			}
 			inv.Profiles = append(inv.Profiles, sum)
 		}
@@ -101,8 +108,10 @@ func LocalInventory() Inventory {
 		for _, m := range c.Members {
 			rc.Members = append(rc.Members, sessionsync.RCMember{Profile: m.Profile, Replicas: m.Count()})
 		}
-		if js, ok := crewDocument(c); ok && hashes {
-			rc.SHA256 = hashOf(js)
+		if hashes {
+			if js, ok := crewDocument(c); ok {
+				rc.SHA256 = hashOf(js)
+			}
 		}
 		inv.Crews = append(inv.Crews, rc)
 	}
