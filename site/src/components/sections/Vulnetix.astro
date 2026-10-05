@@ -172,7 +172,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
 ---
 
 <SealedSection label="vulnetix" sealText={sealText} id="vulnetix">
-  <SectionHead title="Vulnetix integration">
+  <SectionHead title="Vulnetix integration" surfaces={['tui', 'acp', 'cli', 'vulnetix only']}>
       Belai includes a code review that scans your repository, checks what it finds and fixes it, an
       AI Firewall in front of your provider, and an MCP server. The review has three stages, and
       each one can change more than the one before it.
@@ -415,7 +415,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
   </details>
 
   <!-- AI Firewall -->
-  <SubHead title="AI Firewall">
+  <SubHead title="AI Firewall" surfaces={['vulnetix only', 'pix sandbox']}>
       <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a>{' '}
       sends your model traffic through a filtering gateway, which uses its own key in place of the
       provider's. If any of its four required settings is missing, Belai talks to the provider directly.

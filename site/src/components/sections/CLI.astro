@@ -59,7 +59,7 @@ const ci = `BELAI_NO_TUI=1 belai -trust-dir \\
 ---
 
 <SealedSection label="cli" sealText={sealText} id="cli">
-  <SectionHead title="Headless CLI">
+  <SectionHead title="Headless CLI" surfaces={['cli', 'self-hosted']}>
     Belai is the same binary in a terminal and in a CI job. From the command line you can set the mode,
     guardrails, permissions, provider and agents without starting the terminal UI.
   </SectionHead>

@@ -59,7 +59,7 @@ const limits = [
 ---
 
 <SealedSection label="kanban" sealText={sealText} id="kanban">
-  <SectionHead title="Kanban">
+  <SectionHead title="Kanban" surfaces={['tui', 'cli', 'self-hosted', 'pix sandbox']}>
     A report ends with "tests not run", "follow-up: update the docs", "left the workaround in", and the
     next session never sees it. Belai keeps one global board that every session on your machine shares,
     and the model files that open work on it itself. It is also where{' '}
@@ -138,7 +138,7 @@ const limits = [
     </aside>
   </div>
 
-  <SubHead title="Synced with the Vulnetix website">
+  <SubHead title="Synced with the Vulnetix website" surfaces={['vulnetix only']}>
     While the Vulnetix CLI is logged in, the board syncs with the <strong>Belai → Kanban</strong> page on
     the Vulnetix website, where you can drag cards between the same colour-coded columns.
   </SubHead>

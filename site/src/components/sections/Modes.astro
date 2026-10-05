@@ -93,7 +93,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="modes" sealText={sealText} id="modes">
-  <SectionHead title="Modes">
+  <SectionHead title="Modes" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
     Belai has four modes: agent, plan, goal and code. A prompt sent without a mode is classified into agent,
     plan or goal. A mode you pick yourself is kept as it is, and code is only ever picked by you.
   </SectionHead>
@@ -218,7 +218,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </aside>
   </div>
 
-  <SubHead title="Reviewing a plan">
+  <SubHead title="Reviewing a plan" surfaces={['tui', 'acp', 'pix sandbox']}>
     The plan is saved as a structured document. You approve it, send it back with notes, or cancel it.
   </SubHead>
   <Shot

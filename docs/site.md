@@ -19,9 +19,19 @@ each section all read it, so a section's number is its position in that list.
 
 Section order:
 
-hero · beliefs · trust · classifier · sealed · labs · modes · tools · diagnostics · permissions · agents & crews ·
-memory · processes · budgets · session intelligence · providers · routing · vulnetix ·
-kanban · web sessions · pix sandbox · extend · cli · qol · start · faq
+hero · beliefs · trust · classifier · sealed · modes · tools · diagnostics · permissions · agents & crews ·
+pix sandbox · kanban · web sessions · memory · processes · budgets · session intelligence · providers ·
+routing · vulnetix · extend · cli · qol · start · compare · faq
+
+## Surface markers
+
+A section or sub-area may carry a quiet row of markers that says where its feature works:
+`tui`, `acp`, `cli`, `self-hosted`, `pix sandbox` and `vulnetix only`. The set is closed
+(`site/src/lib/surfaces.ts`, with a one-line meaning for each) and renders in that order through
+`Surfaces.astro`. Pass `surfaces={[...]}` to `SectionHead` for the section and to `SubHead`
+only where a sub-area differs from its section. A folded legend above the first section lists the
+meanings. Check each marker against the code before adding it. Sections about getting started,
+the comparison and the FAQ carry none.
 
 ## Reading rules
 
@@ -53,7 +63,7 @@ These keep the page readable. Follow them when you add or change a section.
 The agents section (`site/src/components/sections/Agents.astro`, rendered
 from `Features.astro`) is one ladder: helpers, background agents, workers and crews.
 Three step cards open it, and a folded table (cards below `@3xl`) says what changes on
-each step. Then come ten promises about autonomous work you can sign off on (`#compare`), each
+each step. Then come ten promises about autonomous work you can sign off on (`#sign-off`), each
 backed by a mechanism in this repository, the gates that decide when a card is done (`#assurance`),
 a crew's recorded run on a board (`#crews`, which the kanban section links to), the limits on
 crew workers, the built-in crews and a worker profile (`#profiles`), and what the Vulnetix

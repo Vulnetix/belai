@@ -126,7 +126,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="extend" sealText={extendSeal} id="extend">
-  <SectionHead title="Extend it yourself">
+  <SectionHead title="Extend it yourself" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
     The things people usually add to a coding agent by forking it are built in, and each one goes through
     the same checks as the rest of Belai.
   </SectionHead>
@@ -174,7 +174,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </div>
   </details>
 
-  <SubHead title="Skills, drafted with approval">
+  <SubHead title="Skills, drafted with approval" surfaces={['tui']}>
     After working out a procedure worth keeping, the model can propose it as a skill with{' '}
     <code class="mono">SkillDraft</code>. You see the whole file, or the diff against an existing skill.
   </SubHead>
@@ -196,7 +196,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </article>
   </div>
 
-  <SubHead title="Plugin packages">
+  <SubHead title="Plugin packages" surfaces={['cli', 'self-hosted']}>
     <code class="mono">belai plugin install</code> takes a git URL or a directory. One bad component fails
     the whole install, and <code class="mono">/plugin</code> shows what is installed and its state.
   </SubHead>
@@ -243,7 +243,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
-  <SubHead id="editors" title="Belai in your editor">
+  <SubHead id="editors" title="Belai in your editor" surfaces={['acp']}>
     <code class="mono">belai acp</code> is an Agent Client Protocol agent on stdin and stdout. Zed is the
     reference setup below, and the other editors take the same command.
   </SubHead>

@@ -202,7 +202,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
 
 <SealedSection label="agents" sealText={sealText} id="agents">
   <!-- The ladder -->
-  <SectionHead title="Agents and crews">
+  <SectionHead title="Agents and crews" surfaces={['tui', 'cli', 'self-hosted', 'pix sandbox']}>
       Besides the session you type in, Belai can run three kinds of agent. Each kind can change more
       than the one before it, and has stricter limits on what it can reach. At the top of the ladder a
       crew of workers takes work from a board, and the harness claims it, runs the checks and decides
@@ -324,7 +324,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
   </details>
 
   <!-- Ten promises -->
-  <SubHead id="compare" title="Autonomous work you can sign off on">
+  <SubHead id="sign-off" title="Autonomous work you can sign off on">
     Leave a crew running and read the result when you are back. These ten things hold while you are away,
     and each rests on a mechanism you can read in the source.
   </SubHead>
@@ -512,7 +512,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
   </details>
 
   <!-- The console -->
-  <SubHead id="control-plane" title="Run the fleet from the console">
+  <SubHead id="control-plane" title="Run the fleet from the console" surfaces={['vulnetix only']}>
     Sessions mirror to the Vulnetix website, and a host running belai rc takes requests from it. The
     console shows the whole fleet and what needs a person.
   </SubHead>

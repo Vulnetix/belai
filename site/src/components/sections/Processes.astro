@@ -83,7 +83,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
 ---
 
 <SealedSection label="processes" sealText={sealText} id="processes">
-  <SectionHead title="Processes and recovery">
+  <SectionHead title="Processes and recovery" surfaces={['tui', 'cli', 'self-hosted']}>
       Run a dev server, a file watcher or a tunnel inside Belai instead of in another terminal. Belai
       saves the command for the next session, and a process that crashes gets a limited number of
       restarts. Failures between Belai and a provider recover on their own as well.
@@ -148,7 +148,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
     <span>a model restarts it, up to a cap</span>
   </div>
 
-  <SubHead title="The runs panel">
+  <SubHead title="The runs panel" surfaces={['tui']}>
       <code class="mono">f9</code> opens on the activity tab, and <code class="mono">tab</code> moves on to
       subagents, processes, git and ci. The processes tab lists only the library's running processes.
     </SubHead>
@@ -246,7 +246,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
     </div>
   </details>
 
-  <SubHead title="The git and ci tabs">
+  <SubHead title="The git and ci tabs" surfaces={['tui']}>
       The git tab shows the branch and its upstream, the origin URL with credentials masked, the open
       PR or MR, and every worktree. The ci tab lists the checks or pipeline jobs for the branch, and
       appears only while a PR or MR is open.

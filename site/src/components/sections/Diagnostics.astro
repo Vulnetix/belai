@@ -48,7 +48,7 @@ const limits = [
 ---
 
 <SealedSection label="diagnostics" sealText={sealText} id="diagnostics">
-  <SectionHead title="Diagnostics">
+  <SectionHead title="Diagnostics" surfaces={['tui', 'cli', 'self-hosted', 'pix sandbox']}>
     After the model edits a file, Belai checks it and returns any errors in the same{' '}
     <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
   </SectionHead>

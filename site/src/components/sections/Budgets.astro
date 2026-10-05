@@ -64,7 +64,7 @@ const limits = [
 ---
 
 <SealedSection label="budgets" sealText={sealText} id="budgets">
-  <SectionHead title="Token budgets">
+  <SectionHead title="Token budgets" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
       Give any provider and model an allowance for the session, the local day or the local month, up to
       one of each. Every completed model call counts against the model that served it, including the
       classifier's calls.
@@ -120,7 +120,7 @@ const limits = [
     })}
   </ol>
 
-  <SubHead title="Three colours in the footer">
+  <SubHead title="Three colours in the footer" surfaces={['tui']}>
       With <code class="mono">defined</code> routing, the right of the footer's top line shows the selected
       model's budget: the share of tokens left, the time left in the day or month, and a bar. With two or
       more budgets the footer cycles between them every ten seconds
