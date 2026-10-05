@@ -191,6 +191,20 @@ The sandbox's name, the ids and the live values (launch state, token use) are
 left out: the name is user text, and the live values would change the prompt
 every turn. The last line tells the model where to read them.
 
+## Monitoring and OpenTelemetry
+
+Belai does nothing for these and has no new flag. The sandbox Worker reads the
+machine's CPU, memory, network and disk counters from `/proc` once a minute with
+the container's own exec, and reads agent activity and pull requests from the
+host's audit events (`repo.publish` is a pull request). The console shows them on
+the sandbox card and its Monitoring tab.
+
+A sandbox can also send a copy to your own OTLP/HTTP endpoint, set on the
+console's Launch tab. The headers for it name variables in your secrets vault
+(the same ones `belai rc` reads for the machine's environment), so no secret is
+stored with the launch config. Only metrics and the events the console already
+shows leave; the raw `belai rc` output stays admin only.
+
 ## Edge cases
 
 - A token login (`VULNETIX_API_TOKEN` set) fails preflight. The machine sets it
