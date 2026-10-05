@@ -202,6 +202,47 @@ the container's own exec, and reads agent activity and pull requests from the
 host's audit events (`repo.publish` is a pull request). The console shows them on
 the sandbox card and its Monitoring tab.
 
+Below the charts, the Monitoring tab lists the agents, the crews and the pull
+requests. The live workers are the ones in the host's last `belai rc`
+heartbeat (profile, crew, state, repository, card and branch); what each agent
+profile and crew has done since the instance started (cards claimed, commits,
+pull requests) is counted from the audit events. Pull requests are split into
+those opened this session, meaning since the current instance started, and
+earlier ones. A card an agent holds, or has handed to review or blocked, is
+listed with its branch and, once published, its pull request. Merges are not
+tracked, so a pull request is one an agent opened, not one known to be open on
+GitHub. Every address shown is checked as a GitHub or GitLab pull request
+address before it becomes a link.
+
+The Repositories tab uses the same answer. Each repository links to GitHub and
+to its pull requests and says how many agents work in it, working and idle.
+Agents are matched to a repository by its name, as the harness stamps it on a
+worker, so two attached repositories with the same name share one count and the
+row says so.
+
+### Repository actions
+
+A manager of the sandbox can act on one attached repository from its row. There
+are five operations and each is a fixed command in the sandbox Worker; nothing
+the browser sends reaches a command line except which of the five it is.
+
+| Action | Where | What it does |
+|---|---|---|
+| Retry clone | a clone that failed | clones it again now; on a stopped machine it waits for the next launch |
+| Fetch | a cloned repository, machine running | `git fetch --prune` of origin |
+| Pull (fast-forward) | the same | `git pull --ff-only` on the checked out branch; refuses when the clone and origin have diverged |
+| Pull (rebase) | the same | `git pull --rebase`; a conflict is aborted and nothing changes |
+| Remove from host | any row | deletes the clone from the disk now and detaches it; asks first and names the agents working in it |
+
+Git runs with hooks off, the file transport refused and no submodules. A private
+repository's token reaches git only as the environment of that one process, as
+it does for a clone, and the result shown is a fixed sentence per outcome, never
+git's own text. Fetch and pull are refused while a launch is running, and only
+one repository operation runs at a time. Belai's trusted directories are fixed
+when it starts, so a clone retried or removed on a running machine takes effect
+at the next relaunch, and the console says so. Detach, which removes the clone
+at the next relaunch, is still there.
+
 A sandbox can also send a copy to your own OTLP/HTTP endpoint, set on the
 console's Launch tab. The headers for it name variables in your secrets vault
 (the same ones `belai rc` reads for the machine's environment), so no secret is
