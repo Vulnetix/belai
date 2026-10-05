@@ -86,7 +86,7 @@ func TestValidateSkillBadList(t *testing.T) {
 	doc := `---
 name: x
 description: y
-allowed-tools: read
+allowed-tools: [read
 ---
 body`
 	if _, err := ValidateSkill(doc); err == nil {
@@ -106,5 +106,54 @@ func TestValidateSkillUnterminated(t *testing.T) {
 	doc := "---\nname: x\ndescription: y"
 	if _, err := ValidateSkill(doc); err == nil {
 		t.Fatalf("expected unterminated front-matter to be rejected")
+	}
+}
+
+func TestValidateSkillSpecForms(t *testing.T) {
+	cases := []struct {
+		name  string
+		fm    string
+		check func(*Manifest) bool
+	}{
+		{"metadata block map", "name: a\ndescription: d\nmetadata:\n  author: org\n  version: \"1.0\"\n", func(m *Manifest) bool { return m.Metadata["author"] == "org" && m.Metadata["version"] == "1.0" }},
+		{"metadata flow map", "name: a\ndescription: d\nmetadata: {icon: shield}\n", func(m *Manifest) bool { return m.Metadata["icon"] == "shield" }},
+		{"legacy scalar metadata", "name: a\ndescription: d\nmetadata: team=platform\n", func(m *Manifest) bool { return m.Metadata[MetadataNote] == "team=platform" }},
+		{"tools as a spec string", "name: a\ndescription: d\nallowed-tools: Bash(git log:*) Read\n", func(m *Manifest) bool {
+			return reflect.DeepEqual(m.AllowedTools, []string{"Bash(git log:*)", "Read"})
+		}},
+		{"tools as a block list", "name: a\ndescription: d\nallowed-tools:\n  - Bash\n  - Read\n", func(m *Manifest) bool { return reflect.DeepEqual(m.AllowedTools, []string{"Bash", "Read"}) }},
+		{"a colon in a description (not YAML)", "name: a\ndescription: Cut a release: tag it\n", func(m *Manifest) bool { return m.Description == "Cut a release: tag it" }},
+		{"a folded description", "name: a\ndescription: >-\n  one\n  two\n", func(m *Manifest) bool { return m.Description == "one two" }},
+	}
+	for _, c := range cases {
+		m, err := ValidateSkill("---\n" + c.fm + "---\nbody")
+		if err != nil || !c.check(m) {
+			t.Errorf("%s: m = %+v, err = %v", c.name, m, err)
+		}
+	}
+}
+
+func TestValidateSkillRefusals(t *testing.T) {
+	for name, fm := range map[string]string{
+		"duplicate key":        "name: a\ndescription: d\nname: b\n",
+		"unknown key":          "name: a\ndescription: d\nversion: 1\n",
+		"nested metadata":      "name: a\ndescription: d\nmetadata:\n  a:\n    b: c\n",
+		"unknown belai key":    "name: a\ndescription: d\nmetadata:\n  belai.x: y\n",
+		"http resource":        "name: a\ndescription: d\nmetadata:\n  belai.resources: http://x.test/\n",
+		"duplicate context":    "name: a\ndescription: d\nmetadata:\n  belai.contexts: Go, go\n",
+		"bad bool":             "name: a\ndescription: d\ndisable-model-invocation: maybe\n",
+		"block tools with gap": "name: a\ndescription: d\nallowed-tools: [Bash, , Read]\n",
+	} {
+		if _, err := ValidateSkill("---\n" + fm + "---\nbody"); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestValidSpecName(t *testing.T) {
+	for n, want := range map[string]bool{"belai-scout": true, "a": true, "a1-b2": true, "-a": false, "a-": false, "a--b": false, "A": false, "a_b": false, "a.b": false, "": false} {
+		if ValidSpecName(n) != want {
+			t.Errorf("ValidSpecName(%q) != %v", n, want)
+		}
 	}
 }

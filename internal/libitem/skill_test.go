@@ -13,7 +13,7 @@ func skillDoc(fm, body string) string { return "---\n" + fm + "---\n\n" + body }
 const okSkillFM = "name: release\ndescription: Cut a release\n"
 
 func TestValidateSkill(t *testing.T) {
-	long := strings.Repeat("d", MaxDescriptionBytes)
+	long := strings.Repeat("d", MaxSkillDescriptionBytes)
 	tools := func(n int) string {
 		parts := make([]string, n)
 		for i := range parts {
@@ -37,32 +37,42 @@ func TestValidateSkill(t *testing.T) {
 		{"a closing line with trailing blanks", "---\n" + okSkillFM + "---  \t\n\nbody\n", ""},
 		{"a boolean in any case", skillDoc(okSkillFM+"disable-model-invocation: TRUE\n", "x"), ""},
 		{"description at the limit", skillDoc("name: release\ndescription: "+long+"\n", "x"), ""},
-		{"description over the limit", skillDoc("name: release\ndescription: "+long+"d\n", "x"), "description is 301 bytes"},
+		{"description over the limit", skillDoc("name: release\ndescription: "+long+"d\n", "x"), "description is 1025 bytes"},
 		{"a bidi override in the description is the gate's business, not the validator's", skillDoc("name: release\ndescription: a‮b\n", "x"), ""},
 		{"license at the limit", skillDoc(okSkillFM+"license: "+strings.Repeat("l", MaxSkillLicense)+"\n", "x"), ""},
 		{"license over the limit", skillDoc(okSkillFM+"license: "+strings.Repeat("l", MaxSkillLicense+1)+"\n", "x"), "license is over 128 bytes"},
 		{"compatibility at the limit", skillDoc(okSkillFM+"compatibility: "+strings.Repeat("c", MaxSkillCompatibility)+"\n", "x"), ""},
 		{"compatibility over the limit", skillDoc(okSkillFM+"compatibility: "+strings.Repeat("c", MaxSkillCompatibility+1)+"\n", "x"), "compatibility is over 500 bytes"},
-		{"metadata at the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", MaxSkillMetadata)+"\n", "x"), ""},
-		{"metadata over the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", MaxSkillMetadata+1)+"\n", "x"), "metadata is over 1024 bytes"},
-		{"metadata is a string, whatever it looks like", skillDoc(okSkillFM+"metadata: {a: 1, b: [2]}\n", "x"), ""},
+		{"a scalar metadata value at the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", skills.MaxMetadataValue)+"\n", "x"), ""},
+		{"a scalar metadata value over the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", skills.MaxMetadataValue+1)+"\n", "x"), "is over 1024 bytes"},
+		{"metadata as a map", skillDoc(okSkillFM+"metadata:\n  author: example-org\n  version: \"1.0\"\n", "x"), ""},
+		{"metadata as a flow map", skillDoc(okSkillFM+"metadata: {a: 1, b: two}\n", "x"), ""},
+		{"metadata with a nested value", skillDoc(okSkillFM+"metadata: {a: 1, b: [2]}\n", "x"), "string keys to string values"},
+		{"metadata with too many entries", skillDoc(okSkillFM+"metadata:\n"+manyMeta(skills.MaxMetadataEntries+1), "x"), "the most is 32"},
+		{"metadata over the total", skillDoc(okSkillFM+"metadata:\n"+bigMeta(), "x"), "the most is 8192"},
+		{"an unknown belai key", skillDoc(okSkillFM+"metadata:\n  belai.typo: x\n", "x"), "unknown reserved key"},
+		{"belai keys that are valid", skillDoc(okSkillFM+"metadata:\n  belai.role: belai:scout\n  belai.niche: test gaps\n  belai.contexts: Go, Python\n  belai.resources: https://go.dev/doc/\n  belai.updated: 2026-01-31\n", "x"), ""},
+		{"belai resources that are not https", skillDoc(okSkillFM+"metadata:\n  belai.resources: http://example.com/\n", "x"), "must be an https URL"},
+		{"belai resources with a fragment", skillDoc(okSkillFM+"metadata:\n  belai.resources: https://example.com/a#b\n", "x"), "must not carry a fragment"},
+		{"a belai date that is not a date", skillDoc(okSkillFM+"metadata:\n  belai.updated: soon\n", "x"), "must be a date"},
 		{"allowed-tools at the limit", skillDoc(okSkillFM+tools(MaxSkillAllowedTools), "x"), ""},
 		{"allowed-tools over the limit", skillDoc(okSkillFM+tools(MaxSkillAllowedTools+1), "x"), "allowed-tools has 65 entries"},
 		{"an allowed-tools entry at the limit", skillDoc(okSkillFM+"allowed-tools: ["+strings.Repeat("t", MaxSkillTool)+"]\n", "x"), ""},
 		{"an allowed-tools entry over the limit", skillDoc(okSkillFM+"allowed-tools: ["+strings.Repeat("t", MaxSkillTool+1)+"]\n", "x"), "an allowed-tools entry is over 128 bytes"},
-		{"allowed-tools that is not a list", skillDoc(okSkillFM+"allowed-tools: Bash\n", "x"), "must be a list like"},
+		{"allowed-tools as the specification's string", skillDoc(okSkillFM+"allowed-tools: Bash(git:*) Read\n", "x"), ""},
+		{"allowed-tools as a block list", skillDoc(okSkillFM+"allowed-tools:\n  - Bash\n  - Read\n", "x"), ""},
 		{"an empty allowed-tools entry", skillDoc(okSkillFM+"allowed-tools: [Bash, , Read]\n", "x"), "empty list item"},
 		{"an empty allowed-tools list", skillDoc(okSkillFM+"allowed-tools: []\n", "x"), ""},
-		{"missing name", skillDoc("description: d\n", "x"), "name is required"},
-		{"missing description", skillDoc("name: release\n", "x"), "description is required"},
-		{"empty description", skillDoc("name: release\ndescription:\n", "x"), "description is required"},
-		{"empty name", skillDoc("name:\ndescription: d\n", "x"), "name is required"},
-		{"unknown key", skillDoc(okSkillFM+"version: 2\n", "x"), `unknown front matter field "version"`},
-		{"key in the wrong case", skillDoc("Name: release\ndescription: d\n", "x"), `unknown front matter field "Name"`},
+		{"missing name", skillDoc("description: d\n", "x"), "required front-matter field \"name\""},
+		{"missing description", skillDoc("name: release\n", "x"), "required front-matter field \"description\""},
+		{"empty description", skillDoc("name: release\ndescription:\n", "x"), "required front-matter field \"description\""},
+		{"empty name", skillDoc("name:\ndescription: d\n", "x"), "required front-matter field \"name\""},
+		{"unknown key", skillDoc(okSkillFM+"version: 2\n", "x"), `unknown front-matter field "version"`},
+		{"key in the wrong case", skillDoc("Name: release\ndescription: d\n", "x"), `unknown front-matter field "Name"`},
 		{"duplicate key", skillDoc(okSkillFM+"name: other\n", "x"), "appears twice"},
-		{"a line that is not key: value", skillDoc(okSkillFM+"just words\n", "x"), "malformed front matter line"},
+		{"a line that is not key: value", skillDoc(okSkillFM+"just words\n", "x"), "malformed front-matter line"},
 		{"a longer line starting with --- is not a closing line", skillDoc(okSkillFM+"----\n", "x"), "malformed front matter line"},
-		{"disable-model-invocation that is not a bool", skillDoc(okSkillFM+"disable-model-invocation: maybe\n", "x"), "must be true or false"},
+		{"disable-model-invocation that is not a bool", skillDoc(okSkillFM+"disable-model-invocation: maybe\n", "x"), "expected true/false"},
 		{"empty body", skillDoc(okSkillFM, ""), "no instructions"},
 		{"whitespace body", skillDoc(okSkillFM, "  \n\t\n"), "no instructions"},
 		{"no front matter", "just a body\n", "must open with a --- front matter line"},
@@ -109,7 +119,7 @@ func TestValidateSkill(t *testing.T) {
 // Whatever the library accepts, the loader accepts: the host's own validator
 // runs after the library's rules.
 func TestAcceptedSkillsPassTheLoader(t *testing.T) {
-	doc := skillDoc(okSkillFM+"allowed-tools: [Bash]\nmetadata: a=b\n", "body")
+	doc := skillDoc(okSkillFM+"allowed-tools: [Bash]\nmetadata:\n  a: b\n", "body")
 	it, err := Validate(Skill, []byte(doc))
 	if err != nil {
 		t.Fatal(err)
@@ -147,4 +157,21 @@ func TestParseSkillBody(t *testing.T) {
 	if d.Body != "- one\n- two\n" || d.Description != "Cut a release" || d.Name != "release" {
 		t.Errorf("doc = %+v", d)
 	}
+}
+
+func manyMeta(n int) string {
+	var b strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, "  k%d: v\n", i)
+	}
+	return b.String()
+}
+
+// bigMeta is under the entry and value limits and over the total.
+func bigMeta() string {
+	var b strings.Builder
+	for i := 0; i < 9; i++ {
+		fmt.Fprintf(&b, "  k%d: %s\n", i, strings.Repeat("v", 1000))
+	}
+	return b.String()
 }

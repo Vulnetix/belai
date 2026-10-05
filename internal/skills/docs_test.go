@@ -42,8 +42,8 @@ func TestSkillsPageFieldTableMatchesTheValidator(t *testing.T) {
 func TestSkillsPageStatesTheLimits(t *testing.T) {
 	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/skills.md")), " ")
 	for _, want := range []string{
-		"lowercase letters, digits and hyphens, at most 64",
-		"A description longer than 300 bytes, an empty body, or a file over 32 KiB is refused",
+		"lowercase letters, digits and single hyphens, at most 64",
+		"A description longer than 1024 bytes, an empty body, or a file over 32 KiB is refused",
 		"stay under 32 KiB",
 	} {
 		if !strings.Contains(doc, want) {

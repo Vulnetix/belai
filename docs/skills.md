@@ -36,14 +36,35 @@ allowed-tools: [Bash, Read, Grep]
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | the skill's name |
-| `description` | yes | one line the model sees in the skill list |
-| `allowed-tools` | no | the tools the procedure expects; shown to the model with the body, never grants a tool |
+| `name` | yes | the skill's name; a skill you write has lowercase letters, digits and single hyphens and lives in a directory of the same name |
+| `description` | yes | what the skill does and when to use it, one line the model sees in the skill list |
+| `allowed-tools` | no | the tools the procedure expects, separated by spaces (`[Bash, Read]` is also read); shown to the model with the body, never grants a tool |
 | `disable-model-invocation` | no | `true` hides the skill from the model entirely |
-| `license`, `compatibility`, `metadata` | no | informational |
+| `license`, `compatibility` | no | informational |
+| `metadata` | no | a map of string keys to string values; the `belai.` keys below are Belai's |
 
+The format is the [Agent Skills specification](https://agentskills.io/specification).
 Any other key fails validation, under the `skill_invalid` posture gate. A skill
-that fails validation is not listed and cannot be loaded.
+that fails validation is not listed and cannot be loaded. A file written for the
+earlier loader still loads: a front matter that is not valid YAML is read one
+`key: value` line at a time, a scalar `metadata: text` is kept under the key
+`note`, and `allowed-tools` may still be a `[a, b]` list.
+
+### Metadata
+
+`metadata` keys are yours, except the `belai.` prefix, which is Belai's and is
+checked: a `belai.` key that is not listed here fails validation.
+
+| Key | Value |
+| --- | --- |
+| `belai.role` | the profile the skill serves |
+| `belai.niche` | one line naming the specialism |
+| `belai.contexts` | environment names separated by commas (languages, platforms, techniques) |
+| `belai.resources` | `https` documentation links separated by spaces, at most 40, no fragment |
+| `belai.updated` | the date of the last review, `2026-01-31` |
+
+In the library a skill holds at most 32 metadata entries, a key of at most 64
+bytes, a value of at most 1024 and 8 KiB in all.
 
 ## Loading a skill
 
@@ -72,8 +93,8 @@ with `SkillDraft`:
 {"name": "fixtures", "description": "Regenerate test fixtures", "body": "1. …"}
 ```
 
-1. The harness checks the name (lowercase letters, digits and hyphens, at most
-   64), flattens the description to one line, sanitizes the body, and builds
+1. The harness checks the name (lowercase letters, digits and single hyphens,
+   at most 64), flattens the description to one line, sanitizes the body, and builds
    the complete `SKILL.md`, which must validate and stay under 32 KiB.
 2. It shows you that exact file in a permission ask. When a skill of that
    name exists, the ask shows the diff against it.
@@ -93,8 +114,8 @@ website's library like agents are: a skill you add or edit is pushed as a new
 version, a skill saved on the website can be installed on any connected host, and
 `sync.skills` (default on) switches all of it off. `belai skill list`, `validate`,
 `import` and `export` do the same by hand. The library applies rules the loader
-does not: a description is at most 300 bytes, `license` at most 128, `compatibility`
-at most 500 and `metadata` at most 1024, a document holds no control character
+does not: a description is at most 1024 bytes, `license` at most 128, `compatibility`
+at most 500 and `metadata` is bounded as above, a document holds no control character
 but tab and line feed, and the whole document is at most 32 KiB. A skill that fails
 them still loads here; it is only left out of the sync and reported as skipped. See
 [library-items.md](library-items.md).
@@ -137,9 +158,9 @@ directory.
   are two different skills.
 - A skill that stopped validating after it was listed fails to load with an
   error naming it, and never returns a partial body.
-- `SkillDraft` names are lowercase letters, digits and hyphens, at most 64,
+- `SkillDraft` names are lowercase letters, digits and single hyphens, at most 64,
   so `../x` or `Name` is refused before any ask. A description longer than
-  300 bytes, an empty body, or a file over 32 KiB is refused the same way.
+  1024 bytes, an empty body, or a file over 32 KiB is refused the same way.
 - A description that spans lines is flattened to one, so it cannot add a
   front-matter key.
 - A new skill is listed from the next turn, not the one that wrote it.

@@ -73,28 +73,3 @@ func fmBool(key, v string) (bool, error) {
 	}
 	return false, refuse("front matter %q must be true or false", key)
 }
-
-// fmList reads a one-line list `[a, b]` the way the loader does: items are split
-// on commas, an item may be double-quoted, and an empty item is refused.
-func fmList(key, v string) ([]string, error) {
-	v = strings.TrimSpace(v)
-	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
-		return nil, refuse("front matter %q must be a list like [a, b]", key)
-	}
-	inner := strings.TrimSpace(v[1 : len(v)-1])
-	if inner == "" {
-		return nil, nil
-	}
-	var out []string
-	for _, p := range strings.Split(inner, ",") {
-		p = strings.TrimSpace(p)
-		if len(p) >= 2 && p[0] == '"' && p[len(p)-1] == '"' {
-			p = p[1 : len(p)-1]
-		}
-		if p == "" {
-			return nil, refuse("front matter %q has an empty list item", key)
-		}
-		out = append(out, p)
-	}
-	return out, nil
-}

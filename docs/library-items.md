@@ -104,19 +104,20 @@ A skill document is a `SKILL.md`: the format [skills.md](skills.md#skill-files)
 describes, and the loader's own validator (`internal/skills`) is the source of
 truth for its front-matter fields. On top of it the library holds these rules:
 
-- The front matter is `key: value` lines between two `---` lines (the closing
-  line may have trailing spaces or tabs; a longer line that merely starts with
-  `---` is not one). Lines are trimmed, and blank lines and `#` comments are
-  skipped. A key given twice and a line that is not `key: value` are refused:
-  there is no nested YAML.
+- The front matter is YAML between two `---` lines (the closing line may have
+  trailing spaces or tabs; a longer line that merely starts with `---` is not
+  one), read the way the [Agent Skills specification](https://agentskills.io/specification)
+  describes. A key given twice and a key a skill does not declare are refused.
 - `name` (required) follows the name rule above. `description` (required) is at
-  most 300 bytes and one line.
+  most 1024 bytes.
 - `license` is at most 128 bytes and `compatibility` at most 500. `metadata` is a
-  one-line string of at most 1024 bytes: the loader reads one front-matter line per
-  key, so a nested map cannot be expressed and an indented `key: value` under
-  `metadata:` would be an unknown key there.
-- `allowed-tools` holds at most 64 names of at most 128 bytes, as a one-line list
-  `[Bash, "Read"]`. `disable-model-invocation` is `true` or `false`, in any case.
+  map of string keys to string values: at most 32 entries, a key of at most 64
+  bytes, a value of at most 1024 and 8 KiB in all. The `belai.` keys are
+  checked ([skills.md](skills.md#metadata)). A scalar `metadata: text` from an
+  older file is kept under the key `note`.
+- `allowed-tools` holds at most 64 names of at most 128 bytes, separated by spaces
+  (`Bash(git:*) Read`); the older one-line list `[Bash, "Read"]` is also read.
+  `disable-model-invocation` is `true` or `false`, in any case.
 - The body (after the front matter) must not be empty.
 
 On the host a skill is `<skills dir>/<name>/SKILL.md` holding the canonical bytes

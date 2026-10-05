@@ -107,11 +107,11 @@ func TestSkillDraftSizeBoundary(t *testing.T) {
 	}
 }
 
-// The description is cut off at 300 bytes: 300 passes, 301 is refused, and an
+// The description is cut off at 1024 bytes: 1024 passes, 1025 is refused, and an
 // empty body is refused.
 func TestSkillDraftDescriptionAndBodyBoundaries(t *testing.T) {
 	d := SkillDraft{Dir: func() (string, error) { return t.TempDir(), nil }}
-	for n, ok := range map[int]bool{300: true, 301: false} {
+	for n, ok := range map[int]bool{1024: true, 1025: false} {
 		_, _, err := d.compose(map[string]any{"name": "x", "description": strings.Repeat("a", n), "body": "b"})
 		if (err == nil) != ok {
 			t.Errorf("a %d byte description: err %v, want ok=%v", n, err, ok)

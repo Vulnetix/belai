@@ -96,17 +96,17 @@ func TestLibraryItemsPageStatesTheLimits(t *testing.T) {
 		"at most 200 live items of one kind",
 		"A name is 1 to 64 characters",
 		"A skill or a prompt document is at most 32 KiB",
-		"(required) is at most 300 bytes",
+		"(required) is at most 1024 bytes",
 		"allowed-tools` holds at most 64",
 		"`license` is at most 128 bytes",
 		"`compatibility` at most 500",
-		"`metadata` is a one-line string of at most 1024 bytes",
+		"`metadata` is a map of string keys to string values",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/library-items.md does not say %q", want)
 		}
 	}
-	if MaxItemsPerKind != 200 || MaxNameBytes != 64 || MaxDescriptionBytes != 300 || MaxSkillLicense != 128 || MaxSkillCompatibility != 500 || MaxSkillMetadata != 1024 || MaxSkillAllowedTools != 64 {
+	if MaxItemsPerKind != 200 || MaxNameBytes != 64 || MaxDescriptionBytes != 300 || MaxSkillDescriptionBytes != 1024 || MaxSkillLicense != 128 || MaxSkillCompatibility != 500 || MaxSkillAllowedTools != 64 {
 		t.Error("a limit changed; update docs/library-items.md and this test")
 	}
 }

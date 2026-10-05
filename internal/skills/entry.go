@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/posture"
 )
+
+// MaxDescriptionBytes is the longest description a skill Compose writes, the
+// specification's limit.
+const MaxDescriptionBytes = 1024
 
 // Entry is one discovered skill: its validated manifest and where its
 // SKILL.md lives. Name is the name the model and the user use; a skill from
@@ -92,38 +95,30 @@ func ReadBody(e Entry) (string, error) {
 	if _, err := ValidateSkill(doc); err != nil {
 		return "", fmt.Errorf("skill %q no longer validates: %w", e.Name, err)
 	}
-	rest := doc[len("---\n"):]
-	idx := strings.Index(rest, "\n---")
-	body := rest[idx+len("\n---"):]
-	// The rest of the closing delimiter line goes with it. Only line breaks are
-	// trimmed from the start of the body, so a body that opens with a list
-	// marker or a rule keeps it.
-	if nl := strings.IndexByte(body, '\n'); nl >= 0 {
-		body = body[nl+1:]
-	} else {
-		body = ""
+	_, body, err := Split(doc)
+	if err != nil {
+		return "", err
 	}
-	return strings.TrimLeft(body, "\r\n"), nil
+	return body, nil
 }
 
-var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-
 // ValidName reports whether name is usable as a new skill's name and
-// directory: lowercase letters, digits and hyphens, at most 64.
-func ValidName(name string) bool { return nameRE.MatchString(name) }
+// directory: lowercase letters, digits and single hyphens, not starting or
+// ending with one, at most 64 (the specification's rule).
+func ValidName(name string) bool { return ValidSpecName(name) }
 
 // Compose builds a SKILL.md document from its parts and validates it. The
 // description is flattened to one line so it cannot add front-matter keys.
 func Compose(name, description, body string) (string, error) {
 	if !ValidName(name) {
-		return "", fmt.Errorf("skill name %q must be lowercase letters, digits and hyphens (at most 64)", name)
+		return "", fmt.Errorf("skill name %q must be lowercase letters, digits and single hyphens, not starting or ending with one (at most 64)", name)
 	}
 	description = strings.Join(strings.Fields(description), " ")
 	if description == "" {
 		return "", fmt.Errorf("skill description is required")
 	}
-	if len(description) > 300 {
-		return "", fmt.Errorf("skill description is longer than 300 bytes")
+	if len(description) > MaxDescriptionBytes {
+		return "", fmt.Errorf("skill description is longer than %d bytes", MaxDescriptionBytes)
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
