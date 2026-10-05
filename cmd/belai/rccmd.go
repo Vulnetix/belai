@@ -590,6 +590,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	}
 
 	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
+		Builtins:     builtinMCP(settings, cwd),
 		Workdir:      cwd,
 		HTTPClient:   httpclient.Default(),
 		VulnetixAuth: func() (string, error) { return credentials.VulnetixAuthHeader(cwd) },

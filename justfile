@@ -161,6 +161,10 @@ test *ARGS:
 test-race *ARGS:
     go test -race ./... {{ ARGS }}
 
+# Run the suite as the Pix Sandbox build compiles it (-tags belai_sandbox).
+test-sandbox *ARGS:
+    go test -race -tags belai_sandbox ./... {{ ARGS }}
+
 # Test one package: `just test-pkg ./internal/run -run TestStream -v`.
 test-pkg PKG *ARGS:
     go test -race {{ PKG }} {{ ARGS }}

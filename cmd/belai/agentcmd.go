@@ -384,7 +384,8 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	for _, t := range profile.Tools {
 		if strings.HasPrefix(t, "mcp__") {
 			mcpMgr = mcp.StartAsync(ctx, settings.MCP, mcp.Options{
-				Workdir: repo, HTTPClient: httpclient.Default(),
+				Builtins: builtinMCP(settings, repo),
+				Workdir:  repo, HTTPClient: httpclient.Default(),
 				VulnetixAuth: func() (string, error) { return credentials.VulnetixAuthHeader(repo) },
 				Sandbox:      func() sandbox.Policy { return sandbox.FromSettings(settings.Sandbox, []string{repo}, pol) },
 			})

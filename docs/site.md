@@ -94,12 +94,16 @@ logo cards for Jev (included at no cost), Cloudflare Sandbox and Nix; a
 sub-section on the three gates every connection leaves through (the AI Firewall,
 the Package Firewall and the egress list, with an illustrative console list); a
 four-step supply chain (pinned flake, reproducible build, published SBOM, boot
-check); and the Limits block for repositories, languages and the console. Each
+check); a sub-section (`#pix-decider`) on the decision tool the agent can call
+(the nine tools of the `clef` MCP, a sample `rank_options` call and what it
+returns, and the rules that make it deterministic; the claims come from
+[pix-sandbox.md](pix-sandbox.md#the-decider-mcp)); and the Limits block for repositories, languages and the console. Each
 claim is backed by something Belai does with its inputs or by the image and
 launcher in the website repository: Belai is not told it is hosted, every
 repository is a trusted root and nothing else is, Jev answers every call with
-the key swapped in at the network edge, and a relaunch is a new machine. Nothing
-in the Go code changes for it. Its two cards link to the feature page and to
+the key swapped in at the network edge, and a relaunch is a new machine. The
+decider sub-section is the one block with code behind it: the `clef` MCP is
+compiled only into the Pix Sandbox build. Its two cards link to the feature page and to
 the console's sandbox tab on vulnetix.com. The classifier section's Jev article
 carries `id="jev"` so the "How Belai uses Jev" link and the feature page can
 deep-link to it.

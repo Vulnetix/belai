@@ -419,6 +419,7 @@ func main() {
 	// MCP servers start only here: past the trust gate, from the user's own
 	// settings, and in the background so a slow server never holds startup.
 	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
+		Builtins:   builtinMCP(settings, workdir),
 		Workdir:    workdir,
 		HTTPClient: httpclient.Default(),
 		VulnetixAuth: func() (string, error) {

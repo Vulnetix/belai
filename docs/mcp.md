@@ -11,6 +11,7 @@ text.
 - [Configuring servers](#configuring-servers)
 - [How tools appear](#how-tools-appear)
 - [Security model](#security-model)
+- [Built-in server (Pix Sandbox only)](#built-in-server-pix-sandbox-only)
 - [Commands](#commands)
 - [Limitations](#limitations)
 - [Edge cases](#edge-cases)
@@ -107,6 +108,30 @@ The `mcp` key is read from your global settings only. A repository's
   an `https` URL on `vulnetix.com` or a subdomain; any other use fails the
   server with the reason, so a hand-edited entry cannot send the credential
   elsewhere.
+
+## Built-in server (Pix Sandbox only)
+
+The Pix Sandbox build of Belai (`-tags belai_sandbox`, the `belai-pix-sandbox`
+release) carries one server of its own, `clef`. It is the only built-in server,
+and no other build has it: the code is not compiled in, so there is nothing to
+list or turn off.
+
+- It runs inside Belai on an in-process pipe speaking the same JSON-RPC as a
+  stdio server, so it goes through the same client, the same tool naming
+  (`mcp__clef__<tool>`), the same sanitizing and the same 64 KiB result cap. Its
+  tools carry kind `mcp`: mutating, always classified, and asking unless an allow
+  rule that names them (rules match a tool name exactly, so one rule per tool, for
+  example `mcp__clef__rank_options`) covers them.
+- It does not come from `mcp.servers`. A settings entry named `clef` is ignored,
+  `/mcp` shows it with the transport `builtin`, and `Upsert` and `Remove` leave
+  it alone. `/mcp restart clef` reconnects it.
+- Its tools ask the classifier's decision model for a true/false answer, an enum
+  pick, weights or an ordering, and return numbers and the caller's own options.
+  It starts only a decision model that speaks Clef or SystemOne; with none, a
+  call returns a tool error.
+
+The tools, their limits and their rules are in
+[Pix Sandbox](pix-sandbox.md#the-decider-mcp).
 
 ## Commands
 

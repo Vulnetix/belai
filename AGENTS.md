@@ -633,7 +633,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   The `vulnetix:cli` header reference (written by `/vulnetix mcp`) resolves
   to the Vulnetix CLI's credential at dial time, only in the `Authorization`
   header and only for `https://*.vulnetix.com`; it is never written out
-  resolved.
+  resolved. The one exception to "servers come from settings" is `clef`,
+  compiled only into the Pix Sandbox build (`-tags belai_sandbox`,
+  `internal/clefmcp`, registered through `mcp.Options.Builtins`): an in-process
+  decider whose tools stay `mcp__clef__<tool>` with `tools.KindMCP`, so they are
+  still mutating and classified, and whose results are harness-built numbers
+  and the caller's own options, never model text or backend error text. A
+  settings entry cannot shadow it. Do not give another build a built-in server
+  and do not exempt its tools from the classifier.
 - **Onboarding sends secrets only where they belong.** The Getting started
   sign-up posts to `auth.vulnetix.com` alone (redirects off it are refused);
   its password fields are cleared once the post returns or the form is left,

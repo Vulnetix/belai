@@ -1,11 +1,14 @@
 # Pix Sandbox
 
 A Pix Sandbox is a machine Vulnetix runs for an account: one Cloudflare
-container per purchase, running an unmodified `belai rc`. This page is the
-contract between Belai and that machine. Belai has no code for it and does not
-know it is hosted. Everything below is behaviour the released binary already has
-when it is given a host id, a settings file, a few environment variables and one
-`--dir` per repository.
+container per purchase, running `belai rc`. This page is the contract between
+Belai and that machine. Belai does not know it is hosted. Everything below is
+behaviour the released binary has when it is given a host id, a settings file, a
+few environment variables and one `--dir` per repository. The one thing the
+machine's build adds is code compiled only into the Pix Sandbox variant
+(`-tags belai_sandbox`): it tells the model about the machine
+([the metadata endpoint](#the-metadata-endpoint)) and offers the agent a
+decision tool ([the decider MCP](#the-decider-mcp)). No other build has either.
 
 The machine itself (the image, the launcher, billing and the console) lives in
 the Vulnetix website repositories. Only what Belai does with it is stated here,
@@ -16,7 +19,7 @@ and each rule is pinned by `internal/rc/pixsandbox_test.go`.
 | Input | Value | Belai reads it as |
 |---|---|---|
 | `$BELAI_HOME/sync/host-id` | the sandbox's own uuid | the host id (`sessionsync.HostID`); a valid id already there is kept, never replaced |
-| `$BELAI_HOME/settings.json` | sync on with remote prompts, `firewall.active` `vulnetix`, `classifier.provider` `typesafe` with `jev-latest` | ordinary global settings; guardrails stay at their default, on |
+| `$BELAI_HOME/settings.json` | sync on with remote prompts, `firewall.active` `vulnetix`, the classifier (Clef on `cloudflare-workers-ai` by default, or Jev: `typesafe` with `jev-latest`), and one allow rule for each `mcp__clef__` tool for an image that has the [decider MCP](#the-decider-mcp) | ordinary global settings; guardrails stay at their default, on |
 | `VULNETIX_ORG_ID`, `VULNETIX_API_KEY` | the account's org id and its ApiKey | the Vulnetix credential (`ApiKey <org>:<key>`) used for sync and the AI Firewall |
 | `VULNETIX_API_TOKEN` | empty | no token login, which the website refuses for remote control |
 | `TYPESAFE_API_KEY` | a placeholder, never the real key | the Jev key; the real one is swapped in at the network edge and never enters the machine |
@@ -205,8 +208,85 @@ console's Launch tab. The headers for it name variables in your secrets vault
 stored with the launch config. Only metrics and the events the console already
 shows leave; the raw `belai rc` output stays admin only.
 
+## The decider MCP
+
+The Pix Sandbox build has one built-in MCP server, `clef`, in
+`internal/clefmcp`. Its tools let an agent ask the classifier's decision model
+for a true/false answer, an enum pick, confidence weights or an ordering,
+instead of guessing in prose. Every tool is a question of a fixed shape put to
+the decision backend, which in a sandbox is Clef on Workers AI through the
+sandbox Worker, so it needs no key on the machine and no destination beyond the
+ones the Worker already answers. It counts against the same daily decision
+allowance as guardrails.
+
+The server is compiled only into the Pix Sandbox build and is registered by the
+harness, not by `mcp.servers`: a settings entry named `clef` is ignored,
+`/mcp` lists it with the transport `builtin`, and it cannot be replaced or
+removed in a session ([MCP servers](mcp.md#built-in-server-pix-sandbox-only)).
+It is offered only when the classifier resolves to a Clef or SystemOne decision
+model; with any other classifier a call returns a tool error and nothing else.
+
+Its tools are ordinary MCP tools, named `mcp__clef__<tool>` with kind `mcp`, so
+each call still asks unless an allow rule covers it and each result is still
+classified. The sandbox's launch settings carry one allow rule per tool (rules
+match a tool name exactly, so `mcp__clef__decide_boolean`,
+`mcp__clef__rank_options` and so on) so an agent can use the decider
+unattended; it is the launcher's choice, not Belai's default.
+
+| Tool | Asks | Returns |
+|---|---|---|
+| `decide_boolean` | one true/false question | `answer` (`p_true` at or above `threshold`, default 0.5), `p_true`, `confidence`, `margin` |
+| `gate_decision` | one true/false question and a `min_confidence` (default 0.8, above 0.5) | `decision` of `pass`, `fail` or `uncertain`; low confidence is never a pass |
+| `decide_enum` | one choice over 2 to 255 options | `choice`, `weights` in the order given, `confidence`, `margin` |
+| `weigh_options` | one choice over 2 to 255 options | `weights` summing to 1, in the order given |
+| `rank_options` | one choice over 2 to 255 options | `ranking` of every option, best first |
+| `top_k_options` | one choice, then the first `k` | `top`, `k`, `omitted` |
+| `compare_pair` | one choice over `a` and `b` | `winner`, `winner_option`, `tie`, `weights`, `margin` |
+| `rank_pairwise` | every pair of 2 to 11 items as a true/false question | `ranking` by wins, then points, and `comparisons` |
+| `decide_batch` | up to 64 mixed boolean and enum questions, one request | `answers` in the order given, each with its `id` and result |
+
+Every tool takes a `question` (or `questions`) and an optional `context`, which
+becomes the request's state. The rules are the same for all of them:
+
+- **The harness decides, the model only scores.** The model returns one
+  probability per question or option. Everything else is fixed arithmetic: choice
+  weights are normalised to sum to 1, every number is rounded to four places,
+  `confidence` is the answer's own probability and `margin` its lead over the
+  runner-up (for a boolean, how far `p_true` is from 0.5, doubled).
+- **Ordering is deterministic.** Options sort by weight, heaviest first, and
+  options with equal weight keep the order the caller gave them, so the same
+  answers always give the same ranking. `rank_pairwise` orders by wins, then by
+  the sum of the model's pairwise probabilities, then by input order. A tie in
+  `compare_pair` goes to `a` and sets `tie`.
+- **Limits are Clef's.** At most 255 options and 64 questions per request, so
+  `rank_pairwise` takes 11 items (55 pairs; 12 would need 66) and `decide_batch`
+  takes 64 questions. Empty, repeated or too many options, an unknown argument
+  and a `k` outside 1 to one less than the number of options are refused before
+  any model call. A question is capped at 2000 characters, an option at 200 and
+  the context at 8000.
+- **Text is sanitized for decisions.** Every string that reaches the model goes
+  through `sanitize.ForDecision` (special tokens split, lines that imitate the
+  prompt's layout prefixed), as the guardrails' own questions do. The result
+  echoes the caller's own option strings, not the cleaned ones.
+- **A result is numbers and the caller's words.** It is JSON built by the
+  harness, never model text. A failure is a tool error whose `error` is
+  `invalid`, `unavailable` (no answer in time, 429, 5xx: retry or decide another
+  way), `auth`, `schema` or `error`, with a fixed message. The backend's own
+  error text is never returned, and a failed call is never read as a true or as a
+  chosen option.
+
+Example: `rank_options` with `question` "Which file should I read first to fix
+the failing test", `options` `["a.go", "b.go", "c.go"]` returns
+
+```json
+{"ranking":[{"rank":1,"option":"b.go","weight":0.6012},{"rank":2,"option":"a.go","weight":0.3105},{"rank":3,"option":"c.go","weight":0.0883}]}
+```
+
 ## Edge cases
 
+- The decider is for the agent's choices, not for security. A guardrail verdict
+  is never taken from it, and the classifier calls the decision backend directly,
+  never through these tools.
 - A token login (`VULNETIX_API_TOKEN` set) fails preflight. The machine sets it
   to the empty string so a stray token in its environment cannot shadow the
   ApiKey.
@@ -217,4 +297,5 @@ shows leave; the raw `belai rc` output stays admin only.
 
 See [Remote control](remote-control.md) for the daemon, [Session sync](session-sync.md)
 for the mirror, [Firewall](firewall.md) for the gateway and [Jev jobs](jev-jobs.md)
-for the classifier. The site section is described in [site.md](site.md).
+for the classifier. The site section is described in [site.md](site.md), and the decider's tools are
+described under [MCP servers](mcp.md#built-in-server-pix-sandbox-only).
