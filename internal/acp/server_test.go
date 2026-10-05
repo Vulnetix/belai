@@ -449,15 +449,27 @@ func TestPostEndStreamsTheOutcomeToTheEditor(t *testing.T) {
 		}, true
 	})
 	s.postEnd(context.Background(), &acpSession{id: "s1", cwd: "/work", log: turnlog.New(nil)})
+	wants := []string{"running tests: go", "tests pass (go pass)", "Tests passed: go pass in 1s."}
+	// The chunks are notifications the editor fake records as they arrive, in no
+	// guaranteed order, so wait for every line, not for the last one sent.
+	arrived := func() bool {
+		text := editorText(ed)
+		for _, want := range wants {
+			if !strings.Contains(text, want) {
+				return false
+			}
+		}
+		return true
+	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && !strings.Contains(editorText(ed), "Tests passed") {
+	for time.Now().Before(deadline) && !arrived() {
 		time.Sleep(10 * time.Millisecond)
 	}
 	text := editorText(ed)
 	if gotCwd != "/work" {
 		t.Fatalf("cwd = %q", gotCwd)
 	}
-	for _, want := range []string{"running tests: go", "tests pass (go pass)", "Tests passed: go pass in 1s."} {
+	for _, want := range wants {
 		if !strings.Contains(text, want) {
 			t.Errorf("editor text missing %q: %q", want, text)
 		}
