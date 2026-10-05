@@ -40,7 +40,12 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
-	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain,
+	// The request's model is checked like a session's: a provider this host
+	// holds credentials for, and values that cannot read as flags.
+	if why := checkOverride(r.Provider, r.Model, "", d.o.Models); why != "" {
+		return "", why
+	}
+	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain, Provider: r.Provider, Model: r.Model,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff}
 	inv := d.o.Inventory()
 	switch r.Kind {
@@ -68,31 +73,31 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	return clip(report), ""
 }
 
+// checkAgentProfile validates the agent profile a start request names: it needs
+// agent mode, and the name must be one this host offers (SessionAgents), so a
+// name from the website cannot reach a profile this host never advertised.
+// An empty name is the default agent.
+func (d *Daemon) checkAgentProfile(name, mode string) string {
+	if name == "" {
+		return ""
+	}
+	if mode != "agent" {
+		return "an agent profile needs agent mode"
+	}
+	if !ValidAgentName(name) {
+		return "that is not an agent profile name"
+	}
+	if !slices.ContainsFunc(d.o.Inventory().Agents, func(a sessionsync.RCAgent) bool { return a.Name == name }) {
+		return "this host has no agent profile " + name
+	}
+	return ""
+}
+
 // runAgentStart runs `belai agent start` in the directory, which does the
 // trust check, the preflight and the agents.max_workers check (raised or
 // lowered by belai rc --max), and waits briefly for the workers to register.
 func runAgentStart(w WorkerStart) (string, error) {
-	args := []string{"agent", "start"}
-	if w.MaxWorkers > 0 {
-		args = append(args, "-max-workers", strconv.Itoa(w.MaxWorkers))
-	}
-	if w.Drain {
-		args = append(args, "-drain")
-	}
-	if w.Controls {
-		args = append(args, "-web-controls")
-		if w.GuardrailsOff {
-			args = append(args, "-web-allow-guardrails-off")
-		}
-	}
-	if w.Crew != "" {
-		args = append(args, "-crew", w.Crew)
-		if w.Fill {
-			args = append(args, "-fill")
-		}
-	} else {
-		args = append(args, w.Profile)
-	}
+	args := agentStartArgs(w)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, w.Exe, args...)
@@ -108,6 +113,40 @@ func runAgentStart(w WorkerStart) (string, error) {
 		return "", startError(text)
 	}
 	return text, nil
+}
+
+// agentStartArgs is the fixed argv of one `belai agent start`: the only words
+// a request contributes are a profile or crew name, a provider and a model, each
+// already checked and none able to start with a dash.
+func agentStartArgs(w WorkerStart) []string {
+	args := []string{"agent", "start"}
+	if w.MaxWorkers > 0 {
+		args = append(args, "-max-workers", strconv.Itoa(w.MaxWorkers))
+	}
+	if w.Drain {
+		args = append(args, "-drain")
+	}
+	if w.Provider != "" {
+		args = append(args, "-provider", w.Provider)
+	}
+	if w.Model != "" {
+		args = append(args, "-model", w.Model)
+	}
+	if w.Controls {
+		args = append(args, "-web-controls")
+		if w.GuardrailsOff {
+			args = append(args, "-web-allow-guardrails-off")
+		}
+	}
+	if w.Crew != "" {
+		args = append(args, "-crew", w.Crew)
+		if w.Fill {
+			args = append(args, "-fill")
+		}
+	} else {
+		args = append(args, w.Profile)
+	}
+	return args
 }
 
 type startError string

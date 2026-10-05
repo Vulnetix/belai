@@ -133,6 +133,10 @@ type RCInfo struct {
 	MaxWorkers int         `json:"maxWorkers"`
 	Profiles   []RCProfile `json:"profiles"`
 	Crews      []RCCrew    `json:"crews"`
+	// Agents are the agent profiles a web-started session can be engaged
+	// with (agent mode): names only, never a prompt or a tool list. Nil from
+	// an older daemon, which offers no choice.
+	Agents []RCAgent `json:"agents,omitempty"`
 	// Items are the library items (skills, prompts, ...) this host holds, by
 	// kind, name and the hash of their canonical document: facts only, no
 	// content, and only for the kinds whose sync switch is on.
@@ -239,6 +243,15 @@ const (
 	MaxRCKnowledgeIndexes = 32
 	MaxRCKnowledgeDocs    = 256
 )
+
+// RCAgent is one agent profile a web session can be started with. The name is
+// what the start request carries and the host checks again; DisplayName is how
+// the console shows it.
+type RCAgent struct {
+	Name        string `json:"name"`
+	Builtin     bool   `json:"builtin"`
+	DisplayName string `json:"displayName,omitempty"`
+}
 
 // RCProfile is one worker profile's routing, as the website shows it.
 type RCProfile struct {

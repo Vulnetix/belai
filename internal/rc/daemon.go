@@ -138,6 +138,9 @@ type WorkerStart struct {
 	Exe, Cwd string
 	// Profile or Crew; exactly one is set.
 	Profile, Crew string
+	// Provider and Model are the request's model for these workers; empty
+	// means the host's own default (belai agent start -provider -model).
+	Provider, Model string
 	// MaxWorkers overrides agents.max_workers for this start when set.
 	MaxWorkers int
 	// Drain makes the workers exit once nothing is left to claim, whatever
@@ -156,6 +159,9 @@ type Child struct {
 	// Provider, Model and Effort are the request's override; empty means the
 	// host's own default (or its routing table).
 	Provider, Model, Effort string
+	// Profile is the agent profile a web session is engaged with (agent mode
+	// only); empty runs the default agent.
+	Profile string
 	// GitSync is the request's switch for the git sync before turns; nil
 	// leaves it to git.sync in the host's settings.
 	GitSync *bool
@@ -332,7 +338,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge,
+		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings}
 	if d.o.Controls {
 		for _, c := range sessionctl.Controls {
@@ -614,6 +620,9 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	if why := checkOverride(r.Provider, r.Model, r.Effort, d.o.Models); why != "" {
 		return "", why
 	}
+	if why := d.checkAgentProfile(r.Profile, r.Mode); why != "" {
+		return "", why
+	}
 	d.mu.Lock()
 	if len(d.sessions) >= d.o.Max {
 		n := len(d.sessions)
@@ -628,7 +637,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	}
 	c := Child{
 		Exe: d.o.Exe, Cwd: cwd, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
-		Provider: r.Provider, Model: r.Model, Effort: r.Effort, GitSync: r.GitSync,
+		Provider: r.Provider, Model: r.Model, Effort: r.Effort, Profile: r.Profile, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
 		Shell: d.o.Shell,
@@ -742,10 +751,9 @@ func (d *Daemon) sessionLog(sid string) string {
 	return filepath.Join(dir, "sessions", sid+".log")
 }
 
-// startChild runs `belai rc-session` in the session's directory, in its own
-// process group so a stop reaches its tools too. The prompt goes over stdin,
-// never argv, so it stays out of the process list.
-func startChild(c Child) (int, func() error, error) {
+// childArgs is the fixed argv of one `belai rc-session`. The prompt is not in
+// it (it goes over stdin), and every value is one the daemon already checked.
+func childArgs(c Child) []string {
 	args := []string{"rc-session", "-dispatch", c.Dispatch, "-session-id", c.SessionID, "-idle", c.Idle.String()}
 	if c.Mode != "" {
 		args = append(args, "-mode", c.Mode)
@@ -754,6 +762,9 @@ func startChild(c Child) (int, func() error, error) {
 		if f[1] != "" {
 			args = append(args, f[0], f[1])
 		}
+	}
+	if c.Profile != "" {
+		args = append(args, "-profile", c.Profile)
 	}
 	if c.GitSync != nil {
 		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])
@@ -767,7 +778,14 @@ func startChild(c Child) (int, func() error, error) {
 	if c.Shell {
 		args = append(args, "-shell")
 	}
-	cmd := exec.Command(c.Exe, args...)
+	return args
+}
+
+// startChild runs `belai rc-session` in the session's directory, in its own
+// process group so a stop reaches its tools too. The prompt goes over stdin,
+// never argv, so it stays out of the process list.
+func startChild(c Child) (int, func() error, error) {
+	cmd := exec.Command(c.Exe, childArgs(c)...)
 	cmd.Dir = c.Cwd
 	cmd.Stdin = strings.NewReader(c.Prompt)
 	var logFile *os.File

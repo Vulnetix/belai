@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
@@ -30,6 +31,7 @@ import (
 	"github.com/vulnetix/belai/internal/netguard"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/profiles"
 	"github.com/vulnetix/belai/internal/rc"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
@@ -39,6 +41,7 @@ import (
 	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/testpass"
+	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
@@ -453,6 +456,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	controls := fs.Bool("controls", false, "take session controls from the web (belai rc --web-controls)")
 	allowGuardrailsOff := fs.Bool("allow-guardrails-off", false, "with -controls, a web session may turn guardrails off")
 	shell := fs.Bool("shell", false, "run shell lines from the web (belai rc --web-shell)")
+	profileFlag := fs.String("profile", "", "engage this agent profile for agent-mode turns (a web request's choice, with -mode agent)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -471,6 +475,16 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		fmt.Fprintf(stderr, "belai rc-session: unknown mode %q\n", *modeFlag)
 		return 2
 	}
+	if *profileFlag != "" {
+		if mode != modes.ModeAgent {
+			fmt.Fprintln(stderr, "belai rc-session: -profile needs -mode agent")
+			return 2
+		}
+		if !rc.ValidAgentName(*profileFlag) {
+			fmt.Fprintf(stderr, "belai rc-session: %q is not an agent profile name\n", *profileFlag)
+			return 2
+		}
+	}
 	raw, err := io.ReadAll(io.LimitReader(stdin, 2*sessionsync.MaxPromptBytes))
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc-session: read prompt:", err)
@@ -481,7 +495,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		fmt.Fprintln(stderr, "belai rc-session: empty prompt")
 		return 1
 	}
-	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag,
+	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag, Profile: *profileFlag,
 		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell}
 	switch *gitSyncFlag {
 	case "":
@@ -504,7 +518,10 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 // (nil means git.sync in settings).
 type rcModelPick struct {
 	Provider, Model, Effort string
-	GitSync                 *bool
+	// Profile is the agent profile engaged for agent-mode turns; empty is the
+	// default agent.
+	Profile string
+	GitSync *bool
 	// Controls and AllowGuardrailsOff are the daemon's --web-controls and
 	// --web-allow-guardrails-off, passed on as fixed argv.
 	Controls, AllowGuardrailsOff bool
@@ -674,7 +691,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 
 	opts := rc.SessionOptions{
 		Log: tlog, Mirror: syncer, Dispatch: dispatch,
-		Prompt: prompt, Mode: mode, Idle: idle, Out: stderr,
+		Prompt: prompt, Mode: mode, Profile: pick.Profile, Idle: idle, Out: stderr,
 		Facts: map[string]any{
 			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
 			"guardrails": settings.GuardrailsEnabled(), "routing": cfg.Routing.Kind,
@@ -688,6 +705,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 			PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
+			Narrow: rcProfileNarrow(pick.Profile),
 		})
 		if err != nil {
 			w.System("remote session could not start: " + err.Error())
@@ -745,7 +763,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, Settings: s,
 			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-			Diagnostics: &gate,
+			Diagnostics: &gate, Narrow: rcProfileNarrow(pick.Profile),
 		})
 		if err != nil {
 			closeDiagnoser(gate.Diagnoser)
@@ -789,6 +807,26 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		rcAfterTurn(ctx, ctl, settings, cfg, pol, cwd, sessionID, tlog, prompt, res, paths)
 	}
 	return rc.RunSession(ctx, opts)
+}
+
+// rcProfileNarrow limits a web session engaged with an agent profile to the
+// tools that profile lists (a flat profile's, or the definition's), exactly as
+// the TUI does for an engaged agent. No profile, or one that lists none, keeps
+// every tool.
+func rcProfileNarrow(name string) func(*tools.Registry) *tools.Registry {
+	if name == "" {
+		return nil
+	}
+	var allow []string
+	if p, err := profiles.Load(name); err == nil {
+		allow = p.Tools
+	} else if p, err := agentprofile.Load(name); err == nil {
+		allow = p.Tools
+	}
+	if len(allow) == 0 {
+		return nil
+	}
+	return func(r *tools.Registry) *tools.Registry { return fleet.NarrowTools(r, allow) }
 }
 
 // rcControlEnv is what a web session's controls may name on this host: a
