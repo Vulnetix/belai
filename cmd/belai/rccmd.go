@@ -681,6 +681,14 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	})
 
 	board, src := cliKanban(cwd, sessionID, settings)
+	if board != nil {
+		// The session runs for hours: take the website's board before the first
+		// turn and keep it current, or a card filed after the sandbox started
+		// never reaches KanbanSearch. The deferred flushKanban above still runs.
+		if client := headless.SyncClient(settings, cwd); client != nil {
+			defer startKanbanSync(ctx, board, client)()
+		}
+	}
 	tlog := turnlog.New(w)
 	if startNote != "" {
 		tlog.System(startNote)
