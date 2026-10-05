@@ -269,7 +269,7 @@ func Describe(a Activity) (Description, bool) {
 		return phaseDescription(a), true
 	case EventSecurityFallback:
 		return Description{
-			Summary: "Jev couldn't settle the security verdict",
+			Summary: DeciderName(field(a.Detail, "decider")) + " couldn't settle the security verdict",
 			Outcome: "the agent model ruled instead",
 			Tone:    ToneCaution,
 			Levels:  LevelSecurity,
@@ -704,7 +704,28 @@ func lspServerDownDescription(a Activity) Description {
 	}
 }
 
-// routeFallbackDescription renders a Jev routing decision that did not settle
+// DeciderName renders a decision backend's identity ("clef/…", "local/…",
+// "openrouter/typesafe/jev-1.13") as the name a person would use for it. An
+// empty or unrecognised identity reads as "The decision model", never as a
+// specific product it might not be.
+func DeciderName(identity string) string {
+	id := strings.ToLower(identity)
+	switch {
+	case strings.Contains(id, "clef"):
+		return "Clef"
+	case strings.Contains(id, "tev1"):
+		return "Tev1"
+	case strings.Contains(id, "decider"):
+		return "Decider"
+	case strings.Contains(id, "jev"):
+		return "Jev"
+	case strings.HasPrefix(id, "local/"):
+		return "The local decision model"
+	}
+	return "The decision model"
+}
+
+// routeFallbackDescription renders a decision-model routing decision that did not settle
 // a use case. Verdict "error" is a failed Decisions call (Detail carries the
 // harness-composed "status=N", 0 when no response arrived); "inconclusive" is
 // a reply with no single clear winner.
@@ -717,7 +738,7 @@ func routeFallbackDescription(a Activity) Description {
 		}
 	}
 	return Description{
-		Summary: "Jev couldn't pick a model for " + useCasePhrase(a.Subject),
+		Summary: DeciderName(a.Model) + " couldn't pick a model for " + useCasePhrase(a.Subject),
 		Outcome: outcome,
 		Tone:    ToneCaution,
 		Levels:  LevelDecisions,

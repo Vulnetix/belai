@@ -184,7 +184,7 @@ func TestBashIsReplacedByTheOneBuiltinThatRatesAboveTheThreshold(t *testing.T) {
 		t.Fatalf("tool results = %q", h.replies)
 	}
 	got := h.replies[0]
-	if !strings.HasPrefix(got, "[harness: your Bash call was replaced by Grep (Jev rated it 97% equivalent); the Bash command was not run") {
+	if !strings.HasPrefix(got, "[harness: your Bash call was replaced by Grep (the decision model rated it 97% equivalent); the Bash command was not run") {
 		t.Fatalf("the model was not told about the swap: %q", got)
 	}
 	if !strings.Contains(got, "needle here") {

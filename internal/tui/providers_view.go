@@ -1458,7 +1458,7 @@ func (a *App) renderDeciderRow(selected bool) string {
 	}
 	status := "local first · " + a.deciderStatus().Label()
 	if selected {
-		status += " · enter tests it and sets it for every Jev decision"
+		status += " · enter tests it and sets it for every decision-model job"
 	}
 	return components.Cursor(selected) + fmt.Sprintf("%s %-16s %-12s %s", glyph, nameStr, components.MutedStyle.Render("decisions"), components.MutedStyle.Render(status))
 }

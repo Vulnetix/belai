@@ -30,11 +30,11 @@ func TestAttachRoleManagerWritesEveryDecisionInOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rolemanager.RecordSecurityFallback()
+	rolemanager.RecordSecurityFallback("clef/test")
 	detach()
 	detach() // idempotent
 
-	rolemanager.RecordSecurityFallback() // after the detach: not recorded
+	rolemanager.RecordSecurityFallback("clef/test") // after the detach: not recorded
 	rows := rmRows(entries())
 	if len(rows) != n+1 {
 		t.Fatalf("recorded %d decisions, want %d", len(rows), n+1)
@@ -60,7 +60,7 @@ func TestAttachRoleManagerWritesEveryDecisionInOrder(t *testing.T) {
 
 func TestAttachRoleManagerOnANilLogIsInert(t *testing.T) {
 	detach := New(nil).AttachRoleManager()
-	rolemanager.RecordSecurityFallback()
+	rolemanager.RecordSecurityFallback("clef/test")
 	detach()
 	var nilLog *Log
 	nilLog.AttachRoleManager()()
@@ -78,7 +78,7 @@ func TestOpenWritesATranscript(t *testing.T) {
 	}
 	l.User("hello", nil)
 	detach := l.AttachRoleManager()
-	rolemanager.RecordSecurityFallback()
+	rolemanager.RecordSecurityFallback("clef/test")
 	detach()
 
 	store, err := session.NewStore()

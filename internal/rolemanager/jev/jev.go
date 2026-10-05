@@ -579,7 +579,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 		// like an inconclusive answer, so the content is still classified.
 		// It used to surface as a classifier error, which withheld the
 		// tool result — every read withheld while OpenRouter was slow.
-		rolemanager.RecordSecurityFallback()
+		rolemanager.RecordSecurityFallback(s.Identity())
 		return s.fallback.Classify(ctx, p)
 	}
 	verdict, decided := thresholdCategories(answers, p.Categories)
@@ -588,7 +588,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	}
 	// Inconclusive: record the handoff so the TUI shows the agent model ruled,
 	// then answer the unchanged chat payload with the fallback classifier.
-	rolemanager.RecordSecurityFallback()
+	rolemanager.RecordSecurityFallback(s.Identity())
 	return s.fallback.Classify(ctx, p)
 }
 
