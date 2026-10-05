@@ -72,7 +72,7 @@ func TestKeysMatchTheTUI(t *testing.T) {
 func TestModeCyclesLikeTheTUI(t *testing.T) {
 	st := base()
 	var got []string
-	for range 4 {
+	for range 5 {
 		ch, err := ParseKey("shift+tab", st, env())
 		if err != nil {
 			t.Fatal(err)
@@ -80,7 +80,7 @@ func TestModeCyclesLikeTheTUI(t *testing.T) {
 		st = ch.State
 		got = append(got, st.Mode)
 	}
-	if strings.Join(got, ",") != "plan,goal,auto,agent" {
+	if strings.Join(got, ",") != "plan,goal,code,auto,agent" {
 		t.Fatalf("cycle = %v", got)
 	}
 }

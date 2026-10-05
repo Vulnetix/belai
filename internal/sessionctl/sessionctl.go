@@ -65,9 +65,8 @@ type Control struct {
 // Value sets, in the order a key cycles them.
 var (
 	Modes = []string{"agent", "plan", "goal", "code", "auto"}
-	// CycleModes is what the mode key walks through. Code mode is chosen by name
-	// (/mode code), never cycled into.
-	CycleModes     = []string{"agent", "plan", "goal", "auto"}
+	// CycleModes is what the mode key walks through.
+	CycleModes     = []string{"agent", "plan", "goal", "code", "auto"}
 	ReasoningModes = []string{"auto", "shown", "hidden"}
 	ToolModes      = []string{"auto", "all", "edits", "none"}
 	DecisionLevels = []string{"hidden", "decisions", "security", "all"}

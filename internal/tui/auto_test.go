@@ -19,6 +19,7 @@ func TestCycleReachesAutoAndLeavesNoStickyChoice(t *testing.T) {
 	}{
 		{"plan", false, true},
 		{"goal", false, true},
+		{"code", false, true},
 		{"agent", true, false},
 		{"agent", false, true},
 	}
@@ -34,8 +35,8 @@ func TestAutoChipAndPersistence(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
-	a.mode = "goal"
-	a.cycleMode() // goal -> auto
+	a.mode = "code"
+	a.cycleMode() // code -> auto
 	a.refreshFooter()
 	if a.footer.Mode != "auto" || a.footer.Agent != "agent" {
 		t.Fatalf("chip = %q/%q, want auto/agent", a.footer.Mode, a.footer.Agent)
@@ -75,7 +76,7 @@ func TestRestoredAutoIsNotSticky(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
-	a.mode = "goal"
+	a.mode = "code"
 	a.cycleMode() // auto, saved to prefs
 	b := New(Options{Workdir: workdir})
 	if !b.modeAuto || b.modeSticky || b.modeExplicit || b.mode != "agent" {

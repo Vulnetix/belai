@@ -25,11 +25,12 @@ authority than the same calls made one by one.
 ## Choosing it
 
 Code mode is an explicit choice. It is never picked by the classifier and is not
-in the mode-choice panel or the mode key's cycle.
+in the mode-choice panel. The mode key (`shift+tab`) cycles into it, which is the
+user choosing it.
 
 | Where | How |
 | --- | --- |
-| TUI | `/mode code` (sticky, saved for the project like any mode) |
+| TUI | `/mode code` or `shift+tab` (sticky, saved for the project like any mode) |
 | `belai -prompt` | `-mode code` |
 | ACP | the editor's mode picker offers **Code** |
 | `belai rc` / web controls | `mode: code`, and `/mode code` from the web |

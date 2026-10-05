@@ -4765,7 +4765,10 @@ func (a *App) cycleMode() {
 		a.mode = "goal"
 		a.addSystem("goal mode on")
 	case a.mode == "goal":
-		// goal leads to auto: no sticky choice, the classifier picks per
+		a.mode = "code"
+		a.addSystem("code mode on (agent mode with scripted tool calls)")
+	case a.mode == "code":
+		// code leads to auto: no sticky choice, the classifier picks per
 		// prompt.
 		a.mode = "agent"
 		a.modeAuto = true

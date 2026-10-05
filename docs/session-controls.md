@@ -9,7 +9,7 @@ because both are parsed by one table (`internal/sessionctl`).
 
 | Control | Command | Key | Values |
 | --- | --- | --- | --- |
-| Mode | `/mode agent\|plan\|goal\|code\|auto` | `shift+tab`, `f5` | cycles agent, plan, goal, auto; `code` is chosen by name ([code-mode.md](code-mode.md)) |
+| Mode | `/mode agent\|plan\|goal\|code\|auto` | `shift+tab`, `f5` | cycles agent, plan, goal, code, auto ([code-mode.md](code-mode.md)) |
 | Model | `/model <provider> <model> [effort]` | `ctrl+q` | `ctrl+q` swaps between the main model and the fast tier |
 | Reasoning effort | `/effort default\|<level>` | `f6` | the levels the model takes |
 | Guardrails | `/guardrails on\|off` | `f3` | on, off |
