@@ -290,7 +290,11 @@ func TestProviderKeyNeverPrintsItself(t *testing.T) {
 
 func TestProviderKeysMapsTheServersRefusals(t *testing.T) {
 	for status, want := range map[int]error{404: ErrNotFound, 409: ErrConflict, 401: ErrUnauthorized, 403: ErrKeysNotOverTLS, 502: ErrKeysUnavailable, 503: ErrKeysUnavailable} {
+		// The library's own refusal says TLS; the other statuses read as they always did.
 		s := &itemSite{t: t, status: status, respond: `{"error":"x","keys":[{"provider":"a","key":"sk-LEAK"}]}`}
+		if status == 403 {
+			s.respond = `{"error":"provider keys are only sent over TLS","keys":[{"provider":"a","key":"sk-LEAK"}]}`
+		}
 		c, stop := s.start()
 		keys, _, err := c.ProviderKeys(context.Background(), testHost, "d1")
 		stop()
@@ -306,6 +310,45 @@ func TestProviderKeysMapsTheServersRefusals(t *testing.T) {
 	defer stop()
 	if _, _, err := c.ProviderKeys(context.Background(), testHost, "d1"); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
 		t.Errorf("500: %v", err)
+	}
+}
+
+// A 403 is the library's TLS refusal only when its error text says so. A WAF block,
+// the egress gateway's bare 403 or an HTML error page are not, and must not send the
+// user to look for a TLS problem. The body never reaches the error.
+func TestProviderKeysDoesNotCallEveryForbiddenATLSProblem(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":        ``,
+		"html":         `<html><body><h1>Forbidden</h1> TLS-sk-LEAK</body></html>`,
+		"other json":   `{"error":"blocked by policy sk-LEAK"}`,
+		"no error":     `{"keys":[{"provider":"a","key":"sk-LEAK"}]}`,
+		"error object": `{"error":{"message":"TLS"}}`,
+	} {
+		s := &itemSite{t: t, status: 403, respond: body}
+		c, stop := s.start()
+		keys, _, err := c.ProviderKeys(context.Background(), testHost, "d1")
+		stop()
+		if keys != nil || err == nil {
+			t.Errorf("%s: keys=%v err=%v, want an error", name, keys, err)
+			continue
+		}
+		if errors.Is(err, ErrKeysNotOverTLS) {
+			t.Errorf("%s: a 403 that does not name TLS was read as the TLS refusal", name)
+		}
+		if !strings.Contains(err.Error(), "HTTP 403") {
+			t.Errorf("%s: %v does not say HTTP 403", name, err)
+		}
+		if strings.Contains(err.Error(), "LEAK") || strings.Contains(err.Error(), "Forbidden") {
+			t.Errorf("%s: the error carries the body: %v", name, err)
+		}
+	}
+	// The refusal is still the TLS one when the body carries more than the error.
+	long := `{"error":"provider keys are only sent over TLS","pad":"` + strings.Repeat("x", 8<<10) + `"}`
+	s := &itemSite{t: t, status: 403, respond: long}
+	c, stop := s.start()
+	defer stop()
+	if _, _, err := c.ProviderKeys(context.Background(), testHost, "d1"); !errors.Is(err, ErrKeysNotOverTLS) {
+		t.Errorf("a long TLS refusal = %v, want ErrKeysNotOverTLS", err)
 	}
 }
 

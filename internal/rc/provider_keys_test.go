@@ -253,6 +253,10 @@ func TestProviderKeysMapsTheLibrarysRefusalsToReasons(t *testing.T) {
 	} {
 		h.site.mu.Lock()
 		h.site.keysStatus, h.site.keysBody = status, `{"error":"x","keys":[{"provider":"openai","key":"sk-LEAK"}]}`
+		if status == 403 {
+			// Only the library's own refusal names TLS.
+			h.site.keysBody = `{"error":"provider keys are only sent over TLS","keys":[{"provider":"openai","key":"sk-LEAK"}]}`
+		}
 		h.site.mu.Unlock()
 		got, why := h.keys("openai")
 		if got != sessionsync.DispatchRefused || !strings.Contains(why, want) || strings.Contains(why, "LEAK") {
@@ -261,6 +265,32 @@ func TestProviderKeysMapsTheLibrarysRefusalsToReasons(t *testing.T) {
 	}
 	if len(mem.stored) != 0 {
 		t.Errorf("a failed request stored %v", mem.stored)
+	}
+}
+
+// A 403 from a WAF or the egress gateway is not the library's TLS refusal. The
+// reason must say what was seen, not send the user to debug TLS.
+func TestProviderKeysNonTLSForbiddenIsNotReportedAsTLS(t *testing.T) {
+	h := newItemHarness(t)
+	mem := useMemStore(t)
+	for name, body := range map[string]string{
+		"empty": ``,
+		"html":  `<html><body>Forbidden sk-LEAK</body></html>`,
+		"json":  `{"error":"blocked by policy"}`,
+	} {
+		h.site.mu.Lock()
+		h.site.keysStatus, h.site.keysBody = 403, body
+		h.site.mu.Unlock()
+		got, why := h.keys("openai")
+		if got != sessionsync.DispatchRefused {
+			t.Errorf("%s: %s %q, want refused", name, got, why)
+		}
+		if strings.Contains(why, "TLS") || !strings.Contains(why, "HTTP 403") || strings.Contains(why, "LEAK") {
+			t.Errorf("%s: reason %q should say HTTP 403, not TLS, and carry no body", name, why)
+		}
+	}
+	if len(mem.stored) != 0 {
+		t.Errorf("a refused request stored %v", mem.stored)
 	}
 }
 

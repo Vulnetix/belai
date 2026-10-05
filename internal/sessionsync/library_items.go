@@ -215,8 +215,9 @@ const (
 // Why the library would not release a request's keys, beyond not found (404) and
 // already delivered (ErrConflict, 409).
 var (
-	// ErrKeysNotOverTLS is a 403: the library only sends a key over TLS, and it did
-	// not see this connection as TLS.
+	// ErrKeysNotOverTLS is a 403 whose error text names TLS: the library only sends a
+	// key over TLS, and it did not see this connection as TLS. Any other 403 is not
+	// this error; it comes from something in front of the library.
 	ErrKeysNotOverTLS = errors.New("sessionsync: the library only sends provider keys over TLS")
 	// ErrKeysUnavailable is a 502 or 503: the library has no key storage, or could
 	// not read a stored key.
@@ -248,6 +249,21 @@ func (k ProviderKey) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{"provider": k.Provider, "key": "<redacted>"})
 }
 
+// keysRefusedForTLS reports whether a 403 body is the library's own refusal to send
+// a key over plain HTTP. That is the only 403 the route answers with, but a WAF or the
+// egress gateway can answer 403 too, so the status alone says nothing about TLS: the
+// {"error": ...} text has to name it. The body was read through roundTrip's cap and
+// only the error text is looked at; nothing from it is kept or returned.
+func keysRefusedForTLS(body []byte) bool {
+	var refusal struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &refusal) != nil {
+		return false
+	}
+	return strings.Contains(refusal.Error, "TLS")
+}
+
 // ProviderKeys reads the provider keys the provider_keys_install request
 // dispatchID names. The server answers only while that request is delivered to this
 // host, once, over TLS, and only for the slugs the request names; missing lists the
@@ -262,15 +278,27 @@ func (c *Client) ProviderKeys(ctx context.Context, hostID, dispatchID string) (k
 		Missing []string `json:"missing"`
 	}
 	path := fmt.Sprintf("/hosts/%s/library/provider-keys?dispatch=%s", url.PathEscape(hostID), url.QueryEscape(dispatchID))
-	if err := c.do(ctx, http.MethodGet, path, nil, &out, requestTimeout); err != nil {
-		switch msg := err.Error(); {
-		case strings.Contains(msg, "HTTP 403"):
-			return nil, nil, ErrKeysNotOverTLS
-		case strings.Contains(msg, "HTTP 502"), strings.Contains(msg, "HTTP 503"):
-			return nil, nil, ErrKeysUnavailable
-		}
-		// A 404, a 409, a 401 or anything else: the text names a route and a status,
-		// never a value.
+	status, data, err := c.roundTrip(ctx, http.MethodGet, path, nil, requestTimeout, false, defaultMaxBody)
+	if err != nil {
+		return nil, nil, err
+	}
+	switch {
+	case status == http.StatusNotFound:
+		return nil, nil, ErrNotFound
+	case status == http.StatusUnauthorized:
+		return nil, nil, ErrUnauthorized
+	case status == http.StatusConflict:
+		return nil, nil, ErrConflict
+	case status == http.StatusForbidden && keysRefusedForTLS(data):
+		return nil, nil, ErrKeysNotOverTLS
+	case status == http.StatusBadGateway, status == http.StatusServiceUnavailable:
+		return nil, nil, ErrKeysUnavailable
+	case status < 200 || status > 299:
+		// Any other status, a 403 from a firewall or the edge among them: the text
+		// names a route and a status, never the body, which could hold a value.
+		return nil, nil, fmt.Errorf("sessionsync: GET %s: HTTP %d", path, status)
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
 		return nil, nil, err
 	}
 	if len(out.Keys) > MaxProviderKeys || len(out.Missing) > MaxProviderKeys {
