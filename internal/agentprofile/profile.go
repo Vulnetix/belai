@@ -61,6 +61,14 @@ type AgentProfile struct {
 	// Any key is accepted and shown to the model; a well-known key is also
 	// read by the tool it names (see facts.go and internal/factspec).
 	Facts Facts `json:"facts,omitempty"`
+	// Skills names the skills that guide this agent: a builtin one (belai-scout)
+	// or an installed one. A session engaged with the profile lists and loads
+	// only these through the Skill tool (see skills.go and docs/skills.md).
+	Skills []string `json:"skills,omitempty"`
+	// Metadata holds what an import could not place in a field of this schema.
+	// It is for people and tools, is never shown to a model, and changes nothing
+	// the agent may do (see skills.go).
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
@@ -296,6 +304,12 @@ func (p AgentProfile) Validate() error {
 		return err
 	}
 	if err := p.validateFacts(); err != nil {
+		return err
+	}
+	if err := p.validateSkills(); err != nil {
+		return err
+	}
+	if err := p.validateMetadata(); err != nil {
 		return err
 	}
 	return p.validateWorker()

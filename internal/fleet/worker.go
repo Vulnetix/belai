@@ -1141,7 +1141,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		SessionID: t.SessionID, AskDisabled: &askOff, MCP: mcpMgr,
 		Kanban: store, KanbanSource: src, Claim: t.Claim,
 		Narrow: func(r *tools.Registry) *tools.Registry {
-			r = NarrowTools(r, p.Tools)
+			r = NarrowTools(r, p.Tools).WithSkills(p.Skills)
 			if t.Setup != "" {
 				// No worktree isolates this turn from the checkout: the
 				// profile's tools, read-only (Bash becomes the read-only

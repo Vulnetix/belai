@@ -128,3 +128,45 @@ func TestSkillDraftAlwaysAsks(t *testing.T) {
 		t.Fatal("SkillDraft must always ask")
 	}
 }
+
+// A profile's skills list is the only way to reach a builtin skill, and it
+// narrows the listing to the names it holds.
+func TestSkillAllowListReachesBuiltinsOnly(t *testing.T) {
+	plain := Skill{}
+	for _, e := range plain.Entries() {
+		if e.Source == skills.BuiltinSource {
+			t.Fatalf("an ordinary session lists the builtin skill %s", e.Name)
+		}
+	}
+	res, err := Skill{}.Execute(context.Background(), map[string]any{"skill": "belai-scout"})
+	if err != nil || !strings.HasPrefix(res.Content, "no skill named") {
+		t.Fatalf("an ordinary session loaded a builtin: %q, %v", res.Content, err)
+	}
+
+	narrowed := Skill{Allow: []string{"belai-scout"}}
+	if es := narrowed.Entries(); len(es) != 1 || es[0].Name != "belai-scout" || es[0].Source != skills.BuiltinSource {
+		t.Fatalf("entries = %+v", es)
+	}
+	res, err = narrowed.Execute(context.Background(), map[string]any{"skill": "belai-scout"})
+	if err != nil || res.Kind != KindSkill || !strings.Contains(res.Content, "source: builtin") {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	other, _ := narrowed.Execute(context.Background(), map[string]any{"skill": "belai-patcher"})
+	if !strings.HasPrefix(other.Content, "no skill named") {
+		t.Fatalf("an unlisted builtin loaded: %q", other.Content)
+	}
+}
+
+func TestRegistryWithSkills(t *testing.T) {
+	r := NewRegistry(Skill{}, &Read{})
+	if r.WithSkills(nil) != r {
+		t.Error("an empty list should return the registry unchanged")
+	}
+	got := SkillEntries(r.WithSkills([]string{"belai-scout"}))
+	if len(got) != 1 || got[0].Name != "belai-scout" {
+		t.Fatalf("entries = %+v", got)
+	}
+	if r2 := NewRegistry(&Read{}); r2.WithSkills([]string{"x"}) != r2 {
+		t.Error("a registry without Skill should be returned unchanged")
+	}
+}

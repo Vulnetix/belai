@@ -1421,7 +1421,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// tool and classify as KindSkill. A user-only skill is not listed.
 	if _, ok := s.registry.Find("Skill"); ok {
 		var all []tools.Candidate
-		for _, e := range tools.InstalledSkills() {
+		for _, e := range tools.SkillEntries(s.registry) {
 			if !e.DisableModelInvocation {
 				all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Sanitize(e.Description), Skill: true})
 			}

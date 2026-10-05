@@ -825,16 +825,16 @@ func rcProfileNarrow(name string) func(*tools.Registry) *tools.Registry {
 	if name == "" {
 		return nil
 	}
-	var allow []string
+	var allow, skillNames []string
 	if p, err := profiles.Load(name); err == nil {
 		allow = p.Tools
 	} else if p, err := agentprofile.Load(name); err == nil {
-		allow = p.Tools
+		allow, skillNames = p.Tools, p.Skills
 	}
-	if len(allow) == 0 {
+	if len(allow) == 0 && len(skillNames) == 0 {
 		return nil
 	}
-	return func(r *tools.Registry) *tools.Registry { return fleet.NarrowTools(r, allow) }
+	return func(r *tools.Registry) *tools.Registry { return fleet.NarrowTools(r, allow).WithSkills(skillNames) }
 }
 
 // rcControlEnv is what a web session's controls may name on this host: a

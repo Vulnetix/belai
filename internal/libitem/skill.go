@@ -66,6 +66,9 @@ func ParseSkill(canonical []byte) (SkillDoc, error) {
 	if !ValidName(Skill, d.Name) {
 		return d, refuse("name %q is not valid: %s", cleanForMessage(d.Name), nameRule)
 	}
+	if skills.ReservedName(d.Name) {
+		return d, refuse("names starting with %q are reserved for Belai's own skills", skills.BuiltinPrefix)
+	}
 	d.Description = m.Description
 	if len(d.Description) > MaxSkillDescriptionBytes {
 		return d, refuse("description is %d bytes; the most is %d", len(d.Description), MaxSkillDescriptionBytes)

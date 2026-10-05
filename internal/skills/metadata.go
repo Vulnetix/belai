@@ -16,8 +16,8 @@ import (
 const (
 	MaxMetadataEntries = 32
 	MaxMetadataKey     = 64
-	MaxMetadataValue   = 1024
-	MaxMetadataTotal   = 8192
+	MaxMetadataValue   = 4096
+	MaxMetadataTotal   = 16384
 )
 
 // Reserved metadata keys. Everything under the belai. prefix is Belai's: a key
@@ -34,7 +34,7 @@ const (
 
 const (
 	maxNicheBytes    = 200
-	maxContextTokens = 64
+	maxContextTokens = 96
 	maxContextBytes  = 48
 	maxResources     = 40
 	maxResourceBytes = 300
@@ -43,7 +43,7 @@ const (
 
 var (
 	reservedMeta = map[string]bool{MetaRole: true, MetaNiche: true, MetaContexts: true, MetaResources: true, MetaUpdated: true}
-	contextRE    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+/ -]*$`)
+	contextRE    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+/# -]*$`)
 	roleRE       = regexp.MustCompile(`^[a-z0-9][a-z0-9:._-]*$`)
 	specNameRE   = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 )
@@ -107,7 +107,7 @@ func checkContexts(v string) error {
 	seen := map[string]bool{}
 	for _, t := range toks {
 		if len(t) > maxContextBytes || !contextRE.MatchString(t) {
-			return fmt.Errorf("context %q must be letters, digits and . _ + / - (at most %d bytes)", clipMsg(t, 30), maxContextBytes)
+			return fmt.Errorf("context %q must be letters, digits and . _ + / # - (at most %d bytes)", clipMsg(t, 30), maxContextBytes)
 		}
 		l := strings.ToLower(t)
 		if seen[l] {

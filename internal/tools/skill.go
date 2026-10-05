@@ -42,6 +42,77 @@ func InstalledSkills() []skills.Entry {
 type Skill struct {
 	// List overrides discovery (tests). nil means InstalledSkills.
 	List func() []skills.Entry
+	// Allow, when set, is the only set of skills the session may list and load:
+	// the skills an agent profile names (profile.skills). It is the one way a
+	// builtin skill becomes reachable, so an ordinary session never sees one.
+	Allow []string
+}
+
+// Entries is the skills this tool lists and loads. With no Allow list it is
+// every installed skill (the user's and enabled plugins'). With one, it is the
+// named skills, a builtin before an installed skill of the same name.
+func (s Skill) Entries() []skills.Entry {
+	if s.List != nil {
+		return s.List()
+	}
+	if len(s.Allow) == 0 {
+		return InstalledSkills()
+	}
+	want := map[string]bool{}
+	for _, n := range s.Allow {
+		want[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	var out []skills.Entry
+	seen := map[string]bool{}
+	for _, list := range [][]skills.Entry{skills.Builtin(), InstalledSkills()} {
+		for _, e := range list {
+			k := strings.ToLower(e.Name)
+			if want[k] && !seen[k] {
+				seen[k] = true
+				out = append(out, e)
+			}
+		}
+	}
+	return out
+}
+
+// SkillEntries lists the skills the registry's Skill tool offers, or nil when
+// the registry has no Skill tool.
+func SkillEntries(r *Registry) []skills.Entry {
+	if r == nil {
+		return nil
+	}
+	t, ok := r.Find("Skill")
+	if !ok {
+		return nil
+	}
+	if s, ok := t.(Skill); ok {
+		return s.Entries()
+	}
+	return InstalledSkills()
+}
+
+// WithSkills returns r with its Skill tool limited to the named skills (an agent
+// profile's skills list). An empty list, or a registry without a Skill tool,
+// returns r unchanged.
+func (r *Registry) WithSkills(names []string) *Registry {
+	if r == nil || len(names) == 0 {
+		return r
+	}
+	var list []Tool
+	found := false
+	for _, t := range r.tools {
+		if strings.EqualFold(t.Definition().Name, "Skill") {
+			found = true
+			list = append(list, Skill{Allow: append([]string(nil), names...)})
+			continue
+		}
+		list = append(list, t)
+	}
+	if !found {
+		return r
+	}
+	return r.withCwd(NewRegistry(list...))
 }
 
 func (Skill) Definition() Definition {
@@ -70,11 +141,7 @@ func (s Skill) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if !ok || strings.TrimSpace(name) == "" {
 		return Result{}, fmt.Errorf("missing skill argument")
 	}
-	list := s.List
-	if list == nil {
-		list = InstalledSkills
-	}
-	e, found := skills.Find(list(), name)
+	e, found := skills.Find(s.Entries(), name)
 	if !found || e.DisableModelInvocation {
 		// A user-only skill is reported exactly like a missing one, so the
 		// model learns nothing about it.

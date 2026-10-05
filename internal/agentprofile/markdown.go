@@ -11,8 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Markdown agent definitions are the shape Claude Code, OpenClaw and Hermes
-// use: YAML front-matter between --- lines, and the body as the prompt.
+// Markdown agent definitions are YAML front-matter between --- lines, with the
+// body as the prompt.
 //
 //	---
 //	name: builder
@@ -120,7 +120,7 @@ var markdownKeyOrder = []string{
 	"name", "id", "display_name", "palette", "avatar_id", "personality",
 	"description", "identity", "tools", "mode", "schedule", "monitor_condition", "reflection",
 	"max_iterations", "autonomy", "provider", "model", "effort", "guardrails", "ask_permission",
-	"facts", "kanban", "workspace", "budget", "memory", "knowledge",
+	"facts", "skills", "kanban", "workspace", "budget", "memory", "knowledge", "metadata",
 }
 
 // MarshalMarkdown writes p as a markdown agent definition: the JSON keys as

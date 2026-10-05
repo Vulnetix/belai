@@ -112,7 +112,7 @@ truth for its front-matter fields. On top of it the library holds these rules:
   most 1024 bytes.
 - `license` is at most 128 bytes and `compatibility` at most 500. `metadata` is a
   map of string keys to string values: at most 32 entries, a key of at most 64
-  bytes, a value of at most 1024 and 8 KiB in all. The `belai.` keys are
+  bytes, a value of at most 4096 and 16 KiB in all. The `belai.` keys are
   checked ([skills.md](skills.md#metadata)). A scalar `metadata: text` from an
   older file is kept under the key `note`.
 - `allowed-tools` holds at most 64 names of at most 128 bytes, separated by spaces

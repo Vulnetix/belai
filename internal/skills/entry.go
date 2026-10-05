@@ -21,7 +21,8 @@ type Entry struct {
 	Manifest
 	Name string
 	Path string
-	// Source is "user" for the global skills directory, else the plugin name.
+	// Source is "user" for the global skills directory, BuiltinSource for a skill
+	// that ships with Belai, else the plugin name.
 	Source string
 }
 
@@ -87,11 +88,20 @@ func Find(entries []Entry, name string) (Entry, bool) {
 // the front matter. The file may have changed since discovery, so it is
 // validated again: an invalid file yields an error, never a body.
 func ReadBody(e Entry) (string, error) {
-	data, err := os.ReadFile(e.Path)
-	if err != nil {
-		return "", err
+	var doc string
+	if e.Source == BuiltinSource {
+		d, err := BuiltinDoc(e.Name)
+		if err != nil {
+			return "", err
+		}
+		doc = d
+	} else {
+		data, err := os.ReadFile(e.Path)
+		if err != nil {
+			return "", err
+		}
+		doc = string(data)
 	}
-	doc := string(data)
 	if _, err := ValidateSkill(doc); err != nil {
 		return "", fmt.Errorf("skill %q no longer validates: %w", e.Name, err)
 	}
@@ -110,6 +120,9 @@ func ValidName(name string) bool { return ValidSpecName(name) }
 // Compose builds a SKILL.md document from its parts and validates it. The
 // description is flattened to one line so it cannot add front-matter keys.
 func Compose(name, description, body string) (string, error) {
+	if ReservedName(name) {
+		return "", fmt.Errorf("skill names starting with %q are reserved for Belai's own skills", BuiltinPrefix)
+	}
 	if !ValidName(name) {
 		return "", fmt.Errorf("skill name %q must be lowercase letters, digits and single hyphens, not starting or ending with one (at most 64)", name)
 	}

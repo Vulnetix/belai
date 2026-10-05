@@ -44,12 +44,12 @@ func TestValidateSkill(t *testing.T) {
 		{"compatibility at the limit", skillDoc(okSkillFM+"compatibility: "+strings.Repeat("c", MaxSkillCompatibility)+"\n", "x"), ""},
 		{"compatibility over the limit", skillDoc(okSkillFM+"compatibility: "+strings.Repeat("c", MaxSkillCompatibility+1)+"\n", "x"), "compatibility is over 500 bytes"},
 		{"a scalar metadata value at the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", skills.MaxMetadataValue)+"\n", "x"), ""},
-		{"a scalar metadata value over the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", skills.MaxMetadataValue+1)+"\n", "x"), "is over 1024 bytes"},
+		{"a scalar metadata value over the limit", skillDoc(okSkillFM+"metadata: "+strings.Repeat("m", skills.MaxMetadataValue+1)+"\n", "x"), "is over 4096 bytes"},
 		{"metadata as a map", skillDoc(okSkillFM+"metadata:\n  author: example-org\n  version: \"1.0\"\n", "x"), ""},
 		{"metadata as a flow map", skillDoc(okSkillFM+"metadata: {a: 1, b: two}\n", "x"), ""},
 		{"metadata with a nested value", skillDoc(okSkillFM+"metadata: {a: 1, b: [2]}\n", "x"), "string keys to string values"},
 		{"metadata with too many entries", skillDoc(okSkillFM+"metadata:\n"+manyMeta(skills.MaxMetadataEntries+1), "x"), "the most is 32"},
-		{"metadata over the total", skillDoc(okSkillFM+"metadata:\n"+bigMeta(), "x"), "the most is 8192"},
+		{"metadata over the total", skillDoc(okSkillFM+"metadata:\n"+bigMeta(), "x"), "the most is 16384"},
 		{"an unknown belai key", skillDoc(okSkillFM+"metadata:\n  belai.typo: x\n", "x"), "unknown reserved key"},
 		{"belai keys that are valid", skillDoc(okSkillFM+"metadata:\n  belai.role: belai:scout\n  belai.niche: test gaps\n  belai.contexts: Go, Python\n  belai.resources: https://go.dev/doc/\n  belai.updated: 2026-01-31\n", "x"), ""},
 		{"belai resources that are not https", skillDoc(okSkillFM+"metadata:\n  belai.resources: http://example.com/\n", "x"), "must be an https URL"},
@@ -170,8 +170,8 @@ func manyMeta(n int) string {
 // bigMeta is under the entry and value limits and over the total.
 func bigMeta() string {
 	var b strings.Builder
-	for i := 0; i < 9; i++ {
-		fmt.Fprintf(&b, "  k%d: %s\n", i, strings.Repeat("v", 1000))
+	for i := 0; i < 5; i++ {
+		fmt.Fprintf(&b, "  k%d: %s\n", i, strings.Repeat("v", 4000))
 	}
 	return b.String()
 }

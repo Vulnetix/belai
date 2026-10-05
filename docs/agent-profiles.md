@@ -57,9 +57,11 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | `avatar_id` | No | string | The UUID of the generated avatar the console shows for this agent. |
 | `knowledge` | No | object | `{ "paths": ["~/handbook", "/srv/standards.md"] }`: up to 32 files or directories, absolute, starting with `~/`, or relative to the project (resolved under its trusted repository root), that the agent may search by meaning through `Grep`, `Glob` and `Read` (see [Knowledge](knowledge.md)). Any mode may use it. It travels with the profile: a library install keeps it, a backup carries it, and a replace takes the library copy (keeping this host's paths when the copy lists none). Under the fixed floor in [Knowledge](knowledge.md#profile-knowledge) nothing sensitive is ever listed. A fleet worker also gets a read-only copy of the documents in its worktree. Changing it restarts a running worker, like any other behavioural field. |
 | `facts` | No | object | Structured key/value pairs about the environment the agent works in, such as an AWS role, a Terraform directory or a Kubernetes context. Each value is a string or a list of strings. Any key is accepted and shown to the model; a [well-known key](#facts) is also read by the tool it names. Not for secrets. Changing it restarts a running worker, like any other behavioural field. |
+| `skills` | No | string[] | Up to 8 skill names that guide the agent: a builtin one such as `belai-scout`, or one of your installed skills. A session engaged with the profile lists and loads only these through the `Skill` tool, and its persona gains one sentence naming them. When `tools` is set it must include `Skill`. Names starting with `belai-` are Belai's own and cannot be invented. See [skills.md](skills.md#builtin-skills). Changing it restarts a running worker, like any other behavioural field. |
+| `metadata` | No | object | Free-form string pairs (at most 32, a key of 64 bytes, a value of one clean line of 4096) for what an [import](agent-import.md) could not place in another field. It is for people and tools: no model reads it, it changes nothing the agent may do, and editing it does not restart a worker. |
 | `personality` | No | object | Optional style guidance: `report_style` (one line, 280 characters), `focus` (up to 8 lines of 80) and `vocabulary` (up to 20 lines of 32). It is appended to the worker's persona as style hints that rank below the task and never change what the agent may do. |
 
-`id`, `display_name`, `palette` and `avatar_id` only present the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
+`id`, `display_name`, `palette`, `avatar_id` and `metadata` only present or describe the agent. A running worker pins the rest of the definition (see [Worker profiles](#worker-profiles)), so adding an id or recolouring an agent does not stop it, while a personality edit does, because it changes the prompt.
 
 ### Facts
 
@@ -432,10 +434,12 @@ Validation fails closed:
 - a `gates` block needs a `verify` of `off`, `record` or `enforce`, `require` needs `handoff_to` or `handoff_labels`, `review` needs `verify` to be `enforce`, and `coverage` needs `handoff_to` or `handoff_labels`;
 - a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, only a worker with `vex` may list `rejected`, and `rounds` runs 0 to 5 and needs `isolation: worktree`.
 
-A definition can also be written as Markdown with YAML front-matter, the
-shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,
+A definition can also be written as Markdown with YAML front-matter. The keys
+are the JSON keys,
 checked strictly; the body is the `system_prompt`. `belai agent import FILE.md`
-validates it and saves it as JSON.
+validates it and saves it as JSON. Definitions written for some other agent
+harnesses can be brought in with `belai agent import --from`; see
+[agent-import.md](agent-import.md).
 
 ### Built-in workers and crews
 
@@ -537,7 +541,7 @@ Engaging resolves through `agent.CarrierOptions`, which tries
 profile owns a shared name, and the picker drops the shadowed definition
 rather than offering a row that would engage the other file.
 
-## Hermes-style builder
+## The builder wizard
 
 The agent builder wizard (`/agent create`) uses the configured LLM provider
 with a dedicated system prompt (the "agent designer") to generate profile

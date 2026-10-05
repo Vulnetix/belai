@@ -609,6 +609,9 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 // acts.
 func profilePrompt(p agentprofile.AgentProfile) string {
 	text := p.SystemPrompt
+	if line := p.SkillsLine(); line != "" {
+		text += "\n\n" + line
+	}
 	if facts := p.FactsBlock(); facts != "" {
 		text += "\n\n" + facts
 	}
@@ -634,7 +637,7 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	// The board is how agents hand work to one another, so its tools come
 	// after the allowlist and every definition keeps them.
 	m.mu.Lock()
-	reg = reg.NarrowWithKanban(profile.Tools, m.kanban, m.kanbanSrc)
+	reg = reg.NarrowWithKanban(profile.Tools, m.kanban, m.kanbanSrc).WithSkills(profile.Skills)
 	m.mu.Unlock()
 	perms := permissions.From(m.settings.Permissions.Allow, m.settings.Permissions.Ask, m.settings.Permissions.Deny)
 	var promptOpts prompt.Options

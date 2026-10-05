@@ -180,7 +180,7 @@ func (p AgentProfile) personalityBlock() string {
 // Persona is the profile section of a worker's system block: identity, the
 // system prompt, the personality's style hints, then the declared facts.
 func (p AgentProfile) Persona() string {
-	parts := []string{strings.TrimSpace(p.Identity), strings.TrimSpace(p.SystemPrompt), p.personalityBlock(), p.factsBlock()}
+	parts := []string{strings.TrimSpace(p.Identity), strings.TrimSpace(p.SystemPrompt), p.SkillsLine(), p.personalityBlock(), p.factsBlock()}
 	out := make([]string, 0, len(parts))
 	for _, s := range parts {
 		if s != "" {
@@ -196,5 +196,6 @@ func (p AgentProfile) Persona() string {
 // pins and compares.
 func (p AgentProfile) Behavioural() AgentProfile {
 	p.ID, p.DisplayName, p.Palette, p.AvatarID = "", "", nil, ""
+	p.Metadata = nil
 	return p
 }

@@ -11,6 +11,7 @@ to save a new one with `SkillDraft`, which you approve.
 
 - [Skill files](#skill-files)
 - [Loading a skill](#loading-a-skill)
+- [Builtin skills](#builtin-skills)
 - [Self-authored skills](#self-authored-skills)
 - [The library](#the-library)
 - [Security model](#security-model)
@@ -64,7 +65,7 @@ checked: a `belai.` key that is not listed here fails validation.
 | `belai.updated` | the date of the last review, `2026-01-31` |
 
 In the library a skill holds at most 32 metadata entries, a key of at most 64
-bytes, a value of at most 1024 and 8 KiB in all.
+bytes, a value of at most 4096 and 16 KiB in all.
 
 ## Loading a skill
 
@@ -83,6 +84,23 @@ source. The tool takes no path, so it cannot read any other file. A skill with
 `Skill` is read-only, so it is also available in plan mode and to explore
 subagents. A background agent with a tool allowlist gets it only if the
 allowlist names it.
+
+## Builtin skills
+
+Belai ships one specialist skill for each of its six worker profiles
+(`belai-scout`, `belai-builder`, `belai-reviewer`, `belai-vuln-scout`,
+`belai-patcher`, `belai-verifier`). They are compiled into the binary, so they are
+always the version that matches the profile, and they are listed and loaded only
+in a session whose profile names them in `skills`
+([agent-profiles.md](agent-profiles.md)). An ordinary session does not see them.
+
+- Each is at most 100 lines and opens with a contents list. Its front matter
+  names the tools it expects (`allowed-tools`) and, under `metadata`, the
+  environments it covers (`belai.contexts`) and the documentation it points to
+  (`belai.resources`).
+- The `belai-` prefix is reserved: `SkillDraft`, the library and a profile cannot
+  create a skill with that start, so a builtin is never shadowed or replaced.
+- A builtin's text is classified like any other skill result.
 
 ## Self-authored skills
 
