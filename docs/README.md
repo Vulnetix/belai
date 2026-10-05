@@ -92,6 +92,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
+| Code mode | [Code mode](code-mode.md) | alpha |
 | Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
 | ACP setup in Zed | [Zed](acp-zed.md) | alpha-20260926 |
 | ACP setup in JetBrains IDEs | [JetBrains IDEs](acp-jetbrains.md) | alpha-20260926 |

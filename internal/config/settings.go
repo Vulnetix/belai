@@ -186,6 +186,9 @@ type Settings struct {
 	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
 	// project layer may turn it, or whole-screen capture, off; never on.
 	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
+	// Code governs code mode's script interpreter (docs/code-mode.md). A
+	// project layer may turn it off and lower a limit, never the reverse.
+	Code *CodeSettings `json:"code,omitempty"`
 	// Agents governs the fleet: worker agents that claim kanban items and
 	// run unattended (docs/fleet.md). The project layer may only tighten it.
 	Agents *AgentsSettings `json:"agents,omitempty"`
@@ -1740,6 +1743,8 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	// Screenshot capture: a project may turn it off, never on.
 	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
+	// Code mode: a project may turn it off and lower its limits, never the reverse.
+	out.Code = mergeCode(out.Code, proj.Code, true)
 	// The Bash rewrite table: a project may switch it off, never add or enable.
 	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
 	// Fleet workers run unattended: a project may only tighten them.

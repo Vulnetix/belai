@@ -561,7 +561,9 @@ and is tracked as future work.
 
 ## Modes
 
-`internal/modes` defines three modes; agent is the default.
+`internal/modes` defines four modes; agent is the default. Code mode is agent
+mode with the `Code` script tool and without directly advertised MCP tools
+([code-mode.md](code-mode.md)); it is chosen by name and never classified into.
 
 ### Agent mode
 

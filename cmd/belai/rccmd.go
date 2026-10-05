@@ -444,7 +444,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	fs.SetOutput(stderr)
 	dispatch := fs.String("dispatch", "", "the website request this session answers")
 	sessionID := fs.String("session-id", "", "the session id the daemon minted")
-	modeFlag := fs.String("mode", "", "agent, plan or goal (default: classified)")
+	modeFlag := fs.String("mode", "", "agent, plan, goal or code (default: classified)")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end after this long without a prompt")
 	providerFlag := fs.String("provider", "", "provider for this session (default: the host's own)")
 	modelFlag := fs.String("model", "", "model for this session (default: the host's own)")
@@ -466,7 +466,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	}
 	mode := modes.Mode(*modeFlag)
 	switch mode {
-	case "", modes.ModeAgent, modes.ModePlan, modes.ModeGoal:
+	case "", modes.ModeAgent, modes.ModePlan, modes.ModeGoal, modes.ModeCode:
 	default:
 		fmt.Fprintf(stderr, "belai rc-session: unknown mode %q\n", *modeFlag)
 		return 2

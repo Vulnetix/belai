@@ -20,7 +20,7 @@ the network can be switched off.
 
 It applies to:
 
-- the `Bash` tool, in agent, plan and goal mode and in explore subagents
+- the `Bash` tool, in agent, plan, goal and code mode and in explore subagents, including a `Bash` call made from a [code-mode](code-mode.md) script
 - inline `!cmd` from the prompt
 - supervised processes started from `/processes`
 

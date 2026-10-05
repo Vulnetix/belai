@@ -16,7 +16,7 @@ type State struct {
 	Provider string `json:"provider,omitempty"`
 	// Effort is the last-selected effort/thinking level.
 	Effort string `json:"effort,omitempty"`
-	// LastMode is the last active mode ("agent", "plan", or "goal").
+	// LastMode is the last active mode ("agent", "plan", "goal" or "code").
 	LastMode string `json:"last_mode,omitempty"`
 	// ActivePlan is the currently selected plan name.
 	ActivePlan string `json:"active_plan,omitempty"`

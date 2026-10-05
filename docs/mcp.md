@@ -81,6 +81,9 @@ The `mcp` key is read from your global settings only. A repository's
   asks, because a server tool may do anything.
 - Server tools are not offered in plan mode, and an agent profile's tool
   allowlist drops them.
+- In [code mode](code-mode.md) they are not advertised either: a script calls
+  them as `mcp.<server>.<tool>(args)`, with the same permission rules and
+  classification. Agent, plan and goal mode are unchanged.
 
 ## Security model
 

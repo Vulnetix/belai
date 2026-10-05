@@ -92,6 +92,13 @@ const (
 	// (the same rule as the knowledge store's kb+ rows), so the result is
 	// read-only and sanitise-only; a search calls no model.
 	KindFetched Kind = "fetched"
+	// KindCode is the output of the code-mode Code tool: what a script printed
+	// or returned. Every nested call the script made was gated and, where its
+	// kind needs it, classified by the session before the script saw the
+	// text, so the output is composed only of admitted text and the model's own
+	// literals and is sanitise-only. It is not read-only: the script may have
+	// edited files, so it runs on the sequential path.
+	KindCode Kind = "code"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -102,7 +109,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload, KindScreenshot, KindFetched,
+	KindOffload, KindScreenshot, KindFetched, KindCode,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent

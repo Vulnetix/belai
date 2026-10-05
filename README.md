@@ -4,7 +4,7 @@ A safer LLM coding harness.
 
 Every delimiter carries a cryptographic nonce and integrity hash, untrusted content is sanitised, and a role manager classifies untrusted inputs while segmenting benign tasks from risky agentic actions.
 
-It pairs a safety-first architecture with multiple interaction modes (agent, plan, goal) let you choose the right level of autonomy for the task.
+It pairs a safety-first architecture with multiple interaction modes (agent, plan, goal, and code for batching tool calls in a script) let you choose the right level of autonomy for the task.
 Inspiration for agents is taken from harnesses like Hermes, while the agentic loop and context management is designed to minimise token usage while maximising model alignment over longer sessions.
 This is not a model provider coding harness that incentivises token maxing, or a tool used as a gimmick "look! it has agency!".
 No, Belai holds models to sensible constraints and the result is a tool that leaves an impression of confidence and assurance.

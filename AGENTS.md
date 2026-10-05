@@ -601,6 +601,25 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and the rewritten line is then judged against every rule like any other line.
   The result begins with a harness-composed note (`tools.RewriteBash`). No model
   is asked.
+- **Code mode batches calls and grants nothing a call lacks.** `internal/codemode`
+  runs a model-written script in goja (pure Go, no `require`, timers, network,
+  filesystem or process access) whose only exits are host functions, and each
+  one is a nested call through `Session.executeCall`, the pipeline a direct call
+  takes: surface and allowlist, `CheckArgs`, permission rules, hooks, the ask
+  gate, the OS sandbox, the diff recorder, sanitising and the classifier. The
+  script reads only admitted text or the withheld message. `Code` is `KindCode`,
+  does not mutate itself (its nested calls ask), is sanitise-only because its
+  output is built from admitted text, and is offloaded like other large results;
+  a nested result is kept whole and never enters the read index. Reachable
+  kinds are a closed allowlist (`tools.NestedAllowed`); interactive, planning,
+  board, process-control, subagent and `Skill` tools and `Code` are not. `Code`
+  joins only the code-mode registry (`Registry.CodeSurface`), which drops
+  `KindMCP`, so agent, plan and goal advertise and resolve exactly what they
+  did; MCP is reachable in code mode only as `mcp.<server>.<tool>()` from a
+  script, and `mcp.describe` text is classified as an MCP result. Code mode is
+  chosen by name and is never picked by intent detection or the mode-choice
+  panel. `code.*` limits can only be lowered by a project layer. See
+  [docs/code-mode.md](docs/code-mode.md).
 - **MCP servers are the user's, and their text classifies.** `mcp.servers`
   is read from the user's own settings layers only; `resolve.go` drops the
   project layer's `mcp` key outright. Servers start only after the trust

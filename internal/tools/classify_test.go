@@ -78,6 +78,9 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// A SearchFetched result is lookup over chunks classified when the
 		// page was indexed (docs/web-fetch.md).
 		KindFetched: false,
+		// A script's output is composed of text already admitted per nested
+		// call (docs/code-mode.md).
+		KindCode: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {
