@@ -275,6 +275,12 @@ type RCProfile struct {
 	DisplayName string   `json:"displayName,omitempty"`
 	Palette     []string `json:"palette,omitempty"`
 	AvatarID    string   `json:"avatarId,omitempty"`
+	// SHA256 is the hash of the profile file as the library stores it (the same
+	// bytes a backup uploads and the automatic sync hashes), so the website can
+	// tell which library version this host holds. A hash only, never the
+	// profile text. Empty for a built-in or plugin profile, with sync.profiles
+	// off, or from an older daemon.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // RCRoute is a destination list plus label edits.
@@ -293,6 +299,10 @@ type RCCrew struct {
 	Description string     `json:"description,omitempty"`
 	Builtin     bool       `json:"builtin"`
 	Members     []RCMember `json:"members"`
+	// SHA256 is the hash of the crew JSON as the library stores it, so the
+	// website can tell which library version this host holds. Empty for a
+	// built-in crew, with sync.profiles off, or from an older daemon.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // RCMember is one crew member and how many workers run it.

@@ -559,6 +559,15 @@ refused with "update Belai on the host". The host also reports which items it ho
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
 
+While `sync.profiles` is on, each worker profile and crew in the advertisement also
+carries `sha256`: the hash of the profile markdown or crew JSON exactly as the
+library stores it (the same bytes a backup uploads and the automatic sync hashes),
+so the website can tell which library version the host holds and whether it was
+edited there. It is a hash only, never the text. A built-in or plugin profile, a
+built-in crew, a profile or crew without an id or over the library size limit, and
+any of them with `sync.profiles` off carry none, and an older daemon sends none, so
+the website reads the version as not reported rather than current.
+
 A **`library_sync`** request carries nothing but its id. The daemon runs one pass of
 the automatic sync above at once, asking about every profile, crew and item whose
 switch is on, settled or not, and acknowledges with counts only ("2 pushed, 14
@@ -611,6 +620,7 @@ avatar id, so the website can draw the agent. They are presentation only.
 | With every sync switch off a `library_sync` request is refused and says so; a website that does not know the sync routes is reported in plain words | `TestLibrarySyncNowRefusesWithEverySwitchOffAndSaysWhyOnError` |
 | An offered directory carries `remote`, `host`, `provider`, `branch` and `defaultBranch` only when they have an identifier shape, read from the repository's files; a remote with credentials keeps none of them | `TestDirGitCarriesIdentifierFactsAndNoCredential` |
 | A directory that is not a checkout, a local-path origin, a detached HEAD and an odd branch name add nothing; the scp form of a remote is read | `TestDirGitLeavesOutWhatIsNotAForgeCheckout` |
+| A worker profile and a crew in the advertisement carry the hash of the document the library would store, built from the same bytes the automatic sync hashes, and none while `sync.profiles` is off or for a built-in | `TestInventoryCarriesTheHashOfAStoredProfileAndCrew`, `TestInventoryHashFollowsTheStoredBytes`, `TestInventoryHashIsOmittedWithProfileSyncOff` |
 | The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
 
 ## Files

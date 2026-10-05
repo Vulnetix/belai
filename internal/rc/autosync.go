@@ -148,22 +148,16 @@ func localItems(agents bool, kinds []libitem.Kind) []localItem {
 	}
 	if list, err := agentprofile.List(); err == nil {
 		for _, p := range list {
-			if p.Builtin || p.File == "" || !agentprofile.ValidID(p.ID) {
-				continue
-			}
-			md, err := agentprofile.MarshalMarkdown(p)
-			if err != nil || len(md) > sessionsync.MaxLibraryProfile {
+			md, ok := profileDocument(p)
+			if !ok {
 				continue
 			}
 			out = append(out, localItem{kind: "agent", id: p.ID, name: p.Name, data: md})
 		}
 	}
 	for _, c := range agentprofile.StoredCrews() {
-		if !agentprofile.ValidID(c.ID) {
-			continue
-		}
-		js, err := c.CanonicalJSON()
-		if err != nil || len(js) > sessionsync.MaxLibraryCrew {
+		js, ok := crewDocument(c)
+		if !ok {
 			continue
 		}
 		out = append(out, localItem{kind: "crew", id: c.ID, name: c.Name, data: js})
@@ -462,4 +456,34 @@ func (d *Daemon) syncRecovered() {
 	if had {
 		d.logf("library sync: working again")
 	}
+}
+
+// profileDocument is the markdown the library stores for a profile, or false
+// for one that is never synced: a built-in or plugin profile, one without a
+// file or a valid id, or one over the library's size limit. The automatic sync
+// and the inventory's hash both read it here, so the hash the website compares
+// is the hash of the bytes a backup would store.
+func profileDocument(p agentprofile.AgentProfile) ([]byte, bool) {
+	if p.Builtin || p.File == "" || !agentprofile.ValidID(p.ID) {
+		return nil, false
+	}
+	md, err := agentprofile.MarshalMarkdown(p)
+	if err != nil || len(md) > sessionsync.MaxLibraryProfile {
+		return nil, false
+	}
+	return md, true
+}
+
+// crewDocument is the canonical JSON the library stores for a crew, or false for
+// one that is never synced: a built-in crew, one without a valid id, or one over
+// the library's size limit.
+func crewDocument(c agentprofile.Crew) ([]byte, bool) {
+	if c.Builtin || !agentprofile.ValidID(c.ID) {
+		return nil, false
+	}
+	js, err := c.CanonicalJSON()
+	if err != nil || len(js) > sessionsync.MaxLibraryCrew {
+		return nil, false
+	}
+	return js, true
 }

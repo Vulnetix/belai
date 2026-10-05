@@ -72,8 +72,11 @@ func (i Inventory) catalogueHash() string {
 // registry. A part it cannot read is left empty rather than failing.
 func LocalInventory() Inventory {
 	var inv Inventory
+	// The hash of a profile or crew travels only while sync.profiles is on, as an item's does.
+	hashes := false
 	if s, err := config.LoadGlobal(); err == nil {
 		inv.MaxWorkers = s.MaxWorkers()
+		hashes = s.SyncProfilesEnabled()
 	} else {
 		inv.MaxWorkers = config.DefaultMaxWorkers
 	}
@@ -82,7 +85,11 @@ func LocalInventory() Inventory {
 			if p.Mode != agentprofile.ModeWorker || p.Kanban == nil || len(inv.Profiles) >= maxInvProfiles {
 				continue
 			}
-			inv.Profiles = append(inv.Profiles, profileSummary(p))
+			sum := profileSummary(p)
+			if md, ok := profileDocument(p); ok && hashes {
+				sum.SHA256 = hashOf(md)
+			}
+			inv.Profiles = append(inv.Profiles, sum)
 		}
 	}
 	sort.Slice(inv.Profiles, func(a, b int) bool { return inv.Profiles[a].Name < inv.Profiles[b].Name })
@@ -93,6 +100,9 @@ func LocalInventory() Inventory {
 		rc := sessionsync.RCCrew{ID: c.ID, Name: c.Name, Description: c.Description, Builtin: c.Builtin, Members: []sessionsync.RCMember{}}
 		for _, m := range c.Members {
 			rc.Members = append(rc.Members, sessionsync.RCMember{Profile: m.Profile, Replicas: m.Count()})
+		}
+		if js, ok := crewDocument(c); ok && hashes {
+			rc.SHA256 = hashOf(js)
 		}
 		inv.Crews = append(inv.Crews, rc)
 	}
