@@ -91,7 +91,8 @@ const limits = [
   ['Cd stays inside', '`Cd` moves the working directory anywhere inside the session roots. A path such as `../../../etc` is refused.'],
   ['A repository only tightens', 'A project can raise `sandbox.mode`, deny the network and turn caches off. Loosening any of them takes your own settings, and a project\'s `extra_writable` is dropped.'],
   ['One switch', 'Guardrails off turns the sandbox off with every other check. `/sandbox` shows the policy in effect.'],
-  ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. The command dies with Belai.'],
+  ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. A `Bash` call made from a code-mode script runs under the same policy as a direct one. The command dies with Belai.'],
+  ['A script has no sandbox to escape', 'The code-mode interpreter has no filesystem, process or network access of its own. Everything it does goes through a tool call, and a `Bash` call is wrapped like any other.'],
 ];
 
 const repoTools: [string, string][] = [

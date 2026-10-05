@@ -401,6 +401,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		// A screenshot observes the desktop, so it is mutating: it asks and
 		// runs on the sequential path.
 		KindScreenshot: false,
+		// A script may edit files, so it is mutating.
+		KindCode: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

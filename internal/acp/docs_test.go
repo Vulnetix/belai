@@ -64,8 +64,8 @@ func TestACPPageStatesTheCapabilitiesAndLimits(t *testing.T) {
 	for _, m := range modeList {
 		ids = append(ids, m["id"].(string))
 	}
-	if strings.Join(ids, ",") != "auto,agent,plan,goal" {
-		t.Errorf("modes %v, the page lists auto, agent, plan and goal", ids)
+	if strings.Join(ids, ",") != "auto,agent,plan,goal,code" {
+		t.Errorf("modes %v, the page lists auto, agent, plan, goal and code", ids)
 	}
 }
 

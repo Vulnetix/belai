@@ -159,6 +159,11 @@ func (s *Session) findCallable(name string) (tools.Tool, bool) {
 	if t, _, handled := s.kanbanExecTool(name); handled {
 		return t, t != nil
 	}
+	if s.turnCode && s.codeRegistry != nil {
+		if t, ok := s.codeRegistry.Find(name); ok {
+			return t, true
+		}
+	}
 	return s.registry.Find(name)
 }
 
@@ -166,6 +171,9 @@ func (s *Session) findCallable(name string) (tools.Tool, bool) {
 // mismatch check: the registry plus the phase's kanban tools.
 func (s *Session) callableNames() []string {
 	names := s.registry.Names()
+	if s.turnCode && s.codeRegistry != nil {
+		names = append(names, tools.CodeName)
+	}
 	if s.kanban != nil && s.kanban.on {
 		names = append(names, tools.KanbanAddName, tools.KanbanMoveName)
 	}

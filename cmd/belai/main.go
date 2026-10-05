@@ -149,7 +149,7 @@ func main() {
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	flag.BoolVar(&noTranscript, "no-transcript", false, "with -prompt, do not keep a session transcript of the run")
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
-	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan or goal (default: classified from the prompt)")
+	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan, goal or code (default: classified from the prompt)")
 	deferTools := flag.Bool("defer-tools", true, "advertise core tools in full and load the rest on demand with ToolSearch; -defer-tools=false sends every tool definition on every request")
 	agentName := flag.String("agent", "", "start a background agent by name in foreground mode")
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
@@ -175,11 +175,11 @@ func main() {
 		exitProcess(0)
 	}
 	switch modes.Mode(*modeFlag) {
-	case "", modes.ModeAgent, modes.ModeGoal:
+	case "", modes.ModeAgent, modes.ModeGoal, modes.ModeCode:
 	case modes.ModePlan:
 		*planMode = true
 	default:
-		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan or goal, not %q\n", *modeFlag)
+		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan, goal or code, not %q\n", *modeFlag)
 		exitProcess(2)
 	}
 

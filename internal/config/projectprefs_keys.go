@@ -34,7 +34,7 @@ var prefFixedKeys = map[string]prefKey{
 	"ask_permission":       {kind: prefBool, origin: "ask_permission"},
 	"firewall_enabled":     {kind: prefBool, origin: "firewall"},
 	"caveman":              {kind: prefBool, origin: "caveman"},
-	"mode":                 {kind: prefWord, words: []string{"agent", "plan", "goal", "auto"}},
+	"mode":                 {kind: prefWord, words: []string{"agent", "plan", "goal", "code", "auto"}},
 	"show_reasoning":       {kind: prefBool, origin: "ui"},
 	"show_tool_calls":      {kind: prefBool, origin: "ui"},
 	"show_edits":           {kind: prefBool, origin: "ui"},

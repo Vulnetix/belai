@@ -603,7 +603,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		return "", "this host does not offer that directory"
 	}
 	switch r.Mode {
-	case "", "agent", "plan", "goal":
+	case "", "agent", "plan", "goal", "code":
 	default:
 		return "", "unknown mode " + fmt.Sprintf("%q", r.Mode)
 	}

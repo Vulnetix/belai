@@ -64,7 +64,10 @@ type Control struct {
 
 // Value sets, in the order a key cycles them.
 var (
-	Modes          = []string{"agent", "plan", "goal", "auto"}
+	Modes = []string{"agent", "plan", "goal", "code", "auto"}
+	// CycleModes is what the mode key walks through. Code mode is chosen by name
+	// (/mode code), never cycled into.
+	CycleModes     = []string{"agent", "plan", "goal", "auto"}
 	ReasoningModes = []string{"auto", "shown", "hidden"}
 	ToolModes      = []string{"auto", "all", "edits", "none"}
 	DecisionLevels = []string{"hidden", "decisions", "security", "all"}
@@ -75,7 +78,7 @@ var (
 
 // Controls is the catalogue, in the order the website shows it.
 var Controls = []Control{
-	{ID: CtlMode, Command: "/mode", Usage: "/mode agent|plan|goal|auto", Keys: []string{"shift+tab", "f5"}, Values: Modes, Kind: KindChoice},
+	{ID: CtlMode, Command: "/mode", Usage: "/mode agent|plan|goal|code|auto", Keys: []string{"shift+tab", "f5"}, Values: Modes, Kind: KindChoice},
 	{ID: CtlModel, Command: "/model", Usage: "/model <provider> <model> [effort]", Keys: []string{"ctrl+q"}, Kind: KindModel, Rebuild: true},
 	{ID: CtlEffort, Command: "/effort", Usage: "/effort default|<level>", Keys: []string{"f6"}, Kind: KindChoice, Rebuild: true},
 	{ID: CtlGuardrails, Command: "/guardrails", Usage: "/guardrails on|off", Keys: []string{"f3"}, Values: onOff, Kind: KindToggle, Rebuild: true},
@@ -361,7 +364,7 @@ func ParseKey(key string, st State, env Env) (Change, error) {
 	var line string
 	switch key {
 	case "shift+tab", "f5":
-		line = "/mode " + cycle(Modes, st.Mode)
+		line = "/mode " + cycle(CycleModes, st.Mode)
 	case "f2":
 		line = "/caveman " + flip(st.Caveman)
 	case "f3":

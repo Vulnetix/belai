@@ -53,6 +53,9 @@ type Options struct {
 	// exploration with the edits. Plan mode must never set this: plan mode has
 	// its own read-only contract and must not be told to start editing.
 	WorkDiscipline bool
+	// CodeMode adds the code-mode section (docs/code-mode.md). It is set only
+	// on an explicit code-mode turn, so no other mode's system text changes.
+	CodeMode bool
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -196,6 +199,9 @@ func System(opts Options) (string, error) {
 	}
 	if opts.WorkDiscipline && !opts.Explore {
 		b.WriteString(workDiscipline())
+	}
+	if opts.CodeMode && !opts.Explore {
+		b.WriteString(codeContract())
 	}
 	if opts.Caveman {
 		b.WriteString(CavemanVoice)

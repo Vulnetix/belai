@@ -13,6 +13,7 @@ func TestParse(t *testing.T) {
 		"agent": ModeAgent,
 		"plan":  ModePlan,
 		"goal":  ModeGoal,
+		"code":  ModeCode,
 	}
 	for in, want := range valid {
 		got, err := Parse(in)

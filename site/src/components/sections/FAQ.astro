@@ -47,7 +47,7 @@ const product: { q: string; a: string[] }[] = [
   {
     q: 'Can the model run any command it likes?',
     a: [
-      'Commands go through `Bash`, which follows your permission rules and, where a backend exists, runs inside an operating-system sandbox. A deny rule is matched against every command on a line, including ones wrapped in `sudo`, `env`, `xargs` or `sh -c`. The common cloud and file tools run without a shell at all.',
+      'Commands go through `Bash`, which follows your permission rules and, where a backend exists, runs inside an operating-system sandbox. A deny rule is matched against every command on a line, including ones wrapped in `sudo`, `env`, `xargs` or `sh -c`. The common cloud and file tools run without a shell at all. In code mode, a script\'s calls are the same calls: each is permission-checked, asked about and sandboxed on its own, and the script itself has no filesystem, network or process access.',
     ],
   },
   {

@@ -545,6 +545,10 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
 		e.Origin["screenshot"] = src
 	}
+	if s.Code != nil {
+		e.Settings.Code = mergeCode(e.Settings.Code, s.Code, src == SourceProject)
+		e.Origin["code"] = src
+	}
 	if s.Agents != nil {
 		// Fleet workers run unattended on the user's account: a project
 		// layer may turn them (or their publishing) off and lower the
