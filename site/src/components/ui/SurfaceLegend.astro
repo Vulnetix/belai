@@ -1,0 +1,16 @@
+---
+// SurfaceLegend explains the markers once, above the first section.
+import { surfaces, surfaceOrder } from '../../lib/surfaces';
+---
+
+<details class="surface-legend">
+  <summary class="mono">where each feature works</summary>
+  <dl>
+    {surfaceOrder.map((s) => (
+      <div>
+        <dt class="surface mono">{s}</dt>
+        <dd>{surfaces[s]}</dd>
+      </div>
+    ))}
+  </dl>
+</details>

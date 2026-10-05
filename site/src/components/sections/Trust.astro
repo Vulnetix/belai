@@ -68,7 +68,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="trust" sealText={sealText} id="trust">
-  <SectionHead title="Trust pipeline">
+  <SectionHead title="Trust pipeline" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
     Every untrusted tool result is sanitized, then classified, then either sent up the line to the model
     or blocked. Tools whose output has a format Belai controls are sanitized but not classified.
   </SectionHead>

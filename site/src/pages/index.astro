@@ -5,16 +5,14 @@ import Trust from '../components/sections/Trust.astro';
 import Classifier from '../components/sections/Classifier.astro';
 import SealedBlock from '../components/sections/SealedBlock.astro';
 import Beliefs from '../components/sections/Beliefs.astro';
-import Labs from '../components/sections/Labs.astro';
+import Compare from '../components/sections/Compare.astro';
 import Features from '../components/sections/Features.astro';
-import Kanban from '../components/sections/Kanban.astro';
-import WebSessions from '../components/sections/WebSessions.astro';
-import PixSandbox from '../components/sections/PixSandbox.astro';
 import Extend from '../components/sections/Extend.astro';
 import CLI from '../components/sections/CLI.astro';
 import Qol from '../components/sections/Qol.astro';
 import Install from '../components/sections/Install.astro';
 import FAQ from '../components/sections/FAQ.astro';
+import SurfaceLegend from '../components/ui/SurfaceLegend.astro';
 import JumpNav from '../components/ui/JumpNav.astro';
 import { sections } from '../lib/sections';
 ---
@@ -58,19 +56,17 @@ import { sections } from '../lib/sections';
     </aside>
 
     <main class="min-w-0 flex-1">
+      <SurfaceLegend />
       <Beliefs />
       <Trust />
       <Classifier />
       <SealedBlock />
-      <Labs />
       <Features />
-      <Kanban />
-      <WebSessions />
-      <PixSandbox />
       <Extend />
       <CLI />
       <Qol />
       <Install />
+      <Compare />
       <FAQ />
     </main>
   </div>

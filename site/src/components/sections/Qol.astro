@@ -68,7 +68,7 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
-  <SectionHead title="Quality of life">
+  <SectionHead title="Quality of life" surfaces={['tui']}>
     Smaller features you would otherwise add yourself through a <code class="mono">skills.md</code>. Each
     one is implemented and tested in this repository.
   </SectionHead>

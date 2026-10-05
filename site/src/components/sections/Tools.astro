@@ -105,7 +105,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="tools" sealText={sealText} id="tools">
-  <SectionHead title="Tools and the sandbox">
+  <SectionHead title="Tools and the sandbox" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
     Belai gives the model the tools it was trained on, a catalogue of read-only utilities that never go
     through a shell, and a sandbox for the commands that do.
   </SectionHead>
@@ -255,7 +255,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   </SubHead>
   <Limits items={repoTools} class="mt-head" />
 
-  <SubHead id="sandbox" title="The sandbox">
+  <SubHead id="sandbox" title="The sandbox" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
     Belai's own file tools stay inside the workspace roots, but a command can reach anything your account
     can. So <code class="mono">Bash</code>, inline <code class="mono">!cmd</code> and supervised processes run
     under an operating-system boundary: bubblewrap on Linux, <code class="mono">sandbox-exec</code> on macOS.

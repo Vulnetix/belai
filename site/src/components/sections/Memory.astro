@@ -62,7 +62,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="memory" sealText={sealText} id="memory">
-  <SectionHead title="Memory and knowledge">
+  <SectionHead title="Memory and knowledge" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
     Other coding agents on your machine have probably explored this repository already. Belai can search
     what they found instead of exploring again, and each turn starts with what the session already knows
     about the repository. It can also search the reference documents you give an agent, by meaning.

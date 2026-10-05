@@ -852,3 +852,57 @@ main > .chapter:first-child {
 .ledger-key--closed { background: var(--color-vx-coral); }
 .ledger-key--hand { background: var(--color-vx-sand-amber); }
 .ledger-key--open { background: var(--color-vx-mint-strong); }
+
+/* ----------------------------------------------------------------------------
+ * Surface markers: where a feature works (TUI, ACP, CLI, self-hosted, Pix
+ * Sandbox, Vulnetix only). Deliberately quiet: small mono type, a hairline
+ * outline and the ink at low strength.
+ * ------------------------------------------------------------------------- */
+.surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surface {
+  display: inline-block;
+  padding: 0.0625rem 0.4375rem;
+  border: 1px solid rgba(0, 22, 20, 0.2);
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: rgba(0, 22, 20, 0.62);
+  white-space: nowrap;
+}
+
+.surface-legend {
+  margin: 0 0 1.5rem;
+  font-size: 0.75rem;
+  color: rgba(0, 22, 20, 0.7);
+}
+
+.surface-legend summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.surface-legend dl {
+  display: grid;
+  gap: 0.375rem 1.5rem;
+  margin: 0.75rem 0 0;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.surface-legend dl > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+}
+
+.surface-legend dd {
+  margin: 0;
+}

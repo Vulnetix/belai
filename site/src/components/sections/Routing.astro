@@ -72,7 +72,7 @@ const limits = [
 ---
 
 <SealedSection label="routing" sealText={sealText} id="routing">
-  <SectionHead title="Model routing">
+  <SectionHead title="Model routing" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
       A single prompt can make several model calls before the first edit, and most of them return one
       token. Routing sends those calls to a small model, so the model you picked is spent on the work.
     </SectionHead>

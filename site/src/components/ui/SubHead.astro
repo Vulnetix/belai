@@ -4,18 +4,26 @@
 // heavy rope between sections (SectionBreak) is never used here. The lead is
 // the slot.
 
+import Surfaces from './Surfaces.astro';
+import type { Surface } from '../../lib/surfaces';
+
 interface Props {
   title: string;
   id?: string;
   class?: string;
+  /** Where this sub-area's feature works, when that differs from its section. */
+  surfaces?: readonly Surface[];
 }
 
-const { title, id, class: cls = '' } = Astro.props;
+const { title, id, class: cls = '', surfaces } = Astro.props;
 ---
 
 <div id={id} class={`mt-sub scroll-mt-20 border-t border-vx-ink/15 pt-8 ${cls}`}>
   <div class="grid gap-4 @3xl:grid-cols-2 @3xl:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">{title}</h3>
+    <div>
+      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">{title}</h3>
+      {surfaces && <Surfaces of={surfaces} />}
+    </div>
     <div class="text-vx-ink/80"><slot /></div>
   </div>
 </div>

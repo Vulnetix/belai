@@ -93,7 +93,7 @@ const limits = [
 ---
 
 <SealedSection label="web" sealText={sealText} id="web">
-  <SectionHead title="Web sessions">
+  <SectionHead title="Web sessions" surfaces={['cli', 'self-hosted', 'pix sandbox', 'vulnetix only']}>
     While the Vulnetix CLI is logged in, each session mirrors to the Vulnetix website.{' '}
     <strong>Belai → Sessions</strong> follows a running session live, and a prompt you type there runs on
     the host as if you had typed it at the terminal.
@@ -153,7 +153,7 @@ const limits = [
     ))}
   </div>
 
-  <SubHead title="From the terminal to the page">
+  <SubHead title="From the terminal to the page" surfaces={['tui', 'vulnetix only']}>
     The terminal never blocks on sync. Your answer travels the same way back to the host.
   </SubHead>
   <ol class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
@@ -211,7 +211,7 @@ const limits = [
     </div>
   </details>
 
-  <SubHead title="An audit trail of hosts and agents" id="audit">
+  <SubHead title="An audit trail of hosts and agents" surfaces={['vulnetix only']} id="audit">
     Sync also carries a second record: what your hosts and agents did. <strong>Belai → History</strong> shows
     it in two tabs beside the session list.
   </SubHead>
@@ -274,7 +274,7 @@ const limits = [
     </div>
   </details>
 
-  <SubHead title="The library on the website" id="library-web">
+  <SubHead title="The library on the website" surfaces={['vulnetix only']} id="library-web">
     With <code class="mono">belai rc</code> running, the website's Library keeps what your hosts hold and shows
     where each repository and document lives. A host sends facts about what it holds, and a person
     decides what to back up or install.
