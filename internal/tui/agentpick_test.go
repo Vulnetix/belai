@@ -559,7 +559,8 @@ func TestShiftTabIntoAgentClearsProfileAndShowsCtrlP(t *testing.T) {
 	a.mode = "agent"
 	a.setNamedAgent("reviewer")
 
-	// agent → plan → goal → auto → agent, exactly the shift+tab cycle.
+	// agent → plan → goal → code → auto → agent, exactly the shift+tab cycle.
+	a.cycleMode()
 	a.cycleMode()
 	a.cycleMode()
 	a.cycleMode()
