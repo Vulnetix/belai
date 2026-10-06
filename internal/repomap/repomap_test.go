@@ -150,6 +150,44 @@ func TestRedactRemote(t *testing.T) {
 	}
 }
 
+func TestLanguagesCapsAtMaxFiles(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < maxFiles+5; i++ {
+		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("f%04d.go", i)), []byte("package p\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var total int
+	for _, l := range languages(context.Background(), root) {
+		total += l.Files
+	}
+	if total != maxFiles {
+		t.Fatalf("languages counted %d files, want cap %d", total, maxFiles)
+	}
+}
+
+func TestLayoutCapsPerDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "many")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < maxFiles+5; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%04d.txt", i)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got int
+	for _, s := range layout(context.Background(), root) {
+		if s.Name == "many" {
+			got = s.Files
+		}
+	}
+	if got != maxFiles {
+		t.Fatalf("layout counted %d files for dir, want cap %d", got, maxFiles)
+	}
+}
+
 func TestParseBranch(t *testing.T) {
 	cases := map[string]string{
 		"## main...origin/main [ahead 1]\n M a.go": "main",
