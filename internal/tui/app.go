@@ -613,6 +613,9 @@ type App struct {
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
+	// namedAgentSkills is the skills list of the engaged definition: the only
+	// skills the session lists and loads. Empty means the installed skills.
+	namedAgentSkills []string
 
 	// file picker: the @ file chooser above the composer.
 	files         []string  // workspace listing, slash paths relative to workdir
@@ -954,10 +957,10 @@ func New(opts Options) *App {
 	// allowlist) directly rather than through setNamedAgent, which persists
 	// session meta — New must not write session files yet.
 	namedAgent := prefs.Agent
-	var namedAgentTools []string
+	var namedAgentTools, namedAgentSkills []string
 	if namedAgent != "" {
 		if p, err := agentprofile.Load(namedAgent); err == nil {
-			namedAgentTools = p.Tools
+			namedAgentTools, namedAgentSkills = p.Tools, p.Skills
 		}
 	}
 
@@ -1001,6 +1004,7 @@ func New(opts Options) *App {
 		modeExplicit:      modeExplicit,
 		namedAgent:        namedAgent,
 		namedAgentTools:   namedAgentTools,
+		namedAgentSkills:  namedAgentSkills,
 		ctx:               context.Background(),
 		cfg:               initial,
 		status:            initialStatus,
@@ -2070,6 +2074,8 @@ type sessionBuildParams struct {
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
+	// skillAllow limits the Skill tool to those skills (an engaged definition's skills list).
+	skillAllow []string
 	// agentPool is the shared FIFO fan-out ceiling the session's explore
 	// subagents acquire a lease from.
 	agentPool *agentpool.Pool
@@ -2123,6 +2129,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		profile:       p,
 		src:           credentialSourceOf(a.resolver),
 		toolAllow:     a.engagedAgentTools(),
+		skillAllow:    a.engagedAgentSkills(),
 		agentPool:     a.agentPool,
 		repoMap:       a.repoMap,
 		forge:         a.forgeCache,
@@ -2167,7 +2174,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	// allowlisted session still reaches the footer. The kanban board's search
 	// and update ride on every main session after the allowlist, as in
 	// headless sessions, so an engaged definition can always hand work on.
-	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc)
+	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc).WithSkills(p.skillAllow)
 	if p.procManager != nil {
 		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
 		// Background launching rides on the same manager. Bash is this
@@ -5542,6 +5549,7 @@ func (a *App) firewallAvailable() bool {
 func (a *App) clearEngagedAgent() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.namedAgentSkills = nil
 	a.syncKnowledge()
 	a.agentExplicit = false
 	a.agentPickerOpen = false
@@ -5573,7 +5581,7 @@ func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 // classifier may later replace the name.
 func (a *App) setNamedAgent(name string) {
 	loaded := name
-	var tools []string
+	var tools, skillNames []string
 	if name != "" {
 		// Resolve the allowlist from whichever tree owns the name — flat
 		// profiles first (they win the name in carrier resolution), then
@@ -5585,6 +5593,7 @@ func (a *App) setNamedAgent(name string) {
 		} else if p, err := agentprofile.Load(name); err == nil {
 			loaded = p.Name
 			tools = p.Tools
+			skillNames = p.Skills
 		}
 		// On a load failure the name is kept with no allowlist: carrier
 		// resolution reports the fallback at turn time, matching the old
@@ -5595,6 +5604,7 @@ func (a *App) setNamedAgent(name string) {
 	}
 	a.namedAgent = loaded
 	a.namedAgentTools = tools
+	a.namedAgentSkills = skillNames
 	a.syncKnowledge()
 	a.state.ActiveProfile = loaded
 	a.persistCarrierMeta()
@@ -6431,6 +6441,7 @@ func (a *App) startNewSession() {
 	// a profile was written while this session ran.
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.namedAgentSkills = nil
 	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false

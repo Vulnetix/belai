@@ -12,11 +12,15 @@
 package skills
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // Manifest is the validated front-matter of a skill.
@@ -54,6 +58,9 @@ func ValidateSkill(doc string) (*Manifest, error) {
 	}
 	m, err := parseFrontMatter(fm)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.clean(); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(m.Name) == "" {
@@ -107,9 +114,19 @@ func splitDoc(doc string) (string, string, error) {
 // line when it is not. The decision is syntax only: every semantic rule (known
 // fields, duplicate keys, value types) is applied by both readers.
 func parseFrontMatter(fm string) (*Manifest, error) {
+	dec := yaml.NewDecoder(strings.NewReader(fm))
 	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(fm), &root); err != nil {
+	if err := dec.Decode(&root); err != nil {
+		if errors.Is(err, io.EOF) {
+			return &Manifest{}, nil
+		}
 		return parseLegacy(fm)
+	}
+	// A second document (after a "..." or "---" line) would hide fields from every
+	// check below, so it is refused.
+	var extra yaml.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("the front matter holds more than one YAML document")
 	}
 	if root.Kind == 0 {
 		return &Manifest{}, nil
@@ -117,10 +134,10 @@ func parseFrontMatter(fm string) (*Manifest, error) {
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
 		return parseLegacy(fm)
 	}
-	return parseMapping(root.Content[0])
+	return parseMapping(root.Content[0], strings.Split(fm, "\n"))
 }
 
-func parseMapping(n *yaml.Node) (*Manifest, error) {
+func parseMapping(n *yaml.Node, lines []string) (*Manifest, error) {
 	m := &Manifest{}
 	seen := map[string]bool{}
 	for i := 0; i+1 < len(n.Content); i += 2 {
@@ -139,13 +156,13 @@ func parseMapping(n *yaml.Node) (*Manifest, error) {
 		var err error
 		switch key {
 		case "name":
-			m.Name, err = scalarString(vn)
+			m.Name, err = textField(kn, vn, lines)
 		case "description":
-			m.Description, err = scalarString(vn)
+			m.Description, err = textField(kn, vn, lines)
 		case "license":
-			m.License, err = scalarString(vn)
+			m.License, err = textField(kn, vn, lines)
 		case "compatibility":
-			m.Compatibility, err = scalarString(vn)
+			m.Compatibility, err = textField(kn, vn, lines)
 		case "metadata":
 			m.Metadata, err = nodeMetadata(vn)
 		case "allowed-tools":
@@ -161,6 +178,27 @@ func parseMapping(n *yaml.Node) (*Manifest, error) {
 		}
 	}
 	return m, nil
+}
+
+// textField reads a text field. A plain value on the key's own line is taken as
+// written, the way the earlier loader read it, so a description such as
+// "Fix issue #12" keeps its "#12" and "[WIP]" stays text; a quoted, folded or
+// multi-line value is read as YAML.
+func textField(kn, vn *yaml.Node, lines []string) (string, error) {
+	if vn.Line == kn.Line && kn.Line >= 1 && kn.Line <= len(lines) {
+		quoted := yaml.DoubleQuotedStyle | yaml.SingleQuotedStyle | yaml.LiteralStyle | yaml.FoldedStyle
+		plain := vn.Kind == yaml.ScalarNode && vn.Style&quoted == 0 && vn.Tag != "!!null"
+		flow := vn.Kind != yaml.ScalarNode && vn.Style&yaml.FlowStyle != 0
+		if plain || flow {
+			line := lines[kn.Line-1]
+			if kn.Column >= 1 && kn.Column-1 <= len(line) {
+				if at := strings.Index(line[kn.Column-1:], ":"); at >= 0 {
+					return strings.TrimSpace(line[kn.Column-1+at+1:]), nil
+				}
+			}
+		}
+	}
+	return scalarString(vn)
 }
 
 func scalarString(n *yaml.Node) (string, error) {
@@ -228,10 +266,11 @@ func splitTools(s string) []string {
 	var cur strings.Builder
 	depth := 0
 	flush := func() {
-		if cur.Len() > 0 {
-			out = append(out, cur.String())
-			cur.Reset()
+		// "Read, Grep" is a comma-separated list: the comma is not part of a name.
+		if t := strings.TrimRight(cur.String(), ","); t != "" {
+			out = append(out, t)
 		}
+		cur.Reset()
 	}
 	for _, r := range s {
 		switch {
@@ -362,4 +401,37 @@ func Fields() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// clean checks the text a manifest carries. Name, description and the other text
+// fields are read from YAML, which can decode an escape sequence to a control or
+// bidirectional character or a newline, and they reach the system block; so each
+// is flattened to one line and refused if it holds a character the harness
+// strips from untrusted text (control, escape, bidirectional override, invisible
+// or delimiter markup).
+func (m *Manifest) clean() error {
+	one := func(field string, s *string) error {
+		flat := strings.Join(strings.Fields(*s), " ")
+		if sanitize.Text(flat) != flat {
+			return fmt.Errorf("field %q holds a control, bidirectional, invisible or delimiter character", field)
+		}
+		*s = flat
+		return nil
+	}
+	for field, s := range map[string]*string{"name": &m.Name, "description": &m.Description, "license": &m.License, "compatibility": &m.Compatibility} {
+		if err := one(field, s); err != nil {
+			return err
+		}
+	}
+	for i := range m.AllowedTools {
+		if err := one("allowed-tools", &m.AllowedTools[i]); err != nil {
+			return err
+		}
+	}
+	for k, v := range m.Metadata {
+		if sanitize.Text(k) != k || strings.ContainsAny(k, "\n\t") || sanitize.Text(v) != v {
+			return fmt.Errorf("field %q holds a control, bidirectional, invisible or delimiter character", "metadata")
+		}
+	}
+	return nil
 }

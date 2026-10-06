@@ -1139,3 +1139,18 @@ func TestNamedAgentEmptyImpliesToolsNil(t *testing.T) {
 	r.resumeSession(key, "sess-1")
 	check(r, "resume with no profile")
 }
+
+// An engaged definition's skills list reaches the session in agent mode only,
+// the way its tool allowlist does.
+func TestEngagedAgentSkillsFollowTheMode(t *testing.T) {
+	a := &App{mode: "agent", namedAgentSkills: []string{"belai-scout"}}
+	if got := a.engagedAgentSkills(); len(got) != 1 || got[0] != "belai-scout" {
+		t.Fatalf("agent mode: skills = %v", got)
+	}
+	for _, mode := range []string{"plan", "goal"} {
+		a.mode = mode
+		if got := a.engagedAgentSkills(); got != nil {
+			t.Errorf("%s mode: skills = %v, want the mode's own", mode, got)
+		}
+	}
+}
