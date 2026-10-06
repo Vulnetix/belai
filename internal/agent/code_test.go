@@ -195,7 +195,7 @@ func TestNestedCallsAreGatedLikeDirectOnes(t *testing.T) {
 	sess.turnCode = true
 	ctx := tools.WithNested(context.Background())
 
-	for _, name := range []string{"Code", "Task", "AskUserQuestion", "update_plan", "Skill", "ToolSearch"} {
+	for _, name := range []string{"Code", "Task", "AskUserQuestion", "update_plan", "Todo", "Skill", "ToolSearch"} {
 		if tool, refusal := sess.resolveCall(ctx, name); tool != nil {
 			t.Errorf("a script must not resolve %s (refusal %q)", name, refusal)
 		}

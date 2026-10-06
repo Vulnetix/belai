@@ -49,6 +49,9 @@ const (
 // ledger so no goal-mode field (or a leftover memorised goal) can leak into
 // the plan path.
 type planLedger struct {
+	// repaired is set once a repair continuation has been spent: a pass that
+	// failed on its own calls gets one more pass to correct them.
+	repaired  bool
 	passes    int
 	maxPasses int    // bounded ceiling, for the escalating finish-or-check-in wording
 	context   string // exploration findings shown to the plan evaluator
@@ -365,7 +368,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// made the model spend a whole round writing a checklist before it
 		// read anything. Once a list is tracked, the check keeps it current.
 		if l.hasList && len(l.list.Items) > 0 {
-			turns = append(turns, withTodoCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
+			turns = append(turns, withPlanCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
 		} else {
 			turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes)+"\n\n"+planChecklistOptional)...)
 		}
@@ -374,7 +377,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		final := l.passes >= maxPasses || l.writeNow
 		s.planFinalPass = final
 		if final {
-			turns = append(turns, withTodoCheck(l.knownState()+" "+planFinalDirective, l.list, l.hasList, l.knownNote())...)
+			turns = append(turns, withPlanCheck(l.knownState()+" "+planFinalDirective, l.list, l.hasList, l.knownNote())...)
 		}
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		s.planFinalPass = false
@@ -496,6 +499,15 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			// mode this is a turn boundary: return the plan gathered so far so
 			// the harness can write it to disk for review.
 			if out.productive == 0 {
+				// A pass that failed only on errors in its own calls is
+				// repairable: one more pass with the repair request, then the
+				// plan so far.
+				if out.repairFailures > 0 && !l.repaired {
+					l.repaired = true
+					emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("planning pass %d ended on failing tool calls; asking for corrected calls", l.passes)})
+					turns = append(turns, withPlanCheck(repairContinuationDirective, l.list, l.hasList)...)
+					continue
+				}
 				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop stopped: pass %d executed no tools; returning the plan so far", l.passes)})
 				return run.Result{Reply: l.planSoFar(), Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
 			}

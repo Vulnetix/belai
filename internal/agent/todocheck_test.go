@@ -9,7 +9,7 @@ import (
 
 func TestTodoCheckWithoutAListAsksForOne(t *testing.T) {
 	got := todoCheck(todos.List{}, false)
-	if !strings.Contains(got, "no step list is tracked yet") || !strings.Contains(got, "update_plan") {
+	if !strings.Contains(got, "no todo list is tracked yet") || !strings.Contains(got, "call Todo") {
 		t.Fatalf("todoCheck without a list = %q", got)
 	}
 	// A tracked but empty list reads the same as no list.
@@ -27,7 +27,7 @@ func TestTodoCheckCountsOpenWork(t *testing.T) {
 	l.Items[1].Status = todos.StatusActive
 	l.Items[2].Status = todos.StatusPending
 	got := todoCheck(l, true)
-	for _, want := range []string{"1 of 3 steps done, 1 in progress", "update_plan", "[DONE:n]", "response that carries your next tool calls", "Do not reply with a list update alone"} {
+	for _, want := range []string{"1 of 3 todos done, 1 in progress", "call Todo only when", "[DONE:n]", "response that carries your next tool calls", "Do not reply with a list update alone"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("todoCheck missing %q:\n%s", want, got)
 		}
@@ -40,7 +40,7 @@ func TestTodoCheckCountsOpenWork(t *testing.T) {
 func TestTodoCheckAllDone(t *testing.T) {
 	l := todos.New("g", []string{"alpha"})
 	l.MarkAllDone()
-	if got := todoCheck(l, true); !strings.Contains(got, "every step is marked done") {
+	if got := todoCheck(l, true); !strings.Contains(got, "every todo is marked completed") {
 		t.Fatalf("todoCheck with all done = %q", got)
 	}
 }

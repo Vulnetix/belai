@@ -734,8 +734,8 @@ func TestPlanPassLoopFinalPassOffersOnlyTheFinishTools(t *testing.T) {
 	}
 	final := (*lastUser)[len(*lastUser)-1]
 	for i, u := range *lastUser {
-		if !strings.Contains(u, "TODO check") && !strings.Contains(u, "planning checklist is optional") {
-			t.Fatalf("plan request %d carried neither a TODO check nor the optional-checklist note:\n%s", i, u)
+		if !strings.Contains(u, "PLAN check") && !strings.Contains(u, "planning checklist is optional") {
+			t.Fatalf("plan request %d carried neither a PLAN check nor the optional-checklist note:\n%s", i, u)
 		}
 	}
 	for _, want := range []string{"final planning pass", "not starting over", "Files already read: f.txt", "the rollback step"} {

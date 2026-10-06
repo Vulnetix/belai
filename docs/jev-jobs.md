@@ -266,7 +266,7 @@ there is nothing new to admit and no long model call to wait for.
 - **Pinned, never judged.** The first request; the newest 6 turns; a call whose
   turn carries signed thinking; anything that changed something (a mutating
   tool); a failed or withheld result or a command that exited non-zero;
-  `update_plan`, `ExitPlanMode`, `AskUserQuestion`, `Skill`, `SkillDraft`,
+  `update_plan`, `Todo`, `ExitPlanMode`, `AskUserQuestion`, `Skill`, `SkillDraft`,
   `Task`, `ToolSearch`, `ReadResult`, the Kanban tools and MCP tools.
 - **What the backend sees.** The user's last three requests as the goal, and a
   digest of the conversation: each message's text and, for each call, its tool,

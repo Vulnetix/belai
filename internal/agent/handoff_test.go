@@ -11,43 +11,43 @@ import (
 	"github.com/vulnetix/belai/internal/tools"
 )
 
-func TestHandoffGateRefusesEditBeforeUpdatePlan(t *testing.T) {
+func TestHandoffGateRefusesEditBeforeTodo(t *testing.T) {
 	s := testSession(t)
 	s.turnIntent = rolemanager.IntentHandoff
-	s.handoffUpdatePlanCalled = false
+	s.handoffTodoCalled = false
 
 	call := rolemanager.ToolCall{Name: "Edit", Args: map[string]any{"path": "a.go", "old_string": "x", "new_string": "y"}}
 	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
-	if !strings.Contains(out, "update_plan") {
+	if !strings.Contains(out, "Todo") {
 		t.Fatalf("expected handoff refusal, got %q", out)
 	}
 }
 
-func TestHandoffGateAllowsUpdatePlanFirst(t *testing.T) {
+func TestHandoffGateAllowsTodoFirst(t *testing.T) {
 	s := testSession(t)
 	s.turnIntent = rolemanager.IntentHandoff
-	s.handoffUpdatePlanCalled = false
+	s.handoffTodoCalled = false
 
-	call := rolemanager.ToolCall{Name: "update_plan", Args: map[string]any{"todos": []any{map[string]any{"id": "1", "content": "step", "status": "in_progress"}}}}
+	call := rolemanager.ToolCall{Name: "Todo", Args: map[string]any{"todos": []any{map[string]any{"id": "1", "content": "step", "status": "in_progress"}}}}
 	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
 	if strings.Contains(out, "withheld") {
-		t.Fatalf("expected update_plan to succeed, got %q", out)
+		t.Fatalf("expected Todo to succeed, got %q", out)
 	}
-	if !s.handoffUpdatePlanCalled {
-		t.Fatal("handoffUpdatePlanCalled not set")
+	if !s.handoffTodoCalled {
+		t.Fatal("handoffTodoCalled not set")
 	}
 }
 
-func TestHandoffGateAllowsEditAfterUpdatePlan(t *testing.T) {
+func TestHandoffGateAllowsEditAfterTodo(t *testing.T) {
 	s := testSession(t)
 	s.turnIntent = rolemanager.IntentHandoff
-	s.handoffUpdatePlanCalled = true
+	s.handoffTodoCalled = true
 
 	call := rolemanager.ToolCall{Name: "Edit", Args: map[string]any{"path": "a.go", "old_string": "x", "new_string": "y"}}
 	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
 	// The call may still be refused for other reasons (permission, file not
 	// existing), but not by the handoff gate.
-	if strings.Contains(out, "update_plan") {
+	if strings.Contains(out, "Todo") {
 		t.Fatalf("unexpected handoff refusal after update_plan: %q", out)
 	}
 }
@@ -55,11 +55,11 @@ func TestHandoffGateAllowsEditAfterUpdatePlan(t *testing.T) {
 func TestHandoffGateNoEffectOutsideHandoff(t *testing.T) {
 	s := testSession(t)
 	s.turnIntent = rolemanager.IntentAgent
-	s.handoffUpdatePlanCalled = false
+	s.handoffTodoCalled = false
 
 	call := rolemanager.ToolCall{Name: "Edit", Args: map[string]any{"path": "a.go", "old_string": "x", "new_string": "y"}}
 	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
-	if strings.Contains(out, "update_plan") {
+	if strings.Contains(out, "Todo") {
 		t.Fatalf("unexpected handoff refusal outside handoff: %q", out)
 	}
 }

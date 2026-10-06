@@ -98,7 +98,7 @@ const (
 // is wrapped in DirectivePrefix/DirectiveSuffix prose so the model reads the
 // sealed block as context rather than as the question to answer.
 const (
-	planDirective         = "No work has landed yet. Name the file to change and make the smallest correct edit that advances the goal, in this pass. Record the steps with update_plan (first step in_progress) if you have not already; the list is a side effect of working, not a substitute for it. Read the exact bytes first, then edit immediately — do not end this pass without a file mutation."
+	planDirective         = "No work has landed yet. Name the file to change and make the smallest correct edit that advances the goal, in this pass. Record the todos with Todo (first todo in_progress) if you have not already; the list is a side effect of working, not a substitute for it. Read the exact bytes first, then edit immediately — do not end this pass without a file mutation."
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
@@ -127,8 +127,8 @@ const (
 	// approved plan, which may legitimately change no file.
 	planReadStreakDirective = "You have spent several rounds reading. Carry out the approved plan's next unfinished step in your next response from the bytes you already have: if it changes a file, make the change; if the remaining steps only read or report and are done, say the plan is complete and give the result. Do not re-read files you have already read in full."
 	readStreakDirective     = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
-	goalSimpleDirective     = "This is a simple request: start on it now, in this response, with the actions it names. Run the commands the request asks for and read only what they need. Do not write a plan list, do not run the project test suite or build unless the request asks for it or you changed code, and do not survey the repository. The goal is done when the requested actions have succeeded; report their result in one short reply."
-	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with a [DONE:n] marker in the text of the response that carries your next tool calls — that updates the list without a round of its own; call update_plan again only when the steps themselves change. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	goalSimpleDirective     = "This is a simple request: start on it now, in this response, with the actions it names. Run the commands the request asks for and read only what they need. Do not write a todo list, do not run the project test suite or build unless the request asks for it or you changed code, and do not survey the repository. The goal is done when the requested actions have succeeded; report their result in one short reply."
+	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call Todo once with the todos you will do, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark todos complete with a [DONE:n] marker in the text of the response that carries your next tool calls — that updates the list without a round of its own; call Todo again only when the todos themselves change. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
@@ -181,6 +181,9 @@ func (s *Session) allTestCommands() []string {
 type passLedger struct {
 	passes   int
 	goalText string
+	// todoGates counts the completions sent back because the todo list still
+	// had open items (refuseOpenTodos), bounded by maxTodoReprompts.
+	todoGates int
 	// executePlan: the loop is executing an approved plan, which may change
 	// no file at all, so the no-write escalations name the next plan step
 	// instead of demanding an edit.
@@ -250,9 +253,9 @@ type passLedger struct {
 	// calls, or its reply when it called none) and repeatPasses the run of
 	// consecutive passes that repeated it exactly while changing no file. The
 	// other stall detectors inject a stronger directive and reset, so a model
-	// that redid the same read every pass — update_plan 0/2, Read, update_plan
+	// that redid the same read every pass — Todo 0/2, Read, Todo
 	// 2/2 — looped until it was killed. Repeating identical work is not
-	// progress, whatever the checklist says.
+	// progress, whatever the todo list says.
 	lastPassPrint string
 	repeatPasses  int
 
@@ -335,6 +338,36 @@ func (l *passLedger) noteWrites(out passOutcome) {
 			l.touched = append(l.touched, p)
 		}
 	}
+}
+
+// refuseOpenTodos reports whether a completion about to be accepted should be
+// sent back because the todo list still has open items, and how many. The
+// evaluator rates the work, not the list, and the harness used to mark the whole
+// list done on acceptance, which hid an item the model never did.
+func (l *passLedger) refuseOpenTodos() (open, total int, again bool) {
+	if !l.hasList || l.todoGates >= maxTodoReprompts {
+		return 0, 0, false
+	}
+	o := l.list.Open()
+	if len(o) == 0 {
+		return 0, 0, false
+	}
+	l.todoGates++
+	return len(o), len(l.list.Items), true
+}
+
+// settleTodos publishes the list when a completion is accepted. A complete list
+// is marked done; one with open items left after the bounded send-backs stays as
+// it is and the stop is named, so the record shows what was not done.
+func (l *passLedger) settleTodos(emit func(Event)) {
+	if !l.hasList {
+		return
+	}
+	if n := len(l.list.Open()); n > 0 {
+		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal accepted with %d todo(s) still open", n)})
+	}
+	list := l.list
+	emit(Event{Kind: EventTodosKind, Todos: &list})
 }
 
 // noteWithheld records one pass's withheld count and the running tally of
@@ -561,12 +594,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	}
 
 	if !s.allowPassLoop || modeDec.Mode != modes.ModeGoal {
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modeDec.Mode)
+		out, turns, err := s.passRecoverable(ctx, pipe, system, turns, streaming, emit, modeDec.Mode)
 		if err != nil {
 			return run.Result{}, err
 		}
 		if !out.exhausted {
-			return run.Result{Reply: out.reply, Usage: out.usage}, nil
+			return s.agentFinish(ctx, system, streaming, emit, run.Result{Reply: out.reply, Usage: out.usage}, false), nil
 		}
 
 		// Reset-on-steer: an explore subagent whose iteration budget is spent
@@ -629,8 +662,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 
 		if maxPasses > 0 && l.passes >= maxPasses {
 			s.turnStop = run.StopMaxPasses
-			return run.Result{Passes: l.passes, GoalSentinel: rolemanager.GoalPartial},
-				fmt.Errorf("goal pass loop stopped: max passes (%d) reached", maxPasses)
+			return s.goalErrorReport(ctx, system, turns, streaming, emit, run.Result{Passes: l.passes, GoalSentinel: rolemanager.GoalPartial},
+				fmt.Errorf("goal pass loop stopped: max passes (%d) reached", maxPasses))
 		}
 
 		l.passes++
@@ -719,7 +752,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// resolver that cannot answer.
 		if l.writes == 0 && l.everyPassWithheld() {
 			s.turnStop = run.StopWithheld
-			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: every pass ended with all tool results withheld; re-check the tool path resolver and provider")
+			return s.goalErrorReport(ctx, system, turns, streaming, emit, run.Result{Passes: l.passes},
+				fmt.Errorf("goal pass loop stopped: every pass ended with all tool results withheld; re-check the tool path resolver and provider"))
 		}
 
 		// Maintain the shared todo list from assistant text only, then tell
@@ -768,11 +802,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					turns = append(turns, l.directive(l.gateDirective())...)
 					continue
 				}
-				if l.hasList {
-					l.list.MarkAllDone()
-					list := l.list
-					emit(Event{Kind: EventTodosKind, Todos: &list})
+				if open, total, again := l.refuseOpenTodos(); again {
+					turns = append(turns, l.directive(fmt.Sprintf(openTodoDirective, open, total))...)
+					continue
 				}
+				l.settleTodos(emit)
 				gs.Status = string(goals.StatusComplete)
 				emitGoalState(emit, gs)
 				res := run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}
@@ -829,7 +863,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial,
 						run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
 				}
-				return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
+				return s.goalErrorReport(ctx, system, turns, streaming, emit, run.Result{Passes: l.passes},
+					fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes))
 			}
 			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("pass %d executed no tools; asking for corrected tool calls", l.passes)})
 			turns = append(turns, l.directive(toolRepairDirective)...)
@@ -908,12 +943,13 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				turns = append(turns, l.directive(l.gateDirective())...)
 				continue
 			}
-			// Accepted: mark the todo list complete and return.
-			if l.hasList {
-				l.list.MarkAllDone()
-				list := l.list
-				emit(Event{Kind: EventTodosKind, Todos: &list})
+			// Accepted. A list with open todos is sent back first, and one the
+			// model still will not finish is reported as open, never marked done.
+			if open, total, again := l.refuseOpenTodos(); again {
+				turns = append(turns, l.directive(fmt.Sprintf(openTodoDirective, open, total))...)
+				continue
 			}
+			l.settleTodos(emit)
 			gs.Status = string(goals.StatusComplete)
 			emitGoalState(emit, gs)
 			return s.goalReport(ctx, system, turns, streaming, emit, sentinel, run.Result{
@@ -968,37 +1004,19 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 	}
 	continuations := 0
 	mutations := out.mutations
-	// Agent mode keeps no ledger, but update_plan is on its surface: adopt
-	// what the model reports so each continuation carries the TODO check.
-	var list todos.List
-	hasList := false
-	adopt := func(o passOutcome) {
-		if o.updatePlan != nil {
-			if !hasList {
-				list = todos.New(userPrompt, nil)
-				hasList = true
-			}
-			list.Adopt(o.updatePlan.Items)
-		}
-		// [DONE:n] markers in the pass's own assistant text complete steps
-		// too, as the TODO check invites, without a round of update_plan.
-		if hasList && strings.Contains(o.text, "[DONE:") {
-			list.ApplyMarkers(o.text)
-			l := list
-			emit(Event{Kind: EventTodosKind, Todos: &l})
-		}
-	}
-	adopt(out)
+	// Agent mode keeps no ledger: the turn's todo list lives on the session
+	// (todotrack.go), fed by every pass, so each continuation carries the TODO
+	// check and the turn can be held to its open todos.
 	for continuations < maxCont {
 		if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
 			turns = append(turns, steer...)
 			var err error
-			out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
+			out, turns, err = s.passRecoverable(ctx, pipe, system, turns, streaming, emit, mode)
 			if err != nil {
 				return run.Result{}, err
 			}
 			if !out.exhausted {
-				return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
+				return s.agentFinish(ctx, system, streaming, emit, run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, false), nil
 			}
 			continue
 		}
@@ -1019,29 +1037,31 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		}
 		directive := continuationDirective
 		switch {
-		case mode == modes.ModeAgent && s.turnIntent == rolemanager.IntentHandoff && hasList && !list.Complete():
-			p := list.Progress()
-			directive = fmt.Sprintf("%d of %d plan tasks remain. Continue with the next open task, then finish.", len(list.Items)-p.Completed(), p.Total)
+		case out.repairFailures > 0:
+			directive = repairContinuationDirective
+		case mode == modes.ModeAgent && s.turnIntent == rolemanager.IntentHandoff && s.turnHasTodos && !s.turnTodos.Complete():
+			p := s.turnTodos.Progress()
+			directive = fmt.Sprintf("%d of %d plan tasks remain. Continue with the next open task, then finish.", len(s.turnTodos.Items)-p.Completed(), p.Total)
 		case mode == modes.ModeAgent && !s.turnReadOnly && mutations == 0:
 			directive = agentEditNudge + " " + continuationDirective
 		}
-		turns = append(turns, withTodoCheck(directive, list, hasList)...)
+		turns = append(turns, withTodoCheck(directive, s.turnTodos, s.turnHasTodos)...)
 		var err error
-		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
+		out, turns, err = s.passRecoverable(ctx, pipe, system, turns, streaming, emit, mode)
 		if err != nil {
 			return run.Result{}, err
 		}
-		adopt(out)
+		s.flushTodos(emit)
 		mutations += out.mutations
 		if !out.exhausted {
-			return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
+			return s.agentFinish(ctx, system, streaming, emit, run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, false), nil
 		}
 		if out.productive == 0 {
 			break
 		}
 	}
 	emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("turn budget reached; returning the work so far after %d continuation pass(es)", continuations)})
-	return run.Result{Reply: out.lastText, Usage: out.usage, Passes: continuations}, nil
+	return s.agentFinish(ctx, system, streaming, emit, run.Result{Reply: out.lastText, Usage: out.usage, Passes: continuations}, true), nil
 }
 
 // evaluateGoalPass runs the goal evaluator for one pass boundary and folds the
@@ -1130,7 +1150,7 @@ func (l *passLedger) partialDirective() string {
 		}
 		return body
 	}
-	return "The goal is partially complete and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the next one with an edit in this pass."
+	return "The goal is partially complete and no todo list is tracked yet. Call Todo with the todos you will do, then carry out the next one with an edit in this pass."
 }
 
 // progressionDirective builds the directive injected when the pass loop has
@@ -1139,9 +1159,9 @@ func (l *passLedger) partialDirective() string {
 // step, creating a new agentic evaluation loop rather than aborting.
 func (l *passLedger) progressionDirective() string {
 	if l.hasList {
-		return "Progress has stalled — the step list has not advanced for several passes. Execute the single most concrete next step now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly."
+		return "Progress has stalled — the todo list has not advanced for several passes. Execute the single most concrete next todo now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly."
 	}
-	return "Progress has stalled and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the first one as an edit in this pass. If you are blocked, state the blocker explicitly."
+	return "Progress has stalled and no todo list is tracked yet. Call Todo with the todos you will do, then carry out the first one as an edit in this pass. If you are blocked, state the blocker explicitly."
 }
 
 // Final report directives. A goal pass loop ends on an evaluator verdict, and
@@ -1187,12 +1207,19 @@ func withReply(turns []run.Turn, reply string) []run.Turn {
 // that fails or comes back empty never costs the goal: res is returned as it
 // was, with a warning naming the failure.
 func (s *Session) goalReport(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event), sentinel rolemanager.GoalSentinel, res run.Result) run.Result {
+	return s.finalReport(ctx, system, turns, streaming, emit, sentinel, directiveTurns(reportDirective(sentinel)), res)
+}
+
+// finalReport is the one report turn every mode ends on: instruction turns
+// appended, one tool-less provider turn, and res returned with the report as its
+// reply, or as it was with a warning when the report failed or came back empty.
+func (s *Session) finalReport(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event), sentinel rolemanager.GoalSentinel, instruction []run.Turn, res run.Result) run.Result {
 	if ctx.Err() != nil {
 		return res
 	}
 	emit(Event{Kind: EventReportKind, GoalSentinel: sentinel})
 	s.traceRecord("report", string(sentinel), "", "", res.Passes)
-	turns = append(turns, directiveTurns(reportDirective(sentinel))...)
+	turns = append(turns, instruction...)
 	assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -1209,6 +1236,30 @@ func (s *Session) goalReport(ctx context.Context, system string, turns []run.Tur
 		res.Usage = assistant.Usage
 	}
 	return res
+}
+
+// passRecoverable is pass with the one-shot overflow recovery the goal and plan
+// loops already have: a context overflow is caught once per turn, the context is
+// compacted (or old tool results cleared), and the pass runs again. Agent and
+// code mode used to end the turn on the first overflow.
+func (s *Session) passRecoverable(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), mode modes.Mode) (passOutcome, []run.Turn, error) {
+	out, grown, err := s.pass(ctx, pipe, system, turns, streaming, emit, mode)
+	if err != nil && !s.overflowRecovered && isOverflow(err) {
+		s.overflowRecovered = true
+		if compacted, ok := s.recoverOverflow(ctx, pipe, grown); ok {
+			return s.pass(ctx, pipe, system, compacted, streaming, emit, mode)
+		}
+	}
+	return out, grown, err
+}
+
+// goalErrorReport is goalReport for a stop that is still an error: the goal
+// ends the way it did before, but the model is asked for its final report
+// first, so a session never ends without saying what was done and what was not.
+// The report is best effort and a cancelled turn skips it.
+func (s *Session) goalErrorReport(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event), res run.Result, err error) (run.Result, error) {
+	res.GoalSentinel = rolemanager.GoalPartial
+	return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial, res), err
 }
 
 // directiveTurns frames one harness continuation instruction: a user turn

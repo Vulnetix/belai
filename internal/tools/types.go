@@ -15,9 +15,9 @@ const (
 	KindExplore   Kind = "explore"
 	KindWrite     Kind = "write"
 	KindEdit      Kind = "edit"
-	// KindUpdatePlan is the shaped, harness-composed result of the update_plan
+	// KindTodo is the shaped, harness-composed result of the Todo and update_plan
 	// checklist-progress tool. It is read-only and sanitise-only.
-	KindUpdatePlan Kind = "update_plan"
+	KindTodo Kind = "todo"
 	// KindNative identifies the first-class read-only command tools from the
 	// local catalogue (Cat, Find, Git, JQ, …). Every native tool shells out
 	// to a fixed command with a fixed argument shape, so the kind is read-only
@@ -112,7 +112,7 @@ const (
 // mutating kind into the concurrent read-only fan-out.
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
-	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
+	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindTodo,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport,
@@ -131,7 +131,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindExplore:     true,
 	KindNative:      true,
 	KindRemote:      true,
-	KindUpdatePlan:  true,
+	KindTodo:        true,
 	KindProcess:     true,
 	KindAgentStore:  true,
 	KindSubagent:    true,

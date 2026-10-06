@@ -1308,12 +1308,25 @@ with optional `- Files:` and `- Verify:` sub-bullets), `## Test Plan`,
 then returns the sentinel; the pass loop threads the plan text to
 `plans.Record`, which canonicalises it through `Doc.Render` so the file on
  disk has one stable shape regardless of the model's formatting. `update_plan`
-(the Codex checklist tool, accepted here in plan mode too) drives the
-planning todo list; the `[DONE:n]` marker convention remains as a fallback.
+(the Codex checklist tool, offered in plan mode only) drives the planning
+checklist; the `[DONE:n]` marker convention remains as a fallback.
 
-**`update_plan` is parsed leniently and counts as executed work.**
-`tools.ParsePlanArg` is the single definition of the accepted shape, shared by
-the tool and by the pass loop that adopts the list, so the two can never
+**The checklist tool is per mode.** Goal, agent and code mode keep a *todo
+list* with `Todo` (`todos: [{content, status}]`, `internal/tools/todo.go`);
+plan mode keeps its research steps with `update_plan`. Each surface
+advertises one of them (`Registry.WithoutPlanOnly` drops `update_plan`,
+`Registry.WithoutNonPlan` drops `Todo`), a profile allowlist naming either
+keeps the one its mode offers, a script in code mode can call neither, and a
+call to the other mode's tool is a rejected call the model fixes by naming the
+right one. `Todo` is a deliberate divergence from the trained `update_plan`
+name, documented in its description. Every tool's nested argument shape (the
+entries of a todo list, the questions of `AskUserQuestion`) reaches the
+provider: `Definition.Schema` recurses into `items` and `properties`, so a
+model is never shown a bare array and left to invent the fields.
+
+**The todo list is parsed leniently and counts as executed work.**
+`tools.ParseTodoArg` and `tools.ParsePlanArg` are one definition of the accepted
+shape, shared by the tools and by the pass loop that adopts the list, so the two can never
 disagree about whether a call was usable. It is lenient about spelling and
 strict about substance: the checklist may arrive under `plan`, `steps`,
 `todos`, `items`, `tasks` or `checklist` (as an array, or as a JSON string,
@@ -1321,10 +1334,10 @@ which is how some providers serialise tool arguments); an entry may name its
 text with `step`, `description`, `content`, `text`, `title` and the other
 paraphrases models reach for, or be a bare string; and a status the harness
 cannot read is `pending` rather than a rejection. An entry with no text is
-still an error, because there is nothing to track. A rejected `update_plan`
-costs a whole iteration and teaches the model nothing, and the checklist is
+still an error (it names the field it wanted and the keys it saw), because there
+is nothing to track. A rejected call costs a whole iteration, and the checklist is
 bookkeeping — progress is measured from files on disk, never from this list.
-A pass whose only successful call was `update_plan` is therefore *not* an
+A pass whose only successful call was `Todo` or `update_plan` is therefore *not* an
 empty pass: counting it as one used to fail the whole goal loop with
 *pass N executed no tools* even though the call succeeded.
 
@@ -1584,7 +1597,7 @@ was then thrown away, so a goal cost 45 seconds before the main model was
 asked anything.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive
-asks for one `update_plan` call and the first real change in the same pass.
+asks for one `Todo` call and the first real change in the same pass.
 
 **A pass that changes no file has not advanced the goal.** The loop's primary
 progress signal is the file-diff recorder's observation of each pass, not the

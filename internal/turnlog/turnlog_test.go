@@ -9,6 +9,7 @@ import (
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 func newLog(t *testing.T) (*Log, func() []session.Entry) {
@@ -171,5 +172,33 @@ func TestToolResultCarriesTheDiffTheCallLeft(t *testing.T) {
 	}
 	if _, has := tools[2].Meta["diff"]; has {
 		t.Fatalf("a diff is used once: %v", tools[2].Meta)
+	}
+}
+
+// A headless, rc, fleet or ACP session writes its todo list to the transcript
+// like the TUI does, so the website's Todo panel has something to show. An
+// unchanged list is written once, and the latest entry is what a reader keeps.
+func TestTodoListIsRecorded(t *testing.T) {
+	l, read := newLog(t)
+	list := todos.New("fix it", []string{"read", "edit"})
+	l.Observe(agent.Event{Kind: agent.EventTodosKind, Todos: &list})
+	l.Observe(agent.Event{Kind: agent.EventTodosKind, Todos: &list}) // unchanged: not repeated
+	l.Observe(agent.Event{Kind: agent.EventTodosKind})               // no list: ignored
+	done := list
+	done.MarkAllDone()
+	l.Observe(agent.Event{Kind: agent.EventGoalEvalKind, Todos: &done})
+
+	var written []session.Entry
+	for _, e := range read() {
+		if e.Type == todos.EntryType {
+			written = append(written, e)
+		}
+	}
+	if len(written) != 2 {
+		t.Fatalf("todo_list entries = %d, want 2", len(written))
+	}
+	latest, err := todos.FromEntry(written[1])
+	if err != nil || latest.HasOpen() || len(latest.Items) != 2 {
+		t.Fatalf("latest list = %+v, %v", latest, err)
 	}
 }

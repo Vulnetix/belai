@@ -77,3 +77,8 @@ func closestTool(name string, promptTools []string) string {
 	}
 	return best
 }
+
+// ClosestTool is the offered tool name that case-insensitively prefixes name or
+// is prefixed by it, "" when none does. The agent loop uses it to word the
+// feedback for a call to a tool that was not offered.
+func ClosestTool(name string, offered []string) string { return closestTool(name, offered) }

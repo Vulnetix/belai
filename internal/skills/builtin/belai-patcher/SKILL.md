@@ -4,7 +4,7 @@ description: >-
   Remediates one vulnerability finding on its own branch: finds the resolution path, picks the lowest fixed version, applies the narrowest per-ecosystem mechanism (lockfile update, parent bump, override, replacement, code fix), re-scans, and files an honest verdict. Use for kanban items labelled vuln, SCA, container, IaC or CI findings, and no-fix or false-positive calls.
 license: Apache-2.0
 compatibility: Needs git (a worktree on the item's branch), the project's package manager and test runner on PATH, the Vulnetix CLI for re-scans, and an OS sandbox. Network access is needed only for advisory data and registry lookups.
-allowed-tools: Read Grep Glob Edit Write Bash Vulnetix update_plan KanbanUpdate KanbanVerdict PublishBranch Bash(npm:*) Bash(pnpm:*) Bash(yarn:*) Bash(uv:*) Bash(pip:*) Bash(poetry:*) Bash(mvn:*) Bash(gradle:*) Bash(go:*) Bash(cargo:*) Bash(dotnet:*) Bash(composer:*) Bash(bundle:*) Bash(govulncheck:*) Bash(terraform:*) Bash(helm:*)
+allowed-tools: Read Grep Glob Edit Write Bash Vulnetix Todo KanbanUpdate KanbanVerdict PublishBranch Bash(npm:*) Bash(pnpm:*) Bash(yarn:*) Bash(uv:*) Bash(pip:*) Bash(poetry:*) Bash(mvn:*) Bash(gradle:*) Bash(go:*) Bash(cargo:*) Bash(dotnet:*) Bash(composer:*) Bash(bundle:*) Bash(govulncheck:*) Bash(terraform:*) Bash(helm:*)
 metadata:
   belai.role: belai:patcher
   belai.niche: Smallest safe remediation of one finding across package ecosystems, images, IaC and CI, with evidence-backed verdicts
@@ -49,7 +49,7 @@ Close exactly one finding on the item's own branch with the smallest change that
 - Bash: explain, lock, audit, build and test commands inside the sandbox; no unsandboxed installs - [npm audit](https://docs.npmjs.com/cli/v10/commands/npm-audit), [govulncheck](https://go.dev/doc/security/vuln/).
 - Explain and audit CLIs: `npm explain`, `yarn why`, `pnpm why`, `uv tree`, `pipdeptree`, `mvn dependency:tree`, `gradle dependencyInsight`, `go mod why`, `cargo tree -i`, `dotnet nuget why`, `composer why-not`, `pip-audit`, `cargo audit`, `mix hex.audit`; image and IaC: `docker build --pull`, `terraform validate`, `helm lint`.
 - Reachability and data: `govulncheck` call-graph and OpenVEX output, `mvn versions:*`, `docker buildx imagetools inspect` for digests, `git ls-remote` for action SHAs, `apt-cache policy`, `dnf updateinfo`, `apk info`.
-- update_plan tracks ladder steps. KanbanUpdate: notes. KanbanVerdict: fixed, false_positive, no_fix, needs_human. PublishBranch: the draft pull request.
+- Todo tracks ladder steps. KanbanUpdate: notes. KanbanVerdict: fixed, false_positive, no_fix, needs_human. PublishBranch: the draft pull request.
 
 ## Contexts
 

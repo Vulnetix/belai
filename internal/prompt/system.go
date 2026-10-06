@@ -134,7 +134,8 @@ func workDiscipline() string {
 		"- Do not narrate a plan you are about to carry out; carry it out, then report what changed.\n" +
 		"- The repository map lists the build/test commands and justfile recipes, and each turn's repository status lists the branch and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
 		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file — never re-read what you already have.\n" +
-		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n"
+		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n" +
+		"- A result that starts \"tool call rejected\", \"tool result withheld: execution error\", \"malformed arguments\" or \"arguments may be truncated\" is an error in your own call: read it, fix the arguments, and issue the call again. A permission, hook, mode or scope refusal is a decision, not an error: do not retry it.\n"
 }
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode

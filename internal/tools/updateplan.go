@@ -4,28 +4,34 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/todos"
 )
 
 // UpdatePlan is the trained checklist-progress tool (Codex's update_plan). It
-// is the primary way a model reports plan progress; the [DONE:n] marker
-// convention remains as a fallback parser for models that emit markers
-// instead of calling the tool.
+// is plan mode's way of reporting research progress; goal, agent and code mode
+// use the Todo tool instead (todo.go), which shares this file's parser. The
+// [DONE:n] marker convention remains as a fallback parser for models that emit
+// markers instead of calling the tool.
 type UpdatePlan struct{}
 
+// PlanOnly keeps update_plan off the goal, agent and code surfaces: outside
+// plan mode the checklist is a Todo list and the model calls Todo.
+func (UpdatePlan) PlanOnly() bool { return true }
+
 // Definition describes the tool to the model. It deliberately documents the
-// divergence from Codex: belai accepts update_plan inside plan mode too,
-// because its plan pass loop already tracks a planning checklist.
+// divergence from Codex: belai offers update_plan in plan mode only, where its
+// plan pass loop tracks a planning checklist.
 func (UpdatePlan) Definition() Definition {
 	return Definition{
 		Name: "update_plan",
 		Description: "Report progress against the checklist of steps you are executing. " +
 			"Each step carries a status: pending, in_progress, or completed. Keep it " +
 			"current as you work — it tracks work, it does not replace it. " +
-			"(Divergence from Codex: this tool is also accepted in plan mode, where the " +
-			"checklist being tracked is the planning one. There it is optional and holds short research steps only: " +
+			"(Divergence from Codex: this tool is offered in plan mode only, where the " +
+			"checklist being tracked is the planning one. It is optional and holds short research steps only: " +
 			"the plan itself goes to ExitPlanMode, never into update_plan, and update_plan belongs in the same response as other calls.)",
 		Properties: map[string]Property{
 			"explanation": {Type: "string", Description: "Optional note about this update."},
@@ -49,7 +55,7 @@ func (UpdatePlan) Definition() Definition {
 // Kind returns the dedicated update_plan kind: read-only (it never mutates the
 // workspace) and sanitise-only (its result is a terse harness-composed
 // summary, not arbitrary content).
-func (UpdatePlan) Kind() Kind { return KindUpdatePlan }
+func (UpdatePlan) Kind() Kind { return KindTodo }
 
 // Subject has no permission subject.
 func (UpdatePlan) Subject(args map[string]any) string { return "" }
@@ -58,13 +64,19 @@ func (UpdatePlan) Subject(args map[string]any) string { return "" }
 func (UpdatePlan) Mutates() bool { return false }
 
 // Execute validates the checklist and returns a shaped, harness-composed
-// progress summary. The full checklist is carried in Meta so the agent loop
-// can adopt it into the shared todo list.
+// progress summary.
 func (UpdatePlan) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	list, err := ParsePlanArg(args)
 	if err != nil {
 		return Result{}, err
 	}
+	return checklistResult(list, "plan"), nil
+}
+
+// checklistResult is the harness-composed summary both checklist tools return.
+// The full list rides in Meta so the agent loop can adopt it into the shared
+// todo list.
+func checklistResult(list todos.List, noun string) Result {
 	done := 0
 	for _, it := range list.Items {
 		if it.Status == todos.StatusDone {
@@ -72,10 +84,10 @@ func (UpdatePlan) Execute(ctx context.Context, args map[string]any) (Result, err
 		}
 	}
 	return Result{
-		Kind:    KindUpdatePlan,
-		Content: fmt.Sprintf("plan updated: %d/%d", done, len(list.Items)),
+		Kind:    KindTodo,
+		Content: fmt.Sprintf("%s updated: %d/%d", noun, done, len(list.Items)),
 		Meta:    map[string]any{"todos": list},
-	}, nil
+	}
 }
 
 // planKeys are the argument names a model may use for the checklist itself.
@@ -86,7 +98,7 @@ var planKeys = []string{"plan", "steps", "todos", "items", "tasks", "checklist"}
 // stepKeys are the per-entry names a model may use for the step text. "step"
 // is the trained one; the others cost nothing to accept and are the difference
 // between a tracked checklist and a rejected call.
-var stepKeys = []string{"step", "description", "content", "text", "title", "task", "name", "item", "label", "summary"}
+var stepKeys = []string{"step", "content", "description", "text", "title", "task", "name", "item", "label", "summary", "explanation"}
 
 // statusKeys are the per-entry names a model may use for the step status.
 var statusKeys = []string{"status", "state", "progress"}
@@ -102,22 +114,61 @@ var statusKeys = []string{"status", "state", "progress"}
 // and the checklist is bookkeeping — the harness measures progress from files
 // on disk, never from this list.
 func ParsePlanArg(args map[string]any) (todos.List, error) {
+	return parseChecklist(args, "plan", "step")
+}
+
+// ParseTodoArg is ParsePlanArg for the Todo tool: the same accepted shapes,
+// worded for a todo list, so a rejected call names the fields Todo declares.
+func ParseTodoArg(args map[string]any) (todos.List, error) {
+	return parseChecklist(args, "todos", "content")
+}
+
+// parseChecklist reads the checklist under any accepted name. listName and
+// field are the names the calling tool declares, used only in the error.
+func parseChecklist(args map[string]any, listName, field string) (todos.List, error) {
 	raw, ok := planEntries(args)
 	if !ok {
-		return todos.List{}, fmt.Errorf("plan must be a non-empty array of steps, each with a step string and a status of pending, in_progress or completed")
+		return todos.List{}, fmt.Errorf("%s must be a non-empty array, each entry with a %s string and a status of pending, in_progress or completed", listName, field)
 	}
 	var items []todos.Item
 	for i, r := range raw {
 		step, status := planEntry(r)
 		if step == "" {
-			return todos.List{}, fmt.Errorf("plan[%d] has no step text: each entry needs a step string and a status of pending, in_progress or completed", i)
+			return todos.List{}, fmt.Errorf("%s[%d] has no %s text: each entry needs a %s string and a status of pending, in_progress or completed%s", listName, i, field, field, entryKeys(r))
 		}
 		items = append(items, todos.Item{N: len(items) + 1, Text: step, Status: status})
 	}
 	if len(items) == 0 {
-		return todos.List{}, fmt.Errorf("plan must be a non-empty array of steps")
+		return todos.List{}, fmt.Errorf("%s must be a non-empty array", listName)
 	}
 	return todos.List{Items: items}, nil
+}
+
+// entryKeys names the keys of a rejected entry so the model can see which
+// field it sent. Key names are the model's own text, so they are reduced to
+// identifier characters and capped before they ride in an error.
+func entryKeys(r any) string {
+	m, ok := r.(map[string]any)
+	if !ok || len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		clean := strings.Map(func(c rune) rune {
+			if c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+				return c
+			}
+			return -1
+		}, k)
+		if clean != "" {
+			keys = append(keys, clean)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) > 8 {
+		keys = keys[:8]
+	}
+	return " (keys seen: " + strings.Join(keys, ", ") + ")"
 }
 
 // planEntries finds the checklist array under any of the accepted argument
@@ -186,6 +237,7 @@ func mapStatus(s string) todos.Status {
 
 // Ensure UpdatePlan implements the expected interfaces.
 var (
-	_ Tool    = UpdatePlan{}
-	_ Mutator = UpdatePlan{}
+	_ Tool     = UpdatePlan{}
+	_ Mutator  = UpdatePlan{}
+	_ PlanOnly = UpdatePlan{}
 )

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/otel"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // run is one turn, wrapped in the belai.turn span and the turn-duration
@@ -61,14 +63,14 @@ func turnOutcome(ctx context.Context, err error) string {
 // recorded; its arguments and result never are.
 func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
 	if !otel.Enabled() {
-		return s.executeCallInner(ctx, call, emit, eff)
+		return s.executeCallRecovered(ctx, call, emit, eff)
 	}
 	kind := "unknown"
 	if t, ok := s.registry.Find(call.Name); ok {
 		kind = string(t.Kind())
 	}
 	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "belai.tool_call", otel.S(otel.AttrToolName, call.Name), otel.S(otel.AttrToolKind, kind))
-	out := s.executeCallInner(ctx, call, emit, eff)
+	out := s.executeCallRecovered(ctx, call, emit, eff)
 	outcome := toolOutcome(out)
 	span.Set(otel.S(otel.AttrOutcome, outcome))
 	if outcome != "ok" {
@@ -77,6 +79,18 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	span.End()
 	otel.Add("belai.tool_calls", 1, otel.S(otel.AttrToolKind, kind), otel.S(otel.AttrOutcome, outcome))
 	return out
+}
+
+// executeCallRecovered runs a call and turns a panic in a tool into an
+// execution error the model can read: one broken tool must not take the
+// process down, least of all from the goroutines of a concurrent read group.
+func (s *Session) executeCallRecovered(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = executionError(call.Name, fmt.Errorf("the tool failed unexpectedly (%s)", sanitize.Line(fmt.Sprint(r), 120)))
+		}
+	}()
+	return s.executeCallInner(ctx, call, emit, eff)
 }
 
 func toolOutcome(out string) string {

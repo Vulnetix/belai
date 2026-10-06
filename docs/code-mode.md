@@ -44,6 +44,10 @@ named agent profile never get the `Code` tool.
 The request carries the agent-mode surface with two differences:
 
 - `Code` is added, and it is a core tool, so its definition is always sent.
+- A script that throws, times out or exhausts its call budget answers as a rejected
+  call (`tool call rejected: the script failed: …`) carrying whatever it printed
+  first, so the model fixes the script and runs it again. The checklist tool is
+  `Todo`, as in agent mode, and a script cannot call it.
 - MCP tools are not advertised and cannot be called directly. A direct call is
   withheld with a message that names the script form.
 

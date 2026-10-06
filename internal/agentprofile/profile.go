@@ -136,6 +136,7 @@ var knownToolNames = map[string]bool{
 	"WebSearch":       true,
 	"Write":           true,
 	"update_plan":     true,
+	"Todo":            true,
 }
 
 // extraToolNames are tools a session adds beyond the default registry: the
