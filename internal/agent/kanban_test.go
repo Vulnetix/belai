@@ -185,7 +185,7 @@ func TestKanbanWrapUpFilesOpenWorkAfterAWorkTurn(t *testing.T) {
 			t.Fatalf("wrap-up directive lacks the %q triggers", cat)
 		}
 	}
-	if got := strings.Join(advertised(t, last), ","); got != "KanbanSearch,KanbanUpdate,KanbanAdd,KanbanMove" {
+	if got := strings.Join(advertised(t, last), ","); got != "Read,KanbanSearch,KanbanUpdate,ReadResult,KanbanAdd,KanbanMove" {
 		t.Fatalf("wrap-up surface = %s", got)
 	}
 }
@@ -204,7 +204,9 @@ func TestKanbanWrapUpSkipsAQuestionTurn(t *testing.T) {
 	}
 }
 
-func TestKanbanWrapUpRefusesOtherTools(t *testing.T) {
+// A model that stopped before its work was done can still do it in the
+// wrap-up: the turn's own tools run, they are not refused.
+func TestKanbanWrapUpAllowsOtherTools(t *testing.T) {
 	root, store, src := kanbanFixture(t)
 	ks := &kanbanScript{
 		loopTool: "Read", loopArgs: `{"path":"a.txt"}`, report: "done, but the tests were not run",
@@ -214,8 +216,8 @@ func TestKanbanWrapUpRefusesOtherTools(t *testing.T) {
 	defer srv.Close()
 	runObserved(t, kanbanSession(t, srv, store, src, root), "read a.txt")
 	got := ks.results[len(ks.results)-1]
-	if !strings.Contains(got, "unavailable while updating the kanban board") {
-		t.Fatalf("wrap-up Read result = %q", got)
+	if strings.Contains(got, "withheld") || !strings.Contains(got, "hello") {
+		t.Fatalf("wrap-up Read result = %q, want the file", got)
 	}
 }
 

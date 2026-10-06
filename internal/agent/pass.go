@@ -223,9 +223,6 @@ const planPassIterations = 12
 // passBudget is the tool-round budget of one pass in mode: the session's
 // iteration budget, capped at planPassIterations for a plan-mode pass.
 func (s *Session) passBudget(mode modes.Mode) int {
-	if s.passBudgetOverride > 0 {
-		return s.passBudgetOverride
-	}
 	if mode == modes.ModePlan && s.maxIter > planPassIterations {
 		return planPassIterations
 	}

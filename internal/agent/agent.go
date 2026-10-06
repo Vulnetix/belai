@@ -377,9 +377,8 @@ type Session struct {
 	sealed  string
 	// kanban is the board wiring (see kanban.go); never nil after NewSession.
 	// turnKanbanLoop latches the working loop's KanbanMove for an agent, goal
-	// or plan-execute turn; kanbanWrapUpPass narrows the surface to the
-	// wrap-up tools; passBudgetOverride, when positive, replaces the pass
-	// budget for that pass.
+	// or plan-execute turn; kanbanWrapUpPass adds the wrap-up's KanbanAdd and
+	// KanbanMove to the turn's own surface.
 	kanban         *kanbanState
 	turnKanbanLoop bool
 	// turnRemediation latches a remediation request for the turn (see
@@ -387,7 +386,6 @@ type Session struct {
 	turnRemediation    bool
 	remediationRefused int
 	kanbanWrapUpPass   bool
-	passBudgetOverride int
 	// lastTurns is the most recent pass's final turns, which the wrap-up
 	// continues from; turnToolRuns counts this turn's executed non-kanban
 	// tool calls, one of the harness facts that make a turn a work turn.
@@ -474,10 +472,6 @@ func (s *Session) toolDocs() prompt.ToolsOptions {
 func (s *Session) surfaceFull() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
 	if s.reportOnly {
 		return s.registry.Only(), nil, nil
-	}
-	if s.kanbanWrapUpPass && s.kanban.on {
-		w := s.kanban.wrapUp
-		return w.reg, w.openAI, w.anthropic
 	}
 	if s.planMode && s.planFinalPass {
 		return s.registry.PlanWith(s.planSurface).Only(planFinishTools...), s.finalPlanOpenAITools, s.finalPlanAnthropicTools
