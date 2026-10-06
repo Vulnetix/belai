@@ -588,7 +588,7 @@ by hand, backed up from this host, installed by an older Belai) reports the hash
 its render, which is the bytes a push stores. A crew needs no record: the library
 stores a crew in Belai's canonical JSON. The golden vectors in
 `internal/rc/golden_hash_test.go` pin the bytes and digests of a profile and a crew,
-and vdb-site's `TestBelaiGoldenLibraryHashes` (`belai_golden_hash_test.go`) holds the same literals.
+and vdb-site's TestBelaiGoldenLibraryHashes (`belai_golden_hash_test.go`) holds the same literals.
 
 A **`library_sync`** request carries nothing but its id. The daemon runs one pass of
 the automatic sync above at once, asking about every profile, crew and item whose
