@@ -123,8 +123,11 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   website request it answers) and refuses to start without both, with `-mode`
   (`agent`, `plan`, `goal` or `code`, otherwise classified from the prompt), `-idle`,
   `-provider`, `-model` and `-effort`, `-profile` (an agent profile, with `-mode
-  agent`), and `-git-sync on|off` (the daemon passes them only when the web
-  request named them) optional. `-controls` and
+  agent`), `-git-sync on|off` and `-add-dir DIR` (repeatable: an extra workspace
+  directory, as `/add-dir`; the daemon passes each only when the web request
+  named it, and only if the host offers it) optional. A session with extra
+  directories confines its tools to all of them and sends the model a repo map
+  of each. `-controls` and
   `-allow-guardrails-off` are the daemon's own `--web-controls` and
   `--web-allow-guardrails-off`, and `-shell` its `--web-shell`, passed on to
   every session it starts. Typing it yourself starts nothing the website knows about. The

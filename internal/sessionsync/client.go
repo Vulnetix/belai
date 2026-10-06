@@ -402,6 +402,9 @@ type Dispatch struct {
 	Mode      string `json:"mode"`
 	Prompt    string `json:"prompt"`
 	SessionID string `json:"sessionId"`
+	// Dirs are the extra workspace directories a "start" request adds beyond
+	// Cwd (/add-dir): each is one the host offers, checked again by the daemon.
+	Dirs []string `json:"dirs,omitempty"`
 	// Profile or Crew names what a "worker" or "crew" request starts.
 	Profile string `json:"profile,omitempty"`
 	Crew    string `json:"crew,omitempty"`
