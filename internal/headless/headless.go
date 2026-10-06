@@ -6,6 +6,7 @@ package headless
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -35,12 +36,16 @@ import (
 
 // Params configures one headless session.
 type Params struct {
-	Cfg      run.Config
-	Client   *http.Client
-	Posture  posture.Policy
-	Workdir  string
-	Settings config.Settings
-	PlanMode bool
+	Cfg     run.Config
+	Client  *http.Client
+	Posture posture.Policy
+	Workdir string
+	// WorkspaceDirs are additional directories added to the session (the
+	// /add-dir of the TUI): they become confinement roots, and each one's
+	// repo map is sent to the model alongside Workdir's.
+	WorkspaceDirs []string
+	Settings      config.Settings
+	PlanMode      bool
 	// SessionID is stamped on outbound calls and kanban writes.
 	SessionID string
 	// AllowAsk is true when someone can answer a permission ask (an ACP
@@ -109,6 +114,11 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.Workdir, false, caps, ix)
 	reg.CloudHub().SetFacts(p.Facts)
+	for _, d := range p.WorkspaceDirs {
+		if err := reg.Cwd().AddRoot(d); err != nil {
+			return nil, fmt.Errorf("add workspace directory %s: %w", d, err)
+		}
+	}
 	// A worker whose profile files handoffs under other repositories resolves
 	// the name against this index: the checkouts beneath its directory.
 	if p.Claim != nil && p.Claim.HandoffRepos {
@@ -137,6 +147,12 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 
 	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, p.Settings.Permissions.Deny).WithHarness(p.Deny, p.Permit)
 	repoMap := repomap.Scan(ctx, p.Workdir)
+	var workspaceMaps []repomap.Map
+	for _, d := range p.WorkspaceDirs {
+		if m := repomap.Scan(ctx, d); m.Head != "" {
+			workspaceMaps = append(workspaceMaps, m)
+		}
+	}
 
 	var promptOpts prompt.Options
 	if p.Settings.Caveman != nil && *p.Settings.Caveman {
@@ -189,6 +205,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		ModeDetector:  run.NewModeDetector(p.Cfg),
 		Jev:           run.NewJevJobs(p.Cfg, p.Settings.JevJobSet),
 		RepoMap:       &repoMap,
+		WorkspaceMaps: workspaceMaps,
 		// The same settings-backed fan-out ceiling the TUI uses; without it
 		// max_agents had no effect on the CLI.
 		AgentPool: agentpool.New(p.Settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),

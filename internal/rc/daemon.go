@@ -168,6 +168,9 @@ type WorkerStart struct {
 // Child is one session to start.
 type Child struct {
 	Exe, Cwd, Dispatch, SessionID, Mode, Prompt, LogPath string
+	// Dirs are the extra workspace directories (/add-dir), each already
+	// checked against the directories the host offers.
+	Dirs []string
 	// Provider, Model and Effort are the request's override; empty means the
 	// host's own default (or its routing table).
 	Provider, Model, Effort string
@@ -630,6 +633,10 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	default:
 		return "", "unknown mode " + fmt.Sprintf("%q", r.Mode)
 	}
+	dirs, ok := AllowedExtra(d.o.Dirs, cwd, r.Dirs)
+	if !ok {
+		return "", "this host does not offer one of those directories"
+	}
 	prompt := sessionsync.CleanPrompt(r.Prompt)
 	if prompt == "" {
 		return "", "the prompt was empty after cleaning"
@@ -653,7 +660,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		return "", "could not mint a session id"
 	}
 	c := Child{
-		Exe: d.o.Exe, Cwd: cwd, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
+		Exe: d.o.Exe, Cwd: cwd, Dirs: dirs, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
 		Provider: r.Provider, Model: r.Model, Effort: r.Effort, Profile: r.Profile, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
@@ -782,6 +789,9 @@ func childArgs(c Child) []string {
 	}
 	if c.Profile != "" {
 		args = append(args, "-profile", c.Profile)
+	}
+	for _, dir := range c.Dirs {
+		args = append(args, "-add-dir", dir)
 	}
 	if c.GitSync != nil {
 		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])

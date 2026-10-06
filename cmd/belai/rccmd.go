@@ -456,6 +456,8 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	controls := fs.Bool("controls", false, "take session controls from the web (belai rc --web-controls)")
 	allowGuardrailsOff := fs.Bool("allow-guardrails-off", false, "with -controls, a web session may turn guardrails off")
 	shell := fs.Bool("shell", false, "run shell lines from the web (belai rc --web-shell)")
+	var addDirs stringList
+	fs.Var(&addDirs, "add-dir", "an extra workspace directory for the session (repeatable; the daemon checked each is offered)")
 	profileFlag := fs.String("profile", "", "engage this agent profile for agent-mode turns (a web request's choice, with -mode agent)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -496,7 +498,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		return 1
 	}
 	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag, Profile: *profileFlag,
-		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell}
+		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell, Dirs: addDirs}
 	switch *gitSyncFlag {
 	case "":
 	case "on", "off":
@@ -528,7 +530,16 @@ type rcModelPick struct {
 	// Shell is the daemon's --web-shell: the session runs shell lines the
 	// website sends (internal/rc shell.go).
 	Shell bool
+	// Dirs are the extra workspace directories (/add-dir) beyond the working
+	// directory; each is trust-checked before the session starts.
+	Dirs []string
 }
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, ",") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mode, prompt string, idle time.Duration, pick rcModelPick, stderr io.Writer) error {
 	cwd, err := os.Getwd()
@@ -544,6 +555,18 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if !st.Trusted {
 		return fmt.Errorf("%s is not trusted on this host", cwd)
 	}
+	// Each extra directory is held to the same bar: the daemon checked it is
+	// offered, and it is checked again here, failing closed.
+	for _, d := range pick.Dirs {
+		dst, err := trustgate.Check(d)
+		if err != nil {
+			return fmt.Errorf("check trust for %s: %w", d, err)
+		}
+		if !dst.Trusted {
+			return fmt.Errorf("%s is not trusted on this host", d)
+		}
+	}
+	roots := append([]string{cwd}, pick.Dirs...)
 	// The resolved settings, the host's per-project preferences included (the
 	// project settings page edits those), as a TUI session reads them.
 	eff, err := config.Resolve(cwd, os.Getenv, config.Settings{})
@@ -612,7 +635,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		HTTPClient:   httpclient.Default(),
 		VulnetixAuth: func() (string, error) { return credentials.VulnetixAuthHeader(cwd) },
 		Sandbox: func() sandbox.Policy {
-			return sandbox.FromSettings(settings.Sandbox, []string{cwd}, pol)
+			return sandbox.FromSettings(settings.Sandbox, roots, pol)
 		},
 	})
 	mcp.SetActive(mcpMgr)
@@ -711,7 +734,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		// (AskDisabled is left alone: it would resolve every ask to allow.)
 		sess, err := headless.NewSession(ctx, headless.Params{
 			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
-			PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
+			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 			Narrow: rcProfileNarrow(pick.Profile),
 		})
@@ -765,10 +788,10 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		// Language servers run only when the web turned them on, in this
 		// directory the host trusts (internal/lsp scrubs their environment,
 		// gives them their own process group and refuses every applyEdit).
-		gate := rolemanager.DiagnosticsGateFromSettings(s, []string{cwd}, st.LSP && s.LSPEnabled())
+		gate := rolemanager.DiagnosticsGateFromSettings(s, roots, st.LSP && s.LSPEnabled())
 		askOff := !st.Ask
 		sess, err := headless.NewSession(ctx, headless.Params{
-			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, Settings: s,
+			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, WorkspaceDirs: pick.Dirs, Settings: s,
 			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 			Diagnostics: &gate, Narrow: rcProfileNarrow(pick.Profile),
