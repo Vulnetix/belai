@@ -32,7 +32,7 @@ Belai offers the model different kanban tools at different points in a turn:
 |---|---|
 | Every call of a main session, plan mode included | `KanbanSearch`, `KanbanUpdate` |
 | While an agent, goal or plan-execute loop works | plus `KanbanMove` (to `in_progress`, `blocked` or `done`) |
-| After the report of a work turn (the wrap-up) | only `KanbanSearch`, `KanbanUpdate`, `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
+| After the report of a work turn (the wrap-up) | the turn's own tools, plus `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
 | Explore, Task and fan-out subagents | `KanbanSearch` only |
 | A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and its handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
 | A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
@@ -80,8 +80,9 @@ as the note, done once it is verified.
 
 ### The wrap-up
 
-A work turn gets one short wrap-up pass (at most four tool rounds) after its
-report. A work turn is one of: goal mode, running an approved plan, a
+A work turn gets one wrap-up pass after its report. Nothing is withheld from
+it: if the model stopped before the work was done, it can finish it with the
+turn's own tools (an edit it described but never made, a command it never ran). A work turn is one of: goal mode, running an approved plan, a
 `/vulnetix review`, or an agent turn that ran a tool. Plain question-and-answer
 turns, plan mode, subagents, cancelled turns and failed turns skip it.
 
