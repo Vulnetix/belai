@@ -2,6 +2,7 @@ package skills
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,6 +25,9 @@ type Entry struct {
 	// Source is "user" for the global skills directory, BuiltinSource for a skill
 	// that ships with Belai, else the plugin name.
 	Source string
+	// Embedded is true for a skill compiled into Belai, whose text is read from
+	// the binary and not from Path.
+	Embedded bool
 }
 
 // Root is a directory of <name>/SKILL.md skills. Namespace is empty for the
@@ -49,7 +53,7 @@ func Discover(roots []Root, pol posture.Policy) []Entry {
 				continue
 			}
 			path := filepath.Join(r.Dir, d.Name(), "SKILL.md")
-			data, err := os.ReadFile(path)
+			data, err := readSkillFile(path)
 			if err != nil {
 				continue
 			}
@@ -89,14 +93,14 @@ func Find(entries []Entry, name string) (Entry, bool) {
 // validated again: an invalid file yields an error, never a body.
 func ReadBody(e Entry) (string, error) {
 	var doc string
-	if e.Source == BuiltinSource {
+	if e.Embedded {
 		d, err := BuiltinDoc(e.Name)
 		if err != nil {
 			return "", err
 		}
 		doc = d
 	} else {
-		data, err := os.ReadFile(e.Path)
+		data, err := readSkillFile(e.Path)
 		if err != nil {
 			return "", err
 		}
@@ -138,10 +142,35 @@ func Compose(name, description, body string) (string, error) {
 		return "", fmt.Errorf("skill body is required")
 	}
 	doc := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n" + body + "\n"
-	if _, err := ValidateSkill(doc); err != nil {
+	m, err := ValidateSkill(doc)
+	if err != nil {
 		return "", err
 	}
+	// What is written must load as what the user approved.
+	if m.Description != description || m.Name != name {
+		return "", fmt.Errorf("the description does not read back as written (a # or other YAML syntax changed it); reword it")
+	}
 	return doc, nil
+}
+
+// maxSkillFile bounds a SKILL.md the loader reads: it is read every turn, and a
+// skill is a page of instructions, so a file far past the library's 32 KiB is not one.
+const maxSkillFile = 1 << 20
+
+func readSkillFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxSkillFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxSkillFile {
+		return nil, fmt.Errorf("%s is over %d bytes", filepath.Base(path), maxSkillFile)
+	}
+	return data, nil
 }
 
 // Invalidate drops the LoadDir cache, so a skill written this process shows

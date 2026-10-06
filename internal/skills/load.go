@@ -56,7 +56,7 @@ func loadDir(dir string, pol posture.Policy) ([]Manifest, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name(), "SKILL.md")
-		data, err := os.ReadFile(path)
+		data, err := readSkillFile(path)
 		if err != nil {
 			continue
 		}

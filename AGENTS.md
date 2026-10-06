@@ -568,11 +568,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   nobody can be asked, and writes exactly the previewed file. The project
   layer may turn `skills.self_authoring` off, never on. Belai's own skills
   (`internal/skills/builtin`, one per builtin worker, the `belai-` prefix reserved
-  so the library, `SkillDraft` and a profile cannot create one) are compiled into
+  so the library, `SkillDraft` and a profile cannot create one; a file placed by hand in the skills directory loads as the user's own skill and never shadows a builtin) are compiled into
   the binary and are reachable only through a profile's `skills` list
   (`Registry.WithSkills`): an ordinary session neither lists nor loads one, and
   the `Skill` tool refuses any name outside the list. Their text is `KindSkill`
   and is classified like any skill; do not add an exemption because Belai wrote it.
+  The loader reads a skill's text as written (a plain value keeps its `#`), reads a skill file up to 1 MiB, refuses a second YAML document, and refuses a name, description or other text field that holds a control, bidirectional, invisible or delimiter character, since those reach the system block.
   A skill's `metadata` is a string map; only the `belai.*` keys are Belai's and
   they are validated (`https` links, no fragment, no credentials). The profile's
   own `metadata` is for people and tools: it is never rendered into a prompt, a

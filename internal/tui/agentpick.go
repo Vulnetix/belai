@@ -317,6 +317,14 @@ func (a *App) engagedAgentTools() []string {
 	return a.namedAgentTools
 }
 
+// engagedAgentSkills is the engaged definition's skills list, or nil outside agent mode.
+func (a *App) engagedAgentSkills() []string {
+	if a.mode != "agent" {
+		return nil
+	}
+	return a.namedAgentSkills
+}
+
 // agentSelection returns the highlighted candidate, if there is one.
 func (a *App) agentSelection() (agentChoice, bool) {
 	cands := a.agentCandidates()

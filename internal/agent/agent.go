@@ -1423,7 +1423,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		var all []tools.Candidate
 		for _, e := range tools.SkillEntries(s.registry) {
 			if !e.DisableModelInvocation {
-				all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Sanitize(e.Description), Skill: true})
+				all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Line(e.Description, 1024), Skill: true})
 			}
 		}
 		s.skillCands = all

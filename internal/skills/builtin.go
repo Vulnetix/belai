@@ -45,7 +45,7 @@ func Builtin() []Entry {
 		if err != nil || m.Name != d.Name() {
 			continue
 		}
-		out = append(out, Entry{Manifest: *m, Name: m.Name, Path: path, Source: BuiltinSource})
+		out = append(out, Entry{Manifest: *m, Name: m.Name, Path: path, Source: BuiltinSource, Embedded: true})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
