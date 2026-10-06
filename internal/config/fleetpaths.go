@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -50,4 +52,82 @@ func WorktreesDir() (string, error) {
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// KnowledgeDir returns <GlobalDir>/knowledge, where the retrieval indexes of
+// agent profiles and projects are kept (docs/knowledge.md). It holds document
+// text, so like the rest of the state directory the OS sandbox hides it from
+// every command.
+func KnowledgeDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "knowledge"), nil
+}
+
+// ProfileKnowledgeDir is the directory of one agent profile's index, keyed by
+// the profile's id (a lowercase UUID) because a profile can be renamed.
+func ProfileKnowledgeDir(profileID string) (string, error) {
+	if !validKnowledgeID(profileID) {
+		return "", fmt.Errorf("%q is not a profile id", profileID)
+	}
+	dir, err := KnowledgeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "profiles", profileID), nil
+}
+
+// ProfileFilesDir is the directory that holds the files one agent profile
+// carries, keyed by the profile's id: what a library install wrote for the
+// documents and synced files the profile names (docs/knowledge.md, "A profile's
+// own files"). The daemon owns it; nothing in a repository points here. Like the
+// rest of the state directory the OS sandbox hides it from every command.
+func ProfileFilesDir(profileID string) (string, error) {
+	if !validKnowledgeID(profileID) {
+		return "", fmt.Errorf("%q is not a profile id", profileID)
+	}
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "profiles", "files", profileID), nil
+}
+
+// ProjectKnowledgeDir is the directory of one project's index, keyed by the
+// SHA-256 of the project's cleaned absolute root so the path names no
+// directory. root is the trusted repository root, never a worktree.
+func ProjectKnowledgeDir(root string) (string, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(abs)))
+	dir, err := KnowledgeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "projects", hex.EncodeToString(sum[:])), nil
+}
+
+func validKnowledgeID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i, r := range id {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if r != '-' {
+				return false
+			}
+		case (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f'):
+		default:
+			return false
+		}
+	}
+	return true
 }

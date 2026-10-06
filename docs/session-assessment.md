@@ -45,7 +45,7 @@ row.
   - The contract draft runs alongside exploration and never holds the first pass back. A draft still running when the goal starts is adopted as a sealed directive at the next pass boundary; the draft itself is capped at 2 minutes. A failed draft falls back to the raw prompt.
   - The drafter may only use the detected commands. A deterministic post-check removes lines that name an undetected build runner.
   - The repo map now carries justfile recipe names, changed paths (refreshed every turn) and remotes with credentials removed. The `remotes()` field-index bug is fixed.
-  - Up to `min(max_agents, 16)` read-only tool calls run in parallel.
+  - Up to `max_agents` read-only tool calls run in parallel, held between 4 and 16 (`toolConcurrency`).
   - Agent continuations compact the context, and push toward an edit when the turn has written nothing.
 - **Classifier.** Windows are sliced by rune offset and lower-cased the same way cybertron does. The classifier identity includes a windowing version, so verdicts computed on misaligned windows are evaluated again instead of being trusted. Content is still always classified.
 - **Guidance.** A withheld result now says it is a safety verdict and should not be retried. The work-discipline prompt tells the model the repo map already lists the commands and changed files, and not to re-read files. The `belai:debug` profile no longer describes which tools are available.

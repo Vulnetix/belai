@@ -156,11 +156,18 @@ func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive b
 		return ""
 	}
 	*streak++
-	if *streak%readStreakNudgeAfter != 0 {
+	every := readStreakNudgeAfter
+	if s.turnRemediation {
+		every = remediationNudgeAfter
+	}
+	if *streak%every != 0 {
 		return ""
 	}
 	if s.planMode || s.turnReadOnly || s.exploreSubagent || s.reportOnly || s.kanbanWrapUpPass {
 		return ""
+	}
+	if s.turnRemediation && mode != modes.ModePlan {
+		return remediationNudge
 	}
 	switch mode {
 	case modes.ModeGoal:
@@ -216,9 +223,6 @@ const planPassIterations = 12
 // passBudget is the tool-round budget of one pass in mode: the session's
 // iteration budget, capped at planPassIterations for a plan-mode pass.
 func (s *Session) passBudget(mode modes.Mode) int {
-	if s.passBudgetOverride > 0 {
-		return s.passBudgetOverride
-	}
 	if mode == modes.ModePlan && s.maxIter > planPassIterations {
 		return planPassIterations
 	}
@@ -241,6 +245,9 @@ type callUnit struct {
 	// swap is set when the harness runs a builtin tool in place of this Bash
 	// call; tool, args and decision then describe the builtin.
 	swap *bashSwap
+	// rewriteNote is the harness note that tells the model its Bash command
+	// was changed by the user's bash_rewrite rules; args holds what ran.
+	rewriteNote string
 }
 
 // execCall is the call that actually runs: the model's call, or the builtin
@@ -269,9 +276,9 @@ func (u callUnit) ranAs() string { return u.execCall().Name }
 // when the harness ran another tool.
 func (u callUnit) turnContent(result string) string {
 	if u.swap == nil {
-		return result
+		return u.rewriteNote + result
 	}
-	return u.swap.note() + result
+	return u.rewriteNote + u.swap.note() + result
 }
 
 // execCtx marks the context of a swapped call so its result is classified as
@@ -338,6 +345,12 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 
 		if len(assistant.ToolCalls) == 0 {
+			if s.refuseRemediationFinish(acc.mutations, mode) {
+				// The reply is kept; the model is asked once more for the edit.
+				turns = append(turns, run.Turn{Role: "assistant", Content: assistant.Text})
+				turns = append(turns, directiveTurns(remediationFinishGuard)...)
+				continue
+			}
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive}), turns, nil
 		}
 
@@ -388,6 +401,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			if parseErr == nil {
 				if tool, ok := s.findCallable(call.Name); ok {
 					u.tool = tool
+					if call.Name == "Bash" {
+						u.args, u.rewriteNote = s.rewriteBashArgs(args)
+						args = u.args
+					}
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
 					if call.Name == "Bash" {
 						// A builtin tool that fully replaces the command runs

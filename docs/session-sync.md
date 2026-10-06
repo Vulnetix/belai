@@ -3,8 +3,10 @@
 While Belai is logged in with the Vulnetix CLI, each session is mirrored to
 the Vulnetix website. Two console pages show it:
 
-- **Belai → History** (`/resolve/belai-history`) lists every synced session
-  that is no longer attached to a running host.
+- **Belai → History** (`/resolve/belai-history`) has three tabs. Sessions lists
+  every synced session that is no longer attached to a running host. Hosts and
+  Agents show the [audit log](audit.md), a separate facts-only record of what
+  hosts and agents did that travels with sync but is not the session mirror.
 - **Belai → Sessions** (`/resolve/belai-sessions`) lists the sessions running
   now. Opening one follows it live and accepts prompts, which run on the host
   exactly as if they had been typed there. When the host stops to ask
@@ -42,6 +44,30 @@ the Vulnetix website. Two console pages show it:
   turn*, *running*, *refused* or *expired*.
 - **The website renders only committed lines, in `seq` order.** A line that
   arrives past a gap triggers a refetch of the gap, not an out-of-order render.
+- **A session names the agent it ran under.** The registration carries
+  `activeProfile` (`belai:patcher`), read from the latest `session_meta` line
+  that names one. A switch with ctrl+p appends a new `session_meta` line, so the
+  syncer sees it and registers the session again, and the website shows the
+  session by that agent's display name and colours. Rules and edge cases:
+  - The latest line that names a profile wins (`session.LatestMeta` merges the
+    same way), so ctrl+p from `belai:patcher` to `belai:verifier` moves the
+    session to the second agent.
+  - A line that names no profile leaves it alone. `activeProfile` is
+    `omitempty`, so clearing the agent never reaches the transcript and does not
+    unset it on the website; the last agent that ran stays.
+  - The server keeps the stored value when a registration carries none (a host
+    that predates the field, or a session that never engaged an agent), caps it
+    at 128 bytes, and matches it in History search (`patcher` finds
+    `belai:patcher`).
+  - A worker session's first `session_meta` line carries the worker's profile
+    and its name is `<profile> · <card> <title>`. For a session registered before
+    the host reported `activeProfile`, the website reads the profile from that
+    name prefix, and `saas` backfills the column from the synced `session_meta`
+    lines.
+  - The profile is a name, not a presentation. The website resolves the display
+    name and colours itself (the built-in agents from a table that mirrors
+    `internal/agentprofile/builtin`, a custom agent from the host's catalogue), so
+    a profile with no persona is shown by its name in the console colours.
 - **A web answer is a request too.** It resolves an ask only when the host
   applies it and writes the `ask_answer` line (see [Web answers](#web-answers)).
 
@@ -54,18 +80,22 @@ website never disagree.
 
 | Type | Written when | Carries |
 | --- | --- | --- |
+| `session_name` | The model names the session, or a continued session inherits its parent's name (`meta.source` is `model` or `inherited`) | The name in `content`. The syncer reads it into the registration, so it is the title the website shows; the latest non-empty name wins, and an empty one never clears it |
+| `session_meta` | A session starts, and whenever the mode, a plan or goal, or the engaged agent changes | `cwd`, `mode`, `resumedFrom` and `activeProfile`, each into the registration. Lines merge: a field a line omits keeps its last value (`session.LatestMeta`). A teleported session's first line also holds `teleportedFrom`, the origin id; it stays in the file, and the website reads the origin from the teleport record instead |
 | `turn_state` | A turn starts, and after its last rows are written | `turn_id`, `state` (`started`, `ended`, `error`, `interrupted`), `started_at`, `duration_ms` |
 | `tool_start` | A main-thread tool call starts | `tool_call_id`, `tool_name`, `tool_args`, `started_at` |
 | `tool` (`meta.diff`) | A tool that changed files returns | The rendered diff rows per file (`filediff.Change.Wire`), capped at 256 KiB. Every path keeps its header past the cap |
 | `ask` | The host stops to ask | Entry id = ask id. `kind`: `permission` (tool, subject, args, the `rule` allow-always would add, the diff), `clarify` / `mode_choice` (the questionnaire), `plan_review` (the plan text, up to 64 KiB) |
 | `ask_answer` | The ask is resolved, closed with its turn, or cancelled | Entry id = `answer-` + ask id. `source` (`host` or `web`), then `decision`, `answers`, or `plan_choice` and `notes` |
 | `rolemanager` | Every role-manager or classifier decision | The existing summary and outcome, plus `verdict`, `verdict_label`, `subject` and `pass`. Decisions the live feed does not show (mode selection, goal and plan evaluation) carry `hidden: true` |
+| `vuln` | A turn ends having shown an advisory identifier, once per identifier per session (at most 3 a turn, 40 a session) | The canonical identifier in `content`; `meta` holds `vuln_id`, `url` (the console page), `command` (the `vulnetix vdb vuln` lookup) and `prompt` (the prepared remediation prompt), each composed from the identifier by the harness ([vulnerability row](vuln-row.md)). The website draws the row from it, and a remediate button sends `prompt` as an ordinary web prompt |
+| `intel_state` | A model call moves a plan limit by a percent, or changes the pace, trend or runway word; at most once a minute | `provider`, `at`, `limits[{provider, window, used, resetsAt, observedAt}]`, `pace`, `trend`, `runway`, `roles[{role, tokens}]` (up to 8). Numbers, window names and the harness's own words only, never provider text. The website draws its limit bars and runway from the latest one |
 
 A decision's `Detail` is never written: only the verdict token and the
 harness's own structure reach the record, as with the live feed.
 
 Resume restores diffs, rebuilds the ask and answer notices, and skips
-`tool_start`, `turn_state` and hidden decisions. None of these records reach
+`tool_start`, `turn_state`, `intel_state`, `vuln` and hidden decisions. None of these records reach
 a model: the conversation is still rebuilt from paired calls and results.
 
 ## What it sends, and where
@@ -76,6 +106,17 @@ a model: the conversation is still rebuilt from paired calls and results.
   - The host's name, reduced to identifier characters.
   - Its OS and the Belai version.
   - A random host id kept in `~/.vulnetix/belai/sync/host-id`.
+- **Repository state:** for a session in a git repository, the branch, whether it
+  is a linked worktree, the short HEAD and its subject, `owner/repo`, how far
+  the branch is from its upstream and from origin's default branch, whether
+  tracked files are dirty, the pull or merge request for the branch with its
+  checks (through `gh` or `glab`), and the git sync switch with its last result
+  (see [Git sync](git-sync.md)). It is read every 30 seconds and after each
+  turn, and travels with the session's registration. No file contents.
+  - The website can send one control back, the git sync switch, with the
+    registration and heartbeat responses. It reaches only a live session that
+    takes web prompts, and the host applies it and confirms it in its next
+    repository state.
 - **Destination:** requests go to `https://www.vulnetix.com/api/site/v1/belai/*`.
   - `$VULNETIX_WEB_URL` overrides the origin.
   - The credential is only sent to `https://*.vulnetix.com` or a loopback
@@ -106,10 +147,14 @@ Beyond that:
 - **Queued while busy.** It waits (FIFO) while a turn is running or being
   prepared, or while you are on a screen other than the transcript. It is
   acked *queued* until then.
-- **Refused when it cannot run.** Two cases:
-  - The session is no longer the active one on the host.
-  - The host is in agent mode with no agent chosen: the agent picker is the
-    host user's to answer.
+- **Refused when it cannot run.** The session is no longer the active one on
+  the host.
+- **No agent chosen means Auto.** A prompt that arrives while the host is in
+  agent mode with no agent selected moves the live session to Auto, so the role
+  manager decides the mode and the agent profile for it (the `agent_pick` job in
+  [Jev jobs](jev-jobs.md#agent-pick)). The agent picker is the host user's to
+  answer, and the website never names an agent. The switch is for the session
+  only and saves no preference.
 - **Asks are answered through their own path.** A web prompt never answers an
   ask; a web answer does (below).
 - **Refusals show in the transcript.** If admission refuses the prompt, the
@@ -155,6 +200,15 @@ A web answer is untrusted input:
 Delivery mirrors web prompts: the answer is stored, the inbox hands it to the
 host (answers before prompts), the host acks it *accepted* once the
 `ask_answer` line is uploaded, or *refused* with a reason.
+
+A remote session started by `belai rc --web-controls` answers asks the same
+way while its ask control is on, and takes **session controls** on the inbox
+too (`commands`, after answers and before prompts): a slash line or a key the
+host parses with `internal/sessionctl`. The host acks each one *accepted* with
+the session's new controls, or *refused* with a reason, and re-registers the
+session with `controls` and `controlState` so the page's control strip stays
+current. A host that does not take controls refuses every command. See
+[remote-control.md](remote-control.md#session-controls-from-the-web).
 
 ## Web agent drafts
 
@@ -243,7 +297,7 @@ and the inbox run on the syncer's own goroutines.
 ## Settings
 
 ```json
-{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true } }
+{ "sync": { "enabled": true, "remote_prompts": true, "remote_answers": true, "profiles": true, "skills": true, "prompts": true, "processes": true, "repos": true, "budgets": true, "rewrites": true, "providers": true } }
 ```
 
 - **`sync.enabled`** — mirror sessions. Default on whenever a Vulnetix CLI
@@ -252,6 +306,23 @@ and the inbox run on the syncer's own goroutines.
   sessions view-only.
 - **`sync.remote_answers`** — accept web answers to open asks, including
   allow-always. Default on; `false` keeps every ask on the host.
+- **`sync.profiles`** — let `belai rc` keep the website's agent and crew
+  library current by itself: it pushes the profiles and crews that changed on
+  this host, the markdown and JSON only, never over a version the website saved
+  since this host last synced it (see
+  [Automatic sync](remote-control.md#automatic-sync-of-profiles-and-crews)).
+  Default on; `false` leaves backups to requests from the website. File
+  contents never travel this way.
+- **`sync.skills`**, **`sync.prompts`**, **`sync.processes`**, **`sync.repos`**, **`sync.budgets`**, **`sync.rewrites`**, **`sync.providers`** - the same switch for one kind of
+  [library item](library-items.md): keep that library current by itself,
+  advertise the host's items of the kind (name and hash only) and take the
+  website's backup and install requests for it. Default on; `false` removes the
+  kind from all three. Only the global prompt and process libraries and the user's own
+  `repos`, `token_budgets`, `bash_rewrite`, `providers` and `firewall`
+  settings are ever synced, never a project one. `sync.providers` also gates the
+  website's provider key requests (the keys go to the credentials resolver only; see
+  [library-items.md](library-items.md#provider-keys)). `sync.processes` is the switch that keeps the website out of
+  what runs on the host.
 - **Project layer:** a project settings file may turn any of these off, never
   on.
   The guardrails switch does not change sync; it is a data-egress setting,
@@ -277,8 +348,20 @@ and the inbox run on the syncer's own goroutines.
 - **Liveness.** The host sends a heartbeat every 15 s. A session is live while
   its last heartbeat is under 45 s old, so a host that crashes drops into
   History on its own.
+- **A teleported session syncs like a resumed one.** `belai -teleport` writes the
+  new file before the TUI starts, so the syncer registers it under its new id and
+  uploads every line from the server's high-water mark (none yet), the way a
+  resumed file is. The origin session is not touched and keeps syncing.
 - **Moving to History.** Quitting the TUI, `/clear`, a resume of another
   session and `/sync off` all end the session, which moves it to History.
+- **A session that ends at once is still kept.** Closing the syncer takes the
+  activation that was queued ahead of it, registers the session if it is not yet,
+  uploads every line and ends it, in that order. A fast fleet-worker turn that
+  starts and quits inside one tick therefore reaches History with all of its
+  lines, not nothing (`TestCloseFlushesASessionActivatedJustBefore`). Closing
+  waits at most the timeout it is given and then gives up, so a quit is never held
+  by a host that is unreachable. An empty session file is registered, as the TUI's
+  own is before its first line.
 - **Compaction.** It starts a new session whose parent is the summarised one;
   the website links the two.
 - **Headless and ACP.** `belai -prompt` and each ACP session keep a private
@@ -307,7 +390,10 @@ and the inbox run on the syncer's own goroutines.
     `answer-<ask id>` line, so the Hosts page can show who is waiting on
     the user), detail, paged entries, an SSE
     stream, prompt create/cancel, answer create/cancel, and agent-draft
-    create/read/cancel (`belai_drafts.go`).
+    create/read/cancel (`belai_drafts.go`). The session detail also returns
+    `teleportedFrom` (the origin session, its host and when it finished) and
+    `teleports` (the copies this session started), both read from the teleport
+    record.
   - Wake-ups: `belai_notify.go` listens on `belai_s` (session) and `belai_h`
     (host).
   - **Timeline** (`belai_timeline.go`, `GET /v1/belai/sessions/{id}/timeline`):
@@ -326,6 +412,19 @@ and the inbox run on the syncer's own goroutines.
     API accepts it only for a worker the host reported as live, the host
     checks the id again against its own registry, and a `paused` worker still
     counts as live (it keeps its `agents.max_workers` slot).
+  - **Teleport** (`belai_teleport.go`, `POST /v1/belai/hosts/{id}/teleports`
+    and the routes under it): the target host asks to continue a session. The
+    transcript is already mirrored, so the origin host takes part only when the
+    session ran under a non-built-in agent profile: a `teleport_backup` request,
+    which only the backend makes, has it back the profile, its crews and their
+    members up to the library. The target reads the transcript (frozen at the
+    session's last line), profiles and crews through routes that answer only
+    for a ready teleport naming that host, then acknowledges with the new
+    session id. The row holds ids, a status and times for audit and outlives the
+    sessions and hosts it names. Its git facts, manifest and overrides are
+    cleared when it completes, fails or expires. A sandbox's activity tab reads
+    its teleports from `GET /v1/belai/sandboxes/{id}/teleports`. See
+    [teleport.md](teleport.md).
   - **Assignees** (`belai_assignees.go`, `POST /v1/belai/assignees`): turns an
     email into `person:<member id>` for an organization member, or
     `person:invite-<id>` for an address that is not yet a member, through the
@@ -336,9 +435,22 @@ and the inbox run on the syncer's own goroutines.
   `20260928000001_add_belai_remote_answers`, which adds `BelaiRemoteAnswer`,
   `BelaiSession.remoteAnswers` and the notify triggers, and
   `20261001000001_add_belai_agent_drafts`, which adds `BelaiAgentDraft` and
-  its trigger).
+  its trigger, and `20261017000001_add_belai_teleport`, which adds
+  `BelaiTeleport`).
 - **Website pages:** `src/pages/resolve/belai-*.vue`, in the sidebar's
   **Belai** group.
+
+## Scheduled agents
+
+A host's stored schedules ([remote-control.md](remote-control.md#scheduled-agents))
+sync through the same client the way the board does, under
+`/v1/belai/hosts/{id}/schedules`, and only while `belai rc` runs. The host
+pulls changes after a version cursor and pushes in batches of up to 100. The
+definition is last-writer-wins on its update time; the run record (last run,
+status, next run) is written only by the host, and a pulled schedule never
+replaces it. After a run the status is `started`, then `worked`, `drained` or
+`worker_failed` once the worker stops. A text field from the website is cleaned
+before it is stored.
 
 ## The kanban board
 
@@ -350,6 +462,9 @@ only while session sync can run.
 - **Pulling.** The TUI pulls the website's changes every 15 seconds.
 - **Headless and ACP.** Unlike transcripts, their kanban writes are pushed
   once as the run or connection ends.
+- **Web sessions.** `belai rc-session` pulls once before its first turn and then
+  every 15 seconds, the way the TUI does, and pushes once more as it ends. See
+  [kanban.md](kanban.md).
 
 Server side:
 

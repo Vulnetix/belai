@@ -2,14 +2,18 @@ package skills
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/posture"
 )
+
+// MaxDescriptionBytes is the longest description a skill Compose writes, the
+// specification's limit.
+const MaxDescriptionBytes = 1024
 
 // Entry is one discovered skill: its validated manifest and where its
 // SKILL.md lives. Name is the name the model and the user use; a skill from
@@ -18,8 +22,12 @@ type Entry struct {
 	Manifest
 	Name string
 	Path string
-	// Source is "user" for the global skills directory, else the plugin name.
+	// Source is "user" for the global skills directory, BuiltinSource for a skill
+	// that ships with Belai, else the plugin name.
 	Source string
+	// Embedded is true for a skill compiled into Belai, whose text is read from
+	// the binary and not from Path.
+	Embedded bool
 }
 
 // Root is a directory of <name>/SKILL.md skills. Namespace is empty for the
@@ -45,7 +53,7 @@ func Discover(roots []Root, pol posture.Policy) []Entry {
 				continue
 			}
 			path := filepath.Join(r.Dir, d.Name(), "SKILL.md")
-			data, err := os.ReadFile(path)
+			data, err := readSkillFile(path)
 			if err != nil {
 				continue
 			}
@@ -84,48 +92,85 @@ func Find(entries []Entry, name string) (Entry, bool) {
 // the front matter. The file may have changed since discovery, so it is
 // validated again: an invalid file yields an error, never a body.
 func ReadBody(e Entry) (string, error) {
-	data, err := os.ReadFile(e.Path)
-	if err != nil {
-		return "", err
+	var doc string
+	if e.Embedded {
+		d, err := BuiltinDoc(e.Name)
+		if err != nil {
+			return "", err
+		}
+		doc = d
+	} else {
+		data, err := readSkillFile(e.Path)
+		if err != nil {
+			return "", err
+		}
+		doc = string(data)
 	}
-	doc := string(data)
 	if _, err := ValidateSkill(doc); err != nil {
 		return "", fmt.Errorf("skill %q no longer validates: %w", e.Name, err)
 	}
-	rest := doc[len("---\n"):]
-	idx := strings.Index(rest, "\n---")
-	body := rest[idx+len("\n---"):]
-	return strings.TrimLeft(body, "-\r\n"), nil
+	_, body, err := Split(doc)
+	if err != nil {
+		return "", err
+	}
+	return body, nil
 }
 
-var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-
 // ValidName reports whether name is usable as a new skill's name and
-// directory: lowercase letters, digits and hyphens, at most 64.
-func ValidName(name string) bool { return nameRE.MatchString(name) }
+// directory: lowercase letters, digits and single hyphens, not starting or
+// ending with one, at most 64 (the specification's rule).
+func ValidName(name string) bool { return ValidSpecName(name) }
 
 // Compose builds a SKILL.md document from its parts and validates it. The
 // description is flattened to one line so it cannot add front-matter keys.
 func Compose(name, description, body string) (string, error) {
+	if ReservedName(name) {
+		return "", fmt.Errorf("skill names starting with %q are reserved for Belai's own skills", BuiltinPrefix)
+	}
 	if !ValidName(name) {
-		return "", fmt.Errorf("skill name %q must be lowercase letters, digits and hyphens (at most 64)", name)
+		return "", fmt.Errorf("skill name %q must be lowercase letters, digits and single hyphens, not starting or ending with one (at most 64)", name)
 	}
 	description = strings.Join(strings.Fields(description), " ")
 	if description == "" {
 		return "", fmt.Errorf("skill description is required")
 	}
-	if len(description) > 300 {
-		return "", fmt.Errorf("skill description is longer than 300 bytes")
+	if len(description) > MaxDescriptionBytes {
+		return "", fmt.Errorf("skill description is longer than %d bytes", MaxDescriptionBytes)
 	}
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return "", fmt.Errorf("skill body is required")
 	}
 	doc := "---\nname: " + name + "\ndescription: " + description + "\n---\n\n" + body + "\n"
-	if _, err := ValidateSkill(doc); err != nil {
+	m, err := ValidateSkill(doc)
+	if err != nil {
 		return "", err
 	}
+	// What is written must load as what the user approved.
+	if m.Description != description || m.Name != name {
+		return "", fmt.Errorf("the description does not read back as written (a # or other YAML syntax changed it); reword it")
+	}
 	return doc, nil
+}
+
+// maxSkillFile bounds a SKILL.md the loader reads: it is read every turn, and a
+// skill is a page of instructions, so a file far past the library's 32 KiB is not one.
+const maxSkillFile = 1 << 20
+
+func readSkillFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxSkillFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxSkillFile {
+		return nil, fmt.Errorf("%s is over %d bytes", filepath.Base(path), maxSkillFile)
+	}
+	return data, nil
 }
 
 // Invalidate drops the LoadDir cache, so a skill written this process shows

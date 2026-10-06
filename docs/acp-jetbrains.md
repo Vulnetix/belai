@@ -63,6 +63,6 @@ session, and reject. "Allow for this session" covers that tool name only and
 ends with the session. Every classifier, permission rule, sandbox and budget
 applies as in a headless run; see [Security model](acp.md#security-model).
 
-Sessions are alpha: they are not in the Belai session store, clarifying
-questions are answered as declined, and images and audio are not accepted. See
+Sessions are alpha: an editor cannot load an earlier one back, clarifying
+questions are answered as declined, and audio is not accepted (images are). See
 [Limitations](acp.md#limitations).

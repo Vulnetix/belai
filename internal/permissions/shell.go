@@ -29,7 +29,8 @@ func isShell(tool string) bool { return strings.EqualFold(tool, bashTool) }
 func (s Settings) explainShell(tool, raw string) (Decision, string) {
 	an := shellsafe.Analyze(raw)
 	deny := append([]string{raw}, an.DenySubjects()...)
-	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
+	// A Permit rule never exempts a shell line: it exists for file paths.
+	for _, r := range append(append(append([]string{}, s.Deny...), s.Block...), s.Harness...) {
 		if matchAny(r, tool, deny) {
 			return DecisionBlock, r
 		}

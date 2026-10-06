@@ -1,0 +1,472 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Limits from '../ui/Limits.astro';
+import typesafeLogo from '../../assets/logos/typesafe-white.svg';
+import cloudflareLogo from '../../assets/logos/cloudflare.svg';
+import nixLogo from '../../assets/logos/nix.svg';
+
+// A Pix Sandbox is Belai on a machine Vulnetix runs: an unmodified belai rc on
+// a Cloudflare container, built from the Nix image in the website repository
+// (sandbox-worker/image). Every claim below comes from that image and the
+// Worker that launches it.
+
+const sealText =
+  'Pix Sandbox: Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the Vulnetix console, then start sessions, agents and crews from the same pages you use for your own hosts. Built on Clef from Cloudflare, TypeSafe Jev, Cloudflare Sandbox and Nix. Clef, answered by Cloudflare Workers AI through the sandbox Worker with no Cloudflare key on the machine, is the classifier from the first session; Jev is included too and one launch setting switches a sandbox to it. Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk, always on. The image comes from a pinned Nix flake and builds to the same hash every time; language packs install as signed closures from the binary cache. A firewall on every way out: every model call passes the Vulnetix AI Firewall with provider keys in its vault and Belai guardrails in every session; each language points its package manager at the Vulnetix Package Firewall, which refuses known malware and versions with exploitable vulnerabilities; the container starts offline and reaches only the hosts your policy allows, in a log mode or a deny mode, with every host counted in the console. A supply chain you can verify: a pinned flake, a reproducible build, CycloneDX and SPDX SBOMs published with every image, and a hash check of the binaries before Belai starts. Signed build provenance: after the image is pushed, the build signs SLSA v1 provenance for the registry digest a launch runs and for the image tarball, keyless with cosign (the GitHub identity of the build run, a Fulcio certificate and a Sigstore timestamp, with no public transparency log entry), and publishes the bundle only after it verifies. An evidence pack for every launch: one zip per running instance with a CycloneDX 1.6 document, a plain-language PDF and SHA256SUMS, stating what ran, the provenance and each check with its result; an image built before provenance was recorded is reported as not attested and the pack claims nothing for it. Repositories come from GitHub, public or through the Vulnetix GitHub App; languages include Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any nixpkgs package; the language and build files of a repository suggest the bundles it needs, and registries stay behind the Package Firewall unless allowed directly. The sandbox answers the instance-metadata address 169.254.169.254 itself, from inside the container, with a fixed list of safe facts under /pix/v1/ (the sandbox, Vulnetix, Belai, the launch, the session limits, the models and the settings) and never a credential, key or organisation id; every other path is a 404, so cloud tools find no credentials there. The Pix Sandbox build of Belai reads it once, checks each value, and puts the stable facts in the system prompt of the model, which no other build does. A decision tool for the agent: the same build has one built-in MCP server, clef, whose nine tools ask the decision model for a true or false answer, an enum pick, confidence weights or an ordering. Clef only scores, and Belai does the rest with fixed arithmetic, so the same answers always give the same ranking, ties keep the order you gave, and a result is numbers and your own options, never model text. It runs on the same Clef path as guardrails, with no new key or destination, stays an ordinary MCP tool that is classified, and exists in no other build.';
+
+const firewalls = [
+  {
+    title: 'AI Firewall and guardrails',
+    tag: 'model calls · provider keys',
+    body: "Every model call passes the Vulnetix AI Firewall, and your provider keys live in its vault. Switch a provider on in the sandbox's Models tab and the machine fetches its key now and on every launch; switch it off and the key is cleared. Belai's guardrails run in every session, with the decision model, Clef by default, reading each tool result before the model does.",
+  },
+  {
+    title: 'Package Firewall',
+    tag: 'npm · pypi · cargo · go · maven',
+    body: 'Each language you add points its package manager at the Vulnetix Package Firewall. Known malware and versions with exploitable vulnerabilities are refused before a byte downloads, whichever agent asked.',
+  },
+  {
+    title: 'Egress firewall',
+    tag: 'every other host',
+    body: 'The container starts offline and reaches only the hosts your policy allows. Log everything while you learn what a project needs, then deny all but your list.',
+  },
+];
+
+// Illustrative rows for the console's egress list.
+const egress: [host: string, requests: string, refused: string, action: 'always' | 'Allow' | 'Deny'][] = [
+  ['api.cloudflare.com', '3,906', '0', 'always'],
+  ['guardrails.vulnetix.com', '1,284', '0', 'always'],
+  ['packages.vulnetix.com', '412', '0', 'always'],
+  ['api.github.com', '57', '0', 'Allow'],
+  ['metrics.sdk-vendor.io', '22', '22', 'Deny'],
+  ['api.example.net', '3', '3', 'Deny'],
+];
+
+const chain: [string, string][] = [
+  ['pinned flake', 'nixpkgs, Belai and the Vulnetix CLI are fixed by revision and SHA-256.'],
+  ['reproducible build', 'The image is built twice and ships when both builds give the same hash.'],
+  ['published SBOM', 'CycloneDX and SPDX for the whole image closure, published with every image.'],
+  ['checked at boot', 'The sandbox hashes its binaries against the pins before Belai starts.'],
+];
+
+const yours: [string, string][] = [
+  ['Your repositories', 'Public GitHub repositories, or private ones through the Vulnetix GitHub App with a short-lived, read-only token for each clone.'],
+  ['Your languages', 'Python, Node.js, Go, Rust, Java, Ruby, C and C++, .NET, Zig and Dart, plus any package from nixpkgs. Pick a repository and the console suggests the bundles its language and build files need, such as uv and pytest for Python, with registries kept behind the Package Firewall unless you allow them directly.'],
+  ['Your console', 'Sessions, agents, crews and schedules run from the Belai pages you already use. The console is the way in.'],
+  ['Sessions you can steer', "Each sandbox starts belai rc with session controls and project settings on, so a session page takes the terminal's slash commands and keys and each repository has its own settings page. The Launch tab sets both per sandbox, and letting a page switch guardrails off is a separate choice that starts off."],
+  ['Your decision model', 'Clef from Cloudflare is the default. The Launch tab switches a sandbox to Jev from TypeSafe, and a sandbox that does not set one follows the product default.'],
+];
+
+// What the image build proves, and what a launch gets from it. Every line comes
+// from .github/workflows/pix-sandbox-image.yml and sandbox-worker/src/evidence.ts
+// in the website repository.
+const provenance: [title: string, body: string][] = [
+  ['SLSA v1 provenance', 'After the image is pushed, the build signs an in-toto statement that names the registry digest a launch runs and the image tarball it was loaded from.'],
+  ['Keyless signature', "cosign signs with the build run's GitHub identity, a short-lived Fulcio certificate and a Sigstore timestamp. The signing config lists no transparency log, so nothing about the private repository goes into a public one."],
+  ['Verified before it is published', 'The same workflow checks the signature, the certificate identity (the image workflow on main), the timestamp and the digest. A bundle that does not verify is never stored.'],
+];
+
+const pack: [file: string, what: string][] = [
+  ['evidence.cdx.json', 'CycloneDX 1.6: the image and its components with hashes, every check as a claim with its result, and the in-toto statement as evidence.'],
+  ['evidence.pdf', 'Plain language: what ran, the provenance, each check with its result and UTC time, how to verify, and the limits.'],
+  ['SHA256SUMS', 'A checksum for every other file in the pack.'],
+];
+
+const verifyCommand = `cosign verify-blob-attestation \\
+  --bundle provenance.sigstore.json --new-bundle-format \\
+  --type slsaprovenance1 \\
+  --digest <image sha256> --digestAlg sha256 \\
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
+  --certificate-identity-regexp '^https://github.com/Vulnetix/website/\\.github/workflows/pix-sandbox-image\\.yml@refs/heads/main$' \\
+  --use-signed-timestamps --insecure-ignore-tlog`;
+// The metadata endpoint. The JSON is what GET /pix/v1?format=json returns for a mocked
+// sandbox, built by the Worker's own builder (sandbox-worker/src/metadata.ts in the
+// website repository); the prompt text is what internal/run/environment_sandbox.go
+// renders from it.
+const metadataSample = `{
+  "sandbox": {
+    "id": "7f3c1b9e-2d4a-4e8b-9a61-5c0d3f2e8a14",
+    "name": "api-box",
+    "size": "large",
+    "size-label": "Large",
+    "status": "active",
+    "vcpu": 4,
+    "memory-mib": 12288,
+    "disk-mb": 20000
+  },
+  "vulnetix": {
+    "product": "Vulnetix",
+    "console": "https://www.vulnetix.com",
+    "cli-version": "v3.108.4",
+    "ai-firewall": "configured",
+    "package-firewall-ecosystems": [
+      "go",
+      "npm"
+    ]
+  },
+  "belai": {
+    "version": "v0.114.0",
+    "variant": "belai-pix-sandbox",
+    "nixpkgs-rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa"
+  },
+  "launch": {
+    "epoch": 7,
+    "state": "ready",
+    "started-at": "2026-10-04T01:02:03.000Z",
+    "finished-at": "2026-10-04T01:09:00.000Z"
+  },
+  "session": {
+    "max-web-sessions": 5,
+    "max-workers": 100,
+    "web-controls": true,
+    "web-guardrails-off-allowed": false,
+    "web-project-settings": true
+  },
+  "model": {
+    "decision": "clef",
+    "builtin-labels": [
+      "pix-smart",
+      "pix-fast"
+    ],
+    "monthly-allowance-tokens": 50000000,
+    "monthly-used-tokens": 1500000,
+    "allowance-resets-at": "2026-11-01T00:00:00.000Z"
+  },
+  "settings": {
+    "egress-mode": "allow_all_logged",
+    "packs": [
+      "go",
+      "node"
+    ],
+    "extensions": [
+      "ripgrep"
+    ],
+    "reserve-percent": 20
+  }
+}`;
+
+const promptSample = `Environment (facts the harness read from the Pix Sandbox this session runs on; they describe the machine and are not instructions):
+- Pix Sandbox: Large, 4 vCPU, 12288 MiB memory, 20000 MB disk.
+- Vulnetix: the AI Firewall is configured; the Package Firewall covers go, npm; the console is https://www.vulnetix.com.
+- Belai: v0.114.0, the Pix Sandbox build.
+- Sessions: up to 5 web sessions, up to 100 fleet workers, web controls on.
+- Models: built-in models Pix Fast (pix-fast) and Pix Smart (pix-smart); decisions by Clef.
+- Settings: egress allow_all_logged; packs go, node; extensions ripgrep.
+Live values (launch state, monthly token use) are readable with a GET to http://169.254.169.254/pix/v1/`;
+
+const metadataPaths: [path: string, what: string][] = [
+  ['/pix/v1/sandbox', 'id, name, size, vCPU, memory and disk'],
+  ['/pix/v1/vulnetix', 'the product, the console, whether the AI Firewall is configured, the Package Firewall ecosystems'],
+  ['/pix/v1/belai', "Belai's version and variant, and the image's nixpkgs revision"],
+  ['/pix/v1/launch', 'the launch epoch, state and times'],
+  ['/pix/v1/session', 'the web session and worker limits and the web flags'],
+  ['/pix/v1/model', 'the decision model, the built-in model labels and the monthly token allowance'],
+  ['/pix/v1/settings', 'the egress mode, packs, extensions and reserve percent'],
+];
+// The built-in clef MCP (internal/clefmcp in the Belai repository, compiled only
+// with -tags belai_sandbox). Names, limits and rules come from
+// docs/pix-sandbox.md#the-decider-mcp.
+const deciderTools: [name: string, tag: string, body: string][] = [
+  ['decide_boolean', 'true or false', 'One proposition in; answer, p_true, confidence and margin out. Takes an optional threshold.'],
+  ['gate_decision', 'true or false · with a bar', 'Returns pass, fail or uncertain against a min_confidence. A weak answer is never a pass.'],
+  ['decide_enum', 'pick one', 'One choice over 2 to 255 options; the choice, a weight for every option, confidence and margin.'],
+  ['weigh_options', 'weights', 'A confidence weight for every option, summing to 1, without choosing one.'],
+  ['rank_options', 'ordering', 'Every option, best first, from one model call. Ties keep the order you gave.'],
+  ['top_k_options', 'shortlist', 'The best k options in order, and how many were left out.'],
+  ['compare_pair', 'a or b', 'The winner of two candidates, both weights and the margin. A tie goes to a and says so.'],
+  ['rank_pairwise', 'ordering · pair by pair', 'Orders 2 to 11 items by comparing every pair, then counting wins. Slower, and finer for close calls.'],
+  ['decide_batch', 'up to 64 questions', 'Mixed boolean and enum questions about one context, in one model request.'],
+];
+
+const deciderRules: [title: string, body: string][] = [
+  ['The model scores, Belai decides', 'Clef returns probabilities. Weights are normalised to sum to 1, every number is rounded to four places, and the ranking is a stable sort, so the same answers always give the same order.'],
+  ['Numbers and your own words', 'A result is JSON Belai builds from the probabilities and the options you passed. It holds no model text, and a failure is a fixed error code, never the backend\'s message or a guessed true.'],
+  ['Clef limits, checked first', 'At most 255 options and 64 questions a request. Empty or repeated options, too many items and unknown arguments are refused before any model call.'],
+  ['Still an MCP tool', 'Each tool is mcp__clef__name with the same permission kind as any server tool: classified, and allowed by a rule the sandbox launches with, not by an exemption.'],
+];
+
+const deciderSample = `rank_options
+  question: "Which file should I read first to fix the failing test"
+  options:  ["a.go", "b.go", "c.go"]
+
+{
+  "ranking": [
+    { "rank": 1, "option": "b.go", "weight": 0.6012 },
+    { "rank": 2, "option": "a.go", "weight": 0.3105 },
+    { "rank": 3, "option": "c.go", "weight": 0.0883 }
+  ]
+}`;
+---
+
+<SealedSection id="pix-sandbox" label="pix sandbox" sealText={sealText}>
+  <SectionHead title="Belai around the clock" surfaces={['pix sandbox', 'vulnetix only']}>
+    A Pix Sandbox is Belai on a machine Vulnetix runs for you, day and night. Choose the repositories and languages in the{' '}
+    <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/pix-sandbox">Vulnetix console</a>, then start
+    sessions, agents and crews from the same pages you use for your own hosts.
+  </SectionHead>
+
+  <div class="mt-12 grid gap-5 @3xl:grid-cols-2">
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink border-t-[6px] border-t-cf-orange p-6">
+      <div class="flex h-10 items-center justify-between gap-3">
+        <span class="flex items-center gap-3">
+          <img src={cloudflareLogo.src} alt="" class="h-9 w-auto" loading="lazy" />
+          <span class="text-lg font-bold">Cloudflare</span>
+        </span>
+        <span class="mono rounded-full bg-cf-orange px-2.5 py-1 text-xs font-semibold text-vx-ink">default · included</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Clef by Cloudflare</h3>
+      <p class="text-sm text-vx-ink/80">
+        Clef is Cloudflare's open decision model. A Pix Sandbox runs it on Workers AI through the sandbox Worker's own
+        binding, so no Cloudflare key exists on the machine to leak or rotate. It is the classifier from the first
+        session, with nothing to sign up for.{' '}
+        <a href="#clef" class="underline">How Belai uses Clef</a>
+      </p>
+    </article>
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink bg-vx-ink p-6 text-vx-cream">
+      <div class="flex h-10 items-center justify-between gap-3">
+        <img src={typesafeLogo.src} alt="TypeSafe AI" class="h-7 w-auto" loading="lazy" />
+        <span class="mono rounded-full bg-vx-mint px-2.5 py-1 text-xs font-semibold text-vx-ink">included</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Jev, free with Pix</h3>
+      <p class="text-sm text-vx-cream/80">
+        A sandbox uses Clef by default. Switch it to Jev from TypeSafe in the launch settings, at no extra cost.{' '}
+        <a href="#jev" class="text-vx-mint underline">How Belai uses Jev</a>
+      </p>
+    </article>
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink p-6">
+      <div class="flex h-10 items-center gap-3">
+        <img src={cloudflareLogo.src} alt="" class="h-8 w-auto" loading="lazy" />
+        <span class="text-lg font-bold">Cloudflare</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Cloudflare Sandbox</h3>
+      <p class="text-sm text-vx-ink/80">
+        Each sandbox is its own Cloudflare container with 1 vCPU, 4 GiB of memory and 20 GB of disk. It stays on, so a web
+        session or a scheduled agent starts the moment you ask.
+      </p>
+    </article>
+    <article class="flex flex-col gap-3 rounded-xl border border-vx-ink p-6">
+      <div class="flex h-10 items-center gap-3">
+        <img src={nixLogo.src} alt="" class="h-9 w-9" loading="lazy" />
+        <span class="text-lg font-bold">Nix</span>
+      </div>
+      <h3 class="mt-2 text-xl font-bold">Built with Nix</h3>
+      <p class="text-sm text-vx-ink/80">
+        The image comes from a pinned Nix flake and builds to the same hash every time. Language packs install as signed
+        closures from the binary cache.
+      </p>
+    </article>
+  </div>
+
+  <SubHead id="pix-firewalls" title="A firewall on every way out">
+    Model calls, package installs and every other connection leave the machine through a gate you set from the console.
+    All three are up before the first session starts.
+  </SubHead>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {firewalls.map((f, i) => (
+      <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+        <h4 class="mt-3 text-xl font-bold">{f.title}</h4>
+        <p class={`mono mt-1 text-xs ${i === 2 ? 'text-vx-mint' : 'text-vx-ink/60'}`}>{f.tag}</p>
+        <p class={`mt-3 text-sm ${i === 2 ? 'text-vx-cream/80' : 'text-vx-ink/80'}`}>{f.body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="mono min-w-0 overflow-hidden rounded-xl border border-vx-ink text-xs md:text-sm @4xl:col-span-7" role="img" aria-label="The egress list as the console shows it">
+      <div class="flex flex-wrap justify-between gap-3 bg-vx-ink px-4 py-3 text-vx-cream">
+        <span>egress · sandbox-a31f</span>
+        <span class="text-vx-mint">deny all except allowed</span>
+      </div>
+      <div class="grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 px-4 py-2 text-[0.7rem] tracking-wider text-vx-ink/60 @xl:grid-cols-[minmax(0,1fr)_5rem_4rem_5rem]">
+        <span>HOST</span><span class="hidden text-right @xl:block">REQUESTS</span><span class="text-right">REFUSED</span><span class="text-right">ACTION</span>
+      </div>
+      {egress.map(([host, req, refused, action]) => (
+        <div class={`grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 border-t border-vx-ink/10 px-4 py-2 @xl:grid-cols-[minmax(0,1fr)_5rem_4rem_5rem] ${action === 'Deny' ? 'bg-vx-sand-amber/10' : ''}`}>
+          <span class="truncate">{host}</span>
+          <span class="hidden text-right @xl:block">{req}</span>
+          <span class={`text-right ${action === 'Deny' ? 'text-vx-amber-deep' : ''}`}>{refused}</span>
+          <span class={`text-right ${action === 'Deny' ? 'font-semibold text-vx-red-deep' : action === 'Allow' ? 'font-semibold text-vx-mint-strong' : 'text-vx-ink/60'}`}>{action}</span>
+        </div>
+      ))}
+    </div>
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Every host, counted</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The console lists each hostname the sandbox tried to reach, how often, and how often it was refused. One click allows
+        or denies it for the next launch.
+      </p>
+      <p class="mt-3 text-vx-ink/80">
+        Clef, Jev, the AI Firewall and the Package Firewall stay reachable in either mode, so guardrails and installs keep working
+        while you tighten the list.
+      </p>
+    </div>
+  </div>
+
+  <SubHead id="pix-supply-chain" title="A supply chain you can verify">
+    Every binary on a sandbox traces back to a published hash, from the flake that builds the image to the moment Belai
+    starts.
+  </SubHead>
+  <ol class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
+    {chain.map(([step, what], i) => (
+      <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 0 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class={`mono text-xs ${i === 0 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
+        <p class={`mono mt-2 text-lg font-semibold ${i === 0 ? 'text-vx-mint' : ''}`}>{step}</p>
+        <p class={`mt-1 text-sm ${i === 0 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
+        {i < chain.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @4xl:block" aria-hidden="true">▸</span>}
+      </li>
+    ))}
+  </ol>
+
+  <SubHead id="pix-provenance" title="Signed provenance and an evidence pack">
+    The build proves how the image was made, and every launch can hand you that proof, with the checks the machine made
+    on the way up, as a file you can verify yourself.
+  </SubHead>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {provenance.map(([title, body], i) => (
+      <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class="h-1 w-10 rounded-full bg-vx-mint-strong"></span>
+        <h4 class="mt-3 text-xl font-bold">{title}</h4>
+        <p class={`mt-3 text-sm ${i === 2 ? 'text-vx-cream/80' : 'text-vx-ink/80'}`}>{body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">One pack for each launch</h3>
+      <p class="mt-3 text-vx-ink/80">
+        Open the sandbox's Trust tab and download the evidence pack for the running instance. A relaunch is a new
+        instance with its own pack, and asking twice returns the same file with the same checksum.
+      </p>
+      <ul class="mono mt-4 grid list-none gap-3 p-0 text-sm">
+        {pack.map(([file, what]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold text-vx-mint-strong">{file}</span>
+            <span class="mt-1 block font-sans text-vx-ink/80">{what}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        The pack is not signed. Check the zip against the SHA-256 the console shows and the download returns. An image
+        built before provenance was recorded is reported as not attested, and the pack claims nothing for it.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">Check it without trusting us</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The Worker re-checks the bundle against its pinned checksum and the launch's image digest. The signature itself
+        was verified by the build, and you can repeat that with cosign. The bundle has no transparency log entry, so the
+        check uses the signed timestamp.
+      </p>
+      <pre class="mono mt-4 overflow-x-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="cosign command that verifies the image provenance"><code>{verifyCommand}</code></pre>
+    </div>
+  </div>
+
+  <SubHead id="pix-metadata" title="The sandbox tells the model where it is">
+    Cloud tools ask 169.254.169.254 for instance metadata, and from it for credentials. A Pix Sandbox answers that
+    address itself, and Belai's sandbox build uses the answer to tell the model about the machine.
+  </SubHead>
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Safe facts, nothing else</h3>
+      <p class="mt-3 text-vx-ink/80">
+        The Worker serves a fixed list under <code>/pix/v1/</code>, read the way EC2's metadata is read: a directory lists
+        its keys, a leaf is its value, and <code>?format=json</code> gives a node as JSON. It carries no credential, key,
+        token or organisation id, and never the model behind a Pix label.
+      </p>
+      <ul class="mono mt-4 grid list-none gap-3 p-0 text-sm">
+        {metadataPaths.map(([path, what]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold text-vx-mint-strong">{path}</span>
+            <span class="mt-1 block font-sans text-vx-ink/80">{what}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        Only GET and HEAD are answered, and every other path, including the ones the AWS, Azure and Google tools ask for,
+        is a 404, so those tools find no cloud and no credentials.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">A mocked response</h3>
+      <p class="mt-3 text-vx-ink/80">
+        <code>curl 'http://169.254.169.254/pix/v1?format=json'</code> from inside a sandbox:
+      </p>
+      <pre class="mono mt-4 max-h-[28rem] overflow-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="A mocked response from the sandbox metadata endpoint"><code>{metadataSample}</code></pre>
+    </div>
+  </div>
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">What the model is told</h3>
+      <p class="mt-3 text-vx-ink/80">
+        Belai fetches this once, in the harness and never at a model's request, checks each value for its field and puts the
+        stable ones in the system prompt of every agent turn. Only the Pix Sandbox build does this. The sandbox's name is
+        left out because it is user text, and the live values are left out so the prompt stays the same from turn to turn.
+      </p>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <pre class="mono overflow-x-auto rounded-xl border border-vx-ink p-4 text-xs leading-relaxed" aria-label="The environment block the model sees"><code>{promptSample}</code></pre>
+    </div>
+  </div>
+
+  <SubHead id="pix-decider" title="A decision tool for the agent" surfaces={['pix sandbox']}>
+    The Pix Sandbox build has one built-in MCP server, clef. An agent calls it for a true or false answer, an enum pick,
+    confidence weights or an ordering, and gets numbers back instead of a guess in prose.
+  </SubHead>
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
+    {deciderTools.map(([name, tag, body]) => (
+      <article class="flex flex-col rounded-xl border border-vx-ink p-5">
+        <span class="h-1 w-10 rounded-full bg-cf-orange"></span>
+        <h4 class="mono mt-3 text-lg font-bold">{name}</h4>
+        <p class="mono mt-1 text-xs text-vx-ink/60">{tag}</p>
+        <p class="mt-3 text-sm text-vx-ink/80">{body}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Deterministic on top of Clef</h3>
+      <p class="mt-3 text-vx-ink/80">
+        It runs on the same Clef path as the guardrails, through the sandbox Worker, so it adds no key and no new
+        destination. The server is compiled into the Pix Sandbox build only; no other Belai has it.
+      </p>
+      <ul class="mt-4 grid list-none gap-3 p-0 text-sm">
+        {deciderRules.map(([title, body]) => (
+          <li class="rounded-lg border border-vx-ink/30 p-3">
+            <span class="font-semibold">{title}</span>
+            <span class="mt-1 block text-vx-ink/80">{body}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+    <div class="min-w-0 @4xl:col-span-7">
+      <h3 class="text-2xl font-bold">One call, one ordering</h3>
+      <p class="mt-3 text-vx-ink/80">
+        A sample call and its result. Equal weights keep the order you gave, so asking again with the same answers
+        returns the same ranking.
+      </p>
+      <pre class="mono mt-4 overflow-x-auto rounded-xl border border-vx-ink bg-vx-ink p-4 text-xs leading-relaxed text-vx-cream" aria-label="A sample rank_options call and its result"><code>{deciderSample}</code></pre>
+      <p class="mt-4 text-sm text-vx-ink/75">
+        The contract, with every limit, is in <a class="underline" href="https://github.com/Vulnetix/belai/blob/main/docs/pix-sandbox.md#the-decider-mcp">docs/pix-sandbox.md</a>.
+      </p>
+    </div>
+  </div>
+
+  <Limits items={yours} />
+
+  <div class="mt-sub grid gap-4 @3xl:grid-cols-2">
+    <a href="https://www.vulnetix.com/features/pix-sandbox" class="flex flex-col gap-2 rounded-xl border border-vx-ink bg-vx-mint p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
+      <span class="mono text-xs">features/pix-sandbox</span>
+      <span class="font-bold">Take the tour ↗</span>
+      <span class="text-vx-ink/85">Clef and Jev, Cloudflare, Nix, the three firewalls, signed provenance and the evidence pack, in detail.</span>
+    </a>
+    <a href="https://www.vulnetix.com/resolve/belai-hosts?tab=sandboxes&buy=1" class="flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)]">
+      <span class="mono text-xs">console</span>
+      <span class="font-bold">Start a sandbox ↗</span>
+      <span class="text-vx-ink/85">Pick repositories and languages, launch, and work from the web.</span>
+    </a>
+  </div>
+</SealedSection>

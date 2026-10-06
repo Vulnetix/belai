@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/docparity"
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/resilience"
@@ -2431,5 +2432,46 @@ func TestNewModeDetector(t *testing.T) {
 				t.Fatal("expected non-nil detector")
 			}
 		})
+	}
+}
+
+// TestDefaultModelTableOnThePageMatchesEveryBuiltin reads the table in
+// docs/development.md: every built-in provider has a row, and each row's model
+// is the one DefaultModel returns, so a provider added without a row, or a model
+// changed without the page, fails here.
+func TestDefaultModelTableOnThePageMatchesEveryBuiltin(t *testing.T) {
+	doc := docparity.Read(t, "docs/development.md")
+	section := regexp.MustCompile(`(?s)\| Provider \| Default model \|(.*?)\nA custom provider from`).FindStringSubmatch(doc)
+	if section == nil {
+		t.Fatal("the default model table moved")
+	}
+	rows := map[string]string{}
+	for _, m := range regexp.MustCompile("(?m)^\\| `([a-z0-9-]+)`[^|]* \\| ([^|]+) \\|$").FindAllStringSubmatch(section[1], -1) {
+		rows[m[1]] = strings.TrimSpace(m[2])
+	}
+	for _, name := range provider.Names() {
+		if undocumentedProviders[name] {
+			continue
+		}
+		cell, ok := rows[name]
+		if !ok {
+			t.Errorf("the default model table has no row for the built-in provider %s", name)
+			continue
+		}
+		want := DefaultModel(name)
+		if want == "" {
+			if !strings.HasPrefix(cell, "none") {
+				t.Errorf("%s has no default model, but the page says %s", name, cell)
+			}
+			continue
+		}
+		if cell != "`"+want+"`" && !strings.HasPrefix(cell, "`"+want+"`") {
+			t.Errorf("%s: the page says %s, DefaultModel returns %q", name, cell, want)
+		}
+	}
+	for name := range rows {
+		if !provider.Builtin(name) {
+			t.Errorf("the default model table lists %s, which is not a built-in provider", name)
+		}
 	}
 }

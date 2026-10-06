@@ -92,3 +92,81 @@ func TestReadOnlyDropsSkillDraft(t *testing.T) {
 		t.Fatal("plan surface offers SkillDraft")
 	}
 }
+
+// A skill file of exactly 32 KiB is accepted; one byte more is refused before
+// any ask.
+func TestSkillDraftSizeBoundary(t *testing.T) {
+	d := SkillDraft{Dir: func() (string, error) { return t.TempDir(), nil }}
+	const header = "---\nname: x\ndescription: d\n---\n\n"
+	body := strings.Repeat("a", 32*1024-len(header)-1)
+	if _, doc, err := d.compose(map[string]any{"name": "x", "description": "d", "body": body}); err != nil || len(doc) != 32*1024 {
+		t.Fatalf("a 32 KiB skill: len %d, err %v", len(doc), err)
+	}
+	if _, _, err := d.compose(map[string]any{"name": "x", "description": "d", "body": body + "a"}); err == nil || !strings.Contains(err.Error(), "32 KiB") {
+		t.Fatalf("a skill one byte over: err %v", err)
+	}
+}
+
+// The description is cut off at 1024 bytes: 1024 passes, 1025 is refused, and an
+// empty body is refused.
+func TestSkillDraftDescriptionAndBodyBoundaries(t *testing.T) {
+	d := SkillDraft{Dir: func() (string, error) { return t.TempDir(), nil }}
+	for n, ok := range map[int]bool{1024: true, 1025: false} {
+		_, _, err := d.compose(map[string]any{"name": "x", "description": strings.Repeat("a", n), "body": "b"})
+		if (err == nil) != ok {
+			t.Errorf("a %d byte description: err %v, want ok=%v", n, err, ok)
+		}
+	}
+	if _, _, err := d.compose(map[string]any{"name": "x", "description": "d", "body": "  \n"}); err == nil {
+		t.Error("an empty body was accepted")
+	}
+}
+
+// SkillDraft asks every time, whatever the rules say.
+func TestSkillDraftAlwaysAsks(t *testing.T) {
+	if !(SkillDraft{}).AlwaysAsks() {
+		t.Fatal("SkillDraft must always ask")
+	}
+}
+
+// A profile's skills list is the only way to reach a builtin skill, and it
+// narrows the listing to the names it holds.
+func TestSkillAllowListReachesBuiltinsOnly(t *testing.T) {
+	plain := Skill{}
+	for _, e := range plain.Entries() {
+		if e.Source == skills.BuiltinSource {
+			t.Fatalf("an ordinary session lists the builtin skill %s", e.Name)
+		}
+	}
+	res, err := Skill{}.Execute(context.Background(), map[string]any{"skill": "belai-scout"})
+	if err != nil || !strings.HasPrefix(res.Content, "no skill named") {
+		t.Fatalf("an ordinary session loaded a builtin: %q, %v", res.Content, err)
+	}
+
+	narrowed := Skill{Allow: []string{"belai-scout"}}
+	if es := narrowed.Entries(); len(es) != 1 || es[0].Name != "belai-scout" || es[0].Source != skills.BuiltinSource {
+		t.Fatalf("entries = %+v", es)
+	}
+	res, err = narrowed.Execute(context.Background(), map[string]any{"skill": "belai-scout"})
+	if err != nil || res.Kind != KindSkill || !strings.Contains(res.Content, "source: builtin") {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	other, _ := narrowed.Execute(context.Background(), map[string]any{"skill": "belai-patcher"})
+	if !strings.HasPrefix(other.Content, "no skill named") {
+		t.Fatalf("an unlisted builtin loaded: %q", other.Content)
+	}
+}
+
+func TestRegistryWithSkills(t *testing.T) {
+	r := NewRegistry(Skill{}, &Read{})
+	if r.WithSkills(nil) != r {
+		t.Error("an empty list should return the registry unchanged")
+	}
+	got := SkillEntries(r.WithSkills([]string{"belai-scout"}))
+	if len(got) != 1 || got[0].Name != "belai-scout" {
+		t.Fatalf("entries = %+v", got)
+	}
+	if r2 := NewRegistry(&Read{}); r2.WithSkills([]string{"x"}) != r2 {
+		t.Error("a registry without Skill should be returned unchanged")
+	}
+}

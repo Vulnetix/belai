@@ -359,3 +359,26 @@ func TestFixArgsAlwaysExplicitPath(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigSubcommandNamesMatchTheAllowlist pins the names config validates
+// vulnetix.subcommands against to the review's own allowlist: config cannot
+// import this package, so the two lists are kept equal here.
+func TestConfigSubcommandNamesMatchTheAllowlist(t *testing.T) {
+	got := map[string]bool{}
+	for _, n := range config.VulnetixSubcommandNames {
+		got[n] = true
+	}
+	if len(got) != len(config.VulnetixSubcommandNames) {
+		t.Fatal("config.VulnetixSubcommandNames repeats a name")
+	}
+	for n := range AllowedSubcommands {
+		if !got[n] {
+			t.Errorf("%q is allowed by the review but refused by config validation", n)
+		}
+	}
+	for n := range got {
+		if !AllowedSubcommands[n] {
+			t.Errorf("%q passes config validation but the review refuses it", n)
+		}
+	}
+}

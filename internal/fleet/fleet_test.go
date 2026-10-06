@@ -312,10 +312,10 @@ func TestRegistryReserveAndDeadWorkers(t *testing.T) {
 func TestNarrowGlobsMCP(t *testing.T) {
 	root := t.TempDir()
 	reg := tools.NewRegistry(&tools.Read{Root: root}, &tools.Write{Root: root})
-	if got := narrow(reg, []string{"Read"}).Names(); !slices.Equal(got, []string{"Read"}) {
+	if got := NarrowTools(reg, []string{"Read"}).Names(); !slices.Equal(got, []string{"Read"}) {
 		t.Fatalf("narrow %v", got)
 	}
-	if got := narrow(reg, nil).Names(); len(got) != 2 {
+	if got := NarrowTools(reg, nil).Names(); len(got) != 2 {
 		t.Fatalf("empty allowlist narrowed: %v", got)
 	}
 }

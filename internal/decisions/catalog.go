@@ -13,6 +13,15 @@ const (
 	// JSON, read at the first assistant token. Noul options are
 	// ["true", "false"].
 	TemplateJevK5 Template = "jevk5"
+	// TemplateSystemOne is a model llama-server answers itself on its
+	// native POST /v1/systemone endpoint (llama.cpp build 11371 and later for
+	// Clef): Belai sends the state and questions, never a prompt layout.
+	TemplateSystemOne Template = "systemone"
+	// TemplateTev1 is Together AI's Tev1 layout: a Qwen chat turn with
+	// thinking off whose user message is {"state","question","options"} JSON
+	// with options {"label","key","description"} lettered A to X, read at the
+	// first assistant token. Noul options are ["true", "false"].
+	TemplateTev1 Template = "tev1"
 )
 
 // Temps are a local model's calibration temperatures per question type.
@@ -33,7 +42,21 @@ type LocalModel struct {
 	Temps     Temps
 	Template  Template
 	Blurb     string
+	// MinBuild is the oldest llama-server build that serves the model; zero
+	// means any.
+	MinBuild int
+	// MaxOptions is the most options a question may carry; zero means the
+	// option letters' limit.
+	MaxOptions int
 }
+
+// ClefMinBuild is the first llama.cpp build that serves Clef on
+// /v1/systemone (ggml-org/llama.cpp#29831).
+const ClefMinBuild = 11371
+
+// Tev1MinBuild is the oldest llama.cpp build verified to load Tev1's qwen35
+// architecture.
+const Tev1MinBuild = 10964
 
 // LocalModels is the catalogue of local decision models, in picker order.
 var LocalModels = []LocalModel{
@@ -58,6 +81,42 @@ var LocalModels = []LocalModel{
 		Temps:     Temps{Noul: 2.07, Choice: 2.07},
 		Template:  TemplateJevK5,
 		Blurb:     "JevK5-derived decision model · 4-bit · ~1 s per short check on CPU",
+	},
+	{
+		ID:         "clef-flash",
+		Label:      "Clef-flash 9B",
+		Repo:       "ggml-org/Clef-Flash-GGUF",
+		File:       "Clef-Flash-Q4_K_M.gguf",
+		Alias:      "belai-clef-flash",
+		SizeBytes:  6486448192,
+		Template:   TemplateSystemOne,
+		Blurb:      "Cloudflare's decision model · 4-bit · needs llama.cpp build 11371+",
+		MinBuild:   ClefMinBuild,
+		MaxOptions: ClefMaxOptions,
+	},
+	{
+		ID:         "clef",
+		Label:      "Clef 27B",
+		Repo:       "ggml-org/Clef-GGUF",
+		File:       "Clef-Q4_K_M.gguf",
+		Alias:      "belai-clef",
+		SizeBytes:  19232219104,
+		Template:   TemplateSystemOne,
+		Blurb:      "Cloudflare's most accurate decision model · 4-bit · a GPU recommended · needs llama.cpp build 11371+",
+		MinBuild:   ClefMinBuild,
+		MaxOptions: ClefMaxOptions,
+	},
+	{
+		ID:         "tev1-4b",
+		Label:      "Tev1 4B",
+		Repo:       "bartowski/togethercomputer_Tev1-4B-experimental-GGUF",
+		File:       "togethercomputer_Tev1-4B-experimental-Q4_K_M.gguf",
+		Alias:      "belai-tev1-4b",
+		SizeBytes:  2797527072,
+		Template:   TemplateTev1,
+		Blurb:      "Together AI's experimental decision model · 4-bit · ~1 s per short check on CPU · weights licence still being settled",
+		MinBuild:   Tev1MinBuild,
+		MaxOptions: Tev1MaxOptions,
 	},
 }
 

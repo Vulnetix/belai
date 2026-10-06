@@ -63,7 +63,7 @@ func intentStep(d func() decisions.Decider) Step {
 			Descriptions: map[string]string{"agent": "make a direct code change now", "plan": "write a plan before changing code", "debug": "diagnose a failure"},
 		}
 		dec := d()
-		if dec.Backend() != decisions.BackendLocal {
+		if b := dec.Backend(); b != decisions.BackendLocal && b != decisions.BackendChatLetters {
 			// Hosted and self-hosted Jev score intents one noul each.
 			q = decisions.Noul("The user wants a read-only investigation that should first produce a step-by-step plan before any changes.")
 		}
@@ -88,7 +88,8 @@ func intentStep(d func() decisions.Decider) Step {
 	}}
 }
 
-// SystemOneTarget is a self-hosted Jev endpoint to test.
+// SystemOneTarget is a /v1/systemone endpoint to test (TypeSafe, a
+// self-hosted Jev server, or Strands Decider on another host).
 type SystemOneTarget struct {
 	Name    string
 	BaseURL string
@@ -99,6 +100,10 @@ type SystemOneTarget struct {
 	SendModel bool
 	Key       func() (string, error)
 	Timeout   time.Duration
+	// CriteriaObject and MaxOptions shape requests for a Strands Decider
+	// server, as the live calls do.
+	CriteriaObject bool
+	MaxOptions     int
 }
 
 // SystemOneSteps is the ladder for a self-hosted Jev server. The connect
@@ -172,7 +177,7 @@ func discoverSystemOne(ctx context.Context, st *State, t SystemOneTarget) (*deci
 	paths := uniq(pathOr(t.Path), "/v1/systemone", "/systemone", "/api/v1/systemone", "/v1/decisions")
 
 	probe := func(base, path string) (*decisions.SystemOne, error) {
-		s := &decisions.SystemOne{Name: t.Name, Model: t.Model, SendModel: t.SendModel, BaseURL: base, Path: path, Key: t.Key, Client: st.Env.Client, Timeout: t.Timeout}
+		s := &decisions.SystemOne{Name: t.Name, Model: t.Model, SendModel: t.SendModel, BaseURL: base, Path: path, Key: t.Key, Client: st.Env.Client, Timeout: t.Timeout, CriteriaObject: t.CriteriaObject, MaxOptions: t.MaxOptions}
 		_, err := s.Decide(ctx, decisions.Request{
 			State:     map[string]any{"content": benignState},
 			Questions: map[string]decisions.Question{"q": decisions.Noul(injectionProposition)},

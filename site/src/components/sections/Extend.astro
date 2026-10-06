@@ -15,7 +15,7 @@ import vscodeLogo from '../../assets/editors/vscode.svg';
 // integrations (MCP, ACP, OpenTelemetry). Hook events come from docs/hooks.md.
 
 const extendSeal =
-  'Extend it yourself: hooks at eleven points with allow, deny and ask decisions that can only narrow; skills loaded by name and new ones drafted only with your approval; plugin packages of skills, hooks, prompts and agents, validated whole, pinned and namespaced; desktop notifications written from fixed templates. Hook and skill text is classified like any other untrusted result. Integrations: MCP servers from your own settings, with every tool named mcp__server__tool, asking before it runs and classified after; belai acp for Zed, JetBrains IDEs, Neovim, Emacs and VS Code with the same gates as the CLI and a fail-closed trust check, and a setup tutorial for each editor; OpenTelemetry export of spans and metrics built from an attribute allowlist that cannot carry content.';
+  'Extend it yourself: hooks at eleven points with allow, deny and ask decisions that can only narrow; skills loaded by name and new ones drafted only with your approval; plugin packages of skills, hooks, prompts and agents, validated whole, pinned and namespaced; desktop notifications written from fixed templates. Hook and skill text is classified like any other untrusted result. Integrations: MCP servers from your own settings, with every tool named mcp__server__tool, asking before it runs and classified after, and in code mode reached only from inside a script as mcp.server.tool() with the same rules; belai acp for Zed, JetBrains IDEs, Neovim, Emacs and VS Code with the same gates as the CLI and a fail-closed trust check, and a setup tutorial for each editor; OpenTelemetry export of spans and metrics built from an attribute allowlist that cannot carry content.';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -61,7 +61,7 @@ const integrations = [
   {
     title: 'MCP servers',
     key: 'mcp__server__tool',
-    body: 'Declare stdio or streamable HTTP servers in your global settings. Each tool appears as `mcp__server__tool`, asks before it runs unless a rule allows it, is never offered in plan mode, and its result is classified. A repository cannot add, change or start a server.',
+    body: 'Declare stdio or streamable HTTP servers in your global settings. Each tool appears as `mcp__server__tool`, asks before it runs unless a rule allows it, is never offered in plan mode, and its result is classified. In code mode no server definition is sent at all: a script finds tools with `mcp.list()` and calls them as `mcp.server.tool()`, under the same rules, and agent, plan and goal mode are unchanged. A repository cannot add, change or start a server.',
     doc: 'mcp.md',
   },
   {
@@ -126,7 +126,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="extend" sealText={extendSeal} id="extend">
-  <SectionHead title="Extend it yourself">
+  <SectionHead title="Extend it yourself" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
     The things people usually add to a coding agent by forking it are built in, and each one goes through
     the same checks as the rest of Belai.
   </SectionHead>
@@ -137,20 +137,23 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     A hook runs your command at one point in a session. At the three marked points it can stop what
     comes next; at the others it only observes.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <ol class="m-0 min-w-0 list-none p-0 lg:col-span-7">
+  <details class="deep deep--wide">
+    <summary>The eleven hook points and what a decision does</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <ol class="m-0 min-w-0 list-none p-0 @4xl:col-span-7">
       {events.map(([name, when, blocks], i) => (
         <li class="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-baseline gap-3 border-b border-vx-ink/15 py-2.5 last:border-b-0">
-          <span class="mono text-xs text-vx-ink/50">{String(i + 1).padStart(2, '0')}</span>
+          <span class="mono text-xs text-vx-ink/70">{String(i + 1).padStart(2, '0')}</span>
           <span>
             <code class="mono font-semibold">{name}</code>
-            <span class="block text-sm text-vx-ink/70 sm:ml-3 sm:inline">{when}</span>
+            <span class="block text-sm text-vx-ink/70 sm:ml-3 @xl:inline">{when}</span>
           </span>
           {blocks ? <span class="mono rounded-md bg-vx-ink px-2 py-0.5 text-xs text-vx-mint">can block</span> : <span></span>}
         </li>
       ))}
     </ol>
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-5">
+    <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-5">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT A DECISION DOES</p>
         <dl class="mt-3 grid gap-y-3 text-sm">
@@ -168,12 +171,14 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </p>
     </aside>
   </div>
+    </div>
+  </details>
 
-  <SubHead title="Skills, drafted with approval">
+  <SubHead title="Skills, drafted with approval" surfaces={['tui']}>
     After working out a procedure worth keeping, the model can propose it as a skill with{' '}
     <code class="mono">SkillDraft</code>. You see the whole file, or the diff against an existing skill.
   </SubHead>
-  <div class="mt-8 grid gap-5 md:grid-cols-3">
+  <div class="mt-head grid gap-5 @2xl:grid-cols-3">
     <article class="rounded-xl border border-vx-ink p-5">
       <p class="mono text-xs text-vx-ink/60">01</p>
       <h4 class="mt-2 text-lg font-bold">Loaded by name</h4>
@@ -191,12 +196,15 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </article>
   </div>
 
-  <SubHead title="Plugin packages">
+  <SubHead title="Plugin packages" surfaces={['cli', 'self-hosted']}>
     <code class="mono">belai plugin install</code> takes a git URL or a directory. One bad component fails
     the whole install, and <code class="mono">/plugin</code> shows what is installed and its state.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 sm:grid-cols-2 lg:col-span-8">
+  <details class="deep deep--wide">
+    <summary>The steps of an install, and the command</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 @xl:grid-cols-2 @4xl:col-span-8">
       {plugin.map(([step, what], i) => (
         <li class="rounded-xl border border-vx-ink p-5">
           <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
@@ -205,7 +213,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         </li>
       ))}
     </ol>
-    <aside class="flex min-w-0 flex-col gap-3 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-3 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">INSTALL ONE</p>
         <pre class="mono mt-3 overflow-x-auto whitespace-pre-wrap break-all text-sm leading-7 text-vx-mint"><code>{install}</code></pre>
@@ -215,12 +223,14 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       <p class="text-sm"><a class="text-vx-ink underline" href={`${docBase}plugins.md`}>docs/plugins.md</a></p>
     </aside>
   </div>
+    </div>
+  </details>
 
   <SubHead id="integrations" title="Integrations">
     Belai connects to the tools and editors you already use, and each connection goes through the same
     gates as the session.
   </SubHead>
-  <div class="mt-8 grid gap-5 lg:grid-cols-3">
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
     {integrations.map((it, i) => (
       <article class={`flex flex-col rounded-xl border border-vx-ink p-6 ${i === 1 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <code class={`mono text-sm ${i === 1 ? 'text-vx-mint' : 'text-vx-mint-strong'}`}>{it.key}</code>
@@ -233,17 +243,20 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
-  <SubHead id="editors" title="Belai in your editor">
+  <SubHead id="editors" title="Belai in your editor" surfaces={['acp']}>
     <code class="mono">belai acp</code> is an Agent Client Protocol agent on stdin and stdout. Zed is the
     reference setup below, and the other editors take the same command.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
+  <details class="deep deep--wide">
+    <summary>Set up Zed, step by step</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 @4xl:col-span-8">
       <div class="flex items-center gap-4">
         <img src={zedLogo.src} alt="Zed logo" class="size-10" width="40" height="40" loading="lazy" decoding="async" />
         <h4 class="text-2xl font-bold">Zed</h4>
       </div>
-      <ol class="m-0 mt-5 grid list-none gap-3 p-0 sm:grid-cols-2">
+      <ol class="m-0 mt-5 grid list-none gap-3 p-0 @xl:grid-cols-2">
         {zedSteps.map(([step, what], i) => (
           <li class="rounded-xl border border-vx-ink p-5">
             <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
@@ -266,7 +279,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         <a class="text-vx-ink underline" href="https://zed.dev/docs/ai/external-agents">Zed external agents</a>
       </p>
     </div>
-    <aside class="flex min-w-0 flex-col gap-3 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-3 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">ZED settings.json</p>
         <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{zedJson}</code></pre>
@@ -285,9 +298,11 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </div>
     </aside>
   </div>
+    </div>
+  </details>
 
-  <h4 class="mt-14 text-2xl font-bold">Other editors</h4>
-  <div class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+  <h4 class="mt-sub text-2xl font-bold">Other editors</h4>
+  <div class="mt-5 grid gap-5 @xl:grid-cols-2 @4xl:grid-cols-4">
     {clients.map((c) => (
       <article class="flex flex-col rounded-xl border border-vx-ink p-5">
         <div class="flex h-10 items-center gap-3">
@@ -302,5 +317,5 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

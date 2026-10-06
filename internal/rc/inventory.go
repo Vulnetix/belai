@@ -15,6 +15,9 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
+	"github.com/vulnetix/belai/internal/libitem"
+	"github.com/vulnetix/belai/internal/libstore"
+	"github.com/vulnetix/belai/internal/profiles"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -25,7 +28,20 @@ type Inventory struct {
 	MaxWorkers int
 	Profiles   []sessionsync.RCProfile
 	Crews      []sessionsync.RCCrew
-	Workers    []sessionsync.RCWorker
+	// Agents are the agent profiles a web session may be started with.
+	Agents  []sessionsync.RCAgent
+	Workers []sessionsync.RCWorker
+	// Items are the library items this host holds, for the kinds whose sync
+	// switch is on: kind, name and hash, never a document.
+	Items []sessionsync.RCItem
+	// Models is what a web-started session can run on (models.go).
+	Models *sessionsync.RCModels
+	// Knowledge is the catalogue of this host's knowledge indexes: document
+	// facts only (knowledge.go).
+	Knowledge []sessionsync.RCKnowledge
+	// Prefs are the offered directories' project preferences, by path, read
+	// only with --web-project-settings (prefs.go).
+	Prefs map[string]DirPrefs
 }
 
 // Caps on what one host reports; the server applies the same caps.
@@ -42,7 +58,12 @@ func (i Inventory) catalogueHash() string {
 		M int
 		P []sessionsync.RCProfile
 		C []sessionsync.RCCrew
-	}{i.MaxWorkers, i.Profiles, i.Crews})
+		A []sessionsync.RCAgent
+		I []sessionsync.RCItem
+		D *sessionsync.RCModels
+		K []sessionsync.RCKnowledge
+		F map[string]DirPrefs
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Agents, i.Items, i.Models, i.Knowledge, i.Prefs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -51,8 +72,15 @@ func (i Inventory) catalogueHash() string {
 // registry. A part it cannot read is left empty rather than failing.
 func LocalInventory() Inventory {
 	var inv Inventory
+	// The hash of a profile or crew travels only while sync.profiles is on, as an item's does.
+	hashes := false
+	var held map[string]libHashEntry
 	if s, err := config.LoadGlobal(); err == nil {
 		inv.MaxWorkers = s.MaxWorkers()
+		hashes = s.SyncProfilesEnabled()
+		if hashes {
+			held = readLibraryHashes()
+		}
 	} else {
 		inv.MaxWorkers = config.DefaultMaxWorkers
 	}
@@ -61,7 +89,14 @@ func LocalInventory() Inventory {
 			if p.Mode != agentprofile.ModeWorker || p.Kanban == nil || len(inv.Profiles) >= maxInvProfiles {
 				continue
 			}
-			inv.Profiles = append(inv.Profiles, profileSummary(p))
+			sum := profileSummary(p)
+			// Tested first: with sync.profiles off nothing is rendered or hashed.
+			if hashes {
+				if md, ok := profileDocument(p); ok {
+					sum.SHA256 = hashFor(held, p.ID, hashOf(md))
+				}
+			}
+			inv.Profiles = append(inv.Profiles, sum)
 		}
 	}
 	sort.Slice(inv.Profiles, func(a, b int) bool { return inv.Profiles[a].Name < inv.Profiles[b].Name })
@@ -69,15 +104,96 @@ func LocalInventory() Inventory {
 		if len(inv.Crews) >= maxInvCrews {
 			break
 		}
-		rc := sessionsync.RCCrew{Name: c.Name, Builtin: c.Builtin, Members: []sessionsync.RCMember{}}
+		rc := sessionsync.RCCrew{ID: c.ID, Name: c.Name, Description: c.Description, Builtin: c.Builtin, Members: []sessionsync.RCMember{}}
 		for _, m := range c.Members {
 			rc.Members = append(rc.Members, sessionsync.RCMember{Profile: m.Profile, Replicas: m.Count()})
 		}
+		if hashes {
+			if js, ok := crewDocument(c); ok {
+				rc.SHA256 = hashOf(js)
+			}
+		}
 		inv.Crews = append(inv.Crews, rc)
 	}
+	inv.Agents = SessionAgents()
+	inv.Items = localInventoryItems()
+	inv.Models = LocalModels()
 	inv.Workers = localWorkers()
 	return inv
 }
+
+// localInventoryItems lists the library items this host holds for the kinds whose
+// sync switch is on, at most sessionsync.MaxRCItems of them.
+func localInventoryItems() []sessionsync.RCItem {
+	s, err := config.LoadGlobal()
+	if err != nil {
+		return nil
+	}
+	var kinds []libitem.Kind
+	for _, k := range libstore.Kinds() {
+		if s.SyncItemEnabled(string(k)) {
+			kinds = append(kinds, k)
+		}
+	}
+	var out []sessionsync.RCItem
+	for _, it := range localLibraryItems(kinds) {
+		if len(out) >= sessionsync.MaxRCItems {
+			break
+		}
+		out = append(out, sessionsync.RCItem{Kind: it.kind, Name: it.name, SHA256: hashOf(it.data)})
+	}
+	return out
+}
+
+// maxInvAgents bounds the agent profiles one host advertises.
+const maxInvAgents = 64
+
+// SessionAgents lists the agent profiles a web session can be started with:
+// the flat profiles the TUI's picker offers (built-ins first, then the user's)
+// and the single-mode agent definitions it does not already shadow. A worker,
+// loop, monitor or scheduled definition runs on its own and is not a choice for
+// a session someone talks to. Names only; the host checks the name again when
+// the request arrives.
+func SessionAgents() []sessionsync.RCAgent {
+	look := map[string]string{}
+	var defs []agentprofile.AgentProfile
+	if ps, err := agentprofile.List(); err == nil {
+		for _, p := range ps {
+			look[p.Name] = p.DisplayName
+			if p.Mode == agentprofile.ModeSingle || p.Mode == "" {
+				defs = append(defs, p)
+			}
+		}
+	}
+	var out []sessionsync.RCAgent
+	seen := map[string]bool{}
+	add := func(name string, builtin bool) {
+		if name == "" || seen[name] || len(out) >= maxInvAgents || !ValidAgentName(name) {
+			return
+		}
+		seen[name] = true
+		out = append(out, sessionsync.RCAgent{Name: name, Builtin: builtin, DisplayName: look[name]})
+	}
+	if flat, err := profiles.List(); err == nil {
+		sort.Slice(flat, func(a, b int) bool {
+			if flat[a].Builtin != flat[b].Builtin {
+				return flat[a].Builtin
+			}
+			return flat[a].Name < flat[b].Name
+		})
+		for _, p := range flat {
+			add(p.Name, p.Builtin)
+		}
+	}
+	for _, p := range defs {
+		add(p.Name, p.Builtin)
+	}
+	return out
+}
+
+// ValidAgentName reports whether name can be an agent profile name in a start
+// request: it starts with a letter or digit, so it can never read as a flag.
+func ValidAgentName(name string) bool { return workerName.MatchString(name) }
 
 // RecentWorkers is how long a stopped or failed worker stays on the
 // website after it ends, so its exit reason and last log lines can be read.
@@ -178,6 +294,7 @@ func profileSummary(p agentprofile.AgentProfile) sessionsync.RCProfile {
 		OnSuccess: route(k.OnSuccess), OnFailure: route(k.OnFailure),
 		HandoffTo: nonNil(k.HandoffTo), HandoffLabels: nonNil(k.HandoffLabels),
 		MaxAttempts: k.MaxAttempts, Lease: p.LeaseDuration().String(),
+		ID: p.ID, DisplayName: p.DisplayName, Palette: slices.Clone(p.Palette), AvatarID: p.AvatarID,
 	}
 	if b := p.Budget; b != nil {
 		out.MaxWall, out.MaxPasses = b.MaxWallPerItem, b.MaxPassesPerItem

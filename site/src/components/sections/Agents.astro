@@ -1,6 +1,17 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Walkthrough from '../ui/Walkthrough.astro';
+import Limits from '../ui/Limits.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import CrewLanes from '../figures/CrewLanes.astro';
+import rubberDuck from '../../assets/pix/personas/8a28c058-0f9e-5320-a948-f2b651f08874.svg?url';
+import kremvax from '../../assets/pix/personas/3e8f176f-1538-5d79-b2c7-2eb35edfe989.svg?url';
+import darkAvenger from '../../assets/pix/personas/52f09d1b-981d-59e9-b770-2eec1e628b49.svg?url';
+import juniperTallis from '../../assets/pix/personas/2c302f2e-3661-5878-81af-495e448f910f.svg?url';
+import odoBrannigan from '../../assets/pix/personas/85d6dca1-af97-5646-9e64-a704a4677ce0.svg?url';
+import isadoraPell from '../../assets/pix/personas/47b621eb-90fd-53d0-9127-c28e09c2d120.svg?url';
 
 // One section for every agent Belai runs besides the session: read-only
 // subagents, background agents and crews of kanban workers. It is laid out as
@@ -9,7 +20,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Agents: helpers, background agents, workers and crews. Helpers (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Workers (belai agent start) are processes that claim items off the kanban board, alone or in a crew, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. Both crews run once per repository and have no daily limit. The delivery crew runs your test suites once for the current commit and files what they show, as failing suites, thin coverage, untested packages, property tests, fixtures, contract tests, mutation testing and docs that disagree with the code, as tasks: a clear, concise task goes straight to Backlog for a builder, and one that needs you to confirm or split it waits in Review. Launching it again on the same commit adds nothing the board already has. Each task carries acceptance gates that name a test suite the harness detected, never a command. The harness runs them on the builder's branch and again on the reviewer's, a run that tested nothing is not a pass, and a card is done only when they pass, with the reviewer deciding the gates no test can observe. A request is split into clauses, and any clause no task covers gets a gap card. The security crew and scans only when no artefact in .vulnetix records the current commit. It files one card per finding, patchers fix them or report a false positive, no known fix or a need for a person, and the verifier checks each claim itself and has the harness write an OpenVEX file for the verdict.';
+  'Agents: helpers, background agents, workers and crews. Helpers (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Workers (belai agent start) are processes that claim items off the kanban board, alone or in a crew, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. Both crews run once per repository and have no daily limit. The delivery crew runs your test suites once for the current commit and files what they show, as failing suites, thin coverage, untested packages, property tests, fixtures, contract tests, mutation testing and docs that disagree with the code, as tasks: a clear, concise task goes straight to Backlog for a builder, and one that needs you to confirm or split it waits in Review. Launching it again on the same commit adds nothing the board already has. Each task carries acceptance gates that name a test suite the harness detected, never a command. The harness runs them on the builder branch and again on the reviewer branch, a run that tested nothing is not a pass, and a card is done only when they pass, with the reviewer deciding the gates no test can observe. A request is split into clauses, and any clause no task covers gets a gap card. The security crew and scans only when no artefact in .vulnetix records the current commit. It files one card per finding, patchers fix them or report a false positive, no known fix or a need for a person, and the verifier checks each claim itself and has the harness write an OpenVEX file for the verdict. A profile can declare facts: the AWS role, account and region an agent works in, a Terraform directory, a Kubernetes context. The cloud tools read them, so a crew points at the right place without each prompt repeating it. A role the profile lists is assumed without a prompt, any other role asks you, and its temporary credentials stay in memory and reach only the AWS and Terraform commands. With belai rc running, the website sets schedules for workers, keeps a library of backed-up profiles with versions you can rewind and install on a host, and asks the host to draw a customised Pix for an agent. Autonomous work you can sign off on, ten promises each backed by a mechanism: the harness decides when a task is done by running acceptance gates, the harness claims work in one locked write, git runs layered inside the OS sandbox, a vulnerability finding is scanned, re-scanned and verified by the harness, a request is split into clauses and an uncovered clause gets a gap card, text another agent wrote is classified, a hash-chained audit records facts, a host pulls its requests and re-checks each one, budgets and handoff caps stop a runaway, and any provider or a local model can be used. Gates are references to a detected suite, never a command; a regression against the base commit counts; manual gates go to the reviewer. The Vulnetix console shows what needs a person, merges a crew into one thread with a group message, previews the flow when a card is assigned, pins a card to a host, assigns it to a person by email, pauses and resumes workers, keeps profile versions, draws avatars, verifies the audit chain and charts usage.';
 
 type Step = {
   n: string;
@@ -66,6 +77,43 @@ const steps: Step[] = [
   },
 ];
 
+// Ten promises about any unattended agent. Each body is a mechanism in this
+// repository, so a reader can check it. Nothing here describes another product.
+const promises: [string, string][] = [
+  ['Done means the tests passed', 'After each turn the harness runs the acceptance gates on the card and the exit code decides. A run that tested nothing is not a pass, and a reviewer who approves cannot overrule a failing gate.'],
+  ['Two workers never take the same card', 'Every claim is one locked write to the board. No tool lets a model claim an item, move a card or change a lease, so the harness stays in charge of who works on what.'],
+  ['Your git history stays yours', 'An agent commits on a branch of its own. Git runs in the OS sandbox with your config, hooks, index and every other ref read-only, new objects go to a private store, and one tool pushes, to one branch.'],
+  ['Every vulnerability ends in a verdict', 'The harness decides whether a scan ran. Each patcher fix is re-scanned after every round, a separate verifier re-runs the scanner, and the harness writes the OpenVEX file that records the verdict.'],
+  ['Every part of your request gets tracked', 'A request is split into at most twelve clauses. Every handoff covers one, and a clause no task covers gets a gap card, filed by the harness from ids alone.'],
+  ['Text from other agents is checked before it is read', 'Card text, lessons, handoffs and setup failures all pass the security classifier before any model reads them. A withheld card is blocked, and no worker takes it.'],
+  ['Every action leaves a record you can verify', 'With sync on, a hash-chained audit records claims, commits, gate results and VEX files from fixed fields, never from prompts or output. The Vulnetix server recomputes the chain and flags a break.'],
+  ['Steer a crew from the website', 'A host pulls its own requests and checks each one again. There is no inbound port, and the website cannot set a claim, a model, a posture or a permission. A message to a running worker needs sync.remote_prompts and is admitted like typed steering.'],
+  ['A runaway has a ceiling', 'No worker starts with guardrails off, and an autonomous one refuses to start without a pass budget, or with Bash and no working sandbox. Each item has pass, token and wall-clock budgets, handoffs stop at five per item and six hops, and a crew runs once per repository.'],
+  ['Bring the model you already use', 'Any provider Belai supports, or a model on your machine. A profile picks the provider, model and effort for the roles it runs, and the security classifier ships in the binary with no provider key to set up.'],
+];
+
+const assurance: [string, string][] = [
+  ['A gate is a reference', 'A gate names a test suite the harness detected and, for Go, a package directory and a test name. It never holds a command: the harness builds the argv from its own table and runs it without a shell.'],
+  ['The exit code decides', 'The harness runs the gates on the builder branch and again on the reviewer branch, in the OS sandbox with a scrubbed environment. A run that tested nothing is not a pass.'],
+  ['Manual gates go to the reviewer', 'A gate no test can observe is decided by the reviewer with `KanbanGate`. Manual gates reset to unmet before each review, and an abandoned one blocks the card for a person.'],
+  ['Regressions count', 'The harness compares a branch with the quality record of its base commit, so a branch cannot pass by breaking a suite that passed before.'],
+  ['Every clause is tracked', 'A request becomes at most twelve clauses, and the `request_coverage` job also files a gap card when the tasks look unlikely to finish the request.'],
+  ['Clear work goes straight on', 'A short title, a body of the right size and one to five gates send a task to Backlog for a builder. Anything else waits in Review for you, and a doubt can send a card to Review but never skip it.'],
+];
+
+const control: [string, string][] = [
+  ['What needs you', 'Overview opens on what waits for a person: open questions, cards to confirm and lapsed claims, with the working and done-today counts and the free worker slots.'],
+  ['One crew, one thread', 'Crew merges every live worker\'s transcript into one thread, and each line shows the profile hash, model and effort it ran under. A group message steers every live worker at its next pass boundary.'],
+  ['Assign with a preview', 'The Assign sheet shows who works each stage and what happens on a failure before you file the card. It can pin a card to a host, start a worker there, or assign the card to a person, who gets a short email with the card id and a link and none of the card\'s text.'],
+  ['An audit you can verify', 'The Audit tab filters by vulnerability, card, agent, repository and event kind, and Verify chain re-walks every stored hash, so an edited or missing event shows.'],
+  ['Pause between cards', 'A pause is an empty marker file that the worker checks between cards, so no turn is cut off. Set it from the CLI, the TUI or the Hosts page.'],
+  ['Why a worker idled', 'Its log says what it looks for and when nothing matched. With remote control on, Belai → Agents and Belai → Hosts show each worker, why it stopped and its last log lines, startup errors included.'],
+  ['Schedules', 'While belai rc runs, it starts a worker on a cron you set, in a directory the host offers, through `belai agent start -drain`. Trust, preflight and the worker cap still apply, and a run is recorded before it fires.'],
+  ['Profiles with history', 'A profile backs up to the library as versions you can rewind, and installs on another host from the website after the host validates it as a profile. The Agent Builder drafts every field from one sentence.'],
+  ['A face of its own', 'Give an agent a name, colours and a personality, and your host draws its Pix with your main model. Belai admits only an image made of plain shapes and gradients, so a drawing cannot carry a script or fetch anything.'],
+  ['Usage over time', 'Analytics charts tokens, models, tools, turns and time over 7, 30 or 90 days, and feeds the plan limits, pace and runway each host reports.'],
+];
+
 const quickstart = `belai kanban add "Add a CONTRIBUTING.md" -label build
 belai agent start -crew belai:delivery -trust-dir
 belai agent ps; belai kanban list
@@ -97,15 +145,35 @@ const fences = [
   ['One way to push', 'PublishBranch pushes that branch to a GitHub or GitLab origin and opens a draft PR. git push, gh pr merge and git config are denied.'],
   ['Settings from the root', 'Trust, settings and credentials are read from your repository root, so an agent cannot plant them in a worktree for the next one.'],
   ['Refuses to start', 'No worker runs with guardrails off. An autonomous one needs a pass budget; one with Bash needs a working OS sandbox.'],
-  ['Stops when the board is dry', 'A worker with nothing to claim, and no crew mate still working, waits two polls and exits, freeing its slot. Pass -stay to keep one waiting. A scheduled worker always stays.'],
-  ['You can see why it idled', 'Its log says what it looks for and when nothing matched. With remote control on, the Sessions page shows each worker, why it stopped and its last log lines, startup errors included.'],
-  ['Unclear work waits for you','Each time the delivery crew starts, the harness runs your test suites once for the current commit and files what they show as work for the scout: failing suites, thin coverage, untested packages, property tests, fixtures, contract tests and mutation testing. The scout works in a throwaway worktree where nothing is committed. Each task it hands on carries acceptance gates. A clear, concise task goes to Backlog for a builder, and one that needs you to confirm or split it lands in Review. The harness runs the gates itself before a card moves on.'],
+  ['Stops when the board is dry', 'A worker with nothing to claim, and no crew mate still working, waits two polls and exits, freeing its slot. Pass -stay to keep one waiting. A worker whose profile has its own schedule stays, and one started from a stored schedule runs with -drain and exits when the board is dry.'],
+  ['Test sweeps on HEAD', 'Each time the delivery crew starts, the harness runs your detected test suites once for the current commit and files what they show as work for the scout: failing suites, thin coverage, untested packages, property tests, fixtures, contract tests and mutation testing. Launching it again on the same commit adds nothing the board already has.'],
 ];
 
-const crews = [
-  { name: 'belai:delivery', what: 'a request, or a test run on HEAD → reviewed branches', members: [['scout', 1], ['builder', 2], ['reviewer', 1]] },
-  { name: 'belai:security', what: 'a review of HEAD → verified fixes and a VEX for every verdict', members: [['vuln-scout', 1], ['patcher', 2], ['verifier', 1]] },
-] as const;
+// Each built-in member has a persona (internal/agentprofile/builtin): a display
+// name, a palette whose first colour borders the Pix, and a drawing. A test in
+// the Belai repository checks these names, colours and files against the profiles.
+type Member = { role: string; n: number; name: string; colour: string; face: string; line: string };
+
+const crews: { name: string; what: string; members: Member[] }[] = [
+  {
+    name: 'belai:delivery',
+    what: 'a request, or a test run on HEAD → reviewed branches',
+    members: [
+      { role: 'scout', n: 1, name: 'Juniper Tallis', colour: '#2f8f5b', face: juniperTallis, line: 'Writes the survey: what is where, and small tasks for the builders.' },
+      { role: 'builder', n: 2, name: 'Odo Brannigan', colour: '#d9732a', face: odoBrannigan, line: 'Says what was built and which check proves it.' },
+      { role: 'reviewer', n: 1, name: 'Isadora Pell', colour: '#8a3a6b', face: isadoraPell, line: 'Cites the line, says why it matters and separates must-fix from nit.' },
+    ],
+  },
+  {
+    name: 'belai:security',
+    what: 'a review of HEAD → verified fixes and a VEX for every verdict',
+    members: [
+      { role: 'vuln-scout', n: 1, name: 'Rubber Duck', colour: '#f2c12e', face: rubberDuck, line: 'Talks each finding through out loud, then says which are real.' },
+      { role: 'patcher', n: 2, name: 'Kremvax', colour: '#b3262e', face: kremvax, line: 'Reports in short numbered bulletins, status word first.' },
+      { role: 'verifier', n: 1, name: 'Dark Avenger', colour: '#5b2d91', face: darkAvenger, line: 'Argues the attacker\'s case against every fix before accepting it.' },
+    ],
+  },
+];
 
 const profile = `---
 name: docs-writer
@@ -113,6 +181,7 @@ description: Writes and updates documentation items
 mode: worker
 autonomy: autonomous
 tools: [Read, Grep, Glob, Edit, Write, Bash]
+facts: {environment: staging, owner: docs-team}
 kanban:
   labels: [docs]
   on_success: {list: review, labels: [needs-review]}
@@ -133,19 +202,19 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
 
 <SealedSection label="agents" sealText={sealText} id="agents">
   <!-- The ladder -->
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
-        Agents and crews
-      </h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Agents and crews" surfaces={['tui', 'cli', 'self-hosted', 'pix sandbox']}>
       Besides the session you type in, Belai can run three kinds of agent. Each kind can change more
-      than the one before it, and has stricter limits on what it can reach.
-    </p>
-  </div>
+      than the one before it, and has stricter limits on what it can reach. At the top of the ladder a
+      crew of workers takes work from a board, and the harness claims it, runs the checks and decides
+      when it is done.
+    </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+  <figure class="mt-10 m-0">
+    <Walkthrough id="ubjrP7jpims" title="autonomous agents and crews" />
+    <figcaption class="mono mt-3 text-xs text-vx-ink/75">agents and crews, in motion</figcaption>
+  </figure>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {steps.map((s, i) => {
       const dark = i === 2;
       return (
@@ -196,22 +265,22 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
       );
     })}
   </ol>
-  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+  <div class="mono mt-3 hidden items-center gap-4 text-sm @4xl:flex" aria-hidden="true">
     <span class="text-vx-ink/60">reads and reports</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>writes and pushes on its own</span>
   </div>
 
   <!-- What changes on each step -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">How the three kinds differ</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="How the three kinds differ">
       All three follow your permission rules and the guardrails switch, and the security classifier
       checks everything they read. The table shows what else differs.
-    </p>
-  </div>
+    </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+  <details class="deep deep--wide">
+    <summary>Compare tools, write access, limits and hand-back</summary>
+    <div class="deep__body">
+  <table class="mt-4 hidden w-full border-collapse text-left @3xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="w-[16%] pb-4"><span class="sr-only">Property</span></th>
@@ -236,7 +305,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
     </tbody>
   </table>
 
-  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+  <div class="mt-4 grid gap-4 @3xl:hidden">
     {steps.map((s, i) => (
       <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <h4 class="text-xl font-bold"><span class={`mono text-xs font-medium ${i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n} </span>{s.name}</h4>
@@ -251,21 +320,40 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
       </article>
     ))}
   </div>
+    </div>
+  </details>
+
+  <!-- Ten promises -->
+  <SubHead id="sign-off" title="Autonomous work you can sign off on">
+    Leave a crew running and read the result when you are back. These ten things hold while you are away,
+    and each rests on a mechanism you can read in the source.
+  </SubHead>
+  <ol class="mt-head list-none p-0">
+    {promises.map(([q, a], i) => (
+      <li class="grid gap-x-10 gap-y-2 border-b border-vx-ink/20 py-6 first:border-t first:border-vx-ink/60 @3xl:grid-cols-[17rem_minmax(0,1fr)]">
+        <h4 class="text-lg font-bold leading-snug"><span class="mono mr-2 text-sm font-medium text-vx-mint-strong">{String(i + 1).padStart(2, '0')}</span>{q}</h4>
+        <p class="text-vx-ink/85">{a}</p>
+      </li>
+    ))}
+  </ol>
+
+  <!-- Done is decided by the harness -->
+  <SubHead id="assurance" title="Gates decide when a card is done">
+    A card carries acceptance gates. After each turn the harness runs them and routes the card by what they return.
+  </SubHead>
+  <Limits items={assurance} class="mt-head" />
 
   <!-- A crew at work -->
-  <div id="crews" class="mt-20 grid scroll-mt-8 gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A recorded crew run</h3>
-    <p class="text-vx-ink/80">
+  <SubHead id="crews" title="A recorded crew run">
       Item <code class="mono">K-507600</code>, "Add a CONTRIBUTING.md", on this repository. The builder read
       the docs, wrote the file, committed on its branch and opened{' '}
       <a class="text-vx-ink underline" href="https://github.com/Vulnetix/belai/pull/6">draft PR #6</a>. Every
       step is on the board, in <code class="mono">belai kanban list</code> and on the Vulnetix website.
-    </p>
-  </div>
+    </SubHead>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
-      <div class="hidden grid-cols-4 gap-3 rounded-xl border border-vx-ink bg-vx-bone/40 p-4 md:grid" aria-label="The board when the reviewer took the item">
+  <div class="mt-head grid gap-8 @5xl:grid-cols-12">
+    <div class="min-w-0 @5xl:col-span-8">
+      <div class="hidden grid-cols-4 gap-3 rounded-xl border border-vx-ink bg-vx-bone/40 p-4 @2xl:grid" aria-label="The board when the reviewer took the item">
         {board.map((c) => (
           <div class="flex min-h-56 flex-col gap-3">
             <p class="mono flex items-center gap-2 text-sm"><span class={`inline-block h-2.5 w-2.5 rounded-sm ${c.swatch}`}></span>{c.list}</p>
@@ -274,7 +362,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
             ) : (
               <div class="flex flex-col gap-2 rounded-lg border border-vx-ink bg-vx-cream p-3 shadow-[0_2px_0_var(--color-vx-ink)]">
                 <p class="mono text-xs text-vx-ink/60">K-507600 · 12:28</p>
-                <p class="text-sm font-semibold leading-snug">Add a CONTRIBUTING.md</p>
+                <p class="text-sm font-semibold leading-snug [overflow-wrap:anywhere]">Add a CONTRIBUTING.md</p>
                 <p class="flex flex-wrap gap-1.5">
                   <code class="mono rounded bg-vx-bone px-1.5 py-0.5 text-[11px]">#needs-review</code>
                   <code class="mono rounded bg-vx-mint px-1.5 py-0.5 text-[11px]">⚙ reviewer</code>
@@ -291,24 +379,26 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
 
       <ol class="mt-6 list-none p-0">
         {run.map(([at, move, what, who]) => (
-          <li class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 md:grid-cols-[3.5rem_13rem_minmax(0,1fr)_9rem] md:text-[15px]">
+          <li class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 @2xl:grid-cols-[3.5rem_13rem_minmax(0,1fr)_9rem] @2xl:text-[15px]">
             <span class="mono text-vx-ink/60">{at}</span>
             <span class="mono font-semibold">{move}</span>
-            <span class="col-start-2 md:col-start-auto">{what}</span>
-            <span class="mono col-start-2 text-xs text-vx-mint-strong md:col-start-auto md:text-sm">{who}</span>
+            <span class="col-start-2 @2xl:col-start-auto">{what}</span>
+            <span class="mono col-start-2 text-xs text-vx-mint-strong @2xl:col-start-auto @2xl:text-sm">{who}</span>
           </li>
         ))}
       </ol>
     </div>
 
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+    <aside class="grid min-w-0 content-start gap-5 @2xl:grid-cols-2 @5xl:col-span-4 @5xl:grid-cols-1">
+      <div class="min-w-0">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">FOUR COMMANDS</p>
         <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{quickstart}</code></pre>
       </div>
-      <div><CopyButton value={quickstart} label="copy commands" client:visible /></div>
-      <div class="rounded-xl border border-vx-ink p-5">
-        <p class="mono text-xs tracking-wider text-vx-ink/60">OR WITHOUT LEAVING THE CHAT</p>
+      <div class="mt-2"><CopyButton value={quickstart} label="copy commands" client:visible /></div>
+      </div>
+      <div class="min-w-0 rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/70">OR WITHOUT LEAVING THE CHAT</p>
         <p class="mt-3 flex items-baseline gap-3">
           <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">f9</kbd>
           <span><b>kanban</b> tab: move, route and hand items to a crew</span>
@@ -322,64 +412,53 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
   </div>
 
   <!-- Fences -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits on crew workers</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Limits on crew workers">
       A worker reads text that other people and other models wrote, which is where prompt injections
       come from. So the harness keeps control of claims, pushes and settings.
-    </p>
-  </div>
-  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
-    {fences.map(([title, body]) => (
-      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
-        <h4 class="text-lg font-bold">{title}</h4>
-        <p class="mt-2 text-sm text-vx-ink/80">{body}</p>
-      </div>
-    ))}
-  </div>
+    </SubHead>
+  <details class="deep deep--wide">
+    <summary>Limits and sweeps on a crew worker</summary>
+    <div class="deep__body">
+      <Limits items={fences} class="mt-4" />
+    </div>
+  </details>
 
   <!-- Crews and your own -->
-  <div class="mt-20 grid gap-10 lg:grid-cols-2 lg:items-start">
+  <SubHead id="profiles" title="Built-in crews and your own">
+    Two crews ship with Belai, each member with a name and a way of writing its report. Your own crews
+    are a Markdown profile away.
+  </SubHead>
+  <CrewLanes />
+  <div class="mt-sub grid gap-10 @6xl:grid-cols-2 @6xl:items-start">
     <div class="min-w-0">
-      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Built-in crews and your own</h3>
-      {crews.map((c) => (
-        <div class="mt-7">
+      {crews.map((c, ci) => (
+        <div class={ci === 0 ? '' : 'mt-8'}>
           <p class="flex flex-wrap items-baseline justify-between gap-2">
             <code class="mono text-base font-semibold">{c.name}</code>
-            <span class="text-sm text-vx-ink/60">{c.what}</span>
+            <span class="text-sm text-vx-ink/70">{c.what}</span>
           </p>
-          <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            {c.members.map(([m, n]) => (
-              <>
-                <span class="rounded-lg border border-vx-ink px-3 py-1.5"><b>{m}</b> ×{n}</span>
-                <span aria-hidden="true">→</span>
-              </>
+          <ul class="mt-3 grid gap-3 @xl:grid-cols-3">
+            {c.members.map((m) => (
+              <li class="flex gap-3 rounded-lg border border-vx-ink p-3 text-sm">
+                <img
+                  src={m.face}
+                  alt=""
+                  width="48"
+                  height="48"
+                  loading="lazy"
+                  class="h-12 w-12 flex-none rounded-full border-[3px] bg-vx-bone/60"
+                  style={`border-color: ${m.colour}`}
+                />
+                <span class="min-w-0">
+                  <b class="block">{m.name}</b>
+                  <code class="mono text-xs text-vx-ink/70">{m.role} ×{m.n}</code>
+                  <span class="mt-1 block text-vx-ink/80">{m.line}</span>
+                </span>
+              </li>
             ))}
-            <span class="rounded-lg bg-vx-mint px-3 py-1.5">draft PR</span>
-          </p>
+          </ul>
         </div>
       ))}
-      <p class="mt-7 text-vx-ink/80">
-        A worker is an ordinary profile with <code class="mono">mode: worker</code>: its{' '}
-        <code class="mono">kanban</code> block says what it takes and where it goes next,{' '}
-        <code class="mono">workspace</code> gives it a worktree, <code class="mono">budget</code> bounds one
-        item. Write it as Markdown with front matter, as Claude Code, OpenClaw and Hermes do, and{' '}
-        <code class="mono">belai agent import</code> it. A repository's settings can turn workers off or
-        lower their number, but cannot turn them on or raise it.
-      </p>
-      <p class="mt-4 text-vx-ink/80">
-        Or start from one sentence. <code class="mono">belai agent draft "what it should do"</code> drafts every
-        field and writes a file ready to import, and <code class="mono">-json</code> shows why it chose each value.
-        The Agent Builder on the Vulnetix website asks a live session to draft the same way, then lets you take,
-        change or drop each field before you download it. The draft never touches guardrails or permission
-        asks, and it only suggests crews from workers you already have.
-      </p>
-      <p class="mt-4 text-vx-ink/80">
-        <a class="text-vx-ink underline" href={`${docBase}fleet.md`}>docs/fleet.md</a> has the runtime and a
-        comparison with Hermes Agent and OpenClaw;{' '}
-        <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md`}>docs/agent-profiles.md</a> has
-        every profile field.
-      </p>
     </div>
     <div class="min-w-0">
       <div class="rounded-xl bg-vx-ink p-5">
@@ -389,4 +468,60 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
       <div class="mt-2"><CopyButton value={profile} label="copy profile" client:visible /></div>
     </div>
   </div>
+
+  <details class="deep">
+    <summary>Personas, worker profiles, facts and drafting</summary>
+    <div class="deep__body">
+      <p>
+        Each built-in member has a persona: a display name, a colour palette, a short personality that sets
+        how it writes its report, and a Pix drawn in its colours. The Vulnetix console shows the agent by these.
+        A persona changes how an agent writes and looks, and has no effect on what it may do.
+        <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md#built-in-personas`}>docs/agent-profiles.md</a>{' '}
+        lists the ten built-in personas.
+      </p>
+      <p>
+        A worker is an ordinary profile with <code class="mono">mode: worker</code>: its{' '}
+        <code class="mono">kanban</code> block says what it takes and where it goes next,{' '}
+        <code class="mono">workspace</code> gives it a worktree, <code class="mono">budget</code> bounds one
+        item. Write it as Markdown with front matter, as Claude Code, OpenClaw and Hermes do, and{' '}
+        <code class="mono">belai agent import</code> it. A repository's settings can turn workers off or
+        lower their number, but cannot turn them on or raise it.
+      </p>
+      <p>
+        Any profile can add <code class="mono">facts</code>: where its agent works, as strings or lists. The
+        well-known keys cover sixteen tool families, from AWS, Terraform and kubectl to GitHub, Pulumi and
+        Vercel, and the model sees the rest. A pinned fact refuses the flags that would point the tool
+        elsewhere, and flags that send a tool's credentials to another endpoint are refused with or without
+        facts. A role the profile lists is assumed without a prompt, and any other role asks you first. The
+        temporary credentials stay in memory and reach only the AWS and Terraform commands.
+      </p>
+      <p>
+        Or start from one sentence. <code class="mono">belai agent draft "what it should do"</code> drafts every
+        field and writes a file ready to import, and <code class="mono">-json</code> shows why it chose each value.
+        The Agent Builder on the Vulnetix website asks a live session to draft the same way, then lets you take,
+        change or drop each field before you download it. The draft never touches guardrails or permission
+        asks, and it only suggests crews from workers you already have.
+      </p>
+      <p>
+        <a class="text-vx-ink underline" href={`${docBase}fleet.md`}>docs/fleet.md</a> has the runtime and a
+        comparison with Hermes Agent and OpenClaw;{' '}
+        <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md`}>docs/agent-profiles.md</a> has
+        every profile field.
+      </p>
+    </div>
+  </details>
+
+  <!-- The console -->
+  <SubHead id="control-plane" title="Run the fleet from the console" surfaces={['vulnetix only']}>
+    Sessions mirror to the Vulnetix website, and a host running belai rc takes requests from it. The
+    console shows the whole fleet and what needs a person.
+  </SubHead>
+  <Limits items={control.slice(0, 4)} class="mt-head" />
+  <details class="deep deep--wide">
+    <summary>Pausing, schedules, worker logs, profile history, avatars and usage</summary>
+    <div class="deep__body">
+      <Limits items={control.slice(4)} class="mt-4" />
+    </div>
+  </details>
+
 </SealedSection>

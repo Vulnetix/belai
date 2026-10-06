@@ -13,10 +13,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/avatar"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/teleport/changes"
 )
 
 // DefaultMax is how many sessions a daemon runs at once unless told otherwise.
@@ -51,6 +60,13 @@ type Options struct {
 	// Inventory reads the host's worker profiles, crews and live workers
 	// (LocalInventory unless a test replaces it).
 	Inventory func() Inventory
+	// Knowledge reads the knowledge catalogue for the offered directories
+	// (localKnowledge unless a test replaces it).
+	Knowledge func([]Dir) []sessionsync.RCKnowledge
+	// Models says which providers this host can run a web session on
+	// (LocalModels unless a test replaces it); a start request that names a
+	// provider outside it is refused.
+	Models func() *sessionsync.RCModels
 	// StartWorkers runs `belai agent start` for a worker or crew request
 	// (runAgentStart unless a test replaces it). It returns the command's
 	// report, or an error whose text is the refusal reason.
@@ -59,6 +75,74 @@ type Options struct {
 	// (setWorkerPaused unless a test replaces it). The error text is the
 	// refusal reason.
 	PauseWorker func(id string, pause bool) error
+
+	// Schedules is the host's stored schedules (internal/schedule). nil means
+	// this daemon fires none and syncs none.
+	Schedules *schedule.Store
+	// ScheduleRemote is the website half of schedule sync (the sync client
+	// unless a test replaces it).
+	ScheduleRemote schedule.Remote
+	// ScheduleEvery is how often stored schedules are checked and synced
+	// (30s).
+	ScheduleEvery time.Duration
+	// Now is the scheduler's clock (time.Now unless a test replaces it).
+	Now func() time.Time
+	// Busy reports whether a worker of the profile is already live in the
+	// directory's repository (the fleet registry unless a test replaces it).
+	Busy func(profile, dir string) bool
+	// RemotePrompts reports whether the website may send this host text for a
+	// model to read: the user's own sync.remote_prompts (an avatar request needs
+	// it; a profile install does not, being the user's own action). It reads the
+	// global settings and fails closed unless a test replaces it.
+	RemotePrompts func() bool
+	// TeleportPush is this host's push policy for a teleport (config.TeleportPush*:
+	// the user's teleport.push, read from the global settings each time); nil is ask.
+	TeleportPush func() string
+	// TeleportGit builds the git runners a teleport_code request reads and pushes
+	// with; nil is the hardened default (changes.Hardened). Tests replace it.
+	TeleportGit changes.Runners
+	// Distill writes the hand-over of a replay's changes with this host's model
+	// (the teleport_distill role). nil, or a model that gives nothing usable, is the
+	// harness's file list.
+	Distill func(ctx context.Context, files []rolemanager.TeleportFile, skipped []string, patch string) rolemanager.Distilled
+	// DrawAvatar draws a customised Pix with this host's main model for an
+	// "avatar" request. It returns the SVG, or the reason it could not (harness
+	// text). nil means this daemon has no model to draw with and refuses.
+	DrawAvatar func(ctx context.Context, r avatar.Request) ([]byte, string)
+	// Index indexes the documents of a freshly installed profile: it runs
+	// `belai agent knowledge -index NAME` from a trusted directory this daemon
+	// offers (runKnowledgeIndex unless a test replaces it). It returns a short
+	// clause for the acknowledgement, or the reason it could not.
+	Index func(ctx context.Context, exe, dir, profile string) (string, error)
+	// SyncProfiles reports whether the host keeps the website's agent and crew
+	// library current by itself: the user's own sync.profiles, read from the
+	// global settings each check and failing closed unless a test replaces it.
+	SyncProfiles func() bool
+	// SyncItem reports whether the host keeps the website's library of one kind of
+	// item (skill, prompt, ...) current by itself and takes backup and install
+	// requests for it: the user's own sync.<kinds>, read from the global settings
+	// each time and failing closed unless a test replaces it.
+	SyncItem func(kind libitem.Kind) bool
+	// LibraryRemote is the server half of that sync (the sync client unless a
+	// test replaces it).
+	LibraryRemote LibraryRemote
+	// LibrarySyncEvery is how often profiles, crews and items are checked (30s).
+	LibrarySyncEvery time.Duration
+
+	// Controls lets web sessions change their own controls (--web-controls,
+	// internal/sessionctl); GuardrailsOff also lets them turn guardrails off
+	// (--web-allow-guardrails-off). Both reach a session as fixed argv.
+	Controls      bool
+	GuardrailsOff bool
+	// ProjectSettings advertises each offered directory's project preferences
+	// and takes "project_prefs" requests (--web-project-settings).
+	ProjectSettings bool
+	// Shell lets web sessions run a shell line on this host (--web-shell); it
+	// reaches a session as fixed argv.
+	Shell bool
+	// Prefs reads the offered directories' preferences (localPrefs unless a
+	// test replaces it).
+	Prefs func([]Dir) map[string]DirPrefs
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -66,14 +150,41 @@ type WorkerStart struct {
 	Exe, Cwd string
 	// Profile or Crew; exactly one is set.
 	Profile, Crew string
+	// Provider and Model are the request's model for these workers; empty
+	// means the host's own default (belai agent start -provider -model).
+	Provider, Model string
 	// MaxWorkers overrides agents.max_workers for this start when set.
 	MaxWorkers int
+	// Drain makes the workers exit once nothing is left to claim, whatever
+	// cron schedule their profile carries (a stored schedule fires them).
+	Drain bool
+	// Fill starts only the replicas a crew lacks in the directory.
+	Fill bool
+	// Controls and GuardrailsOff are the daemon's own --web-controls and
+	// --web-allow-guardrails-off, passed on so the workers take session controls.
+	Controls, GuardrailsOff bool
 }
 
 // Child is one session to start.
 type Child struct {
 	Exe, Cwd, Dispatch, SessionID, Mode, Prompt, LogPath string
-	Idle                                                 time.Duration
+	// Dirs are the extra workspace directories (/add-dir), each already
+	// checked against the directories the host offers.
+	Dirs []string
+	// Provider, Model and Effort are the request's override; empty means the
+	// host's own default (or its routing table).
+	Provider, Model, Effort string
+	// Profile is the agent profile a web session is engaged with (agent mode
+	// only); empty runs the default agent.
+	Profile string
+	// GitSync is the request's switch for the git sync before turns; nil
+	// leaves it to git.sync in the host's settings.
+	GitSync *bool
+	Idle    time.Duration
+	// Controls and GuardrailsOff are the daemon's own flags, passed on.
+	Controls, GuardrailsOff bool
+	// Shell is the daemon's --web-shell, passed on.
+	Shell bool
 }
 
 // Daemon is a running `belai rc`.
@@ -84,9 +195,16 @@ type Daemon struct {
 	sessions map[string]*child
 	online   bool
 	lastErr  string
-	catalog  string // Inventory.catalogueHash of the last advertisement
+	catalog  string            // Inventory.catalogueHash of the last advertisement
+	schedErr map[string]string // per sync step, the last failure logged ("" when it works)
 	started  time.Time
 	wg       sync.WaitGroup
+	// avatarSlot holds one token while an avatar is being drawn.
+	avatarSlot chan struct{}
+	// codeSlot holds a token for each teleport_code request being answered.
+	codeSlot chan struct{}
+	// libsync is the automatic sync's memory of what it has settled (autosync.go).
+	libsync *libSyncState
 }
 
 type child struct {
@@ -119,6 +237,33 @@ func New(o Options) (*Daemon, error) {
 	if o.Inventory == nil {
 		o.Inventory = LocalInventory
 	}
+	if o.Models == nil {
+		o.Models = LocalModels
+	}
+	if o.Knowledge == nil {
+		o.Knowledge = localKnowledge
+	}
+	{
+		// The knowledge catalogue covers the offered directories, which only
+		// the daemon knows.
+		read, dirs, cat := o.Inventory, o.Dirs, o.Knowledge
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.Knowledge = cat(dirs)
+			return inv
+		}
+	}
+	if o.ProjectSettings {
+		if o.Prefs == nil {
+			o.Prefs = localPrefs
+		}
+		read, dirs, prefs := o.Inventory, o.Dirs, o.Prefs
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.Prefs = prefs(dirs)
+			return inv
+		}
+	}
 	if o.MaxWorkers > 0 {
 		read := o.Inventory
 		o.Inventory = func() Inventory {
@@ -133,7 +278,35 @@ func New(o Options) (*Daemon, error) {
 	if o.StartWorkers == nil {
 		o.StartWorkers = runAgentStart
 	}
-	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now()}, nil
+	if o.ScheduleEvery <= 0 {
+		o.ScheduleEvery = DefaultScheduleEvery
+	}
+	if o.ScheduleRemote == nil {
+		o.ScheduleRemote = o.Client
+	}
+	if o.Busy == nil {
+		o.Busy = localBusy
+	}
+	if o.RemotePrompts == nil {
+		o.RemotePrompts = remotePromptsOn
+	}
+	if o.Index == nil {
+		o.Index = runKnowledgeIndex
+	}
+	if o.SyncProfiles == nil {
+		o.SyncProfiles = syncProfilesOn
+	}
+	if o.SyncItem == nil {
+		o.SyncItem = syncItemOn
+	}
+	if o.LibraryRemote == nil {
+		o.LibraryRemote = o.Client
+	}
+	if o.LibrarySyncEvery <= 0 {
+		o.LibrarySyncEvery = DefaultLibrarySyncEvery
+	}
+	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
+		codeSlot: make(chan struct{}, 2), libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -149,14 +322,28 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.writeRecord()
 	defer removeRecord(os.Getpid())
 
+	// The daemon's own audit stream: the host's remote-control sessions and
+	// the requests it served (docs/audit.md). Best effort.
+	if dir, err := config.GlobalDir(); err == nil {
+		defer sessionsync.StartAudit(context.Background(), d.o.Client, d.o.HostID, d.o.Host, dir).Close(5 * time.Second)
+	}
+
 	d.register(ctx, d.o.Inventory())
+	audit.Emit(audit.Fact{Kind: audit.HostRCOnline, ActorKind: audit.ActorHarness,
+		Data: map[string]string{"version": d.o.Host.BelaiVersion}})
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
 	if d.o.MaxWorkers > 0 {
-		d.logf("up to %d fleet workers (--max overrides agents.max_workers)", d.o.MaxWorkers)
+		d.logf("up to %d fleet workers (overrides agents.max_workers)", d.o.MaxWorkers)
 	}
 	d.logf("start sessions at %s", d.o.URL)
 
 	go d.heartbeat(ctx)
+	if d.o.Schedules != nil {
+		d.wg.Add(1)
+		go d.scheduler(ctx)
+	}
+	d.wg.Add(1)
+	go d.librarySync(ctx)
 	d.poll(ctx)
 
 	d.shutdown()
@@ -168,7 +355,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews}
+		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge,
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings}
+	if d.o.Controls {
+		for _, c := range sessionctl.Controls {
+			h.RC.ControlCatalogue = append(h.RC.ControlCatalogue, sessionsync.RCControl{
+				ID: c.ID, Command: c.Command, Usage: c.Usage, Keys: c.Keys, Values: c.Values, Kind: c.Kind,
+			})
+		}
+	}
+	if h.RC.Items == nil {
+		h.RC.Items = []sessionsync.RCItem{}
+	}
 	if h.RC.Profiles == nil {
 		h.RC.Profiles = []sessionsync.RCProfile{}
 	}
@@ -179,7 +377,11 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	d.catalog = inv.catalogueHash()
 	d.mu.Unlock()
 	for _, dir := range d.o.Dirs {
-		h.RC.Dirs = append(h.RC.Dirs, sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
+		rd := dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
+		if p, ok := inv.Prefs[dir.Path]; ok {
+			rd.Prefs, rd.Effective = p.Prefs, p.Effective
+		}
+		h.RC.Dirs = append(h.RC.Dirs, rd)
 	}
 	backoff := time.Second
 	for {
@@ -251,47 +453,167 @@ func (d *Daemon) poll(ctx context.Context) {
 
 // handle applies one request. Every field is untrusted.
 func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
+	// Every request is acknowledged through here, so the audit log holds each
+	// one with its kind and outcome. The kind is reduced to a known word: the
+	// request is the website's, and only the word the host recognised is kept.
+	ack := func(ctx context.Context, id, status, sid, reason string) {
+		kind := "unknown"
+		switch r.Kind {
+		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs", "teleport_backup", "teleport_code":
+			kind = r.Kind
+		}
+		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
+			Data: map[string]string{"dispatch": kind, "status": status}})
+		d.ack(ctx, id, status, sid, reason)
+	}
 	switch r.Kind {
 	case "start":
 		sid, reason := d.start(r)
 		if reason != "" {
 			d.logf("refused session in %s: %s", r.Cwd, reason)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
 			return
 		}
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, sid, "")
+		ack(ctx, r.ID, sessionsync.DispatchStarted, sid, "")
 	case "stop":
 		if d.stop(r.SessionID) {
 			d.logf("stopping session %s", short(r.SessionID))
-			d.ack(ctx, r.ID, sessionsync.DispatchStopped, r.SessionID, "")
+			ack(ctx, r.ID, sessionsync.DispatchStopped, r.SessionID, "")
 			return
 		}
-		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
+		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
 	case "worker", "crew":
 		report, reason := d.startWorkers(r)
 		if reason != "" {
 			d.logf("refused %s %s%s in %s: %s", r.Kind, r.Profile, r.Crew, r.Cwd, reason)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
 			return
 		}
 		d.logf("started %s %s%s in %s", r.Kind, r.Profile, r.Crew, r.Cwd)
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	case "pause", "resume":
 		if !fleet.ValidID(r.Worker) {
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that is not a worker id")
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that is not a worker id")
 			return
 		}
 		if err := d.o.PauseWorker(r.Worker, r.Kind == "pause"); err != nil {
 			d.logf("refused %s %s: %v", r.Kind, r.Worker, err)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
 			return
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+	case "avatar":
+		// Answered in the background, so a slow model never holds the queue.
+		d.startAvatar(ctx, r, ack)
+	case "profile_backup", "profile_install":
+		var report, why string
+		if r.Kind == "profile_backup" {
+			report, why = d.backupProfile(ctx, r)
+		} else {
+			report, why = d.installProfile(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Profile), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "crew_backup", "crew_install":
+		var report, why string
+		if r.Kind == "crew_backup" {
+			report, why = d.backupCrew(ctx, r)
+		} else {
+			report, why = d.installCrew(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s%s: %s", r.Kind, short(r.Library), sanitizeName(r.Crew), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "teleport_backup":
+		// Backs up the session's profile, the crews that list it and their
+		// members, so the host that continues the session can install them.
+		report, why := d.backupForTeleport(ctx, r)
+		if why != "" {
+			d.logf("refused teleport_backup %s: %s", sanitizeName(strings.Join(r.Profiles, ",")), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("teleport_backup: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "teleport_code":
+		// Answered in the background, so a model's hand-over never holds the queue.
+		d.startTeleportCode(ctx, r, ack)
+	case "item_backup", "item_install":
+		var report, why string
+		if r.Kind == "item_backup" {
+			report, why = d.backupItem(ctx, r)
+		} else {
+			report, why = d.installItem(ctx, r)
+		}
+		if why != "" {
+			d.logf("refused %s %s %s: %s", r.Kind, sanitizeName(r.ItemKind), sanitizeName(r.Name), why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("%s: %s", r.Kind, report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "library_sync":
+		// Counts go in the acknowledgement; no item name or document does.
+		report, why := d.librarySyncNow(ctx)
+		if why != "" {
+			d.logf("refused library_sync: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("library_sync: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "provider_keys_install":
+		// Slugs go in the log and the acknowledgement; a key never does.
+		report, why := d.installProviderKeys(ctx, r)
+		if why != "" {
+			d.logf("refused provider_keys_install: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("provider_keys_install: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "provider_keys_remove":
+		// Slugs only, as for an install; nothing is fetched.
+		report, why := d.removeProviderKeys(r)
+		if why != "" {
+			d.logf("refused provider_keys_remove: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("provider_keys_remove: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "project_prefs":
+		// Key names and counts go in the log and the acknowledgement; values
+		// are fixed words, booleans and numbers checked by the host.
+		report, why := d.setProjectPrefs(r)
+		if why != "" {
+			d.logf("refused project_prefs in %s: %s", r.Cwd, why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("project_prefs: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+		// Advertise the new values now rather than at the next heartbeat.
+		d.register(ctx, d.o.Inventory())
 	default:
-		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
+		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}
 }
+
+// sanitizeName reduces a profile name from a request to a short identifier for
+// the log.
+func sanitizeName(s string) string { return sanitize.Ident(s, 64) }
 
 func (d *Daemon) ack(ctx context.Context, id, status, sid, reason string) {
 	if err := d.o.Client.AckDispatch(ctx, id, status, sid, reason); err != nil && ctx.Err() == nil {
@@ -307,13 +629,23 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		return "", "this host does not offer that directory"
 	}
 	switch r.Mode {
-	case "", "agent", "plan", "goal":
+	case "", "agent", "plan", "goal", "code":
 	default:
 		return "", "unknown mode " + fmt.Sprintf("%q", r.Mode)
+	}
+	dirs, ok := AllowedExtra(d.o.Dirs, cwd, r.Dirs)
+	if !ok {
+		return "", "this host does not offer one of those directories"
 	}
 	prompt := sessionsync.CleanPrompt(r.Prompt)
 	if prompt == "" {
 		return "", "the prompt was empty after cleaning"
+	}
+	if why := checkOverride(r.Provider, r.Model, r.Effort, d.o.Models); why != "" {
+		return "", why
+	}
+	if why := d.checkAgentProfile(r.Profile, r.Mode); why != "" {
+		return "", why
 	}
 	d.mu.Lock()
 	if len(d.sessions) >= d.o.Max {
@@ -328,8 +660,11 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		return "", "could not mint a session id"
 	}
 	c := Child{
-		Exe: d.o.Exe, Cwd: cwd, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
+		Exe: d.o.Exe, Cwd: cwd, Dirs: dirs, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
+		Provider: r.Provider, Model: r.Model, Effort: r.Effort, Profile: r.Profile, GitSync: r.GitSync,
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
+		Shell: d.o.Shell,
 	}
 	pid, wait, err := d.o.Start(c)
 	if err != nil {
@@ -397,6 +732,8 @@ func (d *Daemon) shutdown() {
 	if err := d.o.Client.RCOffline(ctx, d.o.HostID); err != nil {
 		d.logf("offline: %v", err)
 	}
+	audit.Emit(audit.Fact{Kind: audit.HostRCOffline, ActorKind: audit.ActorHarness,
+		Data: map[string]string{"reason": "stopped"}})
 	d.logf("remote control off")
 }
 
@@ -438,15 +775,44 @@ func (d *Daemon) sessionLog(sid string) string {
 	return filepath.Join(dir, "sessions", sid+".log")
 }
 
-// startChild runs `belai rc-session` in the session's directory, in its own
-// process group so a stop reaches its tools too. The prompt goes over stdin,
-// never argv, so it stays out of the process list.
-func startChild(c Child) (int, func() error, error) {
+// childArgs is the fixed argv of one `belai rc-session`. The prompt is not in
+// it (it goes over stdin), and every value is one the daemon already checked.
+func childArgs(c Child) []string {
 	args := []string{"rc-session", "-dispatch", c.Dispatch, "-session-id", c.SessionID, "-idle", c.Idle.String()}
 	if c.Mode != "" {
 		args = append(args, "-mode", c.Mode)
 	}
-	cmd := exec.Command(c.Exe, args...)
+	for _, f := range [][2]string{{"-provider", c.Provider}, {"-model", c.Model}, {"-effort", c.Effort}} {
+		if f[1] != "" {
+			args = append(args, f[0], f[1])
+		}
+	}
+	if c.Profile != "" {
+		args = append(args, "-profile", c.Profile)
+	}
+	for _, dir := range c.Dirs {
+		args = append(args, "-add-dir", dir)
+	}
+	if c.GitSync != nil {
+		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])
+	}
+	if c.Controls {
+		args = append(args, "-controls")
+		if c.GuardrailsOff {
+			args = append(args, "-allow-guardrails-off")
+		}
+	}
+	if c.Shell {
+		args = append(args, "-shell")
+	}
+	return args
+}
+
+// startChild runs `belai rc-session` in the session's directory, in its own
+// process group so a stop reaches its tools too. The prompt goes over stdin,
+// never argv, so it stays out of the process list.
+func startChild(c Child) (int, func() error, error) {
+	cmd := exec.Command(c.Exe, childArgs(c)...)
 	cmd.Dir = c.Cwd
 	cmd.Stdin = strings.NewReader(c.Prompt)
 	var logFile *os.File
@@ -459,6 +825,10 @@ func startChild(c Child) (int, func() error, error) {
 		}
 	}
 	proc.SetProcessGroup(cmd)
+	// exec.Command, not CommandContext: the session outlives the dispatch and
+	// a stop signals its group through proc.Terminate/Kill. Start refuses a
+	// non-nil Cancel on a command CommandContext did not make.
+	cmd.Cancel = nil
 	if err := cmd.Start(); err != nil {
 		if logFile != nil {
 			logFile.Close()

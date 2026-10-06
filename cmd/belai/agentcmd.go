@@ -30,6 +30,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionctl"
 	"github.com/vulnetix/belai/internal/trustgate"
 )
 
@@ -39,10 +40,24 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
   show NAME                      one profile as JSON
   validate FILE                  check a .json or .md profile
   import [-force] FILE           validate a .json or .md profile and save it
+  import -from FORMAT [-name N] [-yes] [-force] PATH
+                                 convert another harness's agent definition
+                                 (claws, nemoclaw, hermes, mini-swe, auto);
+                                 a preview unless -yes
   draft [-json] [-o FILE] PREMISE  draft a profile from a premise as markdown
                                  (every offer taken; -json: the offers and why)
   crews                          crews and their members
+  crew import [-force] FILE | export NAME | delete NAME
+                                 a crew as the JSON the library keeps
+  files NAME                     the files an agent carries, and where each is found
+  files add NAME FILE [-as PATH] attach a file to an agent (kept in the agent's
+                                 own files and listed in its knowledge.paths)
+  files rm NAME PATH             detach a file
+  files adopt DIR [-dry-run]     attach each DIR/<agent>.md to the agent of that name
   memory NAME [-clear]           a worker's lessons
+  knowledge [-index] [-json] [NAME]  the retrieval indexes: this project's
+                                 .vulnetix output and NAME's listed documents;
+                                 -index brings them up to date first
   run [flags] NAME               run a worker in the foreground
       -once                      work one item (or find none) and exit
       -item K-xxxxxx             work this item
@@ -50,13 +65,15 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -provider P -model M       override the model
       -stay                      keep waiting for work instead of exiting
                                  once nothing is left to claim
+      -drain                     exit once nothing is left to claim even
+                                 with a cron schedule (not with -stay)
   start [flags] NAME | -crew C   start detached workers; prints their ids
       -replicas N                workers of NAME (default 1)
-      -trust-dir, -provider, -model, -stay as for run
+      -trust-dir, -provider, -model, -stay, -drain as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
-  pause ID|NAME                 finish the card in hand, then claim nothing
-  resume ID|NAME                take cards again
+  pause ID|NAME                  finish the card in hand, then claim nothing
+  resume ID|NAME                 take cards again
   stop ID|NAME | -all            stop workers; their items go back to the board
   status                         workers and this project's board
 
@@ -68,7 +85,7 @@ a cron schedule keeps it). See docs/fleet.md.
 
 // runAgentCLI implements `belai agent …` and returns the exit code.
 func runAgentCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "help" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "-help" || args[0] == "help" || args[0] == "--help" {
 		fmt.Fprint(stderr, agentUsage)
 		if len(args) == 0 {
 			return 2
@@ -121,8 +138,14 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 
 	case "validate", "import":
 		force := fs.Bool("force", false, "replace an existing profile of the same name")
+		from := fs.String("from", "", "the format of a definition written for another harness: claws, nemoclaw, hermes, mini-swe or auto")
+		importName := fs.String("name", "", "with -from: the profile name to use instead of the one in the source")
+		yes := fs.Bool("yes", false, "with -from: save the profile and install its skills (without it the import is a preview)")
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-			return 2, fmt.Errorf("usage: belai agent %s FILE", cmd)
+			return 2, fmt.Errorf("usage: belai agent %s [-from FORMAT] FILE", cmd)
+		}
+		if *from != "" {
+			return agentImportForeign(cmd == "validate", *from, fs.Arg(0), *importName, *yes, *force, stdout, stderr)
 		}
 		data, err := os.ReadFile(fs.Arg(0))
 		if err != nil {
@@ -131,6 +154,9 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 		p, err := agentprofile.ParseFile(fs.Arg(0), data)
 		if err != nil {
 			return 1, fmt.Errorf("%s: %w", fs.Arg(0), err)
+		}
+		for _, w := range p.FactWarnings() {
+			fmt.Fprintf(stderr, "%s: warning: %s\n", fs.Arg(0), w)
 		}
 		if cmd == "validate" {
 			fmt.Fprintf(stdout, "%s: valid %s profile %q\n", fs.Arg(0), p.Mode, p.Name)
@@ -165,6 +191,15 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 			fmt.Fprintf(stdout, "%s  %s\n    %s\n", c.Name, c.Description, strings.Join(members, ", "))
 		}
 		return 0, nil
+
+	case "knowledge":
+		return agentKnowledge(ctx, fs, rest, stdout, stderr, asJSON)
+
+	case "files":
+		return agentFiles(ctx, fs, rest, stdout, asJSON)
+
+	case "crew":
+		return agentCrew(fs, rest, stdout)
 
 	case "memory":
 		clear := fs.Bool("clear", false, "delete the lessons")
@@ -283,9 +318,15 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	crew := fs.String("crew", "", "the crew this worker belongs to (set by `agent start`)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
+	drain := fs.Bool("drain", false, "exit once nothing is left to claim even when the profile has a cron schedule")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
+	webControls := fs.Bool("web-controls", false, "take session controls from the website (set by `agent start`)")
+	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, guardrails may be turned off from the website (set by `agent start`)")
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay] NAME")
+		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME")
+	}
+	if *stay && *drain {
+		return 2, errors.New("-stay and -drain contradict each other")
 	}
 	name := fs.Arg(0)
 	wd, _ := os.Getwd()
@@ -302,6 +343,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		return 1, err
 	}
 	if err := fleet.Preflight(profile, settings, pol); err != nil {
+		return 1, err
+	}
+	if err := fleet.CheckRepo(profile, repo); err != nil {
 		return 1, err
 	}
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
@@ -350,7 +394,8 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	for _, t := range profile.Tools {
 		if strings.HasPrefix(t, "mcp__") {
 			mcpMgr = mcp.StartAsync(ctx, settings.MCP, mcp.Options{
-				Workdir: repo, HTTPClient: httpclient.Default(),
+				Builtins: builtinMCP(settings, repo),
+				Workdir:  repo, HTTPClient: httpclient.Default(),
 				VulnetixAuth: func() (string, error) { return credentials.VulnetixAuthHeader(repo) },
 				Sandbox:      func() sandbox.Policy { return sandbox.FromSettings(settings.Sandbox, []string{repo}, pol) },
 			})
@@ -366,10 +411,22 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	w := &fleet.Worker{
 		Profile: profile, Repo: repo, Settings: settings, Posture: pol,
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
-		Sessions: sessions, Sync: headless.SyncClient(settings, repo),
+		Sessions: sessions, Sync: headless.SyncClient(settings, repo), RemotePrompts: settings.SyncRemotePromptsEnabled(),
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:   *once, Item: *item, Stay: *stay, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
+		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
+	}
+	if *webControls {
+		// The model, effort, guardrails and caveman of the next turn, from the
+		// website; a model is resolved when the control arrives, the way a
+		// remote session resolves one (rccmd.go).
+		w.Controls = fleet.NewWorkerControls(settings, cfg, rcControlEnv(cfg, *allowOff), func(st sessionctl.State) (run.Config, error) {
+			nc, err := run.ResolveWithSource(st.Model, st.Provider, os.Getenv, resolver)
+			if err != nil {
+				return run.Config{}, err
+			}
+			return withClassifier(nc, settings, resolver)
+		})
 	}
 	if err := w.Run(ctx); err != nil {
 		return 1, err
@@ -442,8 +499,18 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	model := fs.String("model", "", "model override")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
+	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
+	fill := fs.Bool("fill", false, "with -crew, start only the replicas the crew lacks in this repository")
+	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
+	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
 	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
-		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW")
+		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW [-fill]")
+	}
+	if *stay && *drain {
+		return 2, errors.New("-stay and -drain contradict each other")
+	}
+	if *fill && *crewName == "" {
+		return 2, errors.New("-fill needs -crew")
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -456,11 +523,13 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	type launch struct{ profile, crew string }
 	var launches []launch
+	var crew agentprofile.Crew
 	if *crewName != "" {
 		c, err := agentprofile.LoadCrew(*crewName)
 		if err != nil {
 			return 1, err
 		}
+		crew = c
 		for _, m := range c.Members {
 			for range m.Count() {
 				launches = append(launches, launch{m.Profile, c.Name})
@@ -483,6 +552,9 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		}
 		if err := fleet.Preflight(p, settings, pol); err != nil {
 			return 1, fmt.Errorf("%s: %w", l.profile, err)
+		}
+		if err := fleet.CheckRepo(p, repo); err != nil {
+			return 1, err
 		}
 	}
 	store, err := kanban.OpenDefault()
@@ -511,13 +583,27 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	var started []string
 	// The one-per-repository check, the worker cap and the spawns are one step
 	// under the crew-start lock, so two starts fired together cannot both pass.
-	if err := reg.WithCrewStart(*crewName, repo, onePerRepo, func() error {
+	// Filling a crew that is already live is the point of -fill, so it skips the
+	// one-per-repository refusal; the cap still applies to what it starts.
+	nothing := false
+	if err := reg.WithCrewStart(*crewName, repo, onePerRepo && !*fill, func() error {
 		live, _ := reg.Live()
+		if *fill {
+			launches = launches[:0]
+			for _, p := range fleet.FillCrew(crew, live, repo) {
+				launches = append(launches, launch{p, crew.Name})
+			}
+			if len(launches) == 0 {
+				nothing = true
+				return nil
+			}
+		}
 		if len(live)+len(launches) > max {
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 		}
 		for _, l := range launches {
-			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, MaxWorkers: spawnMax})
+			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
+				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff})
 			if err != nil {
 				return err
 			}
@@ -526,6 +612,10 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return nil
 	}); err != nil {
 		return 1, err
+	}
+	if nothing {
+		fmt.Fprintf(stdout, "%s has every replica it asks for in this repository; nothing to fill\n", crew.Name)
+		return 0, nil
 	}
 	// Wait briefly for each worker to register, so a worker that fails its
 	// own start is reported here rather than discovered later.
@@ -709,18 +799,7 @@ func workerModel(flagProvider, flagModel string, s config.Settings, loadState fu
 	if flagProvider != "" || flagModel != "" {
 		return flagProvider, flagModel
 	}
-	provider, model = s.Provider, s.Model
-	if provider == "" || model == "" {
-		if st, err := loadState(); err == nil {
-			if provider == "" {
-				provider = st.Provider
-			}
-			if model == "" {
-				model = st.Model
-			}
-		}
-	}
-	return provider, model
+	return config.SelectedModel(s, loadState)
 }
 
 // agentPause asks the workers a ref names to pause or resume. A paused worker

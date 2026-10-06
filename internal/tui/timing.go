@@ -3,6 +3,7 @@ package tui
 import (
 	"time"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
@@ -33,6 +34,86 @@ func (a *App) stampMessages(at time.Time) {
 		}
 	}
 }
+
+// maxPlaceBack bounds how many rows a late row may hop back over.
+const maxPlaceBack = 64
+
+// movableRow reports whether a row may be placed by its time. Only notices and
+// cards move: a user prompt, an assistant bubble, a reasoning row or a tool row
+// is paired with its neighbours by the persistence and history code, so it
+// stays where the event stream put it.
+func movableRow(m components.Message) bool {
+	switch m.Role {
+	case "rolemanager", "system", components.ReportRole, components.VulnRole:
+		return true
+	}
+	return false
+}
+
+// placeByTime moves messages[i] back to where its own time puts it.
+//
+// Agent events and role-manager decisions reach the TUI on two channels that
+// are read independently, so a decision made before a tool result can arrive
+// after it. The row is stamped with the time it happened, so it is moved back
+// over any row of the same turn stamped later. It never crosses a user prompt
+// or an unstamped row.
+//
+// The persistence cursor counts the leading rows already written. A row that
+// needs no write (a decision, already recorded, or an ephemeral card) may move
+// anywhere in the turn and the cursor then covers it; a row that still has to
+// be written never moves behind the cursor, so it is written once, in place.
+func (a *App) placeByTime(i int) {
+	if i < 1 || i >= len(a.messages) {
+		return
+	}
+	row := a.messages[i]
+	if row.CreatedAt.IsZero() || !movableRow(row) {
+		return
+	}
+	free := row.Persisted || neverPersisted(row)
+	lo := 0
+	if !free {
+		lo = a.persistedUpTo
+	}
+	j := i
+	for j > lo && i-j < maxPlaceBack {
+		p := a.messages[j-1]
+		if p.Role == "user" || p.CreatedAt.IsZero() || !p.CreatedAt.After(row.CreatedAt) {
+			break
+		}
+		j--
+	}
+	if j == i {
+		return
+	}
+	copy(a.messages[j+1:i+1], a.messages[j:i])
+	a.messages[j] = row
+	// Every row from j to i moved down one.
+	if free && j < a.persistedUpTo {
+		a.persistedUpTo++
+	}
+	shift := func(idx *int) {
+		if *idx >= j && *idx < i {
+			*idx++
+		}
+	}
+	shift(&a.tts.cardIdx)
+	shift(&a.tts.srcIdx)
+	shift(&a.saveFileMsg)
+}
+
+// placeLate places every row added since index from by its time. It is the
+// chronological layout's pass over what one event created: a notice an event
+// raised while an earlier decision was already in the thread lands in time
+// order too.
+func (a *App) placeLate(from int) {
+	for i := max(from, 1); i < len(a.messages); i++ {
+		a.placeByTime(i)
+	}
+}
+
+// chronological reports whether the thread is laid out strictly by time.
+func (a *App) chronological() bool { return a.settings.Layout() == config.LayoutChronological }
 
 // noteModelCall attaches one provider call's duration to this turn's
 // assistant bubble: the latest assistant row after the latest user row. A

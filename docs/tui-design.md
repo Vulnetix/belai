@@ -53,7 +53,7 @@ unreadable on a light background.
 | `ColorText` | `#C9D6D2` | `#2A3835` | Body copy of model replies. Softer than `ColorCream` so emphasis has somewhere to go. |
 | `ColorCream` | `#F6EED6` | `#0F1F1C` | Emphasis: what you typed, identifiers the model names, the model id. |
 | `ColorTeal` | `#3AC4B4` | `#137A6F` | The model's voice, the active composer, success `✓`, bullets, switches that are on. The one brand accent. |
-| `ColorTealSoft` | `#76E0CD` | `#1A8C7C` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
+| `ColorTealSoft` | `#76E0CD` | `#178574` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
 | `ColorYou` | `#F49AC8` | `#B23C7E` | The `you` title of a prompt you typed. |
 | `ColorVoice` | `#C9B0F2` | `#7B5BBE` | The `you` title of a dictated prompt, and the composer frame while the speech or fast model works. |
 | `ColorAmber` | `#E8912B` | `#A95A0B` | Needs you, or you stepped in: permission asks, steering, `!` shell, goal mode, YOLO, context over 80%. **Not** routine tool activity. |
@@ -61,11 +61,70 @@ unreadable on a light background.
 | `ColorDiffAddBg` | `#11301F` | `#DFF1E6` | Background of added diff lines. |
 | `ColorDiffDelBg` | `#3A1917` | `#F9E2E0` | Background of removed diff lines. |
 
-`ColorInk` (`#1C3431`) is the foreground on a solid chip.
+`ColorInk` (`#1C3431` dark, `#FBFBF8` light) is the foreground on a solid chip.
 
 Contrast: every role that renders text you must read (`Muted` and up) keeps
 4.5:1 against the terminal background in its theme. `Line` and `Low` are
 deliberately below that and never carry required information on their own.
+
+### Agent personas
+
+An agent profile can carry a display name and a palette of four colours
+(`display_name` and `palette`, see [agent-profiles.md](agent-profiles.md)). While
+an agent is engaged the TUI wears them, and ctrl+p, the picker and `/agent`
+switch between agents live:
+
+- The **primary** colour replaces `ColorTeal` and the **secondary** replaces
+  `ColorTealSoft`. Nothing else moves: `ColorAmber` and `ColorDanger` keep their
+  safety meaning, and the greys, the text, the category colours and the Pix
+  banner stay as they are. A persona changes who is speaking, never what a
+  colour tells you.
+- A palette colour is one value but the terminal is dark or light, so each is fitted
+  to both. It is kept as it is where it already reads at 4.5:1 on the terminal
+  background, and moved toward white (dark) or black (light) until it does. A
+  test holds every built-in persona to that, and to 3:1 for the chip text on its
+  fill.
+- The footer's mode chip names the agent by its display name (`agent · Kremvax`),
+  the picker draws `Kremvax (patcher)`, and the line that says an agent was
+  engaged reads `agent: Kremvax (belai:patcher)`. Completing an `/agent`
+  argument still shows the profile names, because those are what you type.
+- The agent is dormant outside agent mode, and so are its colours. A profile with
+  no persona, no agent and a new session all show the brand palette.
+- Turns already on screen are drawn again in the new colours: a rendered row is
+  cached with its colours baked in, so a palette change moves the cache key
+  (`components.ThemeGeneration`). The TUI never changes the terminal's own
+  colours or title.
+
+Rules and edge cases:
+
+- **What counts as a palette.** Exactly four `#rrggbb` colours (`PaletteSize`).
+  Anything else (none, three, five, a colour name, a short or unprefixed hex, a
+  value with control bytes) is not a persona: `ApplyPersona` takes any persona off
+  and reports false, so a bad palette can never leave the previous agent's colours
+  on. `agentprofile` already refuses to save one; this guards a hand-edited file.
+- **One agent, two trees.** The persona comes from the agent-profile definition
+  of the name, even when a flat profile of the same name carries the prompt
+  (`belai:debug` is both, and is drawn as Pip Ostrander). A flat profile with no
+  definition has no persona and shows its profile name.
+- **The chip is not the colours.** In auto mode the chip names the mode the
+  classifier picked, and while an approved plan runs it says `executing`; in both
+  the colours still follow the engaged agent. Outside agent mode the agent is
+  dormant, so the chip and the colours go back to the brand together.
+- **Every route ends in one place.** ctrl+p, the picker, `/agent`, a project's
+  pinned agent at startup, resuming a session (the agent it recorded, or none) and
+  a new session all end in `refreshFooter`, so there is no path that changes the
+  agent without changing the colours. `syncPersona` does work only when the agent
+  changed, so a footer refresh on every frame costs nothing.
+- **Cache.** A new `App` starts with the brand palette, whatever the last one
+  left on, and `ResetPersona` does not move the theme generation when no persona
+  is applied, so an idle reset does not redraw the transcript.
+- **Never overridden.** `ColorAmber`, `ColorDanger`, `ColorCream`, `ColorMuted`,
+  `ColorText` and `ColorLine` are fixed (a test checks each).
+
+`components.ApplyPersona` and `components.ResetPersona` are the whole interface.
+`App.syncPersona` calls them from `refreshFooter`, which every route that changes
+the engaged agent ends in. The website draws the same persona for a session by
+the agent it ran under (see [session-sync.md](session-sync.md)).
 
 ## Glyphs
 
@@ -173,6 +232,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊛` | tool and skill search | `tools` |
 | `⊞` | tool and skill selection | `tools` |
 | `⚖` | request sized | `mode` |
+| `◈` | agent profile picked | `mode` |
 | `⚑` | goal pass rated by the decision backend | `mode` |
 | `⌘` | language server found | `code` |
 | `⌥` | diagnostics | `code` |
@@ -182,8 +242,11 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `◔` | delivery handoff rated for clarity | `code` |
 | `⊜` | delivery gates rated against their titles | `code` |
 | `⊚` | request clauses rated against the tasks covering them | `code` |
+| `⇶` | replayed teleport changes checked against the origin's summary | `code` |
+| `⊩` | indexed documents labelled with the topics they are about | `context` |
 | `⊏` | gates drafted for a card that had none | `context` |
 | `⊐` | note written on how a card's gates were checked | `context` |
+| `⇉` | changes of a teleported session summarised for another host | `context` |
 | `?` | question asked | `ask` |
 | `≣` | options ordered | `ask` |
 | `⇢` | route fallback | `routing` |

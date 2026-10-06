@@ -47,7 +47,9 @@ func TestAgentPickerListsBuiltinsFirstThenProfiles(t *testing.T) {
 	}
 
 	row := a.renderAgentPicker()
-	if !strings.Contains(row, "reviewer") || !strings.Contains(row, profiles.DebugProfile) {
+	// belai:debug carries a persona, so its chip is drawn by the display name
+	// with the role beside it; a profile without one keeps its name.
+	if !strings.Contains(row, "reviewer") || !strings.Contains(row, "Pip Ostrander (debug)") {
 		t.Fatalf("picker row = %q, want both profiles", row)
 	}
 	if !strings.Contains(row, "◈") {
@@ -252,7 +254,7 @@ func TestAgentCommandWithSubcommandDoesNotOpenPicker(t *testing.T) {
 		t.Fatalf("expected /agent list to dispatch, not open the picker")
 	}
 	if a.view != viewAgent {
-		t.Fatalf("view = %q, want agent list view", a.view)
+		t.Fatalf("view = %d, want agent list view", a.view)
 	}
 }
 
@@ -557,7 +559,8 @@ func TestShiftTabIntoAgentClearsProfileAndShowsCtrlP(t *testing.T) {
 	a.mode = "agent"
 	a.setNamedAgent("reviewer")
 
-	// agent → plan → goal → auto → agent, exactly the shift+tab cycle.
+	// agent → plan → goal → code → auto → agent, exactly the shift+tab cycle.
+	a.cycleMode()
 	a.cycleMode()
 	a.cycleMode()
 	a.cycleMode()
@@ -1135,4 +1138,19 @@ func TestNamedAgentEmptyImpliesToolsNil(t *testing.T) {
 	seedEntries(t, r, key, "sess-1", entries)
 	r.resumeSession(key, "sess-1")
 	check(r, "resume with no profile")
+}
+
+// An engaged definition's skills list reaches the session in agent mode only,
+// the way its tool allowlist does.
+func TestEngagedAgentSkillsFollowTheMode(t *testing.T) {
+	a := &App{mode: "agent", namedAgentSkills: []string{"belai-scout"}}
+	if got := a.engagedAgentSkills(); len(got) != 1 || got[0] != "belai-scout" {
+		t.Fatalf("agent mode: skills = %v", got)
+	}
+	for _, mode := range []string{"plan", "goal"} {
+		a.mode = mode
+		if got := a.engagedAgentSkills(); got != nil {
+			t.Errorf("%s mode: skills = %v, want the mode's own", mode, got)
+		}
+	}
 }

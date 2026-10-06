@@ -17,6 +17,8 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/knowledge/kbgate"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
@@ -566,13 +568,7 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 
 	history := append([]run.Turn{}, inst.History...)
-	promptText := inst.Profile.SystemPrompt
-	if inst.Profile.Reflection {
-		// Reflection requests a thinking preamble on every loop turn so the
-		// agent's reasoning is visible before it acts.
-		promptText = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + promptText
-	}
-	in := agent.TurnInput{Prompt: promptText}
+	in := agent.TurnInput{Prompt: profilePrompt(inst.Profile)}
 	inst.mu.Lock()
 	task := inst.task
 	inst.task = Task{}
@@ -606,6 +602,28 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 }
 
+// profilePrompt is the text of one turn of a background agent: its system
+// prompt, then the facts it declares (hidden ones omitted), with a thinking
+// preamble ahead of both when it asks for reflection. Reflection requests the
+// preamble on every loop turn so the agent's reasoning is visible before it
+// acts.
+func profilePrompt(p agentprofile.AgentProfile) string {
+	text := p.SystemPrompt
+	if line := p.SkillsLine(); line != "" {
+		text += "\n\n" + line
+	}
+	if facts := p.FactsBlock(); facts != "" {
+		text += "\n\n" + facts
+	}
+	if p.Reflection {
+		text = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + text
+	}
+	return text
+}
+
+// knowledgeWait bounds how long a background run waits for its index.
+const knowledgeWait = 2 * time.Minute
+
 func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	workdir := inst.workdir
 	if workdir == "" {
@@ -615,10 +633,11 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(context.Background(), workdir)
 	reg := tools.DefaultWithCaps(workdir, m.settings.ReadOnlyEnabled(), caps, ix)
+	reg.CloudHub().SetFacts(profile.Facts.Map())
 	// The board is how agents hand work to one another, so its tools come
 	// after the allowlist and every definition keeps them.
 	m.mu.Lock()
-	reg = reg.NarrowWithKanban(profile.Tools, m.kanban, m.kanbanSrc)
+	reg = reg.NarrowWithKanban(profile.Tools, m.kanban, m.kanbanSrc).WithSkills(profile.Skills)
 	m.mu.Unlock()
 	perms := permissions.From(m.settings.Permissions.Allow, m.settings.Permissions.Ask, m.settings.Permissions.Deny)
 	var promptOpts prompt.Options
@@ -649,7 +668,19 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		return nil, err
 	}
 
+	// Reference material: the project's .vulnetix output and this definition's
+	// own documents. An unattended run waits for the index, bounded, so its
+	// first search sees what its last one will (docs/knowledge.md).
+	kbCtx, kbCancel := context.WithTimeout(context.Background(), knowledgeWait)
+	defer kbCancel()
+	setup := kbgate.Setup{Cfg: cfg, Client: m.client, Levels: live, Settings: m.settings, Root: workdir, CopyOutside: true}
+	if paths := profile.KnowledgePaths(); len(paths) > 0 {
+		setup.Profile = &knowledge.Profile{ID: profile.ID, Name: profile.Name, Paths: paths}
+	}
+
 	return agent.NewSession(agent.Options{
+		Knowledge:     kbgate.Open(kbCtx, setup, true),
+		WebPages:      true, // a background agent is a top-level session of its own
 		Cfg:           cfg,
 		Client:        m.client,
 		Registry:      reg,

@@ -379,7 +379,7 @@ var defaultModelEfforts = []string{"low", "medium", "high"}
 // classifierKindOptions are the classifier stacks the kind row cycles. The
 // decision kinds are their own: a decision backend is never a chat model, so
 // it is not an llm choice.
-var classifierKindOptions = []string{"llm", "models", run.ClassifierKindOpenRouterDecisions, run.ClassifierKindJev}
+var classifierKindOptions = []string{"llm", "models", run.ClassifierKindOpenRouterDecisions, run.ClassifierKindSystemOne}
 
 var classifierThresholdOptions = []string{"0.50", "0.60", "0.70", "0.75", "0.80", "0.85", "0.90", "0.95"}
 
@@ -566,6 +566,8 @@ func routingUseCaseKeys() []string {
 		rolemanager.UseCaseVoiceCleanup,
 		rolemanager.UseCaseGateDraft,
 		rolemanager.UseCaseDeliveryReport,
+		rolemanager.UseCaseTeleportDistill,
+		rolemanager.UseCaseTeleportVerify,
 	}
 }
 
@@ -900,6 +902,19 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	if a.modelState.pickingRole == roleClassifier && a.providerIsDecisions(name) {
 		return name, filterModels(a.decisionCatalog(name), a.modelState.filter)
 	}
+	// Under the systemone kind a Cloudflare provider offers Clef, its
+	// decision models, and nothing else.
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && decisions.IsCloudflareProvider(name) {
+		return name, filterModels(clefCatalog(), a.modelState.filter)
+	}
+	// Under the systemone kind Together offers Tev1, and Ollama the Tev1 tags
+	// it has pulled, and nothing else.
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && name == decisions.TogetherProvider {
+		return name, filterModels(tev1HostedCatalog(), a.modelState.filter)
+	}
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == run.ClassifierKindSystemOne && name == decisions.OllamaProvider {
+		return name, filterModels(a.ollamaTev1Catalog(), a.modelState.filter)
+	}
 	catalog := a.catalogFor(name)
 	// The classifier-only filter (curated BERT ids on huggingface, Jev on
 	// openrouter) applies to the models path, where the picker offers
@@ -916,33 +931,78 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 				return name, nil
 			}
 			catalog = a.classifierCatalogFor(name, catalog)
-		case run.ClassifierKindJev:
-			// Jev backends are decision providers, answered above.
+		case run.ClassifierKindSystemOne:
+			// systemone backends are decision providers, answered above.
 			return name, nil
 		default:
 			catalog = filterOutDecisionsModels(name, catalog)
 		}
 	}
-	// Routed use cases are chat activities, so the routing picker never offers
-	// Jev Decisions models (which cannot chat). Stored Jev routing targets
-	// still load, but resolve to the main model at runtime.
-	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast {
+	// Routed use cases and the agent are chat activities, so their pickers
+	// never offer a decision model (Jev, Clef), which cannot chat. Stored
+	// Jev routing targets still load, but resolve to the main model at
+	// runtime.
+	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast || a.modelState.pickingRole == roleAgent {
 		catalog = filterOutDecisionsModels(name, catalog)
 	}
 	return name, filterModels(catalog, a.modelState.filter)
 }
 
-// filterOutDecisionsModels drops Jev Decisions models from a routing picker
-// catalogue. Routed use cases need chat, and a Jev Decisions model cannot
-// chat: it is only ever asked Decisions questions.
+// filterOutDecisionsModels drops decision models (OpenRouter's Jev, Clef on
+// Workers AI) from a chat picker catalogue. A decision model cannot chat: it
+// is only ever asked decision questions.
 func filterOutDecisionsModels(providerName string, catalog []models.Model) []models.Model {
 	out := make([]models.Model, 0, len(catalog))
 	for _, m := range catalog {
-		if !jev.IsDecisionsModel(providerName, m.ID) {
+		if _, decision := decisions.BackendOf(providerName, "", m.ID); !decision {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// clefCatalog is the Clef picker of a Cloudflare provider.
+func clefCatalog() []models.Model {
+	out := make([]models.Model, 0, len(decisions.ClefModels))
+	for _, m := range decisions.ClefModels {
+		out = append(out, models.Model{ID: m.ID, Label: m.Label + " · " + m.Blurb})
+	}
+	return out
+}
+
+// tev1HostedCatalog is the Tev1 picker of the together provider.
+func tev1HostedCatalog() []models.Model {
+	return []models.Model{{ID: decisions.Tev1HostedModel, Label: "Tev1 4B · Together AI · one token a check · $0.04/M input tokens · experimental"}}
+}
+
+// ollamaTev1Catalog is the Tev1 tags the ollama provider lists.
+func (a *App) ollamaTev1Catalog() []models.Model {
+	var out []models.Model
+	for _, m := range a.catalogFor(decisions.OllamaProvider) {
+		if decisions.IsOllamaTev1(decisions.OllamaProvider, m.ID) {
+			out = append(out, models.Model{ID: m.ID, Label: "Tev1 · Ollama /v1/systemone · experimental"})
+		}
+	}
+	return out
+}
+
+// tev1Ready reports whether a provider can run Tev1: together with a key,
+// or ollama listing a Tev1 tag.
+func (a *App) tev1Ready(name string) bool {
+	switch name {
+	case decisions.TogetherProvider:
+		return a.resolver != nil && a.resolver.Configured(name)
+	case decisions.OllamaProvider:
+		return len(a.ollamaTev1Catalog()) > 0
+	}
+	return false
+}
+
+// cloudflareClefReady reports whether a Cloudflare provider can run Clef:
+// its credentials resolve (the API token and account for Workers AI; the
+// account or base URL for AI Gateway).
+func (a *App) cloudflareClefReady(name string) bool {
+	return a.resolver != nil && a.resolver.Configured(name)
 }
 
 // classifierCatalogFor restricts a provider's catalogue to the models the
@@ -1431,8 +1491,22 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 			// A decision kind needs a decision backend: start on OpenRouter's,
 			// the one most people have a key for. The provider row moves it.
 			c.Provider, c.Model = "openrouter", jev.DefaultModel
-		case next == run.ClassifierKindJev && !fits:
-			c.Provider, c.Model = decisions.TypeSafeProvider, decisions.TypeSafeDefaultModel
+		case next == run.ClassifierKindSystemOne && !fits:
+			// Clef on Workers AI first when Cloudflare is configured (the
+			// fastest backend), then Strands Decider-2B on this machine when
+			// it is detected, then TypeSafe's hosted API.
+			switch {
+			case a.cloudflareClefReady(decisions.CloudflareWorkersAIProvider):
+				c.Provider, c.Model = decisions.CloudflareWorkersAIProvider, decisions.ClefModels[0].ID
+			case a.cloudflareClefReady(decisions.CloudflareGatewayProvider):
+				c.Provider, c.Model = decisions.CloudflareGatewayProvider, decisions.ClefModels[0].ID
+			case a.tev1Ready(decisions.TogetherProvider):
+				c.Provider, c.Model = decisions.TogetherProvider, decisions.Tev1HostedModel
+			case a.deciderDetected():
+				c.Provider, c.Model = decisions.DeciderProvider, decisions.Decider2B.ID
+			default:
+				c.Provider, c.Model = decisions.TypeSafeProvider, decisions.TypeSafeDefaultModel
+			}
 		case !run.IsDecisionKind(next) && decision:
 			// A decision backend cannot chat, so leaving a decision kind hands
 			// the guard back to the main model instead of keeping a selection
@@ -1446,7 +1520,8 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 // decision backend: the local decision model, a self-hosted Jev profile, or
 // OpenRouter's Jev model.
 func (a *App) classifierSelectsDecision(c *config.ClassifierSettings) bool {
-	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model))
+	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model) || decisions.IsHostedClef(c.Provider, c.Model) ||
+		decisions.IsHostedTev1(c.Provider, c.Model) || decisions.IsOllamaTev1(c.Provider, c.Model))
 }
 
 // cycleClassifierPhase advances one phase gate's source through the choices the
@@ -1737,9 +1812,14 @@ func (a *App) classifierPhase3Row() settingsRow {
 }
 
 // classifierProviders are the providers the classifier page may offer for the
-// current kind. Kind jev offers only decision backends: OpenRouter (always,
-// since a missing key is reported by the test with a way out, not hidden),
-// self-hosted Jev profiles and the local decision model. The other kinds offer
+// current kind. The decision kinds offer only decision backends:
+// openrouter-decisions offers OpenRouter (always, since a missing key is
+// reported by the test with a way out, not hidden) and the local decision
+// model; systemone offers hosted Clef and Tev1 (together with a key, ollama
+// with a Tev1 tag) when their providers are set up, then TypeSafe, Strands
+// Decider-2B on this machine (first of those when it is detected) and every
+// provider profile of kind systemone. The
+// other kinds offer
 // chat providers: custom profiles, the built-in local servers, openrouter when
 // it is configured, and huggingface when a token is configured. Other
 // built-ins (openai, anthropic, …) are general-chat providers and are not
@@ -1752,10 +1832,31 @@ func (a *App) classifierProviders() []string {
 	if kind == run.ClassifierKindOpenRouterDecisions {
 		return []string{"openrouter", decisions.LocalProvider}
 	}
-	if kind == run.ClassifierKindJev {
-		out := []string{decisions.TypeSafeProvider}
+	if kind == run.ClassifierKindSystemOne {
+		// Clef on Workers AI leads when Cloudflare is configured (directly,
+		// then through AI Gateway). Strands Decider-2B on this machine comes
+		// next when it is detected; it is always offered, and its test says
+		// how to install it.
+		var out []string
+		for _, cf := range []string{decisions.CloudflareWorkersAIProvider, decisions.CloudflareGatewayProvider} {
+			if a.cloudflareClefReady(cf) {
+				out = append(out, cf)
+			}
+		}
+		// Tev1 follows: on Together when it has a key, on Ollama when it has
+		// pulled a Tev1 tag.
+		for _, p := range []string{decisions.TogetherProvider, decisions.OllamaProvider} {
+			if a.tev1Ready(p) {
+				out = append(out, p)
+			}
+		}
+		if a.deciderDetected() {
+			out = append(out, decisions.DeciderProvider, decisions.TypeSafeProvider)
+		} else {
+			out = append(out, decisions.TypeSafeProvider, decisions.DeciderProvider)
+		}
 		for _, name := range a.providerNames() {
-			if a.providerIsDecisions(name) && name != decisions.LocalProvider && name != decisions.TypeSafeProvider {
+			if a.providerIsDecisions(name) && name != decisions.LocalProvider && name != decisions.TypeSafeProvider && name != decisions.DeciderProvider {
 				out = append(out, name)
 			}
 		}

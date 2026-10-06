@@ -12,20 +12,66 @@ The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.
 ## Layout
 
 `site/src/pages/index.astro` composes one long scroller with a sticky left status
-rail (≥1120px). The content is full-width (no fixed max-width). Section order:
+rail (≥1120px) and, below that width, a sticky jump menu (`JumpNav.astro`) that names the
+section being read. The content is full-width (no fixed max-width). Section order lives in
+one list, `site/src/lib/sections.ts`: the rail, the jump menu and the chapter label above
+each section all read it, so a section's number is its position in that list.
 
-hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents & crews ·
-memory · processes · budgets · session intelligence · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
-integrations · cli · qol · start · faq
+Section order:
+
+hero · beliefs · trust · classifier · sealed · modes · tools · diagnostics · permissions · agents & crews ·
+pix sandbox · kanban · web sessions · memory · processes · budgets · session intelligence · providers ·
+routing · vulnetix · extend · cli · qol · start · compare · faq
+
+## Surface markers
+
+A section or sub-area may carry a quiet row of markers that says where its feature works:
+`tui`, `acp`, `cli`, `self-hosted`, `pix sandbox` and `vulnetix only`. The set is closed
+(`site/src/lib/surfaces.ts`, with a one-line meaning for each) and renders in that order through
+`Surfaces.astro`. Pass `surfaces={[...]}` to `SectionHead` for the section and to `SubHead`
+only where a sub-area differs from its section. A folded legend above the first section lists the
+meanings. Check each marker against the code before adding it. Sections about getting started,
+the comparison and the FAQ carry none.
+
+## Reading rules
+
+These keep the page readable. Follow them when you add or change a section.
+
+- **One section break.** `SealedSection` renders `SectionBreak.astro` above its frame: a
+  wide gap (5 to 8rem), then a length of rope with a figure-eight knot and the chapter label
+  (`07 / 25 · modes`). The rope appears nowhere else, so a break always reads as a break. The
+  break sits outside the sealed element, so no digest covers it. The standalone FAQ page passes
+  `chapter={false}`.
+- **One gap inside a section.** `SubHead` opens a sub-area with a hairline and the `mt-sub`
+  gap (4rem); a heading sits `mt-head` (2rem) above what it introduces. Both are `@theme`
+  tokens in `brand.css`. Use `SectionHead`, `SubHead`, `Limits` and `Ladder` and do not
+  hand-roll their markup.
+- **Container queries, not viewport breakpoints.** The rail takes about 250px, so a viewport
+  breakpoint overstates the room a section has. `.seal-body` is an `@container`, and grids
+  use `@xl`, `@2xl`, `@3xl`, `@4xl` and `@5xl` (a 4-up grid needs `@5xl`). Keep a
+  table and its card fallback on the same variant.
+- **Measure and type.** Paragraphs in a section stop at 68ch and the body leading is 1.65.
+  Small text is `text-vx-ink/70` or darker. Colours that are not in the palette get a token
+  (`vx-amber-deep`, `vx-red-deep`, `vx-pane-*`), not a hex class.
+- **Fold detail.** A section shows the claim and what a reader needs to follow it. A table, a
+  ruled list of cases or a tutorial goes in `<details class="deep deep--wide">`, whose summary
+  states what is inside. A link to an anchor inside a closed fold opens it (a script in
+  `Base.astro`). Folding hides text from a first look and never removes it.
+- **Prose.** No em dash, en dash or curly quote, and titles say what happens, not what is
+  absent. Check each new claim against the code or docs before writing it.
 
 The agents section (`site/src/components/sections/Agents.astro`, rendered
 from `Features.astro`) is one ladder: helpers, background agents, workers and crews.
-Three step cards open it, a table (cards below `lg`) says what changes on
-each step, then come a crew's recorded run on a board (`#crews`, which the
-kanban section links to), the crew fences, the built-in crews and a worker
-profile. The step facts live in one `steps` array that feeds both the table
-and the cards. Keep the run truthful: it quotes the item history and draft
-PR of a real release.
+Three step cards open it, and a folded table (cards below `@3xl`) says what changes on
+each step. Then come ten promises about autonomous work you can sign off on (`#sign-off`), each
+backed by a mechanism in this repository, the gates that decide when a card is done (`#assurance`),
+a crew's recorded run on a board (`#crews`, which the kanban section links to), the limits on
+crew workers, the built-in crews and a worker profile (`#profiles`), and what the Vulnetix
+console adds (`#control-plane`). The promises are
+about any unattended agent and name no other product; every answer must stay checkable
+against the code, so change it with the mechanism it cites. The step facts live in one
+`steps` array that feeds both the table and the cards. Keep the run truthful: it quotes the
+item history and draft PR of a real release.
 
 The session intelligence section (`site/src/components/sections/Intel.astro`,
 rendered from `Features.astro`, id `intel`) follows budgets. It opens with a
@@ -45,10 +91,36 @@ and every bar keeps its width. The rules the section states are R15 to R22 in
 Without JS the demo shows its first state (this week, timeline).
 
 The web sessions section (`site/src/components/sections/WebSessions.astro`)
-covers following and answering a session on the Vulnetix website.
+covers following and answering a session on the Vulnetix website. Its audit
+block (`#audit`) says what the History page's Hosts and Agents tabs show and
+lists the events in the `audit` array; keep that list in step with the kinds in
+`internal/audit` and [docs/audit.md](audit.md).
 
-The sandbox, extend and integrations sections live in
-`site/src/components/sections/Extend.astro`. Each card links to the matching
+The pix sandbox section (`site/src/components/sections/PixSandbox.astro`, id
+`pix`) follows web sessions. It describes the hosted machine Vulnetix sells
+(one subscription per machine, bought and managed on the Vulnetix console) and
+the contract in [pix-sandbox.md](pix-sandbox.md), in the section's own blocks:
+logo cards for Jev (included at no cost), Cloudflare Sandbox and Nix; a
+sub-section on the three gates every connection leaves through (the AI Firewall,
+the Package Firewall and the egress list, with an illustrative console list); a
+four-step supply chain (pinned flake, reproducible build, published SBOM, boot
+check); a sub-section (`#pix-decider`) on the decision tool the agent can call
+(the nine tools of the `clef` MCP, a sample `rank_options` call and what it
+returns, and the rules that make it deterministic; the claims come from
+[pix-sandbox.md](pix-sandbox.md#the-decider-mcp)); and the Limits block for repositories, languages and the console. Each
+claim is backed by something Belai does with its inputs or by the image and
+launcher in the website repository: Belai is not told it is hosted, every
+repository is a trusted root and nothing else is, Jev answers every call with
+the key swapped in at the network edge, and a relaunch is a new machine. The
+decider sub-section is the one block with code behind it: the `clef` MCP is
+compiled only into the Pix Sandbox build. Its two cards link to the feature page and to
+the console's sandbox tab on vulnetix.com. The classifier section's Jev article
+carries `id="jev"` so the "How Belai uses Jev" link and the feature page can
+deep-link to it.
+
+The extend section, with its integrations and editors blocks, lives in
+`site/src/components/sections/Extend.astro`; the sandbox block is part of the
+tools section (`Tools.astro`, anchor `#sandbox`). Each card links to the matching
 doc under `docs/` on GitHub, so the site states the rule and the doc carries
 the edge cases.
 
@@ -135,7 +207,7 @@ Determinism rules:
 gated behind `var.manage_pages = false`, the GitHub Pages block. The Pages block
 is net-new for the org and delivered inert: `terraform plan` proposes no
 repository change until `manage_pages` is flipped and the repository is imported
-first (`terraform import github_repository.belai belai`).
+first (`terraform import github_repository_pages.belai belai`).
 
 ## Deploy
 

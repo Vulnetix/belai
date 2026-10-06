@@ -87,6 +87,24 @@ const (
 	// because it observes the desktop, so it asks and runs on the sequential
 	// path.
 	KindScreenshot Kind = "screenshot"
+	// KindFetched is a SearchFetched result: passages of pages this session
+	// fetched with WebFetch. Every chunk was classified when it was indexed
+	// (the same rule as the knowledge store's kb+ rows), so the result is
+	// read-only and sanitise-only; a search calls no model.
+	KindFetched Kind = "fetched"
+	// KindCode is the output of the code-mode Code tool: what a script printed
+	// or returned. Every nested call the script made was gated and, where its
+	// kind needs it, classified by the session before the script saw the
+	// text, so the output is composed only of admitted text and the model's own
+	// literals and is sanitise-only. It is not read-only: the script may have
+	// edited files, so it runs on the sequential path.
+	KindCode Kind = "code"
+	// KindTeleport is a teleport replay's hand-over: the origin host's model's
+	// summary and instructions and the parts of a patch that did not apply, text
+	// from another host that always classifies (agent.TeleportReplay). It is not
+	// the result of any tool, so it is not read-only and never joins the
+	// concurrent fan-out.
+	KindTeleport Kind = "teleport"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -97,7 +115,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload, KindScreenshot,
+	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -122,6 +140,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindKanbanWrite: true,
 	KindToolSearch:  true,
 	KindOffload:     true,
+	KindFetched:     true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

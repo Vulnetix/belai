@@ -272,3 +272,35 @@ func TestValidateVoiceWakeWordNeedsListen(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The device rule here must equal the one internal/voice applies when it
+// starts the helper: 1 to 128 plain characters, not starting with - or =.
+func TestVoiceDeviceRuleMatchesTheCaptureHelper(t *testing.T) {
+	for d, want := range map[string]bool{
+		strings.Repeat("a", 128): true, strings.Repeat("a", 129): false, "hw:1,0": true, "a=b-c": true,
+		"-f": false, "=x": false, "a b": false, "a;b": false,
+	} {
+		err := ValidateVoice(Settings{Voice: &VoiceSettings{Device: d}})
+		if (err == nil) != want {
+			t.Errorf("device %q: err = %v, want accepted = %v", d, err, want)
+		}
+	}
+	if err := ValidateVoice(Settings{Voice: &VoiceSettings{Device: "-f"}}); err == nil || !strings.Contains(err.Error(), "1 to 128") {
+		t.Errorf("the error should state the rule, got %v", err)
+	}
+}
+
+// The keys the page lists for voice.key are the ones the validator accepts.
+func TestVoicePageListsEveryVoiceKey(t *testing.T) {
+	doc := docparity.Read(t, "docs/voice.md")
+	for _, k := range VoiceKeys {
+		if !strings.Contains(doc, "`"+k+"`") && !strings.Contains(doc, k) {
+			t.Errorf("docs/voice.md does not mention the voice key %s", k)
+		}
+	}
+	for _, want := range []string{"`ctrl+space`", "`ctrl+]`", "`ctrl+g`", "`f13` to `f16`"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/voice.md does not say %s", want)
+		}
+	}
+}

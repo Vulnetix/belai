@@ -154,6 +154,18 @@ func (m *Manager) diagnose(ctx context.Context, abs string, content []byte) Repo
 	now := m.now()
 	e.lastUsed = now
 
+	// A server that crashed is left alone: for restartCooldown after the first
+	// crash, and for good after the second.
+	if m.crashed(e) {
+		if m.opts.Fallback && canFallback(lang, abs, root) {
+			r := runFallback(ctx, lang, abs)
+			r.Language = lang.Display
+			m.cache.set(abs, content, r)
+			return r
+		}
+		return Report{Language: lang.Display, Status: StatusUnavailable}
+	}
+
 	// If still warming, skip the wait but fall back if possible.
 	if e.warming {
 		if m.opts.Fallback && canFallback(lang, abs, root) {
@@ -194,10 +206,17 @@ func (m *Manager) diagnose(ctx context.Context, abs string, content []byte) Repo
 		return Report{Language: lang.Display, Status: StatusWarming}
 	}
 
-	// Run live diagnosis within the per-key adaptive budget.
-	budget := e.budget
-	if budget <= 0 {
-		budget = m.opts.Budget
+	// Run live diagnosis within the per-key adaptive budget, unless the server
+	// has timed out so often that it is left alone.
+	budget, live := m.liveBudget(e)
+	if !live {
+		if m.opts.Fallback && canFallback(lang, abs, root) {
+			r := runFallback(ctx, lang, abs)
+			r.Language = lang.Display
+			m.cache.set(abs, content, r)
+			return r
+		}
+		return Report{Language: lang.Display, Status: StatusUnavailable}
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
@@ -218,7 +237,7 @@ func (m *Manager) diagnose(ctx context.Context, abs string, content []byte) Repo
 			return Report{Language: lang.Display, Status: StatusTimeout}
 		}
 		// Server error counts as a crash.
-		m.handleCrash(key, e)
+		m.crashLocked(e)
 		if m.opts.Fallback && canFallback(lang, abs, root) {
 			r := runFallback(context.Background(), lang, abs) // ctx may be done.
 			r.Language = lang.Display
@@ -265,14 +284,14 @@ func (m *Manager) initEntry(key entryKey, e *entry) {
 	}
 	conn, err := m.opts.Start(ctx, argv, e.root)
 	if err != nil {
-		m.handleCrash(key, e)
+		m.handleCrash(e)
 		return
 	}
 
 	cl := newClient(e.lang, conn, []string{e.root})
 	if err := cl.initialize(ctx, e.lang); err != nil {
 		_ = conn.Close()
-		m.handleCrash(key, e)
+		m.handleCrash(e)
 		return
 	}
 
@@ -289,11 +308,18 @@ func (m *Manager) initEntry(key entryKey, e *entry) {
 	e.mu.Unlock()
 }
 
-func (m *Manager) handleCrash(key entryKey, e *entry) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+// handleCrash records that e failed. It is for callers that do not hold e.mu.
+func (m *Manager) handleCrash(e *entry) {
 	e.mu.Lock()
+	defer e.mu.Unlock()
+	m.crashLocked(e)
+}
+
+// crashLocked records that e failed; the caller holds e.mu. The entry stays in
+// the pool so its crash count survives: the first crash allows one restart after
+// restartCooldown, and a second leaves the server down until the entry is evicted
+// for being idle.
+func (m *Manager) crashLocked(e *entry) {
 	if e.client != nil {
 		_ = e.client.close()
 	}
@@ -305,22 +331,31 @@ func (m *Manager) handleCrash(key entryKey, e *entry) {
 	e.ready = false
 	e.warming = false
 	e.lastCrash = m.now()
-
-	// Restart policy: at most one restart per key per session, with a cooldown.
 	e.restarts++
-	if e.restarts <= 1 {
-		e.mu.Unlock()
-		go func() {
-			time.Sleep(restartCooldown)
-			m.mu.Lock()
-			delete(m.entries, key)
-			m.mu.Unlock()
-		}()
-		return
+}
+
+// crashed reports whether e must not be started now: it crashed twice, or it
+// crashed once and the restart cooldown has not passed. The caller holds e.mu.
+func (m *Manager) crashed(e *entry) bool {
+	if e.restarts == 0 || e.client != nil {
+		return false
 	}
-	e.mu.Unlock()
-	// Second crash: permanently unavailable for this session.
-	delete(m.entries, key)
+	return e.restarts > 1 || m.now().Sub(e.lastCrash) < restartCooldown
+}
+
+// liveBudget is how long a live diagnosis may run for e, and false when the
+// server has timed out strikeDisable calls in a row and is not asked again. A
+// success clears the strikes; otherwise the server stays unasked until it is
+// evicted for being idle or Belai restarts, and the fixed fallback (when the
+// language has one) keeps checking in its place.
+func (m *Manager) liveBudget(e *entry) (time.Duration, bool) {
+	if e.strikes >= strikeDisable {
+		return 0, false
+	}
+	if e.budget <= 0 {
+		return m.opts.Budget, true
+	}
+	return e.budget, true
 }
 
 func (m *Manager) adjustStrike(e *entry) {
@@ -371,14 +406,23 @@ func (m *Manager) close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, e := range m.entries {
-		if cl := e.client; cl != nil {
-			_ = cl.close()
-		} else if e.conn != nil {
-			_ = e.conn.Close()
-		}
+		e.mu.Lock()
+		shutdownLocked(e)
+		e.mu.Unlock()
 	}
 	m.entries = map[entryKey]*entry{}
 	return nil
+}
+
+// shutdownLocked closes e's connection and marks it closed, so a server that
+// finishes starting afterwards is closed too. The caller holds e.mu.
+func shutdownLocked(e *entry) {
+	e.closed = true
+	if cl := e.client; cl != nil {
+		_ = cl.close()
+	} else if e.conn != nil {
+		_ = e.conn.Close()
+	}
 }
 
 func (m *Manager) janitor() {
@@ -395,43 +439,50 @@ func (m *Manager) janitor() {
 	}
 }
 
+// evictIdle drops servers unused for defaultIdleEviction. An entry that is
+// mid-diagnosis holds its lock and is in use, so it is skipped.
 func (m *Manager) evictIdle() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := m.now()
 	for k, e := range m.entries {
+		if !e.mu.TryLock() {
+			continue
+		}
 		if now.Sub(e.lastUsed) > defaultIdleEviction {
-			if cl := e.client; cl != nil {
-				_ = cl.close()
-			} else if e.conn != nil {
-				_ = e.conn.Close()
-			}
+			shutdownLocked(e)
 			delete(m.entries, k)
 		}
+		e.mu.Unlock()
 	}
 }
 
+// evictIfNeededLocked makes room for one more entry by dropping the least
+// recently used one that is not mid-diagnosis. The caller holds m.mu.
 func (m *Manager) evictIfNeededLocked() {
 	if len(m.entries) < m.opts.MaxLive {
 		return
 	}
-	var oldest *entryKey
+	var oldest *entry
+	var oldestKey entryKey
 	var oldestTime time.Time
 	for k, e := range m.entries {
-		if oldest == nil || e.lastUsed.Before(oldestTime) {
-			oldest = &k
-			oldestTime = e.lastUsed
+		if !e.mu.TryLock() {
+			continue
+		}
+		used := e.lastUsed
+		e.mu.Unlock()
+		if oldest == nil || used.Before(oldestTime) {
+			oldest, oldestKey, oldestTime = e, k, used
 		}
 	}
-	if oldest != nil {
-		e := m.entries[*oldest]
-		if cl := e.client; cl != nil {
-			_ = cl.close()
-		} else if e.conn != nil {
-			_ = e.conn.Close()
-		}
-		delete(m.entries, *oldest)
+	if oldest == nil {
+		return
 	}
+	oldest.mu.Lock()
+	shutdownLocked(oldest)
+	oldest.mu.Unlock()
+	delete(m.entries, oldestKey)
 }
 
 func (m *Manager) now() time.Time {

@@ -188,18 +188,44 @@ Retry budgets are configurable via `config.Settings.Resilience`:
 - `max_explore_iterations`: the ceiling on a single explore subagent's
   tool-loop budget (default 8). Each task carries its own, smaller budget
   (2–5 rounds by kind; see [architecture.md](architecture.md), "Agentic
-  exploration"), and the smaller of the two applies.
+  exploration"), and the smaller of the two applies. A subagent the model
+  starts with the `Task` tool uses 4 when this is unset, where an explore task
+  and the process-recovery subagent use 8.
+- `max_process_recoveries`: how many times the recovery subagent may restart one
+  supervised process before it is marked `failed` and no further model call is
+  made for it (default 3). See
+  [Supervised processes](architecture.md#supervised-processes).
+- `max_background_processes`: how many processes the model may have running at
+  once through `Bash` with `run_in_background` (default 8). A further call is
+  refused rather than queued.
+- `max_agents`: how many fan-out subagents (explore tasks and background agents)
+  run at once across the whole session (default 15). A larger number needs
+  provider rate-limit headroom, since each subagent is its own stream of
+  requests. The pool resizes when settings reload, without a restart.
+- `plan_explore` and `goal_explore`: booleans, off by default. `plan_explore`
+  runs the repository survey before the first planning pass, and `goal_explore`
+  runs the explore fan-out before a goal whose prompt carries references. Each
+  survey held the first pass back for minutes while that pass re-read the same
+  files, so both are opt-in.
 
 Zero always means "unset, use the default" — which is why `max_passes` needs
 its own rule below, and why a budget genuinely cannot be set to zero.
 
 Project-level values are constrained to the *minimum* of the global and project
-values, so a cloned project file cannot raise a budget. Every budget follows
-that rule, including `max_clarify_rounds` and `max_explore_iterations`. For
-`max_passes` an unset global (0, unbounded) takes the project value: there is
-no ceiling to lower, and adding one is a tightening, not a relaxation. The
-same "unset global takes the project value" step applies to the others, where
-it is a relaxation only against a default the global file never stated.
+values, so a cloned project file cannot raise a budget. That rule covers
+`max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`,
+`max_explore_iterations`, `max_process_recoveries` and
+`max_background_processes`. For `max_passes` an unset global (0, unbounded)
+takes the project value: there is no ceiling to lower, and adding one is a
+tightening, not a relaxation. The same "unset global takes the project value"
+step applies to the others, where it is a relaxation only against a default the
+global file never stated.
+
+Three keys are not budgets and do not follow the minimum rule. `max_agents` is
+a concurrency preference rather than a spend limit, so a project value replaces
+the global one in either direction. `plan_explore` and `goal_explore` are
+switches, and the later layer wins. A negative `max_clarify_rounds` in any layer
+disables clarification, because disabling is an explicit opt-out.
 
 ## Overflow surfacing
 

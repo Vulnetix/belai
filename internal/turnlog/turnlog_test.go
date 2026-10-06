@@ -1,9 +1,12 @@
 package turnlog
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
 )
@@ -102,5 +105,71 @@ func TestTurnEndedWithoutStart(t *testing.T) {
 	l.Flush()
 	if len(read()) != 2 {
 		t.Fatal("blank text written")
+	}
+}
+
+// A shell entry is the TUI's: type and role "shell", the command, its id and
+// its status in meta, the output as content, cut at a rune boundary when long.
+func TestShellEntryShape(t *testing.T) {
+	l, read := newLog(t)
+	if id := l.Shell("M go.mod", map[string]any{"command": "git status --short", "shell_id": "c1", "status": "✓"}); id == "" {
+		t.Fatal("shell entry not written")
+	}
+	long := strings.Repeat("é", maxShellBytes) // two bytes per rune
+	l.Shell(long, map[string]any{"command": "cat big", "shell_id": "c2", "status": "✓"})
+
+	var shells []session.Entry
+	for _, e := range read() {
+		if e.Type == ShellEntry {
+			shells = append(shells, e)
+		}
+	}
+	if len(shells) != 2 {
+		t.Fatalf("shell entries = %d, want 2", len(shells))
+	}
+	if shells[0].Role != "shell" || shells[0].Content != "M go.mod" || shells[0].Meta["shell_id"] != "c1" {
+		t.Fatalf("entry = %+v", shells[0])
+	}
+	if len(shells[1].Content) > maxShellBytes || !utf8.ValidString(shells[1].Content) {
+		t.Fatalf("long entry has %d bytes, valid=%v", len(shells[1].Content), utf8.ValidString(shells[1].Content))
+	}
+	if shells[1].Meta["truncated"] != true {
+		t.Fatalf("meta = %v, want truncated", shells[1].Meta)
+	}
+}
+
+// What a mutating tool changed rides on its result entry, as the TUI records
+// it, so the website can draw the edit. A call that changed nothing carries no
+// diff, and the diff is not kept past its result.
+func TestToolResultCarriesTheDiffTheCallLeft(t *testing.T) {
+	l, read := newLog(t)
+	change := &filediff.Change{Files: []filediff.FileChange{{Path: "main.go", Old: "a\n", New: "b\n"}}}
+
+	l.Observe(agent.Event{Kind: agent.EventToolDiffKind, ToolName: "Edit", ToolCallID: "c1", Diff: change})
+	l.Observe(agent.Event{Kind: agent.EventToolResultKind, ToolName: "Edit", ToolCallID: "c1", ToolArgs: `{"path":"main.go"}`, ToolResult: "ok"})
+	l.Observe(agent.Event{Kind: agent.EventToolResultKind, ToolName: "Read", ToolCallID: "c2", ToolResult: "x"})
+	l.Observe(agent.Event{Kind: agent.EventToolResultKind, ToolName: "Edit", ToolCallID: "c1", ToolResult: "again"})
+
+	var tools []session.Entry
+	for _, e := range read() {
+		if e.Type == "tool" {
+			tools = append(tools, e)
+		}
+	}
+	if len(tools) != 3 {
+		t.Fatalf("tool entries = %d, want 3", len(tools))
+	}
+	d, ok := tools[0].Meta["diff"].(map[string]any)
+	if !ok {
+		t.Fatalf("edit entry meta = %v, want a diff", tools[0].Meta)
+	}
+	if files, _ := d["files"].([]any); len(files) != 1 {
+		t.Fatalf("diff = %v, want one file", d)
+	}
+	if _, has := tools[1].Meta["diff"]; has {
+		t.Fatalf("a read carries no diff: %v", tools[1].Meta)
+	}
+	if _, has := tools[2].Meta["diff"]; has {
+		t.Fatalf("a diff is used once: %v", tools[2].Meta)
 	}
 }

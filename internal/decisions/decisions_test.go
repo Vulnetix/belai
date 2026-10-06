@@ -21,7 +21,10 @@ func TestBackendOf(t *testing.T) {
 		{"openrouter", "", "typesafe/jev-1.13", BackendOpenRouter, true},
 		{"openrouter", "", "openai/gpt-5", "", false},
 		{"decision-local", "", "decider-4b", BackendLocal, true},
-		{"my-jev", "jev", "jev", BackendSystemOne, true},
+		{"my-jev", "systemone", "jev", BackendSystemOne, true},
+		{"legacy-jev", "jev", "jev", BackendSystemOne, true},
+		{"strands-decider", "", "decider-2b", BackendSystemOne, true},
+		{"openrouter", "", "strandsagents/strands-decider-2b", BackendOpenRouter, true},
 		{"typesafe", "", "jev-latest", BackendSystemOne, true},
 		{"llama-server", "llama-server", "x", "", false},
 	}

@@ -25,11 +25,13 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // State is the lifecycle of a supervised process.
@@ -112,6 +114,9 @@ type Manager struct {
 	live     *posture.Live
 	caps     tools.Capabilities
 	logsDir  string
+	// lookupEnv reads a host environment variable for an `env:NAME` value of a
+	// structured process (os.LookupEnv unless a test replaces it).
+	lookupEnv func(string) (string, bool)
 	// session is the owning transcript session id, stamped on the recovery
 	// subagent's provider requests and tool calls through calltrace.
 	session atomic.Value // string
@@ -142,6 +147,10 @@ type processInstance struct {
 	ended    time.Time
 	exitCode int
 	attempts int
+
+	// spec is the structured form this process runs from (an argv, no shell);
+	// nil for a legacy shell string.
+	spec *libitem.ProcessDoc
 
 	// background marks a process the model started (Bash run_in_background):
 	// it runs under policy, is never recovered when it exits, and is reachable
@@ -220,6 +229,24 @@ func (m *Manager) Start(name, command string) (Process, error) {
 	if strings.TrimSpace(command) == "" {
 		return Process{}, fmt.Errorf("empty command")
 	}
+	return m.start(name, command, nil)
+}
+
+// StartSpec launches a structured process (docs/library-items.md): an argv run
+// directly, with no shell, with its own environment, working directory, user and
+// output redirects. The name is the library slug.
+func (m *Manager) StartSpec(name string, doc libitem.ProcessDoc) (Process, error) {
+	if name == "" {
+		return Process{}, fmt.Errorf("a structured process needs a name")
+	}
+	doc.Name = name
+	if err := validateSpec(doc); err != nil {
+		return Process{}, err
+	}
+	return m.start(name, doc.Display(), &doc)
+}
+
+func (m *Manager) start(name, command string, spec *libitem.ProcessDoc) (Process, error) {
 	slug := name
 	if slug == "" {
 		fields := strings.Fields(command)
@@ -265,11 +292,13 @@ func (m *Manager) Start(name, command string) (Process, error) {
 		cancel:   cancel,
 		log:      logW,
 		tail:     newRingBuffer(displayTailLines),
+		spec:     spec,
 	}
 	m.procs[id] = p
 
 	if err := m.startExecLocked(p); err != nil {
 		_ = os.Remove(lockPath)
+		_ = logW.Close()
 		delete(m.procs, id)
 		return Process{}, err
 	}
@@ -279,26 +308,58 @@ func (m *Manager) Start(name, command string) (Process, error) {
 }
 
 func (m *Manager) startExecLocked(p *processInstance) error {
-	ec := exec.CommandContext(p.ctx, "sh", "-c", p.command)
-	ec.Dir = p.dir
-	ec.Env = proc.ScrubbedEnv()
+	var ec *exec.Cmd
+	var run *specRun
+	if p.spec != nil {
+		var err error
+		if ec, run, err = m.specCommand(p); err != nil {
+			return err
+		}
+	} else {
+		ec = exec.CommandContext(p.ctx, "sh", "-c", p.command)
+		ec.Dir = p.dir
+		ec.Env = proc.ScrubbedEnv()
+		if p.background {
+			// A background command the model started is a tool call like Bash and gets
+			// the vault's variables the same way (internal/vaultenv).
+			ec.Env = append(ec.Env, vaultenv.Default.Environ(time.Now())...)
+		}
+	}
 	proc.SetProcessGroup(ec)
+	if run != nil {
+		if err := run.applyUser(ec); err != nil {
+			run.close()
+			return err
+		}
+	}
 	// Supervised processes run under the same OS sandbox as Bash.
 	pol := sandbox.FromSettings(m.settings.Sandbox, []string{m.workdir, p.dir}, m.posture)
 	if p.background {
 		pol = p.policy
 	}
 	if _, err := sandbox.Wrap(ec, pol); err != nil {
+		if run != nil {
+			run.close()
+		}
 		return err
 	}
 
 	sink := func(line string) { m.emitProgress(p.id, line) }
 	tw := proc.NewLineTee(maxLiveTailBytes, sink)
-	mw := io.MultiWriter(p.log, tw)
-	ec.Stdout = mw
-	ec.Stderr = mw
+	// What the process prints is scrubbed before it reaches the log file or the live
+	// tail, so a vault value never lands on disk.
+	sw := vaultenv.NewWriter(io.MultiWriter(p.log, tw), vaultenv.Default)
+	if run != nil {
+		run.wire(ec, sw)
+	} else {
+		ec.Stdout = sw
+		ec.Stderr = sw
+	}
 
 	if err := ec.Start(); err != nil {
+		if run != nil {
+			run.close()
+		}
 		return err
 	}
 	p.pid = ec.Process.Pid
@@ -306,6 +367,10 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 	pid := ec.Process.Pid
 	go func() {
 		err := ec.Wait()
+		if run != nil {
+			run.close()
+		}
+		_ = sw.Close()
 		tw.Flush()
 		p.log.Flush()
 		code := 0
@@ -474,7 +539,14 @@ func (m *Manager) RestartProcess(id, command string) error {
 		return fmt.Errorf("recovery attempt cap (%d) reached", max)
 	}
 	p.attempts++
-	p.command = command
+	// A structured process restarts exactly as it was defined: the recovery
+	// subagent may amend the flags of a shell command a user typed, but a
+	// document's argv, environment, user and redirects are not its to change.
+	if p.spec == nil {
+		p.command = command
+	} else {
+		command = p.command
+	}
 	p.state = StateRunning
 	p.started = time.Now()
 	p.ended = time.Time{}
@@ -495,6 +567,29 @@ func (m *Manager) RestartProcess(id, command string) error {
 	m.mu.Unlock()
 	m.pushEvent(Event{ID: id, Kind: "restart", Process: snap})
 	return nil
+}
+
+// Relaunch stops the process with that handle, if it is running, and starts it
+// again as it was defined: the same name and command, or for a structured process
+// the same document. It is what the runs panel's restart does.
+func (m *Manager) Relaunch(id string) (Process, error) {
+	m.mu.RLock()
+	p, ok := m.procs[id]
+	if !ok || p.background {
+		m.mu.RUnlock()
+		return Process{}, fmt.Errorf("process %q not found", id)
+	}
+	p.mu.RLock()
+	name, command, spec := p.name, p.command, p.spec
+	p.mu.RUnlock()
+	m.mu.RUnlock()
+	if err := m.Stop(id); err != nil {
+		return Process{}, err
+	}
+	if spec != nil {
+		return m.StartSpec(name, *spec)
+	}
+	return m.Start(name, command)
 }
 
 // ProcessByName returns the newest running or historical process record for

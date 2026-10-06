@@ -17,7 +17,7 @@ import (
 var (
 	ColorInk      = lipgloss.AdaptiveColor{Light: "#FBFBF8", Dark: "#1C3431"} // chip foreground
 	ColorTeal     = lipgloss.AdaptiveColor{Light: "#137A6F", Dark: "#3AC4B4"} // the model's voice; success; the one brand accent
-	ColorTealSoft = lipgloss.AdaptiveColor{Light: "#1A8C7C", Dark: "#76E0CD"} // your turns, plan mode, keycaps
+	ColorTealSoft = lipgloss.AdaptiveColor{Light: "#178574", Dark: "#76E0CD"} // your turns, plan mode, keycaps
 	ColorCream    = lipgloss.AdaptiveColor{Light: "#0F1F1C", Dark: "#F6EED6"} // emphasis: what you typed, named identifiers
 	ColorAmber    = lipgloss.AdaptiveColor{Light: "#A95A0B", Dark: "#E8912B"} // needs you, or you stepped in
 	ColorDanger   = lipgloss.AdaptiveColor{Light: "#B8322A", Dark: "#E2564E"} // failures, relaxed guardrails

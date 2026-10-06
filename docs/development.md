@@ -30,7 +30,7 @@ just check      # gofmt + go vet + go test -race, exactly what CI runs
 
 `make` cannot forward arbitrary arguments to a target, so `go run ./cmd/belai -provider … -prompt "…"` was impossible from a Makefile. The workaround was to build into `dist/` or `bin/` and run the artefact — which silently goes stale the moment you edit source, and produces confusing failures like `flag provided but not defined: -provider` from a binary built before that flag existed.
 
-`just` takes recipe parameters, so **everything you run during development runs from source**. There is no build artefact to keep in sync. `bin/` is produced only by `just build-all`, which exists to verify release cross-compilation, and it is gitignored.
+`just` takes recipe parameters, so **everything you run during development runs from source**. There is no build artefact to keep in sync. `bin/` is produced only by `just build-all` and `just build-jailbreak-bin`, which build every release variant for this host's OS and arch, and it is gitignored. The full target matrix is built by the release workflow, and `just cross` checks that the other targets compile.
 
 ## Running from source
 
@@ -41,6 +41,7 @@ just check      # gofmt + go vet + go test -race, exactly what CI runs
 | `just ask openai gpt-5 "summarise this repo"` | pin provider and model for one turn |
 | `just detect-mode "refactor the parser"` | report the Role Manager mode decision only |
 | `just run -version` | pass raw flags through |
+| `just run -help` | the command list, examples and grouped flags (`just run help agent` for one command) |
 
 `prompt`, `ask`, and `detect-mode` take their text as an exported shell variable, so quotes, apostrophes, and `@` characters in a model id survive intact:
 
@@ -69,6 +70,13 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
 | `-classifier-model` | security-classifier model (default: the main model) |
 | `-classifier-effort` | security-classifier thinking effort (default: `none`) |
+| `-classifier-kind` | security-classifier stack: `llm`, `models`, `openrouter-decisions` or `systemone` (`jev` is read as `systemone`; default: `models` when the binary embeds a model, else `llm`) |
+| `-classifier-phase1-model` | phase-1 prompt-saturation model id |
+| `-classifier-phase1-source` | phase-1 source: `embedded` or `huggingface` |
+| `-classifier-phase1-threshold` | phase-1 attack threshold, a probability; `0` or unset means the default `0.75` |
+| `-classifier-phase2-model` | phase-2 jailbreak model id |
+| `-classifier-phase2-source` | phase-2 source: `embedded`, `huggingface` or `disabled` |
+| `-classifier-phase2-threshold` | phase-2 attack threshold; `0` or unset means the default `0.75` |
 | `-caveman` | enable caveman voice rewrite for this run |
 | `-guardrails` | posture guardrails, **on by default**; `-guardrails=false` forces every gate to `ignore` for this run, overriding both the project `preferences.yaml` and any per-gate flag |
 | `-ask-permission` | the permission-ask gate, **on by default**; `-ask-permission=false` resolves every `ask` decision to allow with no prompt |
@@ -82,6 +90,8 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-plan` | start in plan mode: read-only tools only, no mutation |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |
+| `-teleport` | continue a session of your account from another host, sandbox or the web: the transcript and any agent profile it needs are fetched and the session opens here under a new id; rejected with `-resume`, `-continue` or `-prompt` ([teleport](teleport.md)) |
+| `-teleport-ref` | with `-teleport`, check out this ref or commit instead of the one the session was at |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
 | `-trust-dir` | trust the current directory without prompting (grants the directory only, never its proposed `workspace_dirs`) |
@@ -110,6 +120,39 @@ CLI path too. The flag is folded into those settings first, so it still works;
 reading the flag alone used to mean a settings file that disabled guardrails
 was honoured by the TUI and ignored by the CLI.
 
+### Environment variables
+
+The environment is one layer of the settings merge (below the flags, above the
+files), so each variable here sets the same thing as the setting and flag beside
+it. An empty value is ignored. A boolean variable is read with Go's
+`strconv.ParseBool` (`1`, `t`, `true`, `0`, `f`, `false`, in either case), and any
+other value is ignored, so a typo never turns a gate off. A threshold is read as
+a number; text that is not one counts as unset.
+
+| Variable | Sets | Flag |
+| --- | --- | --- |
+| `BELAI_PROVIDER` (then `PI_PROVIDER`) | `provider` | `-provider` |
+| `BELAI_MODEL` | `model` | `-model` |
+| `BELAI_EFFORT` | `effort` | `-effort` |
+| `BELAI_GUARDRAILS` | `guardrails` | `-guardrails` |
+| `BELAI_ASK_PERMISSION` | `ask_permission` | `-ask-permission` |
+| `BELAI_FIREWALL` | `firewall.enabled` | `-firewall` |
+| `BELAI_CLASSIFIER_KIND` | `classifier.kind` | `-classifier-kind` |
+| `BELAI_CLASSIFIER_PROVIDER` | `classifier.provider` | `-classifier-provider` |
+| `BELAI_CLASSIFIER_MODEL` | `classifier.model` | `-classifier-model` |
+| `BELAI_CLASSIFIER_EFFORT` | `classifier.effort` | `-classifier-effort` |
+| `BELAI_CLASSIFIER_CAVEMAN` | `classifier.caveman` | none |
+| `BELAI_CLASSIFIER_PHASE1_MODEL`, `_SOURCE`, `_THRESHOLD` | `classifier.phase1.model`, `.source`, `.threshold` | `-classifier-phase1-model`, `-source`, `-threshold` |
+| `BELAI_CLASSIFIER_PHASE2_MODEL`, `_SOURCE`, `_THRESHOLD` | `classifier.phase2.model`, `.source`, `.threshold` | `-classifier-phase2-model`, `-source`, `-threshold` |
+
+A variable outside this table does not set a setting. `BELAI_HOME`,
+`BELAI_BASE_URL`, `BELAI_WORKTREES_DIR`, `BELAI_NO_KITTY` and
+`BELAI_NO_UPDATE_CHECK` (`1`, `true` or `yes` turns the release check off for
+air-gapped and CI runs; the `update_check` setting is the durable opt-out) are
+described where they apply, and the variables that tell Belai where local model
+files already are (`BELAI_MODELS_DIR`, `HF_HUB_CACHE`, `HF_HOME`, `LLAMA_CACHE`)
+are in [Local inference](architecture.md#local-inference).
+
 ### Provider and model defaults
 
 `-provider` is optional too. When nothing — settings, state, environment or
@@ -136,6 +179,15 @@ when the user's credentials resolve for exactly one provider.
 | `llama-server` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
 | `kiro` | `claude-sonnet-4.5` |
+| `alibaba` | `qwen3-30b-a3b` |
+| `deepseek` | `deepseek-chat` |
+| `fireworks` | `accounts/fireworks/models/llama-v3p3-70b-instruct` |
+| `groq` | `llama-3.3-70b-versatile` |
+| `minimax` | `minimax-text-01` |
+| `mistral` | `mistral-large-latest` |
+| `moonshot` | `kimi-k2-0711` |
+| `together` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `xai` | `grok-3-latest` |
 | `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
 A custom provider from `settings.json` falls through to the `openrouter/free`
@@ -510,7 +562,11 @@ selected. Confirm `/agent` (no argument) also opens it. The strip lists
 built-ins first (`◈`), then user profiles, then `↻` background-agent
 definitions. Press `tab` repeatedly and confirm the highlight walks every
 candidate, ends on `(none)`, wraps, and never writes into the prompt; that
-`enter` engages the highlighted one and shows it in the footer chip; and that
+`enter` engages the highlighted one and shows it in the footer chip (an agent
+with a persona by its display name, in its colours: engage `belai:patcher` and
+confirm `Kremvax`, then `ctrl+p` to `belai:verifier` and confirm `Dark Avenger`
+and a colour change on the next frame, and that `(none)` and a profile with no
+persona bring the brand teal back); and that
 `right` moves the cursor until something is highlighted. With a prompt typed
 in the composer, confirm that two keystrokes send it: the first `enter` opens
 the picker, the second engages the highlighted agent **and** starts the turn,
@@ -593,7 +649,7 @@ the repository (`cd ..` past the root) is refused without moving. Change the
 model or toggle a mode to force a session rebuild and confirm the footer
 returns to the session root.
 
-**Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
+**Release parity.** `just build-all` builds every release variant for this host's OS and arch into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. The release workflow builds the other five targets. Run the host binary and check `-version` reports the git description.
 
 **Model variants.** `just modelprep` downloads, converts and golden-verifies the embedded classifier models. When `uv` is on `PATH` it provisions `torch`, `safetensors` and `numpy` itself (`uv run --with …`, CPU wheels), so no prepared Python is needed; otherwise set `MODELPREP_PYTHON` to a python with `torch`+`safetensors` (default `python3`). `just build-bert` builds `./belai` with only the phase-1 model embedded; `just build-jailbreak` builds it with both phase-1 and phase-2 embedded (~485 MB). The assets are gitignored and never committed; `internal/mlclassify/assets_meta.go` records the golden-verified attack-label orientation.
 
@@ -601,17 +657,23 @@ returns to the session root.
 
 **Supervised processes.** In a temp directory, type `!!sleep 30` and confirm a `Process` tool row appears, the footer activity strip shows it, and no model turn is sent. Check `.vulnetix/processes/010-sleep.sh` holds `sleep 30` verbatim, that the log file is written under `~/.vulnetix/belai/logs/`, and that `/processes` lists it enabled in the project scope. Press `f9` to open the runs panel, press `tab` to switch to the processes tab, select the row, and press `v` to open its live log full-screen; press `esc` to return. Press `x` to stop it; the row should disappear because the processes tab is running-only. Press `r` on a running row to restart it (the old PID stops and a new one starts). From `/processes`, select the stopped entry and press `enter`; the full log tail should open even though the process is no longer running. Run `!!false` and confirm the recovery subagent fires once (a `role manager` pill and a `ProcessRestart` tool row), then the process is marked `failed` after the configured max recoveries. Restart Belai in the same directory and confirm enabled entries auto-start.
 
+**Knowledge.** Put a SARIF file with two results and a `memory.yaml` under a project's `.vulnetix`, start a session and ask the model to `Grep` for a rule id from the SARIF: below the file matches there is a `[knowledge: …]` block with `kb+project/.vulnetix/…` rows, and a `Glob` of `**/*.sarif` lists the same document. `belai agent knowledge` lists the indexed documents with counts and no passage text. Add a `knowledge` block with a directory of Markdown to a profile file, engage the agent with `/agent:<name>` and confirm its documents are searchable, still so after `shift+tab` to plan and goal mode, and gone after you clear the agent. Attach a file with `@` and confirm a `Grep` finds its text, and that a new session does not. Put a line that the classifier flags in a document and confirm it is not returned. Add a `Read(**/memory.yaml)` deny rule and confirm the memory file's passages stop appearing. In `/settings`, open the *Knowledge* group, lower `knowledge per search` to 200 and confirm a search returns less, then press `x` to return it to its default; confirm the three rows are saved to the global file when the scope chip shows project. With `guardrails` off, confirm `belai agent knowledge -index` sends nothing to the classifier.
+
 **Model-started processes.** Ask the model to "start `python3 -m http.server 8123` in the background, read its output, then stop it". Confirm the `Bash` call asks like any other, that a `BashOutput` row shows the access log lines once and `(no new output)` on a second read, that the runs panel (`f9`, processes tab) lists the process, and that `KillShell` marks it stopped without an ask. Ask it to start `sh -c 'exit 3'` and confirm the process ends `exited (exit status 3)` with no recovery subagent. Ask it to stop your own `!!sleep 30` process and confirm the call is refused as not found. Set `resilience.max_background_processes` to 1 and confirm a second launch is refused with the cap message.
 
 **Screenshots.** With Chrome or Chromium on `PATH`, ask the model to "serve this folder on port 8123 in the background and screenshot it". Confirm the `Screenshot` call asks (or is allowed by a `Screenshot(url:http://127.0.0.1:*)` rule), that the result names a file under `~/.vulnetix/belai/screenshots` and that a vision model describes the page. Try `http://example.com` and `http://192.168.1.10` and confirm both are refused before any browser starts, and stop the server and confirm the "nothing is listening" error. Ask for `target: desktop` with an allow rule for `Screenshot` and confirm it still asks. With a text-only model, confirm the result says the image was not sent. Set `screenshot.desktop` to false in the project file and confirm the desktop target disappears; set `screenshot.enabled` to true there while the user file says false and confirm the tool stays off.
 
 **Post-end test pass.** In a scratch Go module with one passing test, set `tests.post_end` to `goal` in `/settings` and confirm the repository map in the system block names the suite on a `tests:` line. Run a goal that edits a file and confirm `running tests: goal`, a `go test ./pkg/...` scoped to the edited package, and a report line. Break a test and repeat: confirm a visible goal-mode turn starts with the failing output attached, the suites re-run after it, and the loop stops after `tests.max_fix_passes` if it cannot fix the test. Set `tests.on_fail` to `diagnose` and confirm one read-only turn and no re-run; set it to `off` and confirm only the failing line. Add `Bash(go test*)` to `permissions.deny` and confirm the run reports `denied` and no loop starts. Set `post_end` to `session`, edit a file, quit with `/exit` and confirm the pass runs first and a second `/exit` leaves at once. Put `"tests": {"post_end": "goal"}` in the project file only and confirm the pass stays off with a note in `/settings`. Headless: `belai -prompt "..." ` with `post_end` set prints the result to stderr and only the reply to stdout.
 
-**Kanban and crew tabs.** With a throwaway item on the board, focus the kanban pane on an empty composer (`↓`) and press `f9`: the runs panel opens on the kanban tab with the same filter and item selected, and the pane above the composer disappears. Press `3` and confirm the item moves to in progress (a `kanban:` line in the transcript), `+` raises its priority (`▲1` beside it), `o` asks for a note in the composer (`esc` cancels, `⏎` saves), `L` sets labels and `[`/`]` cycle the filters. `n` then a title adds an item. `⏎` puts the item's prompt in the composer. Press `tab` to the crew tab and confirm it shows the chosen crew and the worker count. `c` cycles to `belai:security` and back. In a trusted scratch repository, `s` starts the crew, the label turns into `crew N` and the rows refresh every two seconds, `l` shows a worker's log tail, `⏎` on a working worker shows its item on the kanban tab, and `X` stops them all. Back on the kanban tab, `w` on a review item moves it to backlog with the crew's entry label. Delete the throwaway items from `/kanban` afterwards.
+**Kanban and crew tabs.** With a throwaway item on the board and `/settings` → Display → `empty composer pane` set to `kanban`, focus the kanban pane on an empty composer (`↓`) and press `f9`: the runs panel opens on the kanban tab with the same filter and item selected, and the pane above the composer disappears. Press `3` and confirm the item moves to in progress (a `kanban:` line in the transcript), `+` raises its priority (`▲1` beside it), `o` asks for a note in the composer (`esc` cancels, `⏎` saves), `L` sets labels and `[`/`]` cycle the filters. `n` then a title adds an item. `⏎` puts the item's prompt in the composer. Press `tab` to the crew tab and confirm it shows the chosen crew and the worker count. `c` cycles to `belai:security` and back. In a trusted scratch repository, `s` starts the crew, the label turns into `crew N` and the rows refresh every two seconds, `l` shows a worker's log tail, `⏎` on a working worker shows its item on the kanban tab, and `X` stops them all. Back on the kanban tab, `w` on a review item moves it to backlog with the crew's entry label. Delete the throwaway items from `/kanban` afterwards.
 
 **Security crew.** In a trusted scratch repository with a dependency that has a known advisory, run `belai agent start -crew belai:security` and confirm a second run is refused while the first is live. Confirm the scout's log says `no review of <commit>; running it`, that `.vulnetix/memory.yaml` gains that commit, and that the kanban tab shows one `[sca] …` card per finding labelled `vuln`. Stop the crew and start it again on the same commit: the log must say the artefacts already carry it and no scan runs. Commit a change that removes a vulnerable dependency, start the crew, and confirm that card moves to review labelled `gone` and `needs-verify`, that the verifier records a verdict on it, and that `.vulnetix/vex/<finding>.openvex.json` appears with status `fixed`. Add a card by hand for a finding the scanner reports that does not apply, let a patcher record `false_positive` with evidence, and confirm the verifier repeats the evidence, the card reaches `done` and the VEX says `not_affected`. Confirm a `no_fix` verdict ends `blocked` with an `affected` VEX. Start two crews in the same repository from two terminals at once and confirm exactly one starts. After a sweep that files new cards, confirm a `[sweep] plan fixes for new findings at <commit>` item appears, the scout works it, and each new card gains a note with the fixed version and the edit. Make a patcher's first fix ineffective (pin the old version in a second manifest) and confirm the worker log says `the scanner still reports <finding>; round 2 of 3`, the second turn is told which version is still resolved, and that a fix which never works ends as a failed attempt with `the scanner still reports` in the notes and no `.vulnetix` files on the branch.
 
 **Delivery crew.** In a trusted scratch Go module with one failing test and one package without tests, run `belai agent start -crew belai:delivery` and confirm a second start is refused while the first is live. Confirm the scout's log says `quality sweep: running [go] at <commit>`, that `.vulnetix/belai/quality/<commit>.json` appears, and that the kanban tab shows `[quality]` cards labelled `scout` and `quality`: the failing suite (priority 3), the least covered packages, the packages with no test files and the category cards. Let the scout work the failing-suite card and confirm its handoffs land in Review. Stop the crew and start it again on the same commit: the log must say a record already exists, no suite runs and no card is added. Delete one category card, relaunch, and confirm it does not return. Fix the test, commit, launch again: the suites run once, the failing-suite card closes with `no longer reported`, and no category card is duplicated. Deny the test command with `Bash(go test*)` in `permissions.deny`, commit, launch, and confirm no record is written for that commit and no failure card appears.
+
+**Knowledge screen.** In a trusted repository with a `.vulnetix` directory, run `/knowledge`: the project tab lists the indexed documents with a type, language and topic ids, and the pane below shows the selected one's labels and topics with the scores and who decided them. `enter` shows the indexed text and `esc` closes it. `/` then `type:scanner` narrows the list, and `esc` clears it. Press `2` for every project on this host (this one first), `enter` on another to list its documents and `esc` to widen again, then `3` for the agents that list documents. Press `s`, type a phrase from a document, `enter`, and confirm the pane shows `kb+` rows under the knowledge header exactly as a model's `Grep` would; `tab` while typing, or `m` afterwards, switches to `glob` (documents, with `(similar)` marks) and `read` (name a document to see the related passages a `Read` would add). `enter` on a result opens its document. Add a `Read` deny rule for a document under `/permissions` and confirm it disappears from the project tab's search but not from the global one. With a decision backend configured, run `belai agent knowledge -index -json` and confirm documents carry `tagged_by` `jev` after a refresh or two; with none, `patterns`. Resize to 40 columns and confirm nothing wraps past the frame. Press `f1` then `n` to reach the screen from the switcher.
+
+**Workspace changes.** In a repository, edit one tracked file, stage another (`git add`), create an untracked file and run `/diff`: the summary counts one of each and the list marks them `M`, `S` and `?`. `right` and `left` change file, `down`, `pgdn` and `G` scroll the hunks, `r` reloads after a further edit and `esc` returns to chat. Add a `Read` deny rule for one changed file under `/permissions` and confirm it is listed with `◌` and a hidden note, with no hunks. Run it in a clean tree and outside a repository and read the messages, and resize to 40 columns to confirm nothing wraps past the frame. See [docs/diff.md](diff.md).
 
 **Session intelligence.** With no token budget set, send a prompt and watch the footer's first line: the right side shows `intel  today …` with a 24-hour sparkline (a provider that reports rate limits shows `5h 23%` and a bar with a `╹` reset marker instead). Switch `/model` to `routed` and confirm the slot stays. Press `f12`: the runs panel opens on the intel tab at half the terminal height with the limit rows (or `no plan limit reported by …`), pace, trend, runway, and today, the week and 30 days. Press `→` to move the window, `m` for the models list, `r` for this session's roles (a security check appears once the classifier has run), `t` back to the timeline, `b` for `/budgets`, `enter` for the full screen with the 7-day heatmap, `R` to re-read the ledger and `esc` to leave; `f12` closes the pane and `tab` reaches the tab from any other. Resize to 80 columns and to a short terminal and confirm header lines drop from the bottom. Set `ui.intel` to `off` in `/settings` and confirm the slot, the tab and `f12` go and `/intel` says so; a `session` budget then holds the footer alone. To see real limits, use an Anthropic subscription-style provider or any provider that sends `x-ratelimit-*` headers, and check `usage.json` gains `hours` and `limits`; set `intel.plan_limits` to `off` and confirm no new limit readings are recorded.
 
@@ -716,6 +778,19 @@ Rules and edge cases:
 
 The `e2e` package builds `./cmd/belai` into a temp dir and runs it against an `httptest` provider, so it catches exactly the class of bug a stale artefact hides: flags, exit codes, and the Role Manager pipeline as the shipped binary sees them.
 
+**The docs are held to the code.** `just test` fails when a page and the code
+disagree, in both directions. `internal/docparity` is the support code and
+`internal/docsuite` the cross-page checks; the rest sit beside the code they
+describe. They check that every flag, slash command, environment variable and
+audit kind is documented and that a flag, `/command`, file path, Go symbol,
+relative link or heading anchor a page names exists; that every test a page cites
+by name is defined (`TestEveryTestTheDocsCiteExists`); and, per page, the
+limits, defaults, tables and colours it states (the colour roles in
+[tui-design.md](tui-design.md) against `internal/tui/components/theme.go`, the
+record types in [session-sync.md](session-sync.md) against what the syncer
+reads). When you change behaviour, change the page in the same commit and the test
+that pins it tells you which sentence moved.
+
 The local decision-model ladder has an opt-in live test that downloads the
 real weights (~2.6 GB) and drives the llama-server on PATH:
 
@@ -724,9 +799,44 @@ BELAI_LIVE_DECISION=decider-4b BELAI_MODELS_DIR=/some/roomy/dir \
   go test -count=1 -timeout 45m -run TestLiveLocalDecisionLadder -v ./internal/modeltest/
 ```
 
-Use `plumb-4b` for the other catalogue model. To try a self-hosted Jev from
+Use `plumb-4b` for the other catalogue model. To try a self-hosted server from
 the TUI, run any `/v1/systemone` server (for example `laya-serve`) and add it
-under providers → `+ add new provider` → kind `jev`.
+under providers → `+ add new provider` → kind `systemone`.
+
+To ask Clef on Workers AI from a test (one noul and one choice, a fraction of
+a cent):
+
+```bash
+BELAI_CLEF_LIVE=1 CLOUDFLARE_API_KEY=… CLOUDFLARE_ACCOUNT_ID=… \
+  go test -count=1 -run ClefLive -v ./internal/decisions/
+# BELAI_CLEF_MODEL=@cf/cloudflare/clef for the 27B model
+```
+
+To ask Tev1 on Together the charge-dispute example from its repository:
+
+```bash
+BELAI_TEV1_LIVE=1 TOGETHER_API_KEY=… go test -count=1 -run Tev1Live -v ./internal/decisions/
+# against a llama-server already serving the Tev1 4B GGUF:
+BELAI_TEV1_LOCAL_URL=http://127.0.0.1:18197 go test -count=1 -run Tev1LocalLive -v ./internal/decisions/
+```
+
+A local Clef needs llama.cpp build 11371 or later; then
+`BELAI_LIVE_DECISION=clef-flash` runs the local ladder above against it.
+
+To try Strands Decider-2B, install the server and select it; nothing else is
+set:
+
+```bash
+uv tool install strands-decider
+# then in the TUI: /providers → strands-decider → enter (tests, offers the
+# ~4.6 GB pinned download, starts the server on 127.0.0.1:18098)
+```
+
+A server you start yourself is used as it is when it answers on `127.0.0.1:8000`
+(upstream's default) or `127.0.0.1:18098`:
+`strands-decider serve StrandsAgents/strands-decider-2B-hobson-v19`.
+`internal/deciderserver`'s tests launch a stand-in server through the same
+path, so they need no Python.
 
 The speech recogniser (`internal/voice/asr`) is pure Go, so `just cross` needs
 no toolchain for it. Its unit tests build a tiny synthetic model in memory. An
@@ -780,9 +890,17 @@ BuildDate = UTC RFC 3339
 
 ## CI and release
 
-- `.github/workflows/ci.yml` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile on every push and pull request.
+- `.github/workflows/ci.yml` runs on every push (except Dependabot branches), every tag and every pull request, as three jobs. `test` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile. `models` prepares the classifier models and runs the golden tests under the `belai_bert` and `belai_bert_jailbreak` tags, without `-race` because the race detector multiplies the model's memory use. `voice` fetches the pinned speech model, runs the voice tests with `belai_voice` and builds with it.
 - `.github/workflows/release.yml` fires on a `v*` tag: `modelprep` prepares the embedded models (cached by model id + revision), cross-compiles the six vanilla targets plus the three variant families (`belai-bert-guardrails`, `belai-bert-guardrails-jailbreak`, `belai-no-classifier`), publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
-- `.github/workflows/pages.yml` builds the marketing site on `site/**` pushes, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
+- **Contracts the website and server mirror.** Library item validators are kept
+  case for case in `vdb-site` (`api/internal/handler/belai_items_validate_*.go`)
+  and the website (`src/components/belai/belai-item-*.ts`). A release that
+  changes what a host writes into an item (a new provider kind, a reserved
+  provider name) ships only after both accept it, or hosts' backups and the
+  automatic sync are refused. The `systemone` kind and the `strands-decider`
+  name are the current example; the website's `SYSTEMONE_KIND_SINCE` names the
+  release that carries them and is set when it is tagged.
+- `.github/workflows/pages.yml` builds the marketing site on pushes to `main` that touch `site/**` or the workflow itself, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
 
 ## Site
 
@@ -792,7 +910,7 @@ Local recipes: `just site-dev` (dev server), `just site-build` (build `site/dist
 (regenerate the deterministic TUI captures). `just check` stays Go-only and does
 not gain a Node dependency.
 
-Belai is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one Linux host. There is no goreleaser step; the release workflow builds directly and is mirrored locally by `just build-all`.
+Belai is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one Linux host. There is no goreleaser step; the release workflow builds the full matrix directly, and `just build-all` mirrors it locally for the host's OS and arch.
 
 ## Layout
 

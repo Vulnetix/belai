@@ -13,6 +13,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -241,5 +242,237 @@ func TestReadOnlyDirective(t *testing.T) {
 	w.Profile.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree, ReadOnly: true}
 	if w.directive(ws, true) != d {
 		t.Fatal("a read-only worker got the writing directive")
+	}
+}
+
+func hourlyProfile() agentprofile.AgentProfile {
+	p := scoutProfile()
+	p.Kanban.Survey.Every = "1h"
+	return p
+}
+
+// An hourly survey is not skipped because the next start came a moment before
+// the hour was up: the interval is checked against a stamp written after the
+// item was filed, so a start exactly one interval later is always a hair short.
+func TestHourlySurveyRunsWhenTheNextStartIsASecondsEarly(t *testing.T) {
+	store, reg := testEnv(t)
+	var turns []Turn
+	t0 := time.Now()
+	first := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+	first.Once, first.now = false, func() time.Time { return t0 }
+	runFor(t, first, 3*time.Second)
+	if len(turns) != 1 {
+		t.Fatalf("first start: %d turns", len(turns))
+	}
+
+	for name, c := range map[string]struct {
+		after   time.Duration
+		surveys bool
+	}{
+		"exactly an hour":                {time.Hour, true},
+		"thirty seconds early":           {time.Hour - 30*time.Second, true},
+		"just inside the grace":          {time.Hour - 119*time.Second, true},
+		"three minutes early is skipped": {time.Hour - 3*time.Minute, false},
+		"half the interval is skipped":   {30 * time.Minute, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, reg := testEnv(t)
+			var turns []Turn
+			a := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+			a.Once, a.now = false, func() time.Time { return t0 }
+			runFor(t, a, 3*time.Second)
+			at := t0.Add(c.after)
+			b := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+			b.Once, b.Repo, b.now = false, a.Repo, func() time.Time { return at }
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = b.Run(ctx)
+			want := 1
+			if c.surveys {
+				want = 2
+			}
+			if len(turns) != want {
+				t.Fatalf("%d survey turns, want %d\n%s", len(turns), want, b.Log.(*bytes.Buffer).String())
+			}
+			if !c.surveys && !strings.Contains(b.Log.(*bytes.Buffer).String(), "survey skipped") {
+				t.Fatalf("log %q", b.Log.(*bytes.Buffer).String())
+			}
+		})
+	}
+}
+
+// A finished survey does not block the next hour's: the board refuses only a
+// second open item with the same title, and the title carries the date, so the
+// hours of one day share a title.
+func TestHourlySurveysOfOneDayShareATitleWithoutColliding(t *testing.T) {
+	store, reg := testEnv(t)
+	var turns []Turn
+	t0 := time.Now()
+	repo := ""
+	for i := 0; i < 3; i++ {
+		at := t0.Add(time.Duration(i) * time.Hour)
+		w := newWorker(t, store, reg, hourlyProfile(), handoffRunner(store, &turns))
+		w.Once, w.now = false, func() time.Time { return at }
+		if repo != "" {
+			w.Repo = repo
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = w.Run(ctx)
+		cancel()
+		repo = w.Repo
+	}
+	if len(turns) != 3 {
+		t.Fatalf("%d surveys over three hours, want 3", len(turns))
+	}
+}
+
+// A worktree needs a git repository. A worker started in a plain directory is
+// refused up front, instead of claiming (or filing) an item and then failing to
+// prepare a workspace for it.
+func TestCheckRepoRefusesAWorktreeProfileOutsideGit(t *testing.T) {
+	plain := t.TempDir()
+	worktree := scoutProfile()
+	worktree.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree, ReadOnly: true}
+
+	err := CheckRepo(worktree, plain)
+	if err == nil {
+		t.Fatal("a worktree profile in a plain directory must be refused")
+	}
+	for _, want := range []string{"t-scout", "workspace.isolation: worktree", "git repository", plain} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+
+	if out, err := exec.Command("git", "-C", plain, "init", "-q").CombinedOutput(); err != nil {
+		t.Skipf("git init: %v %s", err, out)
+	}
+	if err := CheckRepo(worktree, plain); err != nil {
+		t.Errorf("a git repository: %v", err)
+	}
+	sub := filepath.Join(plain, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckRepo(worktree, sub); err != nil {
+		t.Errorf("a directory inside a repository: %v", err)
+	}
+}
+
+// Only a worktree needs git: a profile with no isolation or a shared checkout
+// is not refused for the directory it starts in.
+func TestCheckRepoLeavesOtherIsolationAlone(t *testing.T) {
+	plain := t.TempDir()
+	none := scoutProfile()
+	if err := CheckRepo(none, plain); err != nil {
+		t.Errorf("no workspace block: %v", err)
+	}
+	for _, iso := range []string{"", agentprofile.IsolationNone, agentprofile.IsolationShared} {
+		p := scoutProfile()
+		p.Workspace = &agentprofile.WorkspaceSpec{Isolation: iso}
+		if err := CheckRepo(p, plain); err != nil {
+			t.Errorf("isolation %q: %v", iso, err)
+		}
+	}
+}
+
+// A profile's handoff_repos reaches the claim a worker's session works under,
+// and an unset one does not.
+func TestClaimCarriesHandoffRepos(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		store, reg := testEnv(t)
+		var turns []Turn
+		p := scoutProfile()
+		p.Kanban.HandoffRepos = on
+		w := newWorker(t, store, reg, p, handoffRunner(store, &turns))
+		w.Once = false
+		runFor(t, w, 3*time.Second)
+		if len(turns) != 1 || turns[0].Claim == nil {
+			t.Fatalf("handoff_repos %v: %d turns", on, len(turns))
+		}
+		if turns[0].Claim.HandoffRepos != on {
+			t.Errorf("handoff_repos %v: claim has %v", on, turns[0].Claim.HandoffRepos)
+		}
+	}
+}
+
+// A worker in a plain folder that is not a git repository works without one:
+// it surveys, runs its turn in the folder itself, hands the finding off under a
+// repository the index found beside it, and finishes the survey item. This is
+// the hourly CloudWatch analyzer's shape.
+func TestSurveyingWorkerInAPlainFolderFilesUnderTheOwningRepo(t *testing.T) {
+	store, reg := testEnv(t)
+	base := t.TempDir()
+	folder := filepath.Join(base, "work")
+	website := filepath.Join(folder, "website")
+	for _, dir := range []string{folder, website} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/acme/website.git"}} {
+		if out, err := exec.Command("git", append([]string{"-C", website}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("git %v: %v %s", args, err, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(folder, ".git")); err == nil {
+		t.Fatal("the worker's folder must not be a repository")
+	}
+
+	p := scoutProfile()
+	p.Kanban.Project = "" // the folder's own project
+	p.Kanban.HandoffRepos = true
+	p.Kanban.Survey.List = "review"
+	p.Workspace = nil
+
+	var turn Turn
+	runner := func(ctx context.Context, tt Turn) (run.Result, error) {
+		turn = tt
+		tt.Claim.UseRepoIndex(repoindex.Scan(ctx, folder))
+		h := tools.KanbanHandoff{KanbanBase: tools.KanbanBase{Store: store, Source: kanban.NewSource(kanban.ProvenanceFor(folder, tt.SessionID, "h")), Claim: tt.Claim}}
+		if _, err := h.Execute(ctx, map[string]any{"title": "Raise the queue timeout", "body": "evidence", "list": "backlog", "labels": []any{"build"}, "repo": "acme/website"}); err != nil {
+			return run.Result{}, err
+		}
+		return complete(ctx, tt)
+	}
+	w := newWorker(t, store, reg, p, runner)
+	w.Repo, w.Once = folder, false
+	runFor(t, w, 3*time.Second)
+
+	if turn.Workdir != folder {
+		t.Fatalf("the turn ran in %q, want the plain folder %q", turn.Workdir, folder)
+	}
+	var survey, handoff kanban.Item
+	items, err := store.Search(kanban.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := store.Search(kanban.Query{Lists: []kanban.List{kanban.Done}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range append(items, done...) {
+		switch {
+		case slices.Contains(it.Labels, agentprofile.SurveyLabel):
+			survey = it
+		case it.Title == "Raise the queue timeout":
+			handoff = it
+		}
+	}
+	if survey.ID == "" || survey.List != kanban.Done {
+		t.Fatalf("the survey item should be filed and done: %+v", survey)
+	}
+	want := kanban.ProvenanceFor(website, "", "")
+	if handoff.ID == "" || handoff.ProjectKey != want.ProjectKey || handoff.Dir != want.Dir {
+		t.Fatalf("the handoff should sit under the website checkout: %+v", handoff)
+	}
+	if handoff.ProjectKey == survey.ProjectKey {
+		t.Error("the handoff stayed in the folder's own project")
+	}
+	if handoff.List != kanban.Review {
+		t.Errorf("a survey's handoff waits in review, got %s", handoff.List)
+	}
+	if handoff.Parent != survey.ID {
+		t.Errorf("the handoff should link to the survey item, got parent %q", handoff.Parent)
 	}
 }

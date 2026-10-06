@@ -6,6 +6,18 @@ security guard, intent detection and routing; see [role manager](role-manager.md
 and for a set of **relevance jobs** that make a session faster or cheaper
 without approving anything. This page is the reference for the relevance jobs.
 
+**Local first.** Every job on this page runs on whichever decision backend is
+selected, and Strands Decider-2B can be that backend on your own machine
+(`classifier.provider: strands-decider`). Then the security guard, intent
+detection, routing and every relevance job are answered by a process on
+loopback: no API key, no network, and no state leaves the host. Clef-flash or
+Clef on llama-server (`classifier.provider: decision-local`) does the same.
+When speed matters more, Clef on Cloudflare Workers AI answers each job in tens
+of milliseconds of model time with the Cloudflare credentials already set up,
+and Tev1 answers on Together with a Together key, on Ollama, or on llama-server
+(`tev1-4b`).
+See [role manager](role-manager.md#decision-backends).
+
 ## The contract every job keeps
 
 - **A job narrows or reorders. It never approves.** It works inside the surface
@@ -19,9 +31,12 @@ without approving anything. This page is the reference for the relevance jobs.
 - **Its input is harness facts and cleaned text.** Every string sent to a
   decision backend is a `DecisionText`, built only by `sanitize.ForDecision`
   ([sanitisation](sanitization.md#decision-backends-fordecision)). File
-  contents, attachment bytes and tool output are not sent.
+  contents, attachment bytes and tool output are not sent, with one exception:
+  [knowledge topics](#knowledge-topics) sends a bounded sample of an indexed
+  document's admitted text.
 - **It needs a backend.** With no decision backend configured (the local
-  decision model, the hosted `typesafe` provider, a self-hosted Jev provider, or OpenRouter's hosted Jev) no job
+  decision model, Strands Decider-2B on this machine, the hosted `typesafe`
+  provider, a `systemone` provider, or OpenRouter's hosted Jev) no job
   runs and none appears in `/settings`.
 
 ## Settings
@@ -42,7 +57,7 @@ classifier; the space key toggles a row and `x` returns it to its default.
 | Key | Meaning |
 | --- | --- |
 | `jev.jobs.<job>` | `true` or `false` for a job in the list below. A missing key means on. An unknown job name is an error. |
-| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
+| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model, Strands Decider-2B and a self-hosted server only, the default), `hosted` (also OpenRouter, TypeSafe's hosted API and Clef on Cloudflare Workers AI) or `off` (paths only, everywhere). |
 
 | `jev.thresholds.<key>` | A score cut-off, a number from 0 to 1, for a gate or job. A missing key keeps its default. The keys are in [Scores and thresholds](#scores-and-thresholds). An out-of-range value or an inverted pair is an error, and settings that fail to validate are never used. |
 
@@ -70,6 +85,9 @@ prompt runs with it.
 | `handoff_clarity` | Sends a delivery handoff to review when it rates as unclear, instead of straight to backlog | Shipped |
 | `gate_alignment` | Flags a runnable gate whose suite and test may not show its stated outcome, and sends its card to review | Shipped |
 | `request_coverage` | Files a gap card for a request clause whose covering tasks do not seem to do it | Shipped |
+| `knowledge_topics` | Labels each indexed document with the topics it is about, by scoring a sample of its text against a vocabulary of about three hundred in one request | Shipped |
+| `agent_pick` | In Auto mode, engages one of your agent profiles when it is a clear fit for a general request | Shipped |
+| `teleport_verify` | Rates a replayed teleport checkout against the origin host's summary as verified, incomplete or failed, settles a clear verdict without the model verifier, and otherwise hands the scores to it as a hint | Shipped |
 
 ## Scores and thresholds
 
@@ -87,6 +105,8 @@ with the default shown; a job reads the value from your settings:
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
 | | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
 | | `goal_complete_at`, `goal_rival_max`, `goal_not_started_at` | 0.90, 0.20, 0.85 | A goal pass is clearly complete at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly not started at `goal_not_started_at` with the same limit; `goal_complete_at` cannot be set below 0.5 and `goal_rival_max` cannot exceed 0.5 |
+| | `goal_complete_at`, `goal_rival_max` (shared) | 0.90, 0.20 | `teleport_verify` reads the goal judge's two cut-offs: a replay is clearly verified at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly failed in the mirror case |
+| | `topic_at` | 0.70 | The knowledge index labels a document with a topic the backend scores at or above this; it cannot be set below 0.5 |
 | | `clear_at`, `align_at`, `cover_at` | 0.50, 0.40, 0.40 | A delivery handoff rated below `clear_at` goes to review, a gate below `align_at` is flagged, and a clause whose tasks all rate below `cover_at` gets a gap card. They only narrow, so raising one means more review |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
 | `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
@@ -519,6 +539,36 @@ turn, so a request such as "commit and push" starts at once.
 Recorded as a `request_scale` event: `simple`, `staged` or `unknown` and the
 score in percent. Never the request.
 
+## Agent pick
+
+In Auto mode the role manager decides the mode for each prompt. When it
+resolves a prompt to the general agent intent, `agent_pick` also decides which
+of your own agent profiles, if any, carries the turn. Intent detection is
+unchanged: the profile is a second question asked only after the intent is
+agent. A website prompt that arrives while the host is in agent mode with no
+agent selected moves the live session to Auto (it saves no preference) and is
+decided the same way.
+
+- **What is offered.** Profiles you wrote, in single mode, with a description,
+  at most 15. A built-in is never offered: debug, fan-out and handoff are
+  already intents, and the rest are background workers. A profile that sets
+  `guardrails` or `ask_permission` to false is never offered, so a pick cannot
+  lower the session's posture.
+- **What the backend sees.** The cleaned prompt and each profile's name and
+  description, as `DecisionText`, plus a final `default` option that means no
+  profile. It ranks them as one choice (2 to 16 options, like option order).
+- **The decision.** A profile engages only when it holds at least
+  `mode_confident` (0.80) with a lead of `mode_margin` (0.25) over the runner-up,
+  the same cut-offs a detected intent must meet. `default` counts as a rival. An
+  unanswered pick, a timeout (8 seconds), a missing backend or a switch that is
+  off runs the turn with no profile, as before.
+- **What it never changes.** The mode, permissions, hooks, the ask gate, the
+  classifier and the sandbox. It engages a carrier for this turn only: the next
+  Auto prompt is decided again. It never asks a chat model.
+
+Recorded as an `agent_pick` event: `engaged`, `default` or `unknown` and how many
+profiles were offered. Never the request or a profile's name.
+
 ## Goal judge
 
 A goal ends a pass when a judge says whether the goal is complete, partial or
@@ -553,6 +603,32 @@ against one criterion, so a clear case needs no chat-model call.
 
 Recorded as a `goal_judge` event: `complete`, `not_started` or `unclear`, and
 the three scores in percent. Never the goal, the list or any evidence.
+
+## Teleport verify
+
+When a [teleport's replay](teleport.md#code) ends with a checkout that does not
+match the origin's tree exactly (an exact match is verified by the harness and
+never reaches this job), the harness asks the decision backend to rate the
+checkout against the origin model's summary on three options: `verified`,
+`incomplete` and `failed`.
+
+- **What the backend sees.** The origin's summary and the harness's own check
+  (how many patched files are identical to the origin's, which differ, which are
+  missing, which were changed that the origin did not change), all as
+  `DecisionText`. Never a file's contents, the patch or a tool's output.
+- **The decision.** It reads the goal judge's two cut-offs: `verified` is clear at
+  `goal_complete_at` (0.90) with both rivals at or below `goal_rival_max` (0.20),
+  and `failed` is the mirror. A lead for `incomplete` is reported as incomplete.
+  An unanswered option is unknown.
+- **When it is not clear.** A contested score, an error or a missing backend sends
+  the check to the model verifier (`teleport_verify` in
+  [role-manager.md](role-manager.md#teleport-roles)) with the scores as a prior.
+- **What it never changes.** A verified rating is not accepted for a file the
+  checkout lacks, a failed rating only stops further model passes, and neither
+  runs a command or approves a call. The replay's model has file tools only.
+
+Recorded as a `teleport_verify` event: `verified`, `incomplete`, `failed` or
+`unclear`, and the three scores in percent. Never the summary or a path.
 
 ## Delivery crew jobs
 
@@ -622,3 +698,43 @@ other case, a clause a handoff claims to cover but does not do.
 
 Recorded as a `request_coverage` event: `sound`, `suspect` or `unknown`, and
 counts.
+
+### Knowledge topics
+
+The [knowledge index](knowledge.md#labels-and-topics) labels every document with
+the topics it is about. A pattern detector does this on its own and needs no
+model. With a decision backend this job refines it, so a topic the patterns
+missed is found and one they over-read is dropped.
+
+- **What the backend sees. This is the one job that sends document text.** A
+  sample of the document's chunks, as `DecisionText`, and the labels of the
+  topics asked about. The text has already been sanitised and admitted by the
+  security classifier at ingestion, and a flagged chunk is never stored, so it is
+  never sent. A document of at most `knowledge.topic_chunks` chunks (default 12)
+  is sent whole when it fits the request. A longer one is sampled: the first
+  chunk, the last and evenly spaced ones between, as many as the request holds.
+  Scanner artifacts are labelled from their kind and tool and are never sent.
+- **One request.** The question carries as many topics as the backend takes in a
+  request (128 for OpenRouter, TypeSafe and a self-hosted server, 24 for the local
+  model), the ones the pattern detector found first and then a spread across the
+  vocabulary's domains. The document text gets the rest of the request's byte
+  budget; if the topics leave too little, the lowest ranked are dropped first. A
+  failed request is not retried or split. Each topic is rated against one
+  criterion: the topic is a main subject of the document, not a passing mention.
+- **The decision.** A topic the backend was asked about and answered keeps the
+  label when it scores at or above `topic_at` (0.70), and loses it below that,
+  even if the patterns found it. A topic it was not asked about, or did not
+  answer, keeps the pattern detector's verdict. The label is a search aid. It
+  does not admit, permit or approve anything.
+- **Bounds.** At most `knowledge.topic_budget_docs` documents (default 40) are
+  sent per refresh, so a first index of a large corpus is filled over several
+  refreshes. After three failed requests in a refresh the backend is left alone
+  until the next one. With a budget of 0, no backend or the switch off, nothing is
+  sent and the pattern detector labels alone. Both `knowledge` keys and
+  `topic_at` are read from your own settings layers only.
+- **Edge cases.** A document the backend did not answer keeps its pattern topics
+  and is tried again at a later refresh while there is budget. The call stays out
+  of the score cache, since a document is not asked about twice.
+
+Recorded as a `knowledge_topics` event: `scored` or `unknown`, and counts of
+topics asked and labelled, never the document or a topic.

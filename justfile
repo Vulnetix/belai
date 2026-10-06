@@ -13,6 +13,7 @@ bin := "bin"
 version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
 commit := `git rev-parse --short HEAD 2>/dev/null || echo unknown`
 builddate := `date -u +%Y-%m-%dT%H:%M:%SZ`
+hostarch := `go env GOARCH`
 
 ldflags := "-X " + module + "/internal/version.Version=" + version + " -X " + module + "/internal/version.Commit=" + commit + " -X " + module + "/internal/version.BuildDate=" + builddate
 
@@ -54,6 +55,11 @@ detect-mode $TEXT:
 voiceprep:
     go run ./tools/voiceprep
 
+# Check that every documentation link in a builtin skill still answers. Needs the
+# network, so it is not part of check.
+skill-links:
+    go run ./tools/skilllinks
+
 # Build ./belai for this host.
 build:
     go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
@@ -77,13 +83,16 @@ modelprep *ARGS:
 build-jailbreak *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
     go build -tags belai_bert_jailbreak,belai_voice -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
 
-# Build only the Linux amd64 jailbreak-classifier release binary into bin/.
-# Extra args are forwarded to modelprep, e.g. `just build-jailbreak-linux-amd64 -force`.
-build-jailbreak-linux-amd64 *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-      go build -tags belai_bert_jailbreak,belai_voice \
+# Build only the jailbreak-classifier release binary for this host into bin/.
+# Extra args are forwarded to modelprep, e.g. `just build-jailbreak-bin -force`.
+build-jailbreak-bin *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
+    #!/usr/bin/env bash
+    set -euo pipefail
+    goos="$(go env GOOS)"; goarch="$(go env GOARCH)"; suffix=""
+    [ "$goos" = windows ] && suffix=".exe"
+    CGO_ENABLED=0 go build -tags belai_bert_jailbreak,belai_voice \
       -ldflags '-s -w {{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' \
-      -o {{ bin }}/belai-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
+      -o "{{ bin }}/belai-bert-guardrails-jailbreak-${goos}-${goarch}${suffix}" {{ pkg }}
 
 # Build ./belai with only the phase-1 prompt-saturation model embedded.
 # Extra args are forwarded to modelprep, e.g. `just build-bert -force`.
@@ -94,15 +103,18 @@ build-bert *ARGS: (modelprep '-phase1' ARGS) voiceprep
 install:
     go install -ldflags '{{ ldflags }}' {{ pkg }}
 
-# Cross-compile every release target and variant into bin/, mirroring
-# .github/workflows/release.yml. Needs the prepared models (run modelprep).
+# Build every release variant for this host's OS and arch into bin/, with the
+# same flags as .github/workflows/release.yml (which builds the full target
+# matrix itself). Needs the prepared models (run modelprep).
 # Extra args are forwarded to modelprep, e.g. `just build-all -force`.
 build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ bin }}
+    goos="$(go env GOOS)"; goarch="$(go env GOARCH)"; suffix=""
+    [ "$goos" = windows ] && suffix=".exe"
     build() {
-      local variant="$1" goos="$2" goarch="$3" suffix="${4:-}"
+      local variant="$1"
       # Plain belai embeds nothing, the speech model included; the other
       # variants embed it for voice.
       local name="{{ binary }}" tags="" extra=""
@@ -122,21 +134,21 @@ build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
           tags="-tags belai_bert_jailbreak,belai_voice"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak"
           ;;
+        pix-sandbox)
+          name="{{ binary }}-pix-sandbox"
+          tags="-tags belai_voice,belai_sandbox"
+          extra="-X {{ module }}/internal/version.Variant=pix-sandbox"
+          ;;
       esac
       echo "  {{ bin }}/${name}-${goos}-${goarch}${suffix}"
       CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
         go build $tags -ldflags '-s -w {{ ldflags }} '"$extra" \
         -o "{{ bin }}/${name}-${goos}-${goarch}${suffix}" {{ pkg }}
     }
-    for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
-      build "$variant" linux   amd64
-      build "$variant" linux   arm64
-      build "$variant" darwin  amd64
-      build "$variant" darwin  arm64
-      build "$variant" windows amd64 .exe
-      build "$variant" windows arm64 .exe
+    for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak pix-sandbox; do
+      build "$variant"
     done
-    ( cd {{ bin }} && sha256sum {{ binary }}-* > checksums.txt )
+    ( cd {{ bin }} && { sha256sum {{ binary }}-* 2>/dev/null || shasum -a 256 {{ binary }}-*; } > checksums.txt )
 
 # Print the version string this tree would stamp into a build.
 version:
@@ -154,6 +166,10 @@ test *ARGS:
 test-race *ARGS:
     go test -race ./... {{ ARGS }}
 
+# Run the suite as the Pix Sandbox build compiles it (-tags belai_sandbox).
+test-sandbox *ARGS:
+    go test -race -tags belai_sandbox ./... {{ ARGS }}
+
 # Test one package: `just test-pkg ./internal/run -run TestStream -v`.
 test-pkg PKG *ARGS:
     go test -race {{ PKG }} {{ ARGS }}
@@ -168,8 +184,9 @@ e2e *ARGS:
 redteam *ARGS:
     go run ./tools/redteam {{ ARGS }}
 
-# Build the Linux binary the benchmark adapter uploads into task containers.
-build-bench ARCH="amd64":
+# Build the Linux binary the benchmark adapter uploads into task containers, for
+# this host's arch (containers run natively); pass ARCH to override.
+build-bench ARCH=hostarch:
     CGO_ENABLED=0 GOOS=linux GOARCH={{ ARCH }} go build -ldflags '{{ ldflags }}' -o {{ bin }}/belai-bench-linux-{{ ARCH }} {{ pkg }}
 
 # Run a Harbor dataset against Belai (see docs/benchmarks.md). Makes real
@@ -177,7 +194,7 @@ build-bench ARCH="amd64":
 # Extra args go to `harbor run`, e.g. `--ak settings=bench/arms/offload-1500-750.json`.
 bench DATASET MODEL ATTEMPTS="3" *ARGS: build-bench
     PYTHONPATH=bench/harbor uvx harbor run -d {{ DATASET }} -m {{ MODEL }} -k {{ ATTEMPTS }} \
-      --agent belai_agent:Belai --ak binary={{ bin }}/belai-bench-linux-amd64 {{ ARGS }}
+      --agent belai_agent:Belai --ak binary={{ bin }}/belai-bench-linux-{{ hostarch }} {{ ARGS }}
 
 # Write coverage.txt and print the per-function summary.
 cover:

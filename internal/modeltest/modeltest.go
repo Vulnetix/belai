@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
 )
 
@@ -106,6 +107,8 @@ type State struct {
 	Env *Env
 	// Handle is a decision server the run launched or found.
 	Handle *decisionserver.Handle
+	// Decider is a Strands Decider server the run launched or found.
+	Decider *deciderserver.Handle
 	// ChatServer is a chat llama-server the run launched.
 	ChatServer *LaunchedServer
 	// ModelPath is the weights file found or downloaded.
@@ -193,6 +196,7 @@ type Report struct {
 	// Handle, ChatServer and Fix are carried from State for the caller to
 	// adopt when it saves, or release when it does not.
 	Handle     *decisionserver.Handle
+	Decider    *deciderserver.Handle
 	ChatServer *LaunchedServer
 	Fix        *EndpointFix
 }
@@ -222,6 +226,7 @@ func (r Report) Warnings() []StepResult {
 // selection is not saved.
 func (r Report) Release() {
 	r.Handle.Stop()
+	r.Decider.Stop()
 	if r.ChatServer != nil && r.ChatServer.Stop != nil {
 		_ = r.ChatServer.Stop()
 	}
@@ -263,7 +268,7 @@ func Run(ctx context.Context, steps []Step, env *Env, emit func(Event)) Report {
 			rep.Passed = false
 		}
 	}
-	rep.Handle, rep.ChatServer, rep.Fix = st.Handle, st.ChatServer, st.Fix
+	rep.Handle, rep.Decider, rep.ChatServer, rep.Fix = st.Handle, st.Decider, st.ChatServer, st.Fix
 	return rep
 }
 

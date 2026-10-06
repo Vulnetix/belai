@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -108,6 +110,10 @@ type Settings struct {
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
 	Notifications *NotificationSettings `json:"notifications,omitempty"`
+	// Teleport configures how this host takes part in a teleport's code
+	// transfer (docs/teleport.md). A per-user preference: the project layer cannot
+	// let a host push a branch to a forge.
+	Teleport *TeleportSettings `json:"teleport,omitempty"`
 	// Voice configures speech input to the composer (docs/voice.md). A
 	// per-user preference: the project layer cannot turn the microphone on,
 	// pick the capture device or make dictation send itself.
@@ -116,10 +122,18 @@ type Settings struct {
 	// preference: the text is sent to Microsoft's read-aloud service, so the
 	// project layer cannot turn it on or choose the voice or the cache.
 	TTS *TTSSettings `json:"tts,omitempty"`
+	// Knowledge sizes the retrieval store behind agent profile documents and
+	// project knowledge (docs/knowledge.md). A per-user host-performance
+	// preference: the project layer is dropped, so a repository cannot make a
+	// host index or return more.
+	Knowledge *KnowledgeSettings `json:"knowledge,omitempty"`
 	// Sync mirrors session transcripts to the Vulnetix website while Belai is
 	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
 	// layer may turn it off, never on.
 	Sync *SyncSettings `json:"sync,omitempty"`
+	// Git configures what Belai does to the repository around a session
+	// (docs/git-sync.md). The project layer may turn it off, never on.
+	Git *GitSettings `json:"git,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -155,6 +169,10 @@ type Settings struct {
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
+	// GitRepos are the repositories `belai repo sync` keeps cloned under the repos
+	// directory (docs/library-items.md). Global only: the project layer is dropped in
+	// Resolve, so a repository cannot make a host clone another.
+	GitRepos []GitRepo `json:"repos,omitempty"`
 	// Intel governs session intelligence's use of provider response headers
 	// (docs/token-budgets.md). Global only: the project layer is dropped in
 	// Resolve, so a repository cannot change what a user learns about their own
@@ -164,9 +182,17 @@ type Settings struct {
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
 	Kanban *bool `json:"kanban,omitempty"`
+	// BashRewrite is the user's rule table that rewrites a model's Bash command
+	// word before permission matching (docs/bash-rewrite.md). Rules come from
+	// the user's own layers only; the project layer may turn the table off,
+	// never on and never add a rule.
+	BashRewrite *BashRewriteSettings `json:"bash_rewrite,omitempty"`
 	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
 	// project layer may turn it, or whole-screen capture, off; never on.
 	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
+	// Code governs code mode's script interpreter (docs/code-mode.md). A
+	// project layer may turn it off and lower a limit, never the reverse.
+	Code *CodeSettings `json:"code,omitempty"`
 	// Agents governs the fleet: worker agents that claim kanban items and
 	// run unattended (docs/fleet.md). The project layer may only tighten it.
 	Agents *AgentsSettings `json:"agents,omitempty"`
@@ -180,6 +206,11 @@ type Settings struct {
 	// Default on. It changes what rides on a request, never what is admitted,
 	// so any layer may set it.
 	Offload *OffloadSettings `json:"offload,omitempty"`
+	// WebFetch keeps the pages a session fetched: a short-lived in-memory
+	// cache and a search index over them (docs/web-fetch.md). Both default on.
+	// They change what a session re-fetches, never what is admitted, so any
+	// layer may set them.
+	WebFetch *WebFetchSettings `json:"web_fetch,omitempty"`
 	// Jev configures the relevance jobs that use a decision backend (bash swap,
 	// compaction pruning, tool selection and search, option order, LSP triage,
 	// explore locate; docs/jev-jobs.md). Every job defaults on and runs only
@@ -201,6 +232,59 @@ type SyncSettings struct {
 	// clarify questionnaire, the mode choice or a plan review. Default true;
 	// false keeps every ask on the host.
 	RemoteAnswers *bool `json:"remote_answers,omitempty"`
+	// Profiles lets `belai rc` keep the website's agent and crew library current
+	// by itself: it pushes the profile markdown and crew JSON that changed on this
+	// host, never file contents (those leave only for a backup request) and never
+	// over a version the website saved since this host last synced. Default true;
+	// false leaves backups to requests from the website.
+	Profiles *bool `json:"profiles,omitempty"`
+	// Skills lets `belai rc` keep the website's skill library current by itself
+	// and lets the website back up or install a skill here
+	// (docs/library-items.md). Default true; false leaves skills out of both.
+	Skills *bool `json:"skills,omitempty"`
+	// Prompts is the same switch for the global prompt library.
+	Prompts *bool `json:"prompts,omitempty"`
+	// Processes is the same switch for the global process library.
+	Processes *bool `json:"processes,omitempty"`
+	// Repos is the same switch for the repository list (`repos`).
+	Repos *bool `json:"repos,omitempty"`
+	// Budgets is the same switch for the token-budget configuration.
+	Budgets *bool `json:"budgets,omitempty"`
+	// Rewrites is the same switch for the Bash rewrite table.
+	Rewrites *bool `json:"rewrites,omitempty"`
+	// Providers is the same switch for the provider set (`providers` and
+	// `firewall`) and for the website's provider key requests.
+	Providers *bool `json:"providers,omitempty"`
+}
+
+// GitSettings configures the repository hygiene a session does before a turn.
+type GitSettings struct {
+	// Sync fetches origin and rebases the session's branch onto origin's
+	// default branch before the first turn and before the first turn after a
+	// commit, when the tree is clean. Default true; false leaves the repository
+	// alone. A session can switch it off for itself (/gitsync off, or the
+	// website's session page) without changing this.
+	Sync *bool `json:"sync,omitempty"`
+}
+
+// GitSyncEnabled reports whether sessions sync their branch with origin's
+// default branch before a turn. Default on.
+func (s Settings) GitSyncEnabled() bool {
+	return s.Git == nil || s.Git.Sync == nil || *s.Git.Sync
+}
+
+// mergeGitOffOnly applies a project layer's git keys over base, honouring only
+// false: a repository may opt out of the sync, and cannot opt a user back in.
+func mergeGitOffOnly(base, proj *GitSettings) *GitSettings {
+	out := &GitSettings{}
+	if base != nil {
+		*out = *base
+	}
+	if proj.Sync != nil && !*proj.Sync {
+		f := false
+		out.Sync = &f
+	}
+	return out
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -220,7 +304,75 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.RemoteAnswers != nil && !*proj.RemoteAnswers {
 		out.RemoteAnswers = &f
 	}
+	if proj.Profiles != nil && !*proj.Profiles {
+		out.Profiles = &f
+	}
+	if proj.Skills != nil && !*proj.Skills {
+		out.Skills = &f
+	}
+	if proj.Prompts != nil && !*proj.Prompts {
+		out.Prompts = &f
+	}
+	if proj.Processes != nil && !*proj.Processes {
+		out.Processes = &f
+	}
+	if proj.Repos != nil && !*proj.Repos {
+		out.Repos = &f
+	}
+	if proj.Budgets != nil && !*proj.Budgets {
+		out.Budgets = &f
+	}
+	if proj.Rewrites != nil && !*proj.Rewrites {
+		out.Rewrites = &f
+	}
+	if proj.Providers != nil && !*proj.Providers {
+		out.Providers = &f
+	}
 	return out
+}
+
+// SyncItemEnabled reports whether the library of one kind of item (skill,
+// prompt, ...) is kept current by `belai rc` and open to the website's backup
+// and install requests: sync.<kinds>, default on, and never on while sync
+// itself is off. An unknown kind is off.
+func (s Settings) SyncItemEnabled(kind string) bool {
+	if !s.SyncEnabled() {
+		return false
+	}
+	var v *bool
+	switch kind {
+	case "skill":
+		if s.Sync != nil {
+			v = s.Sync.Skills
+		}
+	case "prompt":
+		if s.Sync != nil {
+			v = s.Sync.Prompts
+		}
+	case "process":
+		if s.Sync != nil {
+			v = s.Sync.Processes
+		}
+	case "repo":
+		if s.Sync != nil {
+			v = s.Sync.Repos
+		}
+	case "budget":
+		if s.Sync != nil {
+			v = s.Sync.Budgets
+		}
+	case "rewrite":
+		if s.Sync != nil {
+			v = s.Sync.Rewrites
+		}
+	case "provider":
+		if s.Sync != nil {
+			v = s.Sync.Providers
+		}
+	default:
+		return false
+	}
+	return v == nil || *v
 }
 
 // SyncEnabled reports whether session sync is on. Default on; it still needs
@@ -233,6 +385,13 @@ func (s Settings) SyncEnabled() bool {
 // from the website. Default on, and never on while sync itself is off.
 func (s Settings) SyncRemotePromptsEnabled() bool {
 	return s.SyncEnabled() && (s.Sync == nil || s.Sync.RemotePrompts == nil || *s.Sync.RemotePrompts)
+}
+
+// SyncProfilesEnabled reports whether `belai rc` pushes changed profiles and
+// crews to the website's library by itself. Default on, and never on while sync
+// itself is off.
+func (s Settings) SyncProfilesEnabled() bool {
+	return s.SyncEnabled() && (s.Sync == nil || s.Sync.Profiles == nil || *s.Sync.Profiles)
 }
 
 // SyncRemoteAnswersEnabled reports whether a synced session accepts answers
@@ -269,6 +428,44 @@ type HooksSettings struct {
 	// Enabled runs hooks. Default true; a repo-visible project layer may
 	// turn it off, never on.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// TeleportSettings configures a host's part in moving a session's code.
+type TeleportSettings struct {
+	// Push says whether this host, as the origin of a teleport, may push the
+	// session's uncommitted and unpushed changes to the forge as one
+	// belai/teleport/<id> branch so the target can fetch them: "ask" (the
+	// default) pushes only when the target's user agreed with -teleport-push,
+	// "allow" pushes whenever a teleport asks, and "never" never does, so the
+	// changes always go to the target as a patch for a replay. Any other value is
+	// "never".
+	Push string `json:"push,omitempty"`
+}
+
+// Teleport push policies.
+const (
+	TeleportPushAsk   = "ask"
+	TeleportPushAllow = "allow"
+	TeleportPushNever = "never"
+)
+
+// TeleportPushPolicy returns the host's push policy: ask when unset, and never
+// for a value that is not one of the three.
+func (s Settings) TeleportPushPolicy() string {
+	if s.Teleport == nil || s.Teleport.Push == "" {
+		return TeleportPushAsk
+	}
+	switch s.Teleport.Push {
+	case TeleportPushAsk, TeleportPushAllow, TeleportPushNever:
+		return s.Teleport.Push
+	}
+	return TeleportPushNever
+}
+
+func (s *TeleportSettings) merge(from *TeleportSettings) {
+	if from.Push != "" {
+		s.Push = from.Push
+	}
 }
 
 // NotificationSettings configures desktop notifications.
@@ -474,8 +671,72 @@ func (s VulnetixSettings) GatewayURLOrDefault() string {
 
 // AutoFixEnabled reports whether /vulnetix review may run `vulnetix fix --yes`
 // unattended. Default false: the review attaches a --dry-run plan instead.
-func (s VulnetixSettings) AutoFixEnabled() bool {
-	return s.AutoFix != nil && *s.AutoFix
+func (s *VulnetixSettings) AutoFixEnabled() bool {
+	return s != nil && s.AutoFix != nil && *s.AutoFix
+}
+
+// VulnetixSubcommandNames are the names `vulnetix.subcommands` may hold: the
+// nine review scanners and the post-scan fix activity. The review keeps its own
+// table (commands.AllowedSubcommands); a test pins the two together, because
+// config cannot import commands.
+var VulnetixSubcommandNames = []string{"sca", "containers", "sast", "secrets", "iac", "malscan", "sbom", "aibom", "cbom", "fix"}
+
+// MaxVulnetixTimeout bounds `vulnetix.timeout`, so a typo cannot hold a review
+// open for days.
+const MaxVulnetixTimeout = 24 * time.Hour
+
+// ReviewTimeout is how long each review scan may run, from vulnetix.timeout.
+// Zero means no limit, the default: a scan runs until it exits or is killed.
+// ValidateVulnetix has already refused a value that does not parse.
+func (s *VulnetixSettings) ReviewTimeout() time.Duration {
+	if s == nil || s.Timeout == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(s.Timeout)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return min(d, MaxVulnetixTimeout)
+}
+
+// ReviewSubcommands is the scanner subset vulnetix.subcommands names, or nil
+// for every scanner.
+func (s *VulnetixSettings) ReviewSubcommands() []string {
+	if s == nil {
+		return nil
+	}
+	return s.Subcommands
+}
+
+// ValidateVulnetix rejects a vulnetix block (and vulnetix_sweep_roots) holding a subcommand outside the
+// allowlist or a timeout that is not a positive duration up to
+// MaxVulnetixTimeout, naming the key. It runs when settings are loaded, so a
+// bad value fails at startup rather than when a review starts.
+func ValidateVulnetix(s Settings) error {
+	for _, root := range s.VulnetixSweepRoots {
+		if !filepath.IsAbs(root) {
+			return fmt.Errorf("vulnetix_sweep_roots: %q must be an absolute path", root)
+		}
+	}
+	v := s.Vulnetix
+	if v == nil {
+		return nil
+	}
+	for _, name := range v.Subcommands {
+		if !slices.Contains(VulnetixSubcommandNames, name) {
+			return fmt.Errorf("vulnetix.subcommands: %q is not one of %s", name, strings.Join(VulnetixSubcommandNames, ", "))
+		}
+	}
+	if v.Timeout != "" {
+		d, err := time.ParseDuration(v.Timeout)
+		switch {
+		case err != nil:
+			return fmt.Errorf("vulnetix.timeout %q is not a duration such as 10m or 1h30m", v.Timeout)
+		case d <= 0 || d > MaxVulnetixTimeout:
+			return fmt.Errorf("vulnetix.timeout %q must be longer than zero and at most %s", v.Timeout, MaxVulnetixTimeout)
+		}
+	}
+	return nil
 }
 
 // UpdateCheckEnabled reports whether the startup release check may run.
@@ -709,7 +970,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 // main model's effort.
 type ClassifierSettings struct {
 	// Kind selects the security classifier stack: "llm" (the full five-token
-	// LLM sentinel), "jev" (a Jev decision backend, never a chat model) or "models" (local BERT gates plus an optional narrowed
+	// LLM sentinel), "systemone" (a /v1/systemone decision server, never a chat model; "jev" is read as it), "openrouter-decisions" (OpenRouter's Decisions API or the local decision model) or "models" (local BERT gates plus an optional narrowed
 	// phase-3 LLM sentinel). Empty derives from the build variant: "models"
 	// when the binary embeds a model, else "llm".
 	Kind string `json:"kind,omitempty"`
@@ -892,7 +1153,7 @@ type ProviderProfile struct {
 	Protocol string `json:"protocol,omitempty"`
 	Host     string `json:"host,omitempty"`
 	Port     string `json:"port,omitempty"`
-	// DecisionPath is the decision endpoint of a kind "jev" profile, relative
+	// DecisionPath is the decision endpoint of a kind "systemone" profile, relative
 	// to BaseURL; empty means /v1/systemone. The /model test stores the path
 	// it found answering when the default did not.
 	DecisionPath string `json:"decision_path,omitempty"`
@@ -927,6 +1188,10 @@ type UISettings struct {
 	// "security", or "all". It is display-only — every level runs exactly the
 	// same gates.
 	ShowInternalWork *string `json:"show_internal_work,omitempty"`
+	// Layout selects the thread's layout: "clean" (the default) or
+	// "chronological", which places every late row by the time it happened and
+	// shows that time on each row. It is display-only.
+	Layout *string `json:"layout,omitempty"`
 	// BudgetCycleSeconds is how long the footer shows one token budget before
 	// cycling to the next (default 10, minimum 2). See BudgetCycle.
 	BudgetCycleSeconds *int `json:"budget_cycle_seconds,omitempty"`
@@ -936,6 +1201,10 @@ type UISettings struct {
 	// Intel shows the session intelligence slot in the footer's budget cycle
 	// and offers the intel pane on f12. Default on. See IntelEnabled.
 	Intel *bool `json:"intel,omitempty"`
+	// IdlePane picks the one pane shown above an empty composer while the chat
+	// is idle: "none" (the default) or one of IdlePaneNames. It is display
+	// only. See Settings.IdlePane.
+	IdlePane *string `json:"idle_pane,omitempty"`
 	// ClipboardImages lets ctrl+v and /paste-image attach an image from the
 	// system clipboard. Default on. The project layer may turn it off, never
 	// on (docs/image-attachments.md).
@@ -982,6 +1251,9 @@ func (u *UISettings) merge(from *UISettings) {
 	if from.ShowInternalWork != nil {
 		u.ShowInternalWork = from.ShowInternalWork
 	}
+	if from.Layout != nil {
+		u.Layout = from.Layout
+	}
 	if from.BudgetCycleSeconds != nil {
 		u.BudgetCycleSeconds = from.BudgetCycleSeconds
 	}
@@ -990,6 +1262,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.Intel != nil {
 		u.Intel = from.Intel
+	}
+	if from.IdlePane != nil {
+		u.IdlePane = from.IdlePane
 	}
 	if from.ClipboardImages != nil {
 		u.ClipboardImages = from.ClipboardImages
@@ -1022,7 +1297,8 @@ type ResilienceSettings struct {
 	// MaxAttempts is the inclusive pre-first-byte retry budget per model
 	// call. It defaults to 3.
 	MaxAttempts int `json:"max_attempts,omitempty"`
-	// MaxIterations is the per-prompt tool-loop budget. It defaults to 10.
+	// MaxIterations is the per-prompt tool-loop budget. It defaults to 40
+	// (DefaultMaxIterations).
 	MaxIterations int `json:"max_iterations,omitempty"`
 	// MaxPasses is the goal-mode pass-loop ceiling. Zero means unbounded;
 	// the default honours that, and the setting exists for CI and for anyone
@@ -1304,6 +1580,69 @@ func (s Settings) InternalWorkLevel() string {
 	}
 }
 
+// Layout values for ui.layout.
+const (
+	// LayoutClean is the default: rows as the thread builds them.
+	LayoutClean = "clean"
+	// LayoutChronological places every late row by the time it happened and
+	// shows that time on each row.
+	LayoutChronological = "chronological"
+)
+
+// LayoutNames lists the layouts in the order the settings screen cycles them.
+var LayoutNames = []string{LayoutClean, LayoutChronological}
+
+// Layout returns the thread layout as a normalised name. An unrecognised value
+// reads as clean. It is display-only: every layout runs exactly the same gates
+// and writes the same record.
+func (s Settings) Layout() string {
+	if s.UI == nil || s.UI.Layout == nil {
+		return LayoutClean
+	}
+	if strings.ToLower(strings.TrimSpace(*s.UI.Layout)) == LayoutChronological {
+		return LayoutChronological
+	}
+	return LayoutClean
+}
+
+// IdlePane values for ui.idle_pane: the pane shown above an empty composer.
+// The names after IdlePaneNone are the runs panel's tabs (kanban is drawn by
+// its own composer pane).
+const (
+	IdlePaneNone      = "none"
+	IdlePaneKanban    = "kanban"
+	IdlePaneActivity  = "activity"
+	IdlePaneHelpers   = "helpers"
+	IdlePaneProcesses = "processes"
+	IdlePaneCrew      = "crew"
+	IdlePaneGit       = "git"
+	IdlePaneCI        = "ci"
+	IdlePaneIntel     = "intel"
+)
+
+// IdlePaneNames lists the idle panes in the order the settings screen cycles
+// them, none first.
+var IdlePaneNames = []string{
+	IdlePaneNone, IdlePaneKanban, IdlePaneActivity, IdlePaneHelpers,
+	IdlePaneProcesses, IdlePaneCrew, IdlePaneGit, IdlePaneCI, IdlePaneIntel,
+}
+
+// IdlePane returns the pane shown above an empty idle composer as a
+// normalised name. The default is none, and an unrecognised value reads as
+// none. It is display-only: no gate, rule or record depends on it.
+func (s Settings) IdlePane() string {
+	if s.UI == nil || s.UI.IdlePane == nil {
+		return IdlePaneNone
+	}
+	v := strings.ToLower(strings.TrimSpace(*s.UI.IdlePane))
+	for _, n := range IdlePaneNames {
+		if n == v {
+			return v
+		}
+	}
+	return IdlePaneNone
+}
+
 // ToolCallsVisible reports whether tool-call rows render. Default true.
 func (s Settings) ToolCallsVisible() bool {
 	return s.UI == nil || s.UI.ShowToolCalls == nil || *s.UI.ShowToolCalls
@@ -1475,10 +1814,14 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Sync != nil {
 		out.Sync = mergeSyncOffOnly(out.Sync, proj.Sync)
 	}
+	if proj.Git != nil {
+		out.Git = mergeGitOffOnly(out.Git, proj.Git)
+	}
 	if proj.DeferTools != nil {
 		out.DeferTools = proj.DeferTools
 	}
 	out.Offload = mergeOffload(out.Offload, proj.Offload)
+	out.WebFetch = mergeWebFetch(out.WebFetch, proj.WebFetch)
 	out.Jev = mergeJev(out.Jev, proj.Jev, true)
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {
@@ -1487,6 +1830,10 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	// Screenshot capture: a project may turn it off, never on.
 	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
+	// Code mode: a project may turn it off and lower its limits, never the reverse.
+	out.Code = mergeCode(out.Code, proj.Code, true)
+	// The Bash rewrite table: a project may switch it off, never add or enable.
+	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
 	// Fleet workers run unattended: a project may only tighten them.
 	if proj.Agents != nil {
 		out.Agents = out.Agents.tighten(proj.Agents)
@@ -1520,6 +1867,24 @@ func (s Settings) Override(proj Settings) Settings {
 			out.Vulnetix = &v
 		}
 		out.Vulnetix.DepWatch = &t
+	}
+	// Likewise the project sweep: a project file may turn it off; the roots it
+	// walks stay the user's.
+	if proj.VulnetixSweepEnabled != nil && !*proj.VulnetixSweepEnabled {
+		f := false
+		out.VulnetixSweepEnabled = &f
+	}
+	// Likewise autofix, which lets a review run `vulnetix fix --yes` on the
+	// tree: a project file may turn it off, never on.
+	if proj.Vulnetix != nil && proj.Vulnetix.AutoFix != nil && !*proj.Vulnetix.AutoFix {
+		f := false
+		if out.Vulnetix == nil {
+			out.Vulnetix = &VulnetixSettings{}
+		} else {
+			v := *out.Vulnetix
+			out.Vulnetix = &v
+		}
+		out.Vulnetix.AutoFix = &f
 	}
 	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
 		if proj.ReadOnly != nil {
@@ -1717,6 +2082,7 @@ func loadSettings(path string) (Settings, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return Settings{}, fmt.Errorf("parse settings %s: %w", path, err)
 	}
+	NormalizeKinds(&s)
 	return s, nil
 }
 

@@ -13,6 +13,8 @@
 //   - Is it one plain command with nothing the shell would expand or chain, so
 //     that it can run without a shell? ([ReadOnly]).
 //   - If so, is that command, with these flags, read-only?
+//   - Where does a command word sit, so the user's rewrite table can change
+//     it, and does the rewritten line still have the same shape? ([Rewrite]).
 //
 // Anything it cannot parse or cannot see through is reported as such and the
 // callers fail closed: it never matches an allow rule and never runs as

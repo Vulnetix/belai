@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/factspec"
 	"github.com/vulnetix/belai/internal/proc"
 )
 
@@ -44,6 +45,8 @@ type Vulnetix struct {
 	Binary   string // empty means "vulnetix" on PATH
 	Timeout  time.Duration
 	MaxBytes int
+	// Cloud supplies the profile's vulnetix_* facts; nil means none.
+	Cloud *CloudHub
 }
 
 // VulnetixTimeout is the default limit for one Vulnetix call.
@@ -150,7 +153,11 @@ func (v *Vulnetix) Execute(ctx context.Context, args map[string]any) (Result, er
 	}
 	ec := exec.CommandContext(ctx, bin, argv...)
 	ec.Dir = baseDir(v.Root, v.Cwd)
-	ec.Env = append(proc.ScrubbedEnv(), calltrace.Env(ctx)...)
+	applied, err := factspec.Bind(factspec.ToolVulnetix, v.Cloud.Facts(), argv)
+	if err != nil {
+		return Result{}, err
+	}
+	ec.Env = append(append(proc.ScrubbedEnv(), applied.Env...), calltrace.Env(ctx)...)
 	ec.WaitDelay = 2 * time.Second
 	proc.SetProcessGroup(ec)
 	maxBytes := v.MaxBytes

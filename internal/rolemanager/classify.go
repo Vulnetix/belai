@@ -78,6 +78,14 @@ const (
 	UseCaseGateDraft = "gate_draft"
 	// UseCaseDeliveryReport writes the note on how a card's gates were checked.
 	UseCaseDeliveryReport = "delivery_report"
+	// UseCaseTeleportDistill writes the hand-over of the changes a teleport
+	// replays when the forge cannot carry them.
+	UseCaseTeleportDistill = "teleport_distill"
+	// UseCaseTeleportVerify judges a replayed checkout against the hand-over.
+	UseCaseTeleportVerify = "teleport_verify"
+	// UseCaseAgentAvatar draws a customised Pix for an agent (internal/avatar). It
+	// stays on the main model: the drawing is long and its quality is the point.
+	UseCaseAgentAvatar = "agent_avatar"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

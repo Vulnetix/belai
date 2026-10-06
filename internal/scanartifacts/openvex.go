@@ -18,6 +18,7 @@ type vexStatement struct {
 		ID string `json:"@id"`
 	} `json:"products"`
 	Status          string `json:"status"`
+	Justification   string `json:"justification"`
 	ImpactStatement string `json:"impact_statement"`
 	Action          struct {
 		Status string `json:"status"`

@@ -18,11 +18,11 @@ const groups = [...new Set(ROWS.map((r) => r.group))];
 const legend = [
   ['✓', 'text-vx-mint-strong', 'has it'],
   ['✗', 'text-vx-coral', 'does not have it'],
-  ['·', 'text-vx-ink/50', 'no public source found either way'],
+  ['·', 'text-vx-ink/70', 'no public source found either way'],
 ];
 ---
 
-<SealedSection label="labs" sealText={sealText} id="labs">
+<SealedSection label="compare" sealText={sealText} id="compare">
   <SectionHead title="Compared with other harnesses">
     Claude Code, Codex, Cursor and Gemini CLI run very good models. This table compares the harnesses
     around those models, and only on whether each feature exists. It says nothing about the models

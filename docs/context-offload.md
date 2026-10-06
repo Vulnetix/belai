@@ -80,7 +80,8 @@ other harnesses. With a prompt:
    told the page is untrusted data;
 3. its answer, not the page, becomes the `WebFetch` result and goes through
    the classifier;
-4. if the role fails or answers nothing, the page itself is used, and a long
+4. a page served from the session cache is answered the same way, and the answer is classified like any other (see [WebFetch cache and search](web-fetch.md));
+5. if the role fails or answers nothing, the page itself is used, and a long
    page is offloaded as above.
 
 The role routes like the other role-manager activities: set a model for
@@ -106,6 +107,12 @@ except the two newest. Only then does the error end the turn.
 | `offload.enabled` | `true` | Offload oversized results and register `ReadResult` |
 | `offload.threshold_tokens` | `4000` | Estimated size above which a result is offloaded |
 | `offload.preview_tokens` | `1500` | Estimated size of the inline preview (at least 200) |
+
+Two rules keep a bad value from doing harm. A threshold or preview of zero or
+less is treated as unset and takes its default. After that the preview is raised
+to 200 if it is lower, and a threshold that is not above the preview is raised
+to twice the preview, so a result is never replaced by a preview as large as the
+result itself.
 
 Offload changes how much admitted content rides on each request, never what is
 admitted, so any settings layer may set these. The defaults are a starting

@@ -10,10 +10,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/belai/internal/docparity"
 )
 
 const (
@@ -34,6 +38,9 @@ type fakeServer struct {
 	inbox    []RemotePrompt
 	answers  []RemoteAnswer
 	drafts   []RemoteDraft
+	commands []RemoteCommand
+	// cmdState holds each command ack's state, by command id.
+	cmdState map[string]string
 	// results holds each posted draft result body, by draft id.
 	results map[string]map[string]any
 	// conflictDrafts answers a draft result with 409 (cancelled on the web).
@@ -41,12 +48,15 @@ type fakeServer struct {
 	acks           map[string]string
 	gzipped        int // entry posts that arrived gzip-encoded
 	failPost       int // fail this many entry posts with 500
+	// controls is what the website holds for the session and sends back with
+	// a registration and with every heartbeat.
+	controls *Controls
 }
 
 func newFake() *fakeServer {
 	return &fakeServer{hosts: map[string]Host{}, sessions: map[string]SessionMeta{},
 		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, acks: map[string]string{},
-		results: map[string]map[string]any{}}
+		results: map[string]map[string]any{}, cmdState: map[string]string{}}
 }
 
 func (f *fakeServer) lastSeq(id string) int64 {
@@ -73,15 +83,15 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.hosts[parts[1]] = h
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodGet && parts[0] == "hosts" && parts[2] == "inbox":
-		out, ans, drafts := f.inbox, f.answers, f.drafts
-		f.inbox, f.answers, f.drafts = nil, nil, nil
-		writeJSON(map[string]any{"prompts": out, "answers": ans, "drafts": drafts})
+		out, ans, drafts, cmds := f.inbox, f.answers, f.drafts, f.commands
+		f.inbox, f.answers, f.drafts, f.commands = nil, nil, nil, nil
+		writeJSON(map[string]any{"prompts": out, "answers": ans, "drafts": drafts, "commands": cmds})
 	case r.Method == http.MethodPut && parts[0] == "sessions":
 		var m SessionMeta
 		_ = json.NewDecoder(r.Body).Decode(&m)
 		f.sessions[parts[1]] = m
 		delete(f.ended, parts[1])
-		writeJSON(map[string]int64{"lastSeq": f.lastSeq(parts[1])})
+		writeJSON(map[string]any{"lastSeq": f.lastSeq(parts[1]), "controls": f.controls})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "entries":
 		if f.failPost > 0 {
 			f.failPost--
@@ -111,7 +121,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(map[string]int64{"lastSeq": f.lastSeq(parts[1])})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "heartbeat":
 		f.beats++
-		writeJSON(map[string]bool{"ok": true})
+		writeJSON(map[string]any{"ok": true, "controls": f.controls})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "end":
 		f.ended[parts[1]] = true
 		writeJSON(map[string]bool{"ok": true})
@@ -123,6 +133,15 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var in map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.results[parts[1]] = in
+		writeJSON(map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && parts[0] == "commands":
+		var in struct {
+			Status string
+			State  json.RawMessage
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.acks["command:"+parts[1]] = in.Status
+		f.cmdState[parts[1]] = string(in.State)
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && parts[0] == "answers":
 		var in struct{ Status string }
@@ -231,6 +250,42 @@ func TestMirrorsFileLineForLine(t *testing.T) {
 		if a != "ApiKey org:hex" {
 			t.Fatalf("auth header %q", a)
 		}
+	}
+}
+
+// The profile a session runs under rides the registration, and a later
+// session_meta line (ctrl+p picked another agent) re-registers the session.
+func TestActiveProfileReachesTheRegistration(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	profile := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].ActiveProfile
+	}
+	s := startSyncer(t, srv, false)
+
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	appendLines(t, path, line("a", "session_meta", `{"schema":2,"activeProfile":"belai:patcher"}`))
+	s.Nudge()
+	eventually(t, "the first profile", func() bool { return profile() == "belai:patcher" })
+
+	appendLines(t, path, line("b", "session_meta", `{"schema":2,"activeProfile":"belai:verifier"}`))
+	s.Nudge()
+	eventually(t, "the switched profile", func() bool { return profile() == "belai:verifier" })
+
+	// A line that names no profile leaves it alone.
+	appendLines(t, path, line("c", "session_meta", `{"schema":2,"mode":"agent"}`))
+	s.Nudge()
+	eventually(t, "the mode update", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].Mode == "agent"
+	})
+	if got := profile(); got != "belai:verifier" {
+		t.Fatalf("profile after a mode-only line = %q", got)
 	}
 }
 
@@ -492,4 +547,300 @@ func TestNewClientRefusesRealOriginUnderTest(t *testing.T) {
 			t.Fatalf("NewClient(%s) = %v, want a loopback client", base, err)
 		}
 	}
+}
+
+// A session that is activated and closed straight away still reaches the
+// server: Close takes what was queued ahead of it, registers the session,
+// uploads its lines and ends it. The tick is an hour, so only that path can.
+func TestCloseFlushesASessionActivatedJustBefore(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		fake := newFake()
+		srv := httptest.NewServer(fake)
+		path := filepath.Join(t.TempDir(), testSess+".jsonl")
+		appendLines(t, path, line("a", "user", "hi"), line("b", "assistant", "done"))
+		c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := New(Options{Client: c, HostID: testHost, Host: Host{Hostname: "box"},
+			TickEvery: time.Hour, HeartbeatEvery: time.Hour, InboxWait: time.Second})
+		s.Start(context.Background())
+		s.Activate(SessionInfo{ID: testSess, Path: path})
+		s.Nudge()
+		s.Close(5 * time.Second)
+		fake.mu.Lock()
+		registered := len(fake.sessions)
+		ended := fake.ended[testSess]
+		fake.mu.Unlock()
+		if registered != 1 || fake.count(testSess) != 2 || !ended {
+			srv.Close()
+			t.Fatalf("round %d: registered %d, %d lines, ended %v; want 1, 2, true", i, registered, fake.count(testSess), ended)
+		}
+		srv.Close()
+	}
+}
+
+// TestSessionSyncDocNamesTheActiveProfileRules keeps the rules docs/session-sync.md
+// states for activeProfile equal to the code: the wire field, its omitempty (so a
+// cleared agent is never sent), and the cap the page gives for the server.
+func TestSessionSyncDocNamesTheActiveProfileRules(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/session-sync.md")), " ")
+
+	f, ok := reflect.TypeOf(SessionMeta{}).FieldByName("ActiveProfile")
+	if !ok {
+		t.Fatal("SessionMeta has no ActiveProfile")
+	}
+	tag := f.Tag.Get("json")
+	if tag != "activeProfile,omitempty" {
+		t.Fatalf("the wire tag is %q; the page says it is activeProfile and omitempty", tag)
+	}
+	for _, want := range []string{
+		"`activeProfile`", "`omitempty`", "session.LatestMeta", "caps it at 128 bytes",
+		"clearing the agent never reaches the transcript", "`<profile> · <card> <title>`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/session-sync.md no longer says %q", want)
+		}
+	}
+	if _, ok := reflect.TypeOf(SessionInfo{}).FieldByName("ActiveProfile"); !ok {
+		t.Error("SessionInfo has no ActiveProfile, so the tail cannot carry it")
+	}
+}
+
+// A profile cleared on the host never reaches the website: the lines that name
+// none leave the registered one alone, and a re-activation of the same session
+// (a resume) keeps what the file said before.
+func TestActiveProfileSurvivesALineThatNamesNone(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	profile := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].ActiveProfile
+	}
+	s := startSyncer(t, srv, false)
+
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	appendLines(t, path, line("a", "session_meta", `{"schema":2,"activeProfile":"belai:scout"}`))
+	s.Nudge()
+	eventually(t, "the profile", func() bool { return profile() == "belai:scout" })
+
+	// ctrl+p cleared the agent: the transcript line omits the field.
+	appendLines(t, path, line("b", "session_meta", `{"schema":2,"cwd":"/src/x"}`), "not json\n")
+	s.Nudge()
+	eventually(t, "the cwd update", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess].Cwd == "/src/x"
+	})
+	if got := profile(); got != "belai:scout" {
+		t.Fatalf("profile = %q after a line that names none", got)
+	}
+
+	// Activating the same session again (a resume) re-reads the whole file and keeps it.
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	s.Nudge()
+	time.Sleep(150 * time.Millisecond)
+	if got := profile(); got != "belai:scout" {
+		t.Fatalf("profile = %q after the session was activated again", got)
+	}
+}
+
+// TestSessionSyncDocNamesEveryRecordTheTailReads keeps the "What the session
+// records" table equal to the lines the syncer reads display metadata from:
+// each type tail.observe switches on, and the registration field it feeds, is on the page.
+func TestSessionSyncDocNamesEveryRecordTheTailReads(t *testing.T) {
+	doc := docparity.Read(t, "docs/session-sync.md")
+	for _, typ := range []string{"session_name", "session_meta", "assistant"} {
+		// A row is "| `type` |"; assistant lines are the conversation itself and
+		// are described by the model and provider they carry.
+		if typ == "assistant" {
+			continue
+		}
+		if !strings.Contains(doc, "| `"+typ+"` |") {
+			t.Errorf("the records table has no row for %s, which the syncer reads", typ)
+		}
+	}
+	// What the tail does with a record: the same statement the page makes.
+	src, err := os.ReadFile("syncer.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"activeProfile", "resumedFrom", "cwd", "mode"} {
+		if !strings.Contains(string(src), `json:"`+field+`"`) {
+			t.Errorf("tail.observe no longer reads %s from session_meta, but the page says it does", field)
+		}
+		if !strings.Contains(doc, "`"+field+"`") {
+			t.Errorf("the page does not name %s", field)
+		}
+	}
+
+	// A session_name line sets the registered name, the latest wins, and an empty one never clears it.
+	tl := &tail{}
+	tl.observe(Entry{Type: "session_name", Content: "first name"})
+	tl.observe(Entry{Type: "session_name", Content: "  second name "})
+	tl.observe(Entry{Type: "session_name", Content: "   "})
+	if tl.info.Name != "second name" {
+		t.Errorf("name = %q, want the latest non-empty one, trimmed", tl.info.Name)
+	}
+}
+
+// TestSessionSyncDocNamesTheLifecycleRules holds the lifecycle bullets on
+// docs/session-sync.md to the numbers and tests behind them: the heartbeat and
+// liveness windows, and the tests that pin a session that ends at once and an
+// empty or missing file.
+func TestSessionSyncDocNamesTheLifecycleRules(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/session-sync.md")), " ")
+	// The page says a heartbeat every 15 s and live under 45 s; the syncer's default beat is the first.
+	src, err := os.ReadFile("syncer.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "15 * time.Second") || !strings.Contains(doc, "heartbeat every 15 s") || !strings.Contains(doc, "under 45 s old") {
+		t.Error("the heartbeat interval or the 45 s liveness window on the page no longer matches the syncer")
+	}
+	for _, want := range []string{
+		"TestCloseFlushesASessionActivatedJustBefore",
+		"registers the session if it is not yet, uploads every line and ends it",
+		"An empty session file is registered",
+		"A session whose file is never created",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/session-sync.md no longer says %q", want)
+		}
+	}
+	// Every test the page names exists.
+	for _, name := range regexp.MustCompile("`(Test[A-Za-z]+)`").FindAllStringSubmatch(doc, -1) {
+		found := false
+		for _, f := range []string{"sessionsync_test.go"} {
+			b, err := os.ReadFile(f)
+			if err == nil && strings.Contains(string(b), "func "+name[1]+"(") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("docs/session-sync.md names %s, which sessionsync_test.go does not define", name[1])
+		}
+	}
+}
+
+// The host's repository reading rides the registration and a changed reading
+// re-registers; a switch the website holds for the session comes back with the
+// registration and the heartbeats, and only when the server sends one.
+func TestGitReadingGoesUpAndTheWebSwitchComesBack(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	reading := json.RawMessage(`{"branch":"main"}`)
+	var got []bool
+	s := New(Options{Client: c, HostID: testHost, Host: Host{Hostname: "box"},
+		TickEvery: 20 * time.Millisecond, HeartbeatEvery: 40 * time.Millisecond, InboxWait: time.Second,
+		Git: func() json.RawMessage { mu.Lock(); defer mu.Unlock(); return reading },
+		OnControls: func(id string, ctl Controls) {
+			if id == testSess && ctl.GitSync != nil {
+				mu.Lock()
+				got = append(got, *ctl.GitSync)
+				mu.Unlock()
+			}
+		}})
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Close(time.Second) })
+
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	s.Activate(SessionInfo{ID: testSess, Path: path, ProjectName: "belai"})
+	appendLines(t, path, line("a", "user", "hello"))
+	s.Nudge()
+
+	gitOf := func() string {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return string(fake.sessions[testSess].Git)
+	}
+	eventually(t, "the first reading", func() bool { return gitOf() == `{"branch":"main"}` })
+
+	mu.Lock()
+	reading = json.RawMessage(`{"branch":"feature"}`)
+	mu.Unlock()
+	eventually(t, "the changed reading", func() bool { return gitOf() == `{"branch":"feature"}` })
+
+	mu.Lock()
+	if len(got) != 0 {
+		t.Fatalf("no switch was held, yet OnControls saw %v", got)
+	}
+	mu.Unlock()
+
+	off := false
+	fake.mu.Lock()
+	fake.controls = &Controls{GitSync: &off}
+	fake.mu.Unlock()
+	eventually(t, "the website's switch", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) > 0 && !got[0] })
+}
+
+// Session controls come through the inbox to a host that takes them, and a
+// change to the controls re-registers the session with the new state and the
+// new answers switch.
+func TestInboxDeliversCommandsAndControlState(t *testing.T) {
+	fake := newFake()
+	fake.commands = []RemoteCommand{{ID: "c1", SessionID: testSess, Key: "f4"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Client: c, HostID: testHost, RemoteCommands: true,
+		TickEvery: 20 * time.Millisecond, HeartbeatEvery: time.Second, InboxWait: time.Second})
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Close(time.Second) })
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	select {
+	case cmd := <-s.Commands():
+		if cmd.ID != "c1" || cmd.Key != "f4" {
+			t.Fatalf("command = %+v", cmd)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no command delivered")
+	}
+	eventually(t, "registered with controls", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		m := fake.sessions[testSess]
+		return m.Controls && !m.RemoteAnswers
+	})
+	s.SetSessionControls(json.RawMessage(`{"ask":true}`), true)
+	s.AckCommand("c1", AckAccepted, "", json.RawMessage(`{"ask":true}`))
+	eventually(t, "state re-registered", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		m := fake.sessions[testSess]
+		return m.RemoteAnswers && string(m.ControlState) == `{"ask":true}`
+	})
+	eventually(t, "command ack", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.acks["command:c1"] == AckAccepted && fake.cmdState["c1"] == `{"ask":true}`
+	})
+}
+
+// A host started without session controls refuses every command.
+func TestCommandsRefusedWhenOff(t *testing.T) {
+	fake := newFake()
+	fake.commands = []RemoteCommand{{ID: "c2", SessionID: testSess, Line: "/caveman on"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+	s := startSyncer(t, srv, true)
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	eventually(t, "refusal", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.acks["command:c2"] == AckRefused })
 }

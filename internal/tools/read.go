@@ -39,6 +39,9 @@ type Read struct {
 	// Reads, when set, records each successful read so Edit and Write can
 	// tell a file the model has seen from one it has not; see ReadState.
 	Reads *ReadState
+	// Knowledge, when set, lets a model's Read append the passages from the
+	// session's reference documents that resemble the file (docs/knowledge.md).
+	Knowledge *KnowledgeHub
 }
 
 // Definition returns the static tool metadata.
@@ -152,7 +155,11 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		meta["numbered"] = true
 	}
 	r.Reads.Note(full)
-	return ReadResultMeta(w.body+readTrailer(w.first, w.last, w.total), meta), nil
+	body := w.body + readTrailer(w.first, w.last, w.total)
+	if k := knowledgeFor(ctx, r.Knowledge); k != nil && w.first > 0 {
+		body += knowledgeRelated(k.Search(readQuery(w.body)), full)
+	}
+	return ReadResultMeta(body, meta), nil
 }
 
 // readWindowResult is one numbered slice of a file.

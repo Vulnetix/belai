@@ -53,6 +53,9 @@ type Options struct {
 	// exploration with the edits. Plan mode must never set this: plan mode has
 	// its own read-only contract and must not be told to start editing.
 	WorkDiscipline bool
+	// CodeMode adds the code-mode section (docs/code-mode.md). It is set only
+	// on an explicit code-mode turn, so no other mode's system text changes.
+	CodeMode bool
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -69,6 +72,11 @@ type Options struct {
 	// WorkspaceBlock is the rendered harness-computed repo-map block for any
 	// additional workspace directories added with /add-dir.
 	WorkspaceBlock string
+	// Environment is the rendered harness-fetched facts about the machine the
+	// session runs on. Only the Pix Sandbox build sets it (internal/run
+	// environment_sandbox.go): every other build leaves it empty and renders
+	// nothing. Facts only, each checked by the harness before it gets here.
+	Environment string
 	// Persona is a fleet worker profile's own instructions (system prompt and
 	// identity). It is user-authored text from the global profile directory or
 	// a built-in, never repository, board or model text, and renders as its own
@@ -186,8 +194,14 @@ func System(opts Options) (string, error) {
 	if opts.WorkspaceBlock != "" {
 		b.WriteString(opts.WorkspaceBlock + "\n")
 	}
+	if opts.Environment != "" {
+		b.WriteString(opts.Environment + "\n")
+	}
 	if opts.WorkDiscipline && !opts.Explore {
 		b.WriteString(workDiscipline())
+	}
+	if opts.CodeMode && !opts.Explore {
+		b.WriteString(codeContract())
 	}
 	if opts.Caveman {
 		b.WriteString(CavemanVoice)

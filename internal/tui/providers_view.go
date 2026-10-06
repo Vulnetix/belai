@@ -127,6 +127,9 @@ func (a *App) rebuildProviderRows() {
 		// A decision provider is not in the resolver's chat list.
 		configuredSet[decisions.TypeSafeProvider] = a.resolver.Configured(decisions.TypeSafeProvider)
 	}
+	// Strands Decider-2B needs no key: it counts as configured once the
+	// command is installed or a server answers.
+	configuredSet[decisions.DeciderProvider] = a.deciderDetected()
 
 	var configured, notConfigured []providerRow
 	for _, name := range all {
@@ -289,6 +292,9 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 	if name == decisions.TypeSafeProvider {
 		return a.renderTypeSafeRow(selected)
 	}
+	if name == decisions.DeciderProvider {
+		return a.renderDeciderRow(selected)
+	}
 	cfg, _ := run.Prepare("", name, credentialSourceOf(a.resolver))
 	d, ok := provider.Lookup(name)
 	if ok {
@@ -342,6 +348,12 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 	}
 	if cfg.BaseURL != "" && d.Local {
 		extra = cfg.BaseURL
+	}
+	if decisions.IsCloudflareProvider(name) && a.cloudflareClefReady(name) {
+		extra += " · also Clef decisions"
+	}
+	if a.tev1Ready(name) {
+		extra += " · also Tev1 decisions"
 	}
 
 	// The display label (or host:port fallback) is the primary token; the
@@ -417,6 +429,9 @@ func (a *App) handleProvidersKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if r.name == "" {
 			return a, nil
+		}
+		if r.name == decisions.DeciderProvider {
+			return a, a.assignDeciderClassifier()
 		}
 		a.openProviderDetail(r.name)
 		return a, a.push(viewProviderDetail)
@@ -1306,7 +1321,7 @@ func (a *App) providerDetailEndpointCommit() (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	var baseURL string
-	if p.Kind == config.JevKind {
+	if p.Kind == config.SystemOneKind {
 		// A self-hosted Jev server has no chat template; its base URL is the
 		// bare origin, and the decision path stays on the profile.
 		if protocol == "" {
@@ -1415,14 +1430,51 @@ func max(a, b int) int {
 }
 
 // providerViewNames is the providers view's list: the chat providers plus the
-// hosted decision provider, which is configured here (its key) and chosen as
-// a classifier under kind jev, never as a chat model.
+// decision providers (TypeSafe's hosted API, configured here by its key, and
+// Strands Decider-2B on this machine), chosen as a classifier under kind
+// systemone, never as a chat model.
 func (a *App) providerViewNames() []string {
 	names := a.providerNames()
 	n := len(provider.Names())
 	out := append([]string{}, names[:n]...)
-	out = append(out, decisions.TypeSafeProvider)
+	out = append(out, decisions.TypeSafeProvider, decisions.DeciderProvider)
 	return append(out, names[n:]...)
+}
+
+// renderDeciderRow is Strands Decider-2B's master-list row: a decision
+// provider on this machine, with its detected status.
+func (a *App) renderDeciderRow(selected bool) string {
+	glyph := "○"
+	if a.deciderDetected() {
+		glyph = "●"
+	}
+	if a.deciderStatus().Running != "" {
+		glyph = "⏻"
+	}
+	name := decisions.DeciderProvider
+	nameStr := components.MutedStyle.Render(name)
+	if selected {
+		nameStr = components.EmphStyle.Render(name)
+	}
+	status := "local first · " + a.deciderStatus().Label()
+	if selected {
+		status += " · enter tests it and sets it for every decision-model job"
+	}
+	return components.Cursor(selected) + fmt.Sprintf("%s %-16s %-12s %s", glyph, nameStr, components.MutedStyle.Render("decisions"), components.MutedStyle.Render(status))
+}
+
+// assignDeciderClassifier selects Strands Decider-2B for every Jev decision,
+// through the same test as /model; nothing is written unless it passes.
+func (a *App) assignDeciderClassifier() tea.Cmd {
+	enter := a.push(viewModel)
+	a.modelState.classifierScope = "project"
+	test := a.stageClassifier("model", "classifier = "+decisions.DeciderProvider+" · "+decisions.Decider2B.ID, func(c *config.ClassifierSettings) {
+		c.Kind = config.SystemOneKind
+		c.Provider = decisions.DeciderProvider
+		c.Model = decisions.Decider2B.ID
+		c.Effort = "none"
+	})
+	return tea.Batch(enter, test)
 }
 
 // renderTypeSafeRow is TypeSafe's master-list row: a decision provider with a

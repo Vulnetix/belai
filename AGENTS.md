@@ -37,14 +37,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a control or bidi stripper, a loopback test or a shell splitter.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
-  `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
-  repository text), `RepoRead` and the native tools that can print a file's
+  `Read` (a file's bytes), `GH`/`Glab`/`AWS` results (`KindRemote`, third-party
+  repository text, log events and bucket objects), `RepoRead` and the native tools that can print a file's
   contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
-  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
@@ -69,6 +69,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   block that rides back on `Write`/`Edit` is shaped the same way: no more
   than ten rows, each flattened to one line, stripped of control and bidi
   runes, with a restricted source field, sealed with a nonce and a SHA-256.
+  The `kb+` rows that `Grep` and `Glob` append from the knowledge store are the
+  one place arbitrary text rides in a shaped kind, and they are safe only
+  because the store classified each chunk when it was ingested (the Knowledge
+  bullet below). Never append anything to those two kinds that did not come from
+  the store.
 - **The read index holds facts, never contents.** `internal/readindex`
   answers a repeated `Read` of an unchanged file whose earlier result is still
   in the conversation with a harness-composed pointer (path, extent, size, git
@@ -83,7 +88,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   per-turn status, never the system block.
 - **Language servers are a trusted-root feature.** A language server is only
   spawned under a directory the user has already trusted, and only in an
-  interactive TUI session. The server is always started with a scrubbed
+  interactive TUI session or a `belai rc --web-controls` session whose web
+  user turned the language-server control on (`rolemanager.DiagnosticsGate`
+  passed through `headless.Params.Diagnostics`, closed when the session is
+  rebuilt or ends). The server is always started with a scrubbed
   environment and its own process group. It is never asked to perform a
   `workspace/applyEdit` (every such request receives `{"applied":false}`),
   `initializationOptions` is always `null`, and binary overrides from a
@@ -103,6 +111,106 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   read primitive. Their content is written by other models, so `KindAgentStore`
   is in `tools.classifierKinds` unconditionally. Do not add a path argument and
   do not add an exemption.
+- **Facts point a tool and never widen it, and a role's credentials stay in
+  memory.** `internal/factspec` is the one table behind a profile's `facts`
+  (`docs/agent-profiles.md#facts`). The rules:
+  - **Facts are the user's.** They come from a profile in the user's layers, so
+    a repository cannot add one; the drafter never offers them. Any key of the
+    right shape is accepted and listed to the model under framing that calls
+    it data. A key that names a secret and a value shaped like an AWS access
+    key id are refused when the profile loads, and a hidden fact
+    (`aws_external_id`) is read by the harness and kept out of the prompt.
+  - **Binding is the harness's table.** A well-known fact becomes a fixed
+    environment variable or flag (`factspec.Bind`), appended after
+    `proc.ScrubbedEnv`. No model argument names an environment variable or a
+    flag, a value is shape-checked at load, and a fact never changes the
+    `tools` allowlist, a permission rule, the sandbox or the confinement
+    roots. A pinned fact refuses the flags that would override it. Flags that
+    send a tool's credentials to another endpoint or identity
+    (`--profile`, `--endpoint-url`, `--ca-bundle`, the kubeconfig, server,
+    token and impersonation flags, `--impersonate-service-account`) are refused
+    for `AWS`, `Kubectl` and `GCloud` with or without facts, matched in their
+    `=value` and abbreviated forms. Do not add a second flag matcher.
+  - **A role is declared or asked for.** The `AWS` tool's `role_arn` is
+    validated as an IAM role ARN. A role in the `aws_role_arn` fact needs no
+    prompt. Any other ARN asks on every call through `tools.CallAsker`, whatever
+    the rules and the ask gate say, and is withheld where nobody can ask, an
+    `autonomous` worker included. A role is assumed from the ambient identity
+    (never chained from a held role), after checking whether it is already the
+    caller. `aws_account_id` is checked against the resolved identity and fails
+    closed when it cannot be read.
+  - **Credentials never leave the process except as one subprocess's
+    environment.** `tools.CloudHub` holds them in memory only, for the session;
+    new facts drop them. Only the `AWS` and `Terraform` subprocesses receive
+    them. They are never written, logged, put in a result, an error or the `Env`
+    and `Bash` environment, and their strings are redacted from output. A
+    failed assumption reaches the model as AWS's error code alone.
+  - **`AWS` output classifies.** Log events and bucket objects are text other
+    parties wrote, so `AWS` is `KindRemote`. Explore and handoff subagents build
+    their own registry, so their hub holds no facts and no credentials.
+- **Knowledge is classified once, at ingestion, and a search calls no model.**
+  `internal/knowledge` indexes an agent profile's listed documents, the
+  project's `.vulnetix` output and a session's `@` files for `Grep`, `Glob` and
+  `Read`. The session installs a `tools.Knowledge` in its registry's
+  `KnowledgeHub`, and a tool consults it only on a model's own call
+  (`tools.WithKnowledge`, set in `runTool`'s caller): the harness's `Read` of an
+  `@` attachment or a prefetched file never carries it. The rules:
+  - **Ingestion is the gate.** Every chunk is sanitised and then admitted by
+    `kbgate.New` through the ordinary classifier pipeline (a profile's documents
+    as `KindRead`, scanner text as `KindRemote`). The posture level is checked
+    before the call and guardrails off is sanitise-only. A flagged chunk is never
+    stored, a gate error stores nothing for that document, and a flagged batch is
+    halved until the chunk stands alone. Do not index text that did not pass it.
+  - **Search is a lookup.** The `kb+` rows in a `KindGrep`/`KindGlob` result are
+    sanitise-only because of the rule above; `Read` stays `KindRead` and is
+    classified again. A search for a profile or the project never leaves the
+    process: no provider, no embedding service, no model file, no cgo.
+  - **Profile documents are the profile's to list, under a floor.** They come
+    from `knowledge.paths` in a profile (a file on this host, a built-in or a
+    library profile, which installs and backs up with the block), absolute, under
+    `~/`, or relative to the trusted repository root and never allowed to leave
+    it, enumerated by the `internal/locate` eligibility rules (no symlink, hidden,
+    binary, oversized or credential-bearing file) and refused outright under
+    `knowledge.BlockedAbsolute` and for `.git`. A listed `.vulnetix` is read as
+    scanner output, through the scanner gate. A web draft never offers the block.
+  - **`.vulnetix` is read by the harness.** It walks `scanartifacts.Enumerate` at
+    the trusted repository root (a worker's repository, never its worktree), with
+    no path from a model and no symlink followed. SARIF, CycloneDX and OpenVEX
+    become one chunk per record composed from identifier fields only
+    (`scanartifacts.Records`: never a message, a snippet or a matched secret).
+    Native third-party reports, tool logs and Belai's own state are never
+    indexed. A session's `@` files are indexed in memory after the attachment
+    path admitted them, and are never written.
+  - **Permissions still apply.** A `Read` deny rule on a chunk's source path
+    hides it from search and listing. The registry's file tools carry the hub, so
+    a profile's tools allowlist decides which of them see it. A handoff-scoped
+    subagent and an Explore subagent build their own registry and get none.
+  - **Labels and topics are harness facts.** Every document is tagged at
+    ingestion (`internal/knowledge/tags`). Labels come from the path, size and
+    structure through fixed tables, topics from a fixed vocabulary matched by a
+    deterministic detector (no model, no network, at most 64 KiB read), refined
+    only by the `knowledge_topics` job. The per-document label line indexed
+    beside the passages is composed by the harness from those tables and the
+    vocabulary, holds none of the document's text, and is sanitise-only for that
+    reason. Never add document text to it, and never let a model name a label.
+  - **`/knowledge` is the user's view.** It opens indexes read-only through
+    the catalogue (`knowledge.LoadProject`, `LoadProfile`: a corrupt file is listed
+    and left alone, nothing is written), has no model-facing tool, and sends nothing to a model, a
+    transcript, telemetry, audit or sync. Its search calls the same helpers as
+    `Grep`, `Glob` and `Read` (`tools.PreviewGrep`, `PreviewGlob`,
+    `PreviewRead`) so it can never show more than a model would be shown from the
+    same store. The project scope applies the `Read` deny rules; the global and
+    agents scopes show what the user's own host stored.
+  - **The index is facts the user's host owns.** One file per profile and per
+    project in the state directory (hidden from the sandbox), mode 0600, with a
+    magic, a version and a SHA-256 trailer; a file that fails the check is used
+    for nothing and never overwritten. `knowledge.*` sizes are read from the
+    user's layers only, and no passage text reaches telemetry, the audit log,
+    session sync or the session record. The `belai rc` advertisement carries the
+    catalogue of the host's profile and offered-directory indexes (each
+    document's knowledge address, size, SHA-256 and harness labels and topics,
+    `rc/knowledge.go`) for the Library's Documents view, and nothing else from
+    the store.
 - **The confinement boundary is a fixed root set unless the user widens it.**
   The primary working directory is the default confinement root. The only
   ways to add roots are an explicit `/add-dir` command confirmed by the user,
@@ -163,15 +271,67 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   exactly one decision backend: OpenRouter's Decisions API
   (`classifier.kind` `openrouter-decisions`), TypeSafe's hosted API (the
   built-in classifier-only `typesafe` provider, key `TYPESAFE_API_KEY`, sent
-  only to `https://api.typesafe.ai`), a self-hosted server speaking TypeSafe's
-  `/v1/systemone` (a provider profile of kind `jev`; the last two are
-  `classifier.kind` `jev`), or the local decision model (`decision-local`:
-  Decider-4B or Plumb-4B on llama-server, `internal/decisionserver`). The
-  rules:
-  - A `jev` profile is a provider profile, so the project layer cannot add
-    one; its URL is https or loopback http with no credentials in it, and its
-    key rides only in the `Authorization` header to that URL, never across a
-    redirect. No decision backend is firewall-routed or asked to chat.
+  only to `https://api.typesafe.ai`), Strands Decider-2B on this machine (the
+  built-in classifier-only `strands-decider` provider: upstream's
+  `strands-decider serve` on loopback, `internal/deciderserver`), Cloudflare's
+  Clef on Workers AI (`@cf/cloudflare/clef` or `clef-flash` under the
+  `cloudflare-workers-ai` or `cloudflare-ai-gateway` provider), Together AI's
+  Tev1 (`together/Tev1-4B-experimental` under the `together` provider, read
+  from the answer letter's log-probabilities on chat completions, or a `tev1:`
+  tag on Ollama's own `/v1/systemone` under the `ollama` provider), a server
+  speaking the `/v1/systemone` API (a provider profile of kind `systemone`;
+  these four are `classifier.kind` `systemone`, and `jev`, the kind's name
+  before, is read as `systemone` and never written), or the local decision
+  model (`decision-local`: Decider-4B, Plumb-4B or Tev1 4B read from letter
+  log-probabilities, or Clef-flash and Clef on llama-server's own
+  `/v1/systemone`, `internal/decisionserver`). The rules:
+  - A `systemone` profile is a provider profile, so the project layer cannot
+    add one; its URL is https or loopback http with no credentials in it, and
+    its key rides only in the `Authorization` header to that URL, never across
+    a redirect. No decision backend is firewall-routed or asked to chat.
+  - The Strands Decider server is used only on a loopback address whose
+    `/health` names a Strands Decider checkpoint (`deciderserver.ParseHealth`,
+    identifiers only). When none answers, it is launched from PATH with a
+    harness-fixed argv (`deciderserver.Args`: the checkpoint directory, the
+    loopback host, the port and the served name), after the trust gate, with
+    the scrubbed environment plus `HF_HOME` pointing at Belai's own snapshot
+    and `HF_HUB_OFFLINE`, in its own process group; only the process that
+    launched it stops it. Its checkpoint and base model are pinned by revision
+    and SHA-256 (`decisions.Decider2B`), downloaded only in a `/model` test
+    after the user confirms the size, and an LFS file must also match the
+    SHA-256 Hugging Face reports. The server never downloads. A question with
+    more options than the head reads is never sent. OpenRouter and Hugging
+    Face are asked only whether they serve it; a remote decider is used only
+    through OpenRouter's Decisions API or a `systemone` profile.
+  - Clef on Workers AI uses the user's own Cloudflare API token, resolved
+    from the credentials store and never from a firewall route
+    (`run.resolveClef` builds the request itself). The token rides only in
+    the `Authorization` header to
+    `api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/clef*`,
+    or to `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/...`
+    with the gateway token only in `cf-aig-authorization`; the account id is
+    32 hex characters and the gateway URL is checked to be on that host, and
+    a redirect is refused. Cloudflare's envelope error text is sanitised and
+    capped. A Clef model is never offered or asked to chat (the agent, fast
+    and routing pickers drop every decision model), and no image is sent.
+  - Tev1 on Together uses the user's own Together key, resolved from the
+    credentials store and never from a firewall route (`run.resolveTev1`
+    builds the request itself), sent only in the `Authorization` header to
+    the `together` provider's base URL (https, or loopback http, with no
+    credentials in it), and a redirect is refused. Each question is one
+    tool-less chat completion for one token at temperature 0 with thinking
+    off (`decisions.ChatLetters`), so the model is never asked to chat; the
+    state is JSON-escaped into the payload Tev1 was trained on, so it cannot
+    forge prompt structure. An answer is read only from the option letters'
+    log-probabilities: a reply without them, or one whose letters hold too
+    little of the probability, is unavailable and never read from its text.
+    A Tev1 id or tag is never offered or asked to chat, like Clef, and no
+    image is sent. Ollama's Tev1 is a `/v1/systemone` server on the
+    `ollama` provider's address, https or loopback http.
+  - A local Clef runs on llama-server build 11371 or later (`Ensure` refuses
+    an older build before launching) with the harness-fixed argv plus
+    `--batch-size` and `--ubatch-size` equal to the context, so a decision
+    prompt is evaluated in one micro-batch.
   - The local server's binary comes from PATH and its argv is harness-fixed
     (`localinfer.DecisionArgs`: loopback host, `-m` path, alias). It starts
     only after the trust gate, with the scrubbed environment, in its own
@@ -186,7 +346,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     error and the pipeline fails closed.
 - **A model selection is saved only after its test passes.** A `/model` edit
   that selects a model (and the providers view's assign-as-classifier, and a
-  new `jev` provider) runs the `internal/modeltest` ladder first and writes
+  new `systemone` provider) runs the `internal/modeltest` ladder first and writes
   nothing when it fails. The ladder writes no settings itself; probes see
   only harness-built content, and every step detail is harness-composed or a
   cleaned, capped excerpt. Knobs that pick no model write at once.
@@ -252,7 +412,18 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   [docs/jev-jobs.md](docs/jev-jobs.md) work inside the surface the mode already
   allows; permissions, hooks, the ask gate, the classifier and the sandbox still
   apply to what they produce. Their input is harness facts and `DecisionText`
-  only, never file contents, attachment bytes or tool output. An unavailable
+  only, never file contents, attachment bytes or tool output, with one named
+  exception: `knowledge_topics` (`internal/knowledge/kbgate/tagger.go`) sends a
+  bounded sample of an indexed document's chunks, as `DecisionText`, to the
+  decision backend the user set up. Those chunks were sanitised and admitted by
+  the security classifier at ingestion, a flagged chunk is never stored so never
+  sent, and a scanner artifact is never sent. The sample is at most
+  `knowledge.topic_chunks` chunks and what one request holds
+  (`jev.TopicLimits`), the call is one request, never retried or split, and at
+  most `knowledge.topic_budget_docs` documents go per refresh. It only tags: a
+  topic label helps a search find a document and never admits, permits or
+  approves anything. Its failure is the pattern detector's result. Do not add a
+  second job that sends file text. An unavailable
   backend, an unanswered item or an answer outside 0 to 1 is *unknown*, and the
   job falls back to the ordinary behaviour, never to a chat model. Each job is a
   `jev.jobs.<job>` switch that defaults on, runs only with a decision backend
@@ -286,6 +457,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   cut-offs `clear_at`, `align_at` and `cover_at` follow the same user-layer-only
   rule as every threshold. Only titles, clauses and gate identifiers reach a
   backend, and a card the harness files from a rating holds ids only.
+  Agent pick (`agent_pick`, `agent/agentpick.go`) lets Auto mode engage one of
+  the user's own single-mode profiles for a general request. It sees the
+  sanitized prompt and each offered profile's name and description as
+  `DecisionText`. A built-in profile, a profile without a description and one that
+  lowers `guardrails` or `ask_permission` are never offered, so a pick cannot
+  widen anything, and it engages only a lead at `mode_confident` and `mode_margin`
+  over every rival, `default` included. A website prompt with no agent selected
+  moves the live session to Auto and saves nothing.
   Request scale (`request_scale`, `agent/scale.go`) sees only the sanitized prompt.
   A simple verdict (at or above `simple_at`, default 0.80, never below 0.5, and
   staged below `keep_at`) only drops goal-turn ceremony: the contract draft, the
@@ -301,6 +480,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   only. Anything else, an error or a timeout goes to the model judge with the
   scores as a harness line and an instruction to accept completion only when
   tools showed a check. A complete verdict still meets the verification gate.
+  Teleport verify (`teleport_verify`, `jev/teleport.go`) sees the origin model's summary as `DecisionText` and the harness's own check of a replayed checkout (paths and counts), never the patch, a file's contents or a tool's output. It reads the goal judge's cut-offs (`goal_complete_at`, `goal_rival_max`), only ever rates a checkout the exact tree comparison did not already verify, and a verified rating is never accepted for a file the checkout lacks; anything unclear goes to the model sentinel.
 - **Every role-manager decision is written to the session record.**
   `Activity.Record` builds a `rolemanager` entry for every event, shown or
   hidden, and `rolemanager.AddSink` delivers activities losslessly and in
@@ -386,7 +566,31 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   hidden and answer like missing ones. `SkillDraft` is an `AlwaysAsker`: it
   asks on every call whatever the rules or the ask gate say, is withheld when
   nobody can be asked, and writes exactly the previewed file. The project
-  layer may turn `skills.self_authoring` off, never on.
+  layer may turn `skills.self_authoring` off, never on. Belai's own skills
+  (`internal/skills/builtin`, one per builtin worker, the `belai-` prefix reserved
+  so the library, `SkillDraft` and a profile cannot create one; a file placed by hand in the skills directory loads as the user's own skill and never shadows a builtin) are compiled into
+  the binary and are reachable only through a profile's `skills` list
+  (`Registry.WithSkills`): an ordinary session neither lists nor loads one, and
+  the `Skill` tool refuses any name outside the list. Their text is `KindSkill`
+  and is classified like any skill; do not add an exemption because Belai wrote it.
+  The loader reads a skill's text as written (a plain value keeps its `#`), reads a skill file up to 1 MiB, refuses a second YAML document, and refuses a name, description or other text field that holds a control, bidirectional, invisible or delimiter character, since those reach the system block.
+  A skill's `metadata` is a string map; only the `belai.*` keys are Belai's and
+  they are validated (`https` links, no fragment, no credentials). The profile's
+  own `metadata` is for people and tools: it is never rendered into a prompt, a
+  directive or the system block, and it is outside the profile hash.
+- **An import is a user's file, converted whole and never widened.**
+  `internal/agentimport` reads a Claws package, an NVIDIA NeMo Fabric agent
+  configuration, a Hermes profile or a mini-SWE-agent YAML through bounded readers
+  (no symlink, no file over 1 MiB, no credential file by name, no archive path
+  outside the archive, nothing written to disk) and produces a single-mode,
+  supervised profile that passes `agentprofile.Validate`. Tools come only from the
+  fixed table in `build.go`, and a source that names none gets the read-only set,
+  never every tool. An endpoint, a credential, an environment variable name, an MCP
+  server entry, a schedule and any worker, safety or host-local block are never
+  carried over; what has no field is metadata or only named in the report. It
+  writes nothing: `belai agent import -from` previews unless `-yes`, and installs
+  skills only through the library validator. Foreign format names stay in this
+  package and its docs.
 - **Plugins are installed by the user, validated whole, and namespaced.**
   `internal/plugins` installs only after the user confirms a full listing
   (every hook's event and command included), or `-yes` on the CLI; the TUI
@@ -409,6 +613,38 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `caches` to `false`, never the reverse, and its `extra_writable` is
   dropped. `required` with no working backend refuses the command; it never
   falls back to running it bare.
+- **Bash rewrite rules are the user's, and permissions judge what runs.**
+  `bash_rewrite` (`internal/config/bashrewrite.go`, docs/bash-rewrite.md) is
+  read from the user's own settings layers only; the project layer may switch it
+  off, never on and never add a rule. A rule is plain words on both sides
+  (`shellsafe.ValidRewriteRule`) and `shellsafe.Rewrite` changes only the
+  program words of commands written in command position, found by parsing, never
+  by substring, and not those held by a wrapper. The result is re-parsed and
+  must keep the line's flags and command count, else the line runs as sent. It
+  runs once, before permission matching (`agent.rewriteBashArgs`): an explicit
+  deny or block rule on the model's own line stops the call before any rewrite,
+  and the rewritten line is then judged against every rule like any other line.
+  The result begins with a harness-composed note (`tools.RewriteBash`). No model
+  is asked.
+- **Code mode batches calls and grants nothing a call lacks.** `internal/codemode`
+  runs a model-written script in goja (pure Go, no `require`, timers, network,
+  filesystem or process access) whose only exits are host functions, and each
+  one is a nested call through `Session.executeCall`, the pipeline a direct call
+  takes: surface and allowlist, `CheckArgs`, permission rules, hooks, the ask
+  gate, the OS sandbox, the diff recorder, sanitising and the classifier. The
+  script reads only admitted text or the withheld message. `Code` is `KindCode`,
+  does not mutate itself (its nested calls ask), is sanitise-only because its
+  output is built from admitted text, and is offloaded like other large results;
+  a nested result is kept whole and never enters the read index. Reachable
+  kinds are a closed allowlist (`tools.NestedAllowed`); interactive, planning,
+  board, process-control, subagent and `Skill` tools and `Code` are not. `Code`
+  joins only the code-mode registry (`Registry.CodeSurface`), which drops
+  `KindMCP`, so agent, plan and goal advertise and resolve exactly what they
+  did; MCP is reachable in code mode only as `mcp.<server>.<tool>()` from a
+  script, and `mcp.describe` text is classified as an MCP result. Code mode is
+  chosen by name and is never picked by intent detection or the mode-choice
+  panel. `code.*` limits can only be lowered by a project layer. See
+  [docs/code-mode.md](docs/code-mode.md).
 - **MCP servers are the user's, and their text classifies.** `mcp.servers`
   is read from the user's own settings layers only; `resolve.go` drops the
   project layer's `mcp` key outright. Servers start only after the trust
@@ -422,7 +658,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   The `vulnetix:cli` header reference (written by `/vulnetix mcp`) resolves
   to the Vulnetix CLI's credential at dial time, only in the `Authorization`
   header and only for `https://*.vulnetix.com`; it is never written out
-  resolved.
+  resolved. The one exception to "servers come from settings" is `clef`,
+  compiled only into the Pix Sandbox build (`-tags belai_sandbox`,
+  `internal/clefmcp`, registered through `mcp.Options.Builtins`): an in-process
+  decider whose tools stay `mcp__clef__<tool>` with `tools.KindMCP`, so they are
+  still mutating and classified, and whose results are harness-built numbers
+  and the caller's own options, never model text or backend error text. A
+  settings entry cannot shadow it. Do not give another build a built-in server
+  and do not exempt its tools from the classifier.
 - **Onboarding sends secrets only where they belong.** The Getting started
   sign-up posts to `auth.vulnetix.com` alone (redirects off it are refused);
   its password fields are cleared once the post returns or the form is left,
@@ -496,7 +739,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   confirmations (`KindKanbanWrite`) are harness-composed. The per-turn board
   directive carries counts and item ids only, never item text. The tools take
   no path. Provenance (session, host, project, directory) is stamped by the
-  harness from `kanban.Source` and never taken from arguments. Explore, Task
+  harness from `kanban.Source` and never taken from arguments. The one choice a
+  model has is `KanbanHandoff`'s `repo`, offered only to a profile with
+  `kanban.handoff_repos`: it must match a checkout in the harness's own
+  repository index (`WorkerClaim.UseRepoIndex`), and the project and directory
+  are derived from that checkout (`kanban.ProvenanceFor`), so no model text
+  becomes provenance. An unknown, ambiguous or path-shaped name is refused and
+  nothing is filed, and the survey list, labels, hop limit and per-item cap
+  still apply. Explore, Task
   and fan-out subagents get `KanbanSearch` only, so repository text they read
   cannot persist into the board. A main session's kanban tools are added
   after any tools allowlist (an engaged definition, a background agent, a
@@ -591,8 +841,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   or matched text (a secret's value never reaches a card). A reconcile compares
   only a kind whose own artefact records HEAD, so a missing report never closes
   a card, and a patcher's reconcile never scans. `Finding`, `SeenRef`,
-  `Verdict` and `VEX` on a card are harness-set, host-local and never taken from
-  a model argument. `KanbanVerdict` is bound to the claim: it takes no item id,
+  `Verdict` and `VEX` on a card are harness-set and never taken from a model
+  argument. They sync with the card, but a pulled copy is only ever offered to an
+  empty field: `Merge` validates each value against the shape the harness gives
+  it (`CleanFinding`, `CleanRef`, `Verdict.Valid`, a `.vulnetix/vex/*.openvex.json`
+  path) and never replaces or clears a value this host holds, and the website
+  cannot set them. `KanbanVerdict` is bound to the claim: it takes no item id,
   writes only the claimed item's verdict and note, and moves no list; the
   harness routes the card from the recorded verdict. Only the verifier's profile
   (`kanban.security.vex`) may reject or close a card, and it closes one only
@@ -625,6 +879,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     worker's registry record, set only by the CLI or the TUI. It carries no
     text, is checked between cards so a turn is never cut off, and a
     valid worker id is the only path it can name.
+  - **Web prompts to a worker.** Only with the user's `sync.remote_prompts`
+    (`Worker.RemotePrompts`; a project layer may only turn it off). A prompt
+    typed into a worker's session, such as a crew message the Agents page sends
+    to each live worker, is cleaned by `sessionsync.CleanPrompt`, enters the
+    running turn only through `Session.Steer` (sanitised and admitted at the
+    pass boundary like typed steering) or is held, at most eight, for the next
+    turn. It is never a slash command, a shell command or an answer, and it
+    writes no file. The `profile_facts` on a worker's user entries are harness
+    facts (names, presentation, hash, model, tool count), never the prompt or
+    the tool list.
   - **Item text.** The claimed item's text reaches the model only as a
     `kanban` attachment gated exactly like a `KanbanSearch` result
     (`agent.TurnInput.KanbanItem`): sanitised, and classified unless the
@@ -662,6 +926,35 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
       dir after each turn.
     The harness commits what is left, after checking HEAD is still the
     item's branch.
+  - **Files are placed by the harness and permitted by the profile.** A
+    worker's profile defines what is put in its worktree
+    (`internal/fleet/sync.go`), and the harness does the copying, so a worker is
+    never given the repository path and has no mount of it. The documents in
+    `knowledge.paths` are copied read-only (`knowledge.EnumerateProfile` and
+    `CopyDocs`: a relative path in place, an outside path under
+    `.vulnetix/knowledge/<label>/`, never over a file the harness did not place).
+    `workspace.sync` entries are copied in before each turn and, for `write`,
+    merged back after it under a lock (`config.AcquireFileLock`, the lockfile in
+    the state directory): the worker's version when nobody else changed the file,
+    otherwise the lines it added appended, and never its deletions. The text is
+    sanitised, files and entries are bounded, only regular text files are copied,
+    a symlink on either side is refused, and a path is plain characters so a
+    permission rule built from it is exact. Whoever wrote the profile (a library
+    install is allowed and keeps both blocks), a fixed floor holds:
+    `agentprofile.ProtectedRead` and `ProtectedWrite` (Git's files, Belai's state,
+    credentials and settings, the scanner evidence), `knowledge.BlockedAbsolute`
+    (the filesystem root, the home directory itself, credential stores, the
+    kernel's pseudo filesystems, the system files that hold secrets, Belai's
+    state), credential files by name, and no write-back over a
+    file Git tracks outside `.vulnetix`. The harness's commit leaves placed paths
+    out (`Workspace.changedPaths`) and a branch that commits one fails the
+    attempt. A worker's `Write(*.vulnetix/*)` and `Edit(*.vulnetix/*)` denies are
+    `permissions.Settings.Harness` rules, and a `write` entry adds a `Permit` rule
+    for exactly its path (`fleet.SyncPermits`); `Permit` exempts a call from
+    `Harness` rules only, never from the user's `Deny` or `Block`, never a shell
+    line, and neither field is read from a settings file. The text is model output
+    that other workers read, so it reaches a model only through `Read` (classified)
+    or the knowledge index (classified at ingestion).
   - **Pushing.** Only `PublishBranch` pushes (`KindPublish`,
     mutating, sanitise-only): exactly the item's branch, by an explicit
     refspec, to a GitHub/GitLab `origin`, then a draft pull request. It is on
@@ -718,6 +1011,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   goes through the classifier like the page would; the page never reaches the
   conversation. Any role failure falls back to the page itself. Guardrails off
   skips only the classification, never the role or sanitising.
+- **The WebFetch cache and fetched-page index hold admitted text only, and a
+  hit or a search never skips classification.** `tools.WebPages`
+  (`internal/tools/webpages.go`, docs/web-fetch.md) stages a fresh page with its
+  `WebFetch` result, sanitised; `Session.promoteResult` settles it only after the
+  gate: admitted (classifier proceed, or guardrails off) moves it into an
+  in-memory, bounded, TTL'd cache and hands it to the index, withheld drops the
+  staged page and evicts anything held for that URL from both. A hit is returned
+  as an ordinary `KindWebFetch` result, so it is sanitised and classified like a
+  fresh one (with a `prompt`, the answer is classified); the URL policy runs
+  before the lookup and a miss runs every redirect and address check. Only 2xx
+  pages are held and nothing is written to disk. The index
+  (`internal/agent/webindex.go`) reuses `internal/knowledge`: each chunk is
+  sanitised and admitted by `kbgate.New(…, KindWebFetch)` at ingestion, a flagged
+  chunk is never stored, a gate error stores nothing, and a search calls no model
+  or network. `SearchFetched` is path- and URL-free and its `KindFetched` result
+  is sanitise-only only because of that ingestion rule: never put text in that
+  kind that did not come from the index. A page indexed while guardrails were off
+  is never served once they are on and is re-classified on re-fetch; a `WebFetch`
+  deny rule hides a page. A registry built for a subagent has a page store that
+  is off, and only a top-level session (`agent.Options.WebPages`) switches it on.
+  `web_fetch` settings may be set by any layer, are clamped to fixed ceilings, and
+  never change what is admitted.
 - **Telemetry carries facts, never content.** `internal/otel` exports only
   attribute keys on its fixed allowlist, and reduces every string value to
   identifier characters, capped. Never add a key that can hold a prompt,
@@ -767,6 +1082,42 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   SHA-256 hex string is refused. A spoken "stop" stops playback before it
   touches a turn, and a transcript that mostly repeats the words being read is
   dropped as echo (`ttsEcho`), never matched or dictated.
+- **The vulnerability row is composed from one validated identifier.**
+  `internal/vulnid` is the one recognizer of prefixed advisory identifiers
+  (CVE, GHSA, OSV, PYSEC, RUSTSEC, GO, GSD, EUVD, VND and the distribution
+  advisories): strict ASCII shapes, bounded on both sides, nothing matched
+  across a control, bidi or zero-width rune. The TUI scans the tool results and
+  the reply it already shows (`internal/tui/vulnwatch.go`, no model call), and a
+  headless or remote-control transcript does the same at a turn's end
+  (`internal/turnlog`); both go through `vulnid.Tracker`, so the limits (3 a
+  turn, 40 a session, once per identifier) are one rule. The row on screen is
+  `Ephemeral`, never promoted to a model and never in telemetry, audit or a
+  notification. The website's copy is a `vuln` session entry whose content and
+  meta (`vuln_id`, `url`, `command`, `prompt`) `vulnid.EntryMeta` composes from
+  the canonical identifier alone, so session sync mirrors only harness-composed
+  text and a resume skips it. The link (a fixed https host with the identifier as
+  one escaped path component), the `vdb` command, the copy buttons, the
+  `remediate` prompt (`vulnid.RemediationPrompt`, sent as the user's own prompt
+  through the typed-prompt path on the user's click, or as a website prompt) and
+  the `belai:triage` launch take only `vulnid.Valid`'s canonical string, never the
+  text around it; the click handler validates again. `belai:triage` is read-only
+  (`Vulnetix`, `Read`, `Grep`, `Glob`), starts through
+  `bgagent.Manager.StartTask` under the ordinary permissions, trust gate and
+  sandbox, and receives the identifier as one `vulnerability_id:` data line, never
+  in its instance name. A remediation request (`vulnid.IsRemediation`, the prompt
+  alone, no model) skips the mode-choice panel and the agent pick, runs as an agent
+  turn on the full surface and arms the edit pressure in `agent/remediation.go`; it
+  never applies in plan mode, on a read-only turn or without `Edit`, and it widens
+  no permission. Do not add a second identifier recognizer or let any
+  other text into the row or the entry. See [docs/vuln-row.md](docs/vuln-row.md).
+- **The `/diff` pane is the user's own view and shows no denied file.**
+  `internal/workdiff` collects the working tree's changes with read-only,
+  hardened git calls (hooks and fsmonitor off, no optional locks, the scrubbed
+  environment) and `internal/tui/diff_view.go` draws them. The text goes to the
+  screen only: never a model, transcript, telemetry, audit or sync, and there is
+  no model-facing tool. A path a `Read` deny rule covers is listed by name and
+  status and its content is never read; a symlink is never followed and sizes
+  are bounded. See [docs/diff.md](docs/diff.md).
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
@@ -818,6 +1169,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   command runs, never a spoken command line; it falls back to dictation on any
   miss, failure or timeout. `voice.wake_word` and `voice.commands` are
   per-user keys, dropped from the project layer.
+- **The audit log is harness facts, hash-chained, and never composed from the
+  transcript.** `internal/audit` records what a host and its agents did (a
+  claim, a commit, a gate decided by exit code, a VEX written, a request the
+  website made of the host) and `sessionsync.AuditSyncer` uploads it. It is not
+  the session mirror: it never reads or writes the session JSONL, and it has
+  its own endpoint, because the mirror is content and this is not. Every string
+  on an event is reduced to `[A-Za-z0-9._:/@+-]` and capped (`audit.Clean`), a
+  commit id is kept only as full lowercase hex, an advisory id only in its
+  identifier shape, and a verdict and an actor kind only from their enums.
+  The event's keys and the `data` map's keys are closed sets
+  (`TestEventKeysClosed`, `TestDataKeysAllowlist`); never add a key that can
+  hold a prompt, reply, argument, output, command, file content, commit message
+  or model-written note. The recorder stamps seq, time, hostname, scope and the
+  chain hash, so an emitter cannot set them and no model argument reaches an
+  event. Each process run appends to its own stream file under the state
+  directory, each event's hash covers it and the previous hash
+  (`audit.Canonical`, pinned to the server's by a golden vector), and the server
+  stores a chain break flagged, never dropped. A card links to a vulnerability
+  only when it is a security card (`kanban.Item.VulnID`). With no recorder
+  installed (sync off) `audit.Emit` does nothing, the audit is best effort and
+  never fails or slows what it records, and the project layer may turn sync
+  off, never on. See [docs/audit.md](docs/audit.md).
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends
@@ -831,26 +1204,252 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   permission ask or question, and in agent mode with no carrier it is refused
   rather than answering the picker. The project layer may turn `sync.enabled`,
   `sync.remote_prompts` and `sync.remote_answers` off, never on.
+- **Teleport moves a transcript, a profile and code, and trusts none of them.**
+  `belai -teleport` (`internal/teleport`, docs/teleport.md) continues a session of
+  the account on this host. The rules:
+  - **What moves.** The session transcript, the agent profile the session ran
+    under with the crews that list it and their members when this host lacks
+    them, and the code the session changed (the Code bullet below). No provider,
+    credential, setting or schedule. A scheduled profile is
+    not installed. The session's mode and active profile become the new
+    session's own record; its model is a hint applied only where this host
+    already has that provider credentialed; its plan and goal names, guardrails
+    state and working directory never carry (`session.Meta` is rebuilt, and the
+    directory is where the command ran or a worktree teleport made).
+  - **The transcript is untrusted.** It came through the backend from another
+    host. `teleport.verify` requires every line from 0 to the frozen snapshot,
+    once each and in order, with shaped ids, types and roles and bounded sizes;
+    `teleport.build` runs every content and meta string through `sanitize.Text`,
+    drops the origin's `session_meta` lines and rebuilds one root. A gap or a
+    short page is a refusal, never a partial session. `session.Store.Import` is
+    O_EXCL, so a teleport never replaces a session, and a failed teleport removes
+    what it wrote.
+  - **A profile and a crew are installed like any library install.** The one
+    installer is `internal/libinstall`, shared with the rc daemon: strict parse,
+    validated whole, no replace without the request's say-so, members before the
+    crew. Do not add a second installer.
+  - **Git is hardened.** The session's git facts are the origin's remote,
+    branch, abbreviated HEAD and dirty flag; its code travels only as the Code
+    bullet says. The remote
+    must match this checkout; a missing commit is fetched from origin and refused
+    when still missing (`-teleport-ref` is the user's explicit override, shape
+    checked). A mismatched checkout gets a worktree under `config.WorktreesDir`
+    and is never moved. Every git call is `forge.HardenedGit`, with ids passed
+    after `--end-of-options` or `--`. The worktree is trusted for the directory
+    only, after the repository was.
+  - **The backend gates and forgets.** Every read is answered only for a ready
+    teleport row naming this target host, the same principal, and a manifest
+    entry (`belai_teleport.go`). A sandbox is never a target. Each request makes
+    a new row and a new session. A `teleport_backup` request is made by the
+    backend alone, never by the browser, and the origin host uploads only while it
+    is delivered. The row keeps ids, status and times for audit and outlives the
+    sessions it names; its `coord` column (git facts, manifest, overrides, the
+    code result) is cleared when the teleport completes, fails or expires. A
+    session's origin is read from the row, never from a field the host sends.
+  - **Ack before opening.** The new session is kept only once the backend has
+    recorded the teleport, so a session that came from another never exists
+    without its audit record. The target's `host.teleport` audit event names the
+    new session and the origin id only.
+  - **Code goes by a branch the origin pushed, or by a replay the target
+    finishes, and never by trust.** A `teleport_code` request (made by the
+    backend alone, answered by an upload only the delivered request can make,
+    status `syncing_code`) asks the origin host to read its own working tree. The
+    request carries identifiers only (the teleport, the session's directory, the
+    user's agreement to a branch, whether the forge is not to be tried); the
+    daemon re-checks the directory against its own list and never reads a path
+    from the request. It never fails a teleport: the transcript and profile
+    move regardless and the target says why the changes did not.
+    - **What may leave the origin** is decided by the origin host
+      (`internal/teleport/changes`): a credential-bearing file (the locate
+      eligibility names), a binary, a file over 256 KiB, a symbolic link, a path
+      outside `[A-Za-z0-9._@+/-]`, anything inside `.git` or `.vulnetix` and
+      anything git ignores never travel; the final state is built in a throwaway
+      index, so the checkout, its index and its refs are never changed. A patch
+      over 512 KiB or 200 files is not sent.
+    - **A push is the user's and the host's.** `teleport.push` (`ask` by default,
+      `allow`, `never`; user layers only, `resolve.go` drops the project layer)
+      and the target user's `-teleport-push` decide it: `ask` pushes only with the
+      flag, `allow` whenever asked, `never` never; any other value is `never`. It
+      pushes one commit by an explicit refspec to `origin` as
+      `belai/teleport/<id>` and nothing else, never a user's branch, never forced.
+      A target that cannot fetch the branch asks once for a replay, and the
+      origin then does not push.
+    - **A replay is untrusted from the first byte.** The patch is parsed against
+      a closed grammar (`changes.ParsePatch`: no rename, copy, binary patch, symlink
+      or submodule mode, no mode but 100644 and 100755, no path outside the
+      repository or inside `.git` or `.vulnetix`, hunk counts exact) and applied
+      by git file by file in a worktree the teleport made, never the user's
+      checkout, which refuses a path through a symlink. Do not add a second patch
+      parser or apply a patch another way.
+    - **The hand-over is another host's model's text.** The origin's summary and
+      instructions and the parts of the patch that did not apply reach the target's
+      model only as `agent.TeleportReplay`, a sanitised attachment classified
+      unconditionally (`tools.KindTeleport` is in `classifierKinds`, withheld means
+      not replayed), never as prompt text, a directive or part of the system
+      block; the harness's own facts (paths, counts) ride in the directive. The
+      replay session has file tools only (`Read`, `Write`, `Edit`, `Grep`, `Glob`,
+      `LS`) so no word of the hand-over can run a command or reach the network.
+      Do not widen `replayTools`.
+    - **Verification is the harness's, then a decision's.** An exact match of the
+      checkout's tree to the origin's (`changes.Matches`) is verified without a
+      model. Otherwise `teleport_verify` (`internal/rolemanager/jev/teleport.go`,
+      the goal judge's cut-offs) rates the origin's summary and harness facts
+      (paths and counts), then the model sentinel (`TELEPORT_VERIFIED`,
+      `TELEPORT_INCOMPLETE`, `TELEPORT_FAILED`) is the fallback. A malformed
+      verdict is incomplete, a verified rating is never accepted for a file the
+      checkout lacks, and at most three model passes run. The `teleport_distill`
+      role writes the hand-over from the file list and the patch (capped) with a
+      harness fallback that holds no patch text.
 - **Remote control starts sessions only where the host said, with asks off.**
   `belai rc` (`internal/rc`) offers only trusted projects and `--dir`
   directories (a `--dir` is trusted like `-trust-dir`: the directory only).
   Every website request is untrusted: the daemon re-checks the directory
   against its own list (exact match after resolving symlinks, never a
   prefix), the `rc-session` child checks trust again and fails closed, and
-  the prompt is cleaned and admitted like a typed one. The website never
-  picks the provider, model, posture or permissions. rc refuses to run with
+  the prompt is cleaned and admitted like a typed one. Without
+  `--web-controls` the website never changes a session's provider, model,
+  posture or permissions after the start request, rc refuses to run with
   guardrails off, sessions run with `AllowAsk` false and web answers off
-  (never `AskDisabled`, which would allow every ask), and the prompt reaches
-  the child on stdin, never argv. The heartbeat's worker entries are
+  (never `AskDisabled`, which would allow every ask); a guardrails-off
+  project preference is overridden to on for a remote session, never honoured
+  without the host's flag. The prompt reaches the child on stdin, never argv. The heartbeat's worker entries are
   registry facts plus a tail of each worker's own log, read by id from the
   fleet log directory (never a path from a record), cleaned with
   `sessionsync.CleanLogLine` and capped per line, per worker and in total.
   That log holds harness lines and the worker process's stderr only; nothing
-  may write model output or item text to it. A website `pause` or `resume`
+  may write model output or item text to it. An offered directory carries only
+  identifier-shaped git facts read from its files (`rc/dirgit.go`: owner/repo,
+  forge host and kind, branch, default branch), never a URL or a credential. A
+  `library_sync` request runs one pass of the automatic library sync and is
+  acknowledged with counts only. A website `pause` or `resume`
   request names a worker id only: the daemon accepts it when it has the shape
   of an id (`fleet.ValidID`) and the worker is live in the host's own
   registry, and otherwise refuses it with a reason. It sets or clears the
   worker's empty pause marker and does nothing else.
+- **Web session controls are the host's opt-in and a fixed table.**
+  `belai rc --web-controls` passes `-controls` to each `rc-session` as fixed
+  argv, and only then does the syncer take `commands` from the inbox
+  (`sessionsync.RemoteCommand`: one slash line or one key). Each is parsed by
+  `internal/sessionctl`, the same table the TUI's control commands use, and
+  nothing outside it runs: never a free-form slash command, `!cmd` or `@`. Every
+  value is checked there or by an existing validator (a model through
+  `rc.CheckModel` against the host's credentialed providers, Jev thresholds by
+  `JevThresholdSettings.Validate`, known job and language names). A control
+  changes that session only (`sessionctl.State.Apply` on a copy of the
+  settings) and writes no settings file; a change that needs it rebuilds the
+  agent session between turns (`rc.Controller`), keeping the history. Guardrails
+  may be turned off only with `--web-allow-guardrails-off` (refused without
+  `--web-controls`), and off means `posture.AllIgnore()` as everywhere. Ask on
+  routes permission and clarify asks to the web through `rc`'s ask bridge,
+  recorded and validated as the TUI does (`internal/webask`): only an explicit
+  allow runs a call, allow-always is remembered in memory for that session,
+  and an unanswered ask is denied after `rc.DefaultAskWait`. Ask off mirrors
+  `f4` (`AskDisabled`), so it is part of the same opt-in. Each applied control
+  writes a harness-composed transcript line and its ack carries the state;
+  refusal reasons are harness text. Auto-commit commits only the paths a
+  completed goal's tools changed through `forge.CommitPaths`, and the post-end
+  test pass is `headless.RunPostEnd` under the session's gates.
+- **Web project settings write the host's preferences only.**
+  `belai rc --web-project-settings` advertises each offered directory's
+  `config.ProjectPrefs` as flat keys with their resolved value and origin, and
+  takes `project_prefs` requests naming an offered directory (the same exact
+  match as a start) and flat keys to set or clear. Only `config.PrefKeys` can be
+  named, each value is a boolean, a word from the key's fixed set or a number in
+  [0,1], and the result must pass `ProjectPrefs.ValidateOver` before it is
+  written to the host-private preference file, never the repository. A
+  preference that later fails validation is dropped by `config.Resolve` with a
+  note rather than stopping Belai. The acknowledgement holds counts and the
+  directory's base name only.
+- **A scheduled agent starts only what a worker request could.**
+  `internal/schedule` records (profile, cron, directory, on/off) sync with the
+  website like kanban cards, and the website may edit them but never run one or
+  supply a prompt, model, posture or permission. The `belai rc` ticker fires a
+  due record only through `startWorkers`: the daemon matches the directory
+  against its own list, the profile must be a worker profile in its own
+  catalogue, and `belai agent start -drain` applies the trust check, the
+  preflight and the worker cap. A record the host cannot accept (a cron that
+  does not parse, a directory it does not offer, an unknown profile) is turned
+  off with a status, never applied. The run record (last run, status, next run)
+  is written only by the host and a pull never replaces it. A run missed while
+  the daemon was down is skipped, a schedule fires at most once per cron tick,
+  and the start is recorded before it fires so a crash cannot double fire. Once
+  a started worker stops, the status is updated to `worked`, `drained` or
+  `worker_failed`. Text pulled from the website is cleaned before it is stored,
+  and `schedules.json` is private (0600). Every firing, outcome update and
+  refusal is a `host.schedule` audit event.
+- **A web profile install is the user's own action, and is validated as a
+  profile.** The
+  website keeps a library of agent profiles (versions in S3, indexed per
+  tenant) and asks a host to back one up or install one through the dispatch
+  queue, `profile_backup` and `profile_install`. A request carries identifiers
+  only, and the server answers a host's upload or fetch only for the request that
+  names it, while it is delivered to that host. A backup writes nothing on the
+  host. An install is made by a person with their own login, so it is not held to
+  the rules for web prompts: it does not need `sync.remote_prompts` and a
+  profile may be as permissive as the user chooses. The fetched markdown is still
+  parsed strictly and validated whole (`agentprofile`), and it is refused if it
+  is not a valid profile, names a built-in, would replace a profile without an
+  explicit replace and the same `id`, or reuses another profile's display name.
+  The reason sent back is harness text with a short cleaned excerpt, never the
+  profile. The server checks shape and size only; the host's validation is the
+  authority. Do not add a content rule here that a prompt would need.
+- **A library item is a document that validates whole, and is the user's to
+  switch off per kind.** The website keeps skills, prompts and the other
+  documents in [docs/library-items.md](docs/library-items.md) and asks a host
+  to back one up or install one through the dispatch queue (`item_backup`,
+  `item_install`), identifiers only. `internal/libitem` is the one validator:
+  canonical bytes, a closed schema (an unknown or wrongly cased key is refused),
+  bounded sizes and a name that cannot name a path, reusing the loader's and the
+  settings validators rather than copying them. `internal/libstore` is the one
+  writer: it never replaces an item without the request's say-so, never writes
+  through a symbolic link, and writes atomically at `0600`/`0700`. A skill or a
+  prompt is untrusted text and is refused, not repaired, when
+  `libstore.untrustedGate` finds delimiter markup, a control or escape character,
+  a bidirectional override or an invisible rune, so what is stored is what the
+  library holds. Each kind has its own `sync.<kinds>` switch (a project layer may
+  turn it off, never on): off means nothing is hashed, advertised or sent for it
+  and its requests are refused. A refusal reason is harness text and never the
+  document, only the user's global layers are read or written, and a host never
+  advertises more than kind, name and hash. A structured process is an argv run
+  with no shell: a secret-looking `env` name takes only `env:OTHER` (the value is
+  copied from the host at start, an unset one refuses the start), `user` is
+  honoured only when Belai is root and never falls back to the current user, a
+  redirect file is `0600` and never opened through a link, the sandbox's writable
+  roots stay the project directory whatever `cwd` says, and the recovery subagent
+  restarts it exactly as defined, never amended. A repository item is configuration only: `belai repo sync` runs
+  git as an argv with hooks off, no prompts and only the https and ssh transports,
+  never puts a token in a URL or an argument (a private https repository goes
+  through the GitHub CLI's credential helper or fails with that reason), moves a
+  branch by fast-forward only, refuses a dirty tracked tree or a diverged branch
+  instead of resetting, never touches an untracked file, and never follows a
+  symbolic link in the checkout path; the project layer's `repos` is dropped. A budget set and the Bash rewrite table are the host's one
+  configuration of their kind: an install over an existing one needs the request's
+  replace flag, writes only the user's global settings file (atomically, keeping
+  every other key), and runs Belai's own validators (`ValidateTokenBudgets`,
+  `ValidateBashRewrite`) before anything is written, so a document the library
+  accepts is never written as a setting Belai refuses to load. A provider set holds no key (the schema refuses one):
+  keys reach a host only through `provider_keys_install`, which the library answers
+  once, over TLS, for the slugs the request names; the host checks each key (not
+  empty, at most 4096 bytes, no control character), stores it only in the credentials
+  resolver under the provider's own name (`credentials.NewGlobalResolver`), never in
+  settings, a log, an acknowledgement, an audit event, a session record or an error,
+  and `sessionsync.ProviderKey` redacts itself through every `fmt` verb and JSON.
+- **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
+  what comes back.** An `avatar` request names an agent creator by id and is
+  accepted only while `sync.remote_prompts` is on, one drawing at a time. The
+  display name, colours and personality are the website's text: cleaned to capped
+  lines, admitted through the security classifier under the effective posture,
+  and sent to the model only as labelled data under a system text that is the
+  harness's own. The reply is parsed against a closed list of drawing elements
+  and attributes; any element, attribute, reference, entity, comment or size
+  outside the list refuses the whole image, nothing is repaired, and the bytes
+  posted back are the guard's own serialisation. A refusal is a harness-worded
+  reason, never model or provider text. The image is never read back into a model
+  and is rendered only as an image; the server and the website admit it again.
+  Never add an element to the list that can run code or fetch.
+  A built-in agent's avatar is a drawing shipped with the profile
+  (`internal/agentprofile/builtin/avatars`), never one made at run time, and
+  `TestPersonaAvatarsAreAdmitted` holds each to the same guard, unchanged.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line
@@ -876,6 +1475,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   computed from the host's own profiles, never drafted. The host posts offers
   back and writes no profile, setting or file. A refusal reason is harness
   text, never model or provider output.
+
+- **A vault value never leaves a tool call unscrubbed.** The environment variables a
+  Pix sandbox gets from the secrets vault (`internal/vaultenv`) are held in memory,
+  set only on the process a command starts, and replaced by `[vault:NAME]` in the tool
+  result, the transcript, a background log and this process's own stdout and stderr.
+  Any new place that writes a tool's output or a transcript line must pass it through
+  `vaultenv.Default.Scrub` or `ScrubBytes`. See [docs/vault-env.md](docs/vault-env.md).
 
 ## Layout
 

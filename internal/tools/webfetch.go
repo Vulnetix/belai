@@ -6,7 +6,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/httpclient"
@@ -17,6 +19,10 @@ import (
 // WebFetch is the web-fetch tool with SSRF protection.
 type WebFetch struct {
 	Client *http.Client
+	// Pages is the session's page cache and index feed (docs/web-fetch.md).
+	// nil, or a store nothing enabled, leaves WebFetch as it was: every call
+	// goes to the network and nothing is kept.
+	Pages *WebPages
 }
 
 // Definition returns the static tool metadata.
@@ -61,6 +67,25 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 		return Result{}, fmt.Errorf("invalid url: %w", err)
 	}
 	fetchURL := u.String()
+	key := pageKey(u)
+	prompt, _ := args["prompt"].(string)
+	prompt = strings.TrimSpace(prompt)
+
+	// A cached page was admitted earlier in this session and is returned as an
+	// ordinary result: the session sanitises and classifies it exactly as it
+	// does a fresh one. The check above (scheme, host, address literal) has
+	// already run on the canonical URL; only the network round trip is
+	// skipped.
+	if text, age, ok := w.Pages.lookup(key); ok {
+		meta := map[string]any{MetaWebFetchKey: key, MetaWebFetchAge: int(age / time.Second)}
+		if prompt != "" {
+			// The answer's header carries the note; the page text is only
+			// what the answering role reads.
+			meta[MetaWebFetchPrompt], meta[MetaWebFetchURL] = prompt, raw
+			return Result{Kind: KindWebFetch, Content: text, Meta: meta}, nil
+		}
+		return Result{Kind: KindWebFetch, Content: CacheNote(age) + "\n\n" + text, Meta: meta}, nil
+	}
 
 	host := u.Hostname()
 
@@ -124,10 +149,33 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	res := WebFetchResult(text)
 	// A prompt asks the harness to answer it over the page instead of
 	// returning the page (see WebFetchPrompt); the tool only carries it.
-	if p, ok := args["prompt"].(string); ok && strings.TrimSpace(p) != "" {
-		res.Meta = map[string]any{MetaWebFetchPrompt: strings.TrimSpace(p), MetaWebFetchURL: raw}
+	if prompt != "" {
+		res.Meta = map[string]any{MetaWebFetchPrompt: prompt, MetaWebFetchURL: raw}
+	}
+	// A page is staged for the cache and the index only when the server
+	// answered 2xx, so an error page is never served again. The session turns
+	// the stage into a cache entry only after the result is admitted.
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 && w.Pages.active() {
+		if token := w.Pages.stage(key, text); token != "" {
+			if res.Meta == nil {
+				res.Meta = map[string]any{}
+			}
+			res.Meta[MetaWebFetchKey], res.Meta[MetaWebFetchStage] = key, token
+		}
 	}
 	return res, nil
+}
+
+// pageKey is the cache and index key of a checked URL: its canonical form
+// without the fragment (never sent to a server) and without a default port, so
+// the spellings of one page share an entry.
+func pageKey(u *url.URL) string {
+	c := *u
+	c.Fragment, c.RawFragment = "", ""
+	if port := c.Port(); (port == "80" && c.Scheme == "http") || (port == "443" && c.Scheme == "https") {
+		c.Host = strings.TrimSuffix(c.Host, ":"+port)
+	}
+	return c.String()
 }
 
 // Result metadata keys WebFetch sets when the call carried a prompt.

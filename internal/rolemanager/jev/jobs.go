@@ -350,3 +350,29 @@ func PickScale(scores map[string]float64) (Scale, float64) {
 	}
 	return ScaleUnknown, 0
 }
+
+// AgentDefaultID is the pick option that stands for "no profile": the model
+// may always decline, so a poor match is never forced.
+const AgentDefaultID = "default"
+
+// agentPickQuestion is the shared question every agent profile is ranked by.
+const agentPickQuestion = "Which option is the best fit to carry out the request in state.context? Choose default unless one profile clearly matches what the request asks for."
+
+// PickAgent ranks the user's agent profiles for a request, with a final
+// default option that means no profile. offers are the profiles, each with an
+// identifier-safe ID the caller maps back to a name and a description; the
+// request is the user's prompt. Both reach the backend only as DecisionText.
+func (j *Jobs) PickAgent(ctx context.Context, request string, offers []ScoreItem) (PickResult, error) {
+	opts := make([]ScoreItem, 0, len(offers)+1)
+	opts = append(opts, offers...)
+	opts = append(opts, ScoreItem{
+		ID:    AgentDefaultID,
+		Label: sanitize.ForDecision("default: a general coding request that none of the listed profiles clearly fits", 0),
+	})
+	return j.Client.Pick(ctx, PickRequest{
+		Job:      string(config.JevAgentPick),
+		Question: sanitize.ForDecision(agentPickQuestion, 0),
+		Context:  sanitize.ForDecision("User request: "+request, 1500),
+		Options:  opts,
+	})
+}

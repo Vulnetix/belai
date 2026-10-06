@@ -2,12 +2,11 @@
 import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
-import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 import Shot from '../ui/Shot.astro';
+import PermissionFlow from '../figures/PermissionFlow.astro';
 import permMerge from '../../assets/concepts/permission-merge.svg?raw';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
-import permissionsShot from '../../assets/shots/permissions.svg';
 
 const sealText =
   'Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff.';
@@ -31,44 +30,34 @@ const limits = [
   ['Grants add up', 'Merging adds grants and keeps where each came from. It never widens a surface on its own, and an explicit deny beats every allow.'],
   ['When no rule matches', 'The call is allowed by default. Set `permission_no_match` to `enforce` and it is blocked.'],
   ['Rules read the command', 'A Bash rule is matched against each command the line contains, not the raw text. `Bash(git status*)` does not approve `git status; rm -rf x`, and a deny for `git push` also stops `env git push` and `sh -c \'git push\'`.'],
-  ['Some calls always ask', 'A `Screenshot` of the desktop asks every time, whatever a rule or the ask switch says, and is withheld when nobody can be asked. A page on your own machine follows the ordinary rules, so `Screenshot(url:http://127.0.0.1:*)` lets your dev server through and never the desktop.'],
+  ['Some calls always ask', 'A desktop `Screenshot` asks every time, whatever your rules say. Pages on localhost follow your rules, so `Screenshot(url:http://127.0.0.1:*)` lets your dev server through.'],
   ['The switch comes first', 'Every gated path checks the guardrails switch before calling the classifier, so turning a gate off also stops its classifier calls.'],
 ];
 ---
 
 <SealedSection label="permissions" sealText={sealText} id="permissions">
-  <SectionHead title="Permissions">
+  <SectionHead title="Permissions" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
     Each tool is set to allow, deny or ask. With ask, you see the diff before a tool that changes files
     runs.
   </SectionHead>
 
-  <Ladder steps={rules} from="runs on its own" to="withheld, whatever else says">
-    <svg slot="art-0" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="10" y="18" width="130" height="34" rx="8" class="fill-vx-bone" />
-      <text x="24" y="40" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">Read(**)</text>
-      <path d="M140 35 H220" />
-      <circle cx="240" cy="35" r="14" class="fill-vx-mint-strong" stroke="none" />
-    </svg>
-    <svg slot="art-1" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="10" y="10" width="300" height="50" rx="8" />
-      <text x="24" y="30" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-coral" stroke="none">− user := r.URL.Query()</text>
-      <text x="24" y="48" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-mint-strong" stroke="none">+ name := r.URL.Query()</text>
-    </svg>
-    <svg slot="art-2" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-      <rect x="10" y="18" width="130" height="34" rx="8" class="stroke-vx-cream/40" />
-      <text x="24" y="40" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-cream" stroke="none">Bash(rm *)</text>
-      <path d="M140 35 H200" />
-      <path d="M214 23 L238 47 M238 23 L214 47" class="stroke-vx-coral" stroke-width="3" />
-    </svg>
-  </Ladder>
+  <PermissionFlow />
+  <dl class="mt-8 grid gap-6 @3xl:grid-cols-3">
+    {rules.map((r) => (
+      <div class="border-t border-vx-ink pt-3">
+        <dt class="mono text-sm font-semibold">{r.name}</dt>
+        <dd class="m-0 mt-1 text-sm text-vx-ink/80">{r.lead}</dd>
+      </div>
+    ))}
+  </dl>
 
   <SubHead title="Where a grant comes from">
     The permissions in effect combine policy, session, tool kind and role. Each grant records which of
     these added it, and <code class="mono">/permissions</code> shows it.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-2 @4xl:items-center">
     <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
-    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-2">
+    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @xl:grid-cols-2">
       {sources.map(([k, v]) => (
         <div class="bg-vx-cream p-5">
           <dt class="mono font-semibold">{k}</dt>
@@ -82,10 +71,15 @@ const limits = [
     The approval prompt shows the diff of the change as well as the path, and allow-always writes the
     rule it names.
   </SubHead>
-  <div class="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
-    <Shot src={approvalDiffShot.src} alt="The approval prompt showing a diff" caption="approval prompt, diff in the prompt" />
-    <Shot src={permissionsShot.src} alt="The permissions screen" caption="/permissions" />
-  </div>
+  <Shot
+    class="mt-8"
+    shot={approvalDiffShot}
+    title="approve edit"
+    alt="The approval prompt showing a diff with one line removed and one added, and the approve, deny and view full diff buttons"
+    rows={[0, 12]}
+    marks={[{ row: 7, col: 92 }, { row: 11, col: 40 }]}
+    notes={['The change itself, line by line, before anything is written.', 'Approve, deny or open the full diff.']}
+  />
 
   <SubHead title="One switch for every surface">
     <code class="mono">f3</code> turns guardrails off for every surface at once, and a red{' '}
@@ -102,7 +96,7 @@ const limits = [
       <rect x="40" y="130" width="104" height="52" rx="26" class="gs-off fill-vx-coral/15 stroke-vx-coral" />
       <circle cx="118" cy="156" r="20" class="gs-knob fill-vx-cream" />
       <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-on" fill="currentColor" stroke="none">on</text>
-      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-off fill-[#B8332E]" stroke="none">off</text>
+      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-off fill-vx-red-deep" stroke="none">off</text>
 
       <rect x="24" y="278" width="220" height="44" rx="8" class="fill-tui-ink" stroke="none" />
       <text x="40" y="305" font-family="Geist Mono, monospace" font-size="13" class="gs-on fill-tui-teal" stroke="none">● guardrails  ● ask</text>
@@ -139,5 +133,5 @@ const limits = [
     </svg>
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

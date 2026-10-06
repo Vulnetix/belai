@@ -22,7 +22,6 @@ import (
 // Scan bounds: never walk unboundedly.
 const (
 	scanTimeout = 5 * time.Second
-	maxDirs     = 200
 	// maxFiles caps files counted per top-level directory in layout and
 	// across the whole tree in languages. The split is intended: layout
 	// summarises each directory independently, languages the whole tree.

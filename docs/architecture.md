@@ -22,7 +22,7 @@ chain: default < state < global < project prefs < project < env < flag):
 
 ```jsonc
 "classifier": {
-  "kind":   "models",           // "llm" | "jev" | "models"; default models when embedded, else llm| "models"; default models when embedded, else llm
+  "kind":   "models",           // "llm" | "models" | "openrouter-decisions" | "systemone"; default models when embedded, else llm
   "provider": "openrouter",      // llm: omit → main provider; models: phase 3 (extraction/jailbreak) sentinel
   "model":    "typesafe/jev-1.13", // openrouter → the Jev Decisions gate model; huggingface → a curated BERT id
   "effort":   "none",             // default: reasoning OFF
@@ -58,10 +58,14 @@ chat, rather than classify with a model nobody asked for. A file written
 before the kinds existed reads as what it is (`run.ClassifierKind`): `kind:
 "llm"` with an OpenRouter Jev model or the local decision provider, and
 `kind: "jev"` naming OpenRouter or the local provider, read as
-`openrouter-decisions`; `typesafe` reads as `jev`. In `/model`, the kind row
-cycles `llm`, `models`, `openrouter-decisions`, `jev`. Choosing a decision
+`openrouter-decisions`; `typesafe` and `strands-decider` read as
+`systemone`, and so does any other `kind: "jev"` (the kind's name before
+many servers spoke `/v1/systemone`; `config.NormalizeKinds` rewrites it on
+load, for provider profiles too). In `/model`, the kind row cycles `llm`,
+`models`, `openrouter-decisions`, `systemone`. Choosing a decision
 kind whose backend is not selected starts on OpenRouter's Jev model
-(`openrouter-decisions`) or `typesafe/jev-latest` (`jev`); leaving a decision
+(`openrouter-decisions`) or, under `systemone`, Strands Decider-2B when it is
+detected on this machine (local first) and `typesafe/jev-latest` otherwise; leaving a decision
 kind clears the selection so the guard returns to the main model. A kind whose
 test fails saves nothing, and the next press of the kind row moves on from the
 kind that was tried, so an unreachable backend (no key, no network) never
@@ -146,12 +150,15 @@ Business rules:
   never a chat model, so it appears on the classifier picker only and never on
   the agent or routing pickers.
 - **Decision backends.** Besides OpenRouter's Jev, the classifier can name
-  TypeSafe's hosted API (the built-in `typesafe` provider), a self-hosted Jev
-  server (a provider profile of kind `jev`, TypeSafe's `/v1/systemone`) or
-  the local decision model (`decision-local`: Decider-4B
-  or Plumb-4B on a shared llama-server). Whichever is set answers every Jev
-  job: security, intent detection and routing. `internal/decisions` holds the
-  transports, `internal/decisionserver` the shared local server, and
+  TypeSafe's hosted API (the built-in `typesafe` provider), Strands
+  Decider-2B on this machine (the built-in `strands-decider` provider,
+  upstream's `strands-decider serve` on loopback), a server speaking the
+  `/v1/systemone` API (a provider profile of kind `systemone`) or the local
+  decision model (`decision-local`: Decider-4B or Plumb-4B on a shared
+  llama-server). Whichever is set answers every Jev job: security, intent
+  detection and routing. `internal/decisions` holds the transports,
+  `internal/decisionserver` the shared local llama-server,
+  `internal/deciderserver` the shared Strands Decider server, and
   docs/role-manager.md "Decision backends" the details.
 - **Selections are tested before they are saved.** A `/model` edit that
   selects a model runs the `internal/modeltest` ladder and is written only on
@@ -245,7 +252,7 @@ Business rules and edge cases:
   available on the classifier picker only.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
-  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft` and `delivery_report`. Unknown keys may be stored
+  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill` and `teleport_verify`. Unknown keys may be stored
   but are not consulted.
 - **Candidates are validated.** A use-case target must set at least one of
   `provider` or `model`. Provider names are validated against the built-in and
@@ -297,7 +304,7 @@ Business rules and edge cases:
   the agent's later work. The `test_report` role, which writes the short report
   after a passing [post-end test pass](testing.md#pass-the-report), is a fast
   use case too, and falls back to a harness-composed line when the fast model is
-  unavailable. The delivery crew's `gate_draft` and `delivery_report` roles are fast use cases too, each with a harness-composed fallback (see [Delivery role payloads](role-manager.md#delivery-role-payloads)).
+  unavailable. The delivery crew's `gate_draft` and `delivery_report` roles are fast use cases too, each with a harness-composed fallback (see [Delivery role payloads](role-manager.md#delivery-role-payloads)). A teleport's `teleport_distill` and `teleport_verify` are fast use cases too (see [Teleport roles](role-manager.md#teleport-roles)).
 - **Precedence per use case:** a fast use case goes to the fast tier whenever
   one exists, under `defined` and `routed` alike. Under `routed` it skips Jev
   entirely: no Decisions call, no `route_fallback`, and no pool candidate,
@@ -536,7 +543,7 @@ variables.
 **Where the session id comes from.** The TUI wraps each turn's context with its
 current session id and pushes it into the background agent and process
 managers (`SetSessionID`), including after `/new`, resume and plan fork.
-Explore subagents inherit the parent's id. A headless `belai -p` run mints a
+Explore subagents inherit the parent's id. A headless `belai -prompt` run mints a
 fresh id per invocation. The TUI's direct tool runs (inline `!cmd`, `@file`
 admission, the file picker) carry it too.
 
@@ -554,7 +561,9 @@ and is tracked as future work.
 
 ## Modes
 
-`internal/modes` defines three modes; agent is the default.
+`internal/modes` defines four modes; agent is the default. Code mode is agent
+mode with the `Code` script tool and without directly advertised MCP tools
+([code-mode.md](code-mode.md)); it is chosen by name and never classified into.
 
 ### Agent mode
 
@@ -1782,7 +1791,7 @@ session name or short id. Entry types:
 | `rolemanager` | `rolemanager` | a role-manager decision line, with `summary` / `outcome` / `tone` / `level` in `meta` |
 | `completion` | `completion` | the harness-composed agent-mode completion panel body (never sent to a model) |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
-| `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
+| `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `teleportedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
 | `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
 | `branch` | *(empty)* | `/tree` moved the session to an earlier entry: `meta.from_entry` is the leaf left, `meta.to_entry` the entry the next one hangs from; the marker's own `parentId` is `to_entry` |
@@ -1822,6 +1831,19 @@ and `originCwd`, because `App.workdir` is the tool-confinement boundary and
 must never be silently widened to another tree. Legacy schema-1 files rehydrate
 text-only (tool history predates persistence) and gain a backfilled
 `session_meta` on first same-key resume.
+
+Teleport (`belai -teleport <id>`, [teleport.md](teleport.md)) is the third way
+to open a session that already exists. It does not read the origin's file: the
+transcript comes from the backend's mirror, frozen at the line the session had
+reached. `internal/teleport` checks that every line arrived once and in order,
+cleans every text and meta string, drops the origin's `session_meta` lines,
+rebuilds one root with a fresh `session_meta` (`cwd` is this host's,
+`teleportedFrom` the origin id, mode and active profile from the origin's last
+record, no plan, goal or repo map head) and writes it with `Store.Import` under
+a new id, `O_EXCL` so nothing is replaced. The TUI then resumes it through the
+same `ResumeKey`/`ResumeSession` path, as a same-project resume. A checkout at a
+different commit gets a git worktree, so `App.workdir` stays the confinement
+boundary it was started in.
 
 Entries are appended by `persistTail`, which writes only *settled* messages: a
 tool row waits for its result, and an assistant `tool_calls` entry waits for
@@ -1876,6 +1898,19 @@ own `At`. A transcript row takes the time of the event that created it
 (`Message.CreatedAt`), and `timestamp` on disk is that time. Rows appended
 immediately (the user prompt, session name) use the write time, which is the
 same thing.
+
+**The thread is placed by those times.** Agent events and role-manager decisions
+reach the TUI on two channels read independently, so a decision made before a
+tool result can arrive after it. `placeByTime` (`internal/tui/timing.go`) moves a
+notice or card back over rows of the same turn that were stamped later. It never
+crosses a user prompt, and it only moves `rolemanager`, `system`, report and
+vulnerability rows: user, assistant, reasoning and tool rows are paired by their
+neighbours. A row that needs no write (a decision already recorded, an
+ephemeral card) may move anywhere in the turn and the persistence cursor then
+covers it; a row still to be written never moves behind the cursor. Under
+`ui.layout` `chronological` ([settings](settings.md#layout)) every row an agent
+event creates is placed this way and the renderer drops the streaming hoist and
+labels each panel with its time; under `clean` only decisions are placed.
 
 **Durations say where the time went.** `meta.duration_ms` is recorded for:
 
@@ -1994,7 +2029,11 @@ The footer is a rule plus three content lines:
   for goal), cwd (home collapsed to `~`) and git branch (`⎇ main`), joined by
   `·`. The mode chip carries the engaged agent when there is one —
   `agent · reviewer` — so what is carrying the turn is visible without opening
-  anything. cwd and branch are omitted entirely when unset, so a non-git
+  anything. An agent with a persona is named by its display name
+  (`agent · Kremvax`) and the accents take its colours (see
+  [Agent personas](tui-design.md#agent-personas)); in auto mode the slot names
+  the mode the classifier picked and while a plan runs it reads `executing`,
+  and the colours still follow the engaged agent. cwd and branch are omitted entirely when unset, so a non-git
   directory shows the chip alone — until the agent moves, at which point the
   directory renders even outside a repository, because a footer that
   disagreed with the paths in the transcript would be worse than no footer.
@@ -2072,7 +2111,17 @@ Context usage has three degraded renderings:
 - `(?)` instead of a percentage — the window is unknown, or the anchor predates
   a `/compact` (stale), so the context bar is empty and muted.
 - a coloured bar and percentage — only when anchored and fresh; `<20%`
-  remaining reads red, `<50%` remaining reads amber, otherwise teal.
+  remaining reads red, `<50%` remaining reads amber, otherwise teal. The full
+  segment labels the figure (`tokens: 150k/200k (25% left)`); the shed form on
+  a tight line states fullness (`ctx 75%`), coloured by the same remaining-share
+  rule.
+
+A tool-call count (`tools: 12`, shed to `12 tools` on the tightest line, absent
+at zero) sits between the context segment and the bar. It is the main thread's
+tool rows for the current turn: `turnToolCounts` in `internal/tui/completion.go`,
+the same counter the completion panel reports, so the two cannot disagree. Like
+the rest of the footer it is a number drawn from session state and never
+reaches a prompt, a directive or telemetry (the session-intelligence rule).
 
 Progress-bar business rules: the bar is 10 cells, filled by
 `tokens / context window` clamped to [0, 1] at eighth-cell resolution
@@ -2756,6 +2805,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer; with a loaded library prompt, open the overwrite/delete action bar; otherwise save the prompt to the library |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | `ctrl+r` toggles the reasoning panel for the session (`shown`/`hidden`); `ctrl+t` cycles tool-row display auto → all → edits only → none |
+| `ctrl+q` | Toggle the session between its main model and its fast tier (chat). The press schedules the switch and writes an ephemeral thread line, `next turn will use fast|main model (provider/model)`; the model changes as the next turn starts (`App.send`), never mid-turn. A second press before then cancels it. Pressed during a running turn it interrupts that turn exactly as `esc` does (partial rows flushed, `request cancelled`) and re-dispatches the same prompt, attachments and directive on the other model without echoing the prompt again. Session-only: it goes through `applyModelProvider` like the `/model` session scope, writes no settings, and the saved last-used selection keeps the main model while the fast one is borrowed (`App.persistedModel`). Only the already-resolved fast tier (`routing.fast_model`, else the provider's registry fast model) is offered, so no `modeltest` run is needed; with none configured it says so. A model picked by hand meanwhile ends the swap. The security guard's `main` tier follows the session model while the fast one is borrowed |
 | `f2` | Toggle the caveman voice rewrite, persisting to the per-project preference file; the footer `caveman:` slot updates in the same frame |
 | `f3` | Toggle guardrails (the posture gates), from any screen |
 | `f4` | Toggle the permission-ask gate, from any screen |
@@ -2934,7 +2984,12 @@ prompt in the composer, so it is deliberately not `enter`.
 
 The engaged agent is session state: it applies to every following turn
 (`App.namedAgent` → `agent.TurnInput.ForceAgent`), shows in the footer chip
-next to the mode, and is cleared by `/clear`. It is **agent mode only**. Plan
+next to the mode, and is cleared by `/clear`. Every change of it ends in
+`refreshFooter`, which calls `App.syncPersona`: the accents take the agent's
+palette and the picker, the footer and the switch notice use its display name
+(`lookupAgentLook` reads the agent-profile definition of the name, so a flat
+profile such as `belai:debug` wears the definition's persona). ctrl+p cycles the
+list and each step re-themes live. It is **agent mode only**. Plan
 and goal mode carry Belai's own plan or goal — `resolveCarrier` admits
 exactly one carrier, and `ForceAgent` also forces the mode, so sending an
 engaged agent from plan mode would silently drop the mode the user picked.
@@ -2957,6 +3012,9 @@ foreground.
 - The picker is only visible in agent mode, only on the chat view, and only
   when no slash-completion popup or file chooser is active. An active `@`
   prefix hides the agent picker because the file chooser owns `@`.
+- Auto mode never opens the picker on `enter`: the role manager decides the
+  mode, and the `agent_pick` job may engage one of the user's profiles, for
+  each prompt.
 - Opening the picker sets the highlight to `belai:debug` when it exists; if
   the default built-in is missing, the first available candidate is selected.
 - Tab from a cold state (no highlight) lands on the first candidate; tab from
@@ -3505,7 +3563,10 @@ only turn it off or lower budgets — see [testing.md](testing.md)),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,
-`plan_explore`, `goal_explore`), `providers`,
+`plan_explore`, `goal_explore`), `knowledge` (`max_index_tokens`,
+`max_project_tokens`, `max_result_tokens`: the size of the retrieval store behind
+profile documents and `.vulnetix` output; global only, see
+[knowledge.md](knowledge.md)), `providers`,
 `caveman` (default off; toggled from any screen with `f2`),
 `guardrails` and `ask_permission` (both default on; toggled with `f3` and
 `f4`, or together with `/yolo` — the repo-visible project layer may only
@@ -3513,11 +3574,24 @@ tighten them, never loosen a global `true` back to `false`; the per-project
 user preference file may set them both ways),
 `vulnetix.firewall_enabled` (default off; toggled with `f10` — the project
 layer may only turn it off, the preference file may turn it on),
-`allow_project_providers`, and the `classifier` block
+`allow_project_providers` and `allow_project_workspace_dirs` (global-only
+opt-ins, both off by default: without them a project file's `providers`,
+`provider_labels` and `workspace_dirs` are dropped when settings merge, and a
+note says so in the transcript at startup; the `workspace_dirs` note is skipped
+once you have ruled on those directories. A project `workspace_dirs` entry takes
+effect only when you accept it by name in the first-run trust prompt or with
+`/add-dir`, which needs no opt-in), `vulnetix_sweep_enabled` and `vulnetix_sweep_roots` (the
+project sweep), the `vulnetix` block (`subcommands`, `timeout`, `autofix`,
+`gateway_url`, `firewall_enabled`, `dep_watch`, and the accepted but unused
+`continue_on_error` and `org_id`; each key's default and layer rule is in
+[vulnetix.md](vulnetix.md#review-settings)), and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
-in the Security classifier section above. That enumeration is the whole
-`config.Settings` struct, plus two keys that are accepted on read and never
-written back:
+in the Security classifier section above. Every other key has its own section
+in these pages; `TestEverySettingIsDocumented` fails when a key the struct
+accepts is named nowhere under `docs/`, and
+`TestEveryTopLevelSettingReachesTheEffectiveSettings` fails when one is
+accepted and saved but never takes effect. Two keys are accepted on read and
+never written back:
 
 - `bash_readonly` — the deprecated alias for `read_only`. `Settings.UnmarshalJSON`
   folds it into `read_only` only when the canonical key is absent, then clears
@@ -3609,6 +3683,21 @@ OpenAI-surface base URL, so the probe, the launch, and the stored credential
 can never disagree. The old hard-coded `18080` and duplicate port lists are
 gone.
 
+**Where model files are found.** `localinfer.FindModelFile` looks for exactly
+one repository file on disk before anything is downloaded, in this order, and
+uses the first match with no network call:
+
+1. Belai's own directory, `$BELAI_MODELS_DIR` or `<user cache>/belai/models`,
+   where a file is stored as `<org>--<repo>/<file>`.
+2. The Hugging Face hub cache, in `$HF_HUB_CACHE`, then `$HF_HOME/hub`, then
+   `~/.cache/huggingface/hub`, in any snapshot of `models--<org>--<repo>`.
+3. llama.cpp's own cache, `$LLAMA_CACHE` then `<user cache>/llama.cpp`, where a
+   `-hf` download is named `<org>_<repo>_<file>`.
+
+An empty file never counts, and neither does a partial download (`.part`,
+`.incomplete`). The Hugging Face token, when set, is sent to Hugging Face and
+nowhere else, and Belai downloads weights only after you confirm the size.
+
 Supporting pieces:
 
 - `internal/localinfer/port.go` owns port allocation and base-URL spelling.
@@ -3661,6 +3750,13 @@ credential-scrubbed environment (`proc.ScrubbedEnv`), and streams output to a
 live tool row and a log file under `<GlobalDir>/logs` without contacting
 the model while it runs.
 
+A process can also be a **structured entry** (docs/library-items.md#processes): an
+argv run directly with no shell, with its own environment (`env:OTHER` copies a
+host variable, so a secret is never in the document), working directory, user
+(honoured only as root, never falling back) and output redirects (the log, nowhere,
+or a `0600` file never opened through a link). It runs under the same sandbox and
+the scrubbed environment, with the project directory as the only writable root.
+
 When a supervised process exits without the user having stopped it, Belai
 dispatches a **recovery subagent** with the command, the exit code, the run
 duration, the attempt count, and the tail of the log. The subagent's registry
@@ -3669,7 +3765,7 @@ search the process log) and `ProcessRestart` (to restart the process). It
 has no other tools, may not fan out, may not clarify, and may not ask the user.
 `ProcessRestart` accepts an amended command only when `argv[0]` matches the
 original binary basename; the model may fix flags, but it may not swap the
-executable. Deny permission rules are evaluated against the effective
+executable. A structured process is never amended: it restarts exactly as defined. Deny permission rules are evaluated against the effective
 command, and each restart call consumes one
 `resilience.max_process_recoveries` slot (default 3).
 
@@ -3727,9 +3823,11 @@ no new role-manager label is needed.
 
 Supervised processes share the prompt library's file-backed library shape via
 `internal/filelib`: global and project scopes, filename grammar
-`NNN-slug.sh` / `_NNN-slug.sh` for enabled/disabled, global entries overlayed
-by project entries of the same name. The whole file body is the command,
-verbatim. `!!cmd` writes the command to the project scope with a slug derived
+`NNN-slug.sh` / `_NNN-slug.sh` (or, for a structured entry, `NNN-slug.json` /
+`_NNN-slug.json`) for enabled/disabled, global entries overlayed by project
+entries of the same name. The whole body of a `.sh` file is the command,
+verbatim; a `.json` file is the process document, and when one slug has both the
+structured file wins and the other is a stray. `!!cmd` writes the command to the project scope with a slug derived
 from `argv[0]` and starts it. The manager screen (`/processes`) allows the
 user to toggle auto-start, reorder, edit in `$VISUAL/$EDITOR`, create, delete,
 run, stop, and view the log tail. `enter` on any process opens its full log
@@ -3746,6 +3844,28 @@ registry as it arrives, so the reader stays live even when the process is
 still running. Enabled entries
 auto-start when Belai opens the workdir; a lock file per `(workdir-hash, slug)`
 prevents a second Belai instance from launching a duplicate copy.
+
+## Library items
+
+The Vulnetix website keeps a per-account library of the documents a host holds:
+skills, prompts, supervised processes, git repositories, token budgets, the Bash
+rewrite table and provider sets. `internal/libitem` is the pure half: the canonical
+bytes whose SHA-256 a sync compares, and a strict validator per kind that applies the
+library's rules and then Belai's own (the skill loader, `ValidateTokenBudgets`,
+`ValidateBashRewrite`, `ValidateProviders`, `ValidateFirewall`) rather than copying
+them. `internal/libstore` is the host half: it reads what the host holds of a kind as
+that canonical document and installs one atomically, never replacing an item without
+being told, never writing through a link, and validating the whole settings file it is
+about to write. `internal/repos` clones and updates the `repos` setting with git as an
+argv (`belai repo sync`). The `belai rc` daemon (`internal/rc`: `item_backup`,
+`item_install`, `provider_keys_install` and the automatic sync) and the
+`belai <kind> import|export` commands both go through it, so a document means one thing
+however it arrives. Provider keys never travel in a document: a `provider_keys_install`
+request fetches them once, over TLS, and `internal/rc` hands each to the credentials
+resolver (`credentials.NewGlobalResolver`) and nowhere else. A project-layer file is
+never read or written, and a `sync.<kinds>` setting per kind lets the user shut the
+website out of it. The formats, limits, sync states and security rules are in
+[library-items.md](library-items.md).
 
 ## Performance
 

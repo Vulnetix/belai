@@ -28,8 +28,12 @@ the sanitiser sits in the tool-result pipeline.
 | URL a user configured for a service | `internal/netguard` | `CheckURL` with the `Endpoint` profile | Refuses |
 | Address a connection would reach | `internal/netguard` | `Forbidden`, `ForbiddenIP` | Refuses |
 | Loopback test used by all of the above | `internal/netguard` | `IsLoopbackHost` | n/a |
+| Private range a host explicitly allows | `internal/netguard` | `ParseAllowCIDRs`, `SetAllowedPrefixes`, `AllowedPrefixes` | Refuses all but the named range |
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
 | Tool argument | `internal/tools` | `CheckArgs`, `CheckFormat` | Refuses |
+| Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
+| A skill or prompt document from the library, before it is written | `internal/libstore` | `untrustedGate` (with `sanitize.Sanitize`) | Refuses |
+| A library item document: shape, names, limits | `internal/libitem` | `Validate` | Refuses |
 
 Repairing is used for text whose content has value even when part of it is
 hostile (a tool result, a prompt): the dangerous part is cut and the rest
@@ -130,7 +134,7 @@ and percent escapes that decode to a control character at any depth up to four
 
 | Profile | Scheme | Host |
 | --- | --- | --- |
-| `Fetch` (model-supplied) | `http` or `https` | Must be public: internal names (`localhost`, `*.local`, `*.internal`, `*.localdomain`, `*.lan`, `*.home.arpa`, single-label names) and any address in a forbidden range are refused |
+| `Fetch` (model-supplied) | `http` or `https` | Must be public: internal names (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.intranet`, `*.localdomain`, `*.lan`, `*.home.arpa`, single-label names) and any address in a forbidden range are refused |
 | `Endpoint` (user-configured) | `https`, or `http` to a loopback host | Any host, private addresses included, because self-hosted services live there |
 
 `Forbidden` covers, after unmapping IPv4-mapped IPv6: `0/8`, `10/8`,
@@ -149,6 +153,33 @@ connection. Every redirect target goes through `CheckURL` again. The four
 earlier copies of the loopback test all call `IsLoopbackHost`, which accepts
 `localhost` (with a trailing dot, or as a subdomain), loopback literals and
 IPv4-mapped IPv6 loopback.
+
+**An explicit allow list.** A host whose own network answers with addresses in
+a private range can name that range, and only that range, with
+`belai rc --allow-private-cidr <cidr>` (repeatable). The Pix Sandbox needs it:
+its egress gateway stands in for every host the container reaches, so a name
+resolves to a placeholder address such as `fd00::119:1`, which `Forbidden` would
+refuse, and WebFetch could reach nothing. `ParseAllowCIDRs` accepts only a CIDR
+written in canonical form (host bits zero) that lies wholly inside a private-use
+block (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`), at most eight
+of them. Loopback, link-local (the cloud metadata address), multicast, the
+unspecified address, the IPv6 transition ranges and any public range can never be
+allowed, and an invalid value allows nothing. `belai rc` passes the list to the
+sessions and workers it starts in the `BELAI_ALLOW_PRIVATE_CIDRS` environment
+variable, which each process reads at start, and `SetAllowedPrefixes` drops any
+entry `ParseAllowCIDRs` would have refused. `Forbidden` then lets an address in
+the list through and still refuses every other private address, so allowing
+`fd00::/64` does not open `10/8`, `fc00::/7` outside it, or `fd00:ec2::254`.
+`AllowedPrefixes` returns the list in force.
+
+**The one fixed link-local fetch.** The Pix Sandbox build reads the sandbox's
+metadata service at `169.254.169.254` for the system prompt
+(`internal/run/environment_sandbox.go`, docs/pix-sandbox.md). That is the
+harness's own request, not a model-directed one, so it does not go through
+`CheckURL` or `Forbidden`: its dialer connects to one address whatever the URL
+says, takes no proxy and no redirect, and discards any answer that does not carry
+the sandbox Worker's `X-Pix-Metadata: v1` header. No other code dials that
+address, and a model's fetch of it is still refused.
 
 Limit: the IDNA conversion rejects invisible characters and invalid names but
 cannot detect look-alike letters from different scripts.
@@ -236,6 +267,14 @@ For git only the read subcommands (`status`, `log`, `diff`, `show`,
   core.pager=cat` is added, and `--no-ext-diff --no-textconv` for `diff`, `log`
   and `show`, so repository configuration cannot name a program to run.
 
+**Rewrite.** The user's `bash_rewrite` table ([Bash rewrite](bash-rewrite.md))
+is applied by `Rewrite`, which edits only the program words of commands the line
+writes in command position, found by parsing. `ValidRewriteRule` restricts both
+sides of a rule to plain words. The result is parsed again and must have the
+same flags and command count, or the line is left as sent; the permission rules
+then judge the rewritten line in full, and an explicit deny on the original
+line stops the call before any rewrite.
+
 Full-mode Bash still runs through `sh -c`; the OS sandbox is its boundary.
 `shellsafe` decides permission and the read-only classification, not what the
 shell may do once it is allowed.
@@ -268,6 +307,47 @@ check. The `Format` is not sent to the model. Formats:
 
 Read, Write, Edit, Glob, Grep and Cd declare `path`, WebFetch `url`, Bash
 `command`, Grep's pattern `regex`. An undeclared format fails closed.
+
+## Profile facts: `factspec`
+
+A profile's `facts` ([Facts](agent-profiles.md#facts)) are text the author wrote that
+reaches the model and, for the well-known keys, a tool's environment and argv.
+`factspec.Validate` refuses a key that is not lowercase letters, digits and
+underscores, a key that names a secret (`_secret`, `_token`, `_password`,
+`_passphrase`, `_api_key`, `_credentials`), a value that is not one clean line
+(unchanged by `sanitize.Text`, at most 512 characters), a value shaped like an AWS
+access key id, and a well-known key whose value does not fit its shape. It
+refuses rather than repairs, so a value is read as it was written.
+
+`factspec.Bind` is the other half. It maps a fact to a fixed environment variable
+or flag chosen from the harness's table, never from a model argument. It also
+refuses, for the tools it names, the flags that carry credentials to another
+endpoint or identity (`--profile`, `--endpoint-url`, `--ca-bundle`,
+`--no-verify-ssl`, `--no-sign-request`, the kubeconfig, server, token and
+impersonation flags, `--impersonate-service-account`, `--access-token-file`), and
+the flags a pinned fact would be overridden by. A flag matches in its `--flag=value`
+form and as an abbreviation, since a CLI may read either, and a flag after a
+bare `--` is an argument to something else. A hidden fact (`aws_external_id`) is
+read by the harness and left out of the prompt.
+
+## Library items
+
+A skill or a prompt that the website's library installs on a host
+([library-items.md](library-items.md)) is text another party may have written, so it
+is refused rather than repaired: a repair would change the bytes and so the hash the
+library compares, and the stored document would no longer be the library's. Before
+anything is written, `libstore.untrustedGate` refuses a document in which
+`sanitize.Sanitize` would remove harness delimiter markup, or that holds a control
+character other than newline and tab, a terminal escape, a bidirectional override,
+a zero-width or line-separator rune, a byte order mark, or a character from the tag
+block. Joiners that spell real text (ZWJ, ZWNJ) and variation selectors are kept.
+The refusal names the rule and the code point, never the surrounding text.
+
+The gate is the write-time half. Reading is unchanged: a skill result is still
+`KindSkill`, always sanitised and classified, and a prompt is still admitted like
+any text the user submits. A library document is also validated whole by
+`internal/libitem` (a closed schema, bounded sizes, a name that cannot name a path),
+so no path or command comes from its text.
 
 ## Testing
 

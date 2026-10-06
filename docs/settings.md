@@ -38,15 +38,48 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Group | Rows |
 | --- | --- |
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task` |
-| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `todo panel`, `mouse capture`, `session names` |
+| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `mouse capture`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
 | Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
-| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge` |
+| Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents` |
+| Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics`, `jev agent pick`, `jev teleport verify` |
 | Jev thresholds | one slider per cut-off, in the sections below |
+
+### Layout
+
+`ui.layout` (the `layout` row in Display, and a per-project preference) sets how
+the thread is laid out. It is display only: both layouts run the same gates and
+write the same record.
+
+| Value | What the thread does |
+| --- | --- |
+| `clean` (default) | Rows as the thread builds them. A role-manager decision that reaches the TUI after rows that happened later is still placed by its own time, and a belai notice is held below a reply while it streams, so the reply is not interrupted. |
+| `chronological` | Strict time order. A notice an event raised is placed by the event's time too (never behind the rows already written, so each is written once), nothing is held below a streaming reply, and the blank line above each panel shows that panel's time as `HH:MM:SS`. A row with no recorded time shows none. |
+
+An unknown value reads as `clean`. A project layer may set it either way.
+
+### Empty composer pane
+
+`ui.idle_pane` (the `empty composer pane` row in Display) picks the one pane
+shown above an empty composer while the chat is idle. It is display only: it
+reads nothing the pane would not show and changes no permission.
+
+| Value | What shows |
+| --- | --- |
+| `none` (default) | Nothing: the composer sits on its own. |
+| `kanban` | The [kanban pane](kanban.md#the-pane): open items, colour-coded. |
+| `activity`, `helpers`, `processes`, `crew`, `git`, `ci`, `intel` | That tab of the runs panel, opened unfocused. A tab that is not offered (`ci` without a pull request, `intel` with `ui.intel` off, `kanban`-board tabs with the board off) shows nothing. |
+
+The pane goes away as soon as you type, attach or start a turn, and comes back
+when the composer is empty and the chat idle again. `↓` or `f9` on an empty
+composer takes the keyboard in the pane; from then on it is an ordinary runs
+panel, so typing leaves it open until you close it with `f9`. A pane you
+close stays closed until the composer is next used. An unknown value reads as
+`none`. A project layer may set it either way.
 
 **The two Jev groups exist only while a decision backend is configured**
 (`Settings.JevConfigured`). Without one they are hidden, not greyed, because no
@@ -67,6 +100,7 @@ Every cut-off is in exactly one section, in this order:
 | option order | `jev option hit`, `jev option margin`, `jev option lead` |
 | mode choice | `jev mode sure`, `jev mode margin`, `jev mode headless` |
 | delivery crew | `jev clear at`, `jev align at`, `jev cover at` |
+| knowledge topics | `jev topic at` |
 
 A section heading labels its rows and never takes the cursor.
 
@@ -92,7 +126,7 @@ movement, edit and back always stay.
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
   the scope chip shows: `auto-commit per task`, `plan limits`, every `test …`,
-  `voice …` and `read aloud …` row, and every Jev threshold. Other rows follow
+  `voice …`, `read aloud …` and `knowledge …` row, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session
   once chosen.
 - **A higher layer wins.** After an edit, if another layer sets the same key and
@@ -119,9 +153,14 @@ movement, edit and back always stay.
 - **A track** is 20 cells with a `│` at the default, so a value reads against
   where it starts.
 - **Editing a text row** (`provider`, `model`, `session retention`, `max agents`,
-  `budget cycle`, `test command`, `test fix passes`, `test timeout`) opens the
+  `budget cycle`, `test command`, `test fix passes`, `test timeout`, `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`) opens the
   editor below the list, and the body shrinks by its height. `enter` saves,
   `esc` cancels; a refused value stays open with the reason.
+- **Settings with no row.** Some keys are edited in `settings.json` only: the
+  library sync switches (`sync.skills`, `sync.prompts`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`, `sync.providers`; see
+  [session-sync.md](session-sync.md#settings) and [library-items.md](library-items.md))
+  and the `repos` list have no row here. A project layer may switch a sync switch off
+  and never on, and its `repos` is dropped.
 
 ## Edge cases
 

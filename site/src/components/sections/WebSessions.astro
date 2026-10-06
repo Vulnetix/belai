@@ -3,11 +3,12 @@ import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
 import Limits from '../ui/Limits.astro';
+import WhereItRuns from '../figures/WhereItRuns.astro';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins.';
+  'Web sessions: while the Vulnetix CLI is logged in, every Belai session mirrors to the Vulnetix website. Belai → Sessions follows a running session live and takes prompts that run on the host as if typed there. When the host stops to ask, the page shows the question and can answer it: a permission ask (allow once, allow always, deny), clarify questions, the mode choice and a plan review. Tool rows, diffs with syntax colour, reasoning and every role-manager and classifier decision show as the TUI draws them. The session JSONL is the single record; the website mirrors it, and a web answer is untrusted input applied through the host\'s own code. The first answer wins. Belai → History also shows an audit trail of hosts and agents: facts Belai recorded about claims, commits, gates, pull requests and VEX, chained by SHA-256 so an edited row shows as broken. Remote control: belai rc, or /rc inside Belai, makes the machine appear under Belai → Sessions, where a directory, a prompt and an optional mode start a session on the host. It checks the Vulnetix CLI, a browser login, session sync, guardrails and a directory before it starts. A session runs only in a directory the daemon offers, which is a trusted project or a --dir, re-checked by exact match after resolving symlinks. Each session is its own belai rc-session process with asks off, ending after thirty idle minutes, and at most three run at once. With belai rc --web-controls the page changes a session the way the terminal does, with the same slash commands and keys, for that session only, and its asks come to the page; guardrails can be switched off there only when the host also passes --web-allow-guardrails-off. With --web-project-settings the console edits each offered directory\'s project preferences in the host\'s own file for it, and the next session there reads them. /trusted lists and revokes the offered directories, and the same daemon reports the host\'s worker catalogue to the Board page. The library on the website: Sync from hosts asks each online host to run its library sync now and each answers with counts. A checkout directory tells the website its owner/repo, forge, branch and default branch, so the Library joins it with scans, sandboxes and sessions per repository. The Documents view shows each document\'s address, size, SHA-256, labels and topics from each host\'s knowledge index; the text stays on the host. Teleport: belai -teleport <id> continues a session from another host, a Pix Sandbox or the web on the host you are at, under a new id, while the original keeps running. Only the transcript and the agent profile it ran under travel, with the crews that list it when the new host lacks them, and never a provider, a setting or a schedule. The origin host backs the profile up first, the transcript is read frozen at the line the session had reached and checked line by line, and a checkout at another commit gets a worktree. Every session card and the session page copy the command, and a teleported session links back to where it came from.';
 
 const answers = [
   {
@@ -32,6 +33,24 @@ const answers = [
   },
 ];
 
+// What a host running belai rc gives the website's Library (docs/remote-control.md).
+const library: [string, string][] = [
+  ['Sync from hosts', 'Hosts back their profiles, crews and library items up on their own every half minute. Sync from hosts on the Library page asks each online host to run that pass now, and each answers with counts, never a name.'],
+  ['Repositories, joined', 'A directory that is a checkout tells the website its owner/repo, forge, branch and default branch, read from its own files. The Library joins that with your scans, sandboxes and sessions, one row per repository, and lists the ones that can be cloned.'],
+  ['What each host indexes', "The Documents view shows what each host's knowledge index holds: every document's address, size, SHA-256, labels and topics. The text and the index file stay on the host."],
+]
+
+const remote: [string, string][] = [
+  ['Checked before it starts', '`belai rc` prints one line per check and the one thing to do about each failure: the Vulnetix CLI, a browser login, session sync, guardrails on, a directory to offer and a website that accepts the credential. `/rc` walks the same list as a setup screen.'],
+  ['Only directories you trusted', 'A session runs only in a directory the daemon offers: a project you already trusted, or a `--dir` you pass, which is trusted exactly as `-trust-dir` would. The daemon checks each request against its own list again, by exact match after resolving symlinks.'],
+  ['Each session is its own process', '`belai rc-session` runs in the chosen directory with the prompt on stdin and writes the same transcript as the terminal. It ends after thirty idle minutes, when you press Stop session, or when remote control stops. At most three run at once.'],
+  ['The host picks the rest', 'The website chooses the directory, the prompt and optionally the mode and model. Guardrails and permissions are the host\'s own, and asks are off, so the rules decide as they do for `belai -prompt`, until the host turns on session controls.'],
+  ['Session controls, when the host allows them', 'With `belai rc --web-controls` a session page takes the slash commands and keys of the terminal: shift+tab for the mode, f2 to f4 for caveman, guardrails and ask, ctrl+r and ctrl+t for what the page shows, and `/model`, `/tests`, `/lsp` and `/jev`. A change lasts for that session and the settings files stay as they are. Asks come to the page while ask is on. Switching guardrails off from the page also needs `--web-allow-guardrails-off` on the host.'],
+  ['Project settings from the console', 'With `belai rc --web-project-settings` each offered directory gets a settings page that lists every preference with the layer its value comes from. Saving writes the host\'s own preference file for that directory, which the next session there reads.'],
+  ['Manage what is offered', '`/trusted` lists every trusted directory, marks the ones the running daemon offers and revokes stale or temporary ones. Revoking clears the trust flag, so the next launch there asks again.'],
+  ['The fleet too', 'The same daemon reports this host\'s worker catalogue and its live workers, so the Board page can assign cards and predict what will happen to them.'],
+];
+
 const records = [
   ['turn_state', 'a turn started or ended, with the footer facts: mode, model, effort, branch, switches, context'],
   ['tool_start', 'a tool call started, so the page shows it running before its result lands'],
@@ -48,6 +67,21 @@ const path = [
   ['page', 'shows it, about one round trip after it happened'],
 ];
 
+const audit = [
+  ['host.first_seen · version_changed', 'this machine reported for the first time, or with a new Belai version'],
+  ['host.rc_online · rc_offline', 'belai rc started or stopped'],
+  ['host.dispatch', 'a request from the website (start, stop, worker, crew, pause, resume, profile_backup, profile_install, crew_backup, crew_install, avatar, item_backup, item_install, provider_keys_install, provider_keys_remove, library_sync, project_prefs, teleport_backup, teleport_code) and whether the host carried it out'],
+  ['host.teleport', 'this host opened a session teleported in from another, naming the new session and the origin'],
+  ['host.schedule', 'belai rc fired a stored schedule, skipped or was refused a run, or turned a schedule off'],
+  ['worker.started · state · stopped', 'a worker started, was paused or resumed, and stopped'],
+  ['card.claimed · released', 'a worker took a card and handed it back, with the list it went to'],
+  ['card.lease_lapsed', 'a claim ran out of lease and the card went back to its list'],
+  ['repo.commit', 'the commit id Belai read from git, the base the branch started at and how many files changed'],
+  ['repo.publish', 'a draft pull request was opened for the branch of an item'],
+  ['gate.verified', 'a gate and the exit code that decided it, or a regression against the base'],
+  ['vex.written · finding.carded · finding.reconciled', 'the VEX for a verdict, the card a scan filed for a finding, and a finding found gone or closed'],
+];
+
 const limits = [
   ['Only the open question', 'The host applies an answer only to the question open right now, and only if it fits: options that exist, one choice where only one is allowed, a known decision.'],
   ['Through the same code', "An answer is applied through the functions the host's own keys call. Notes are cleaned of control characters and capped."],
@@ -59,51 +93,56 @@ const limits = [
 ---
 
 <SealedSection label="web" sealText={sealText} id="web">
-  <SectionHead title="Web sessions">
+  <SectionHead title="Web sessions" surfaces={['cli', 'self-hosted', 'pix sandbox', 'vulnetix only']}>
     While the Vulnetix CLI is logged in, each session mirrors to the Vulnetix website.{' '}
     <strong>Belai → Sessions</strong> follows a running session live, and a prompt you type there runs on
     the host as if you had typed it at the terminal.
   </SectionHead>
 
-  <div class="mt-10 grid gap-8 lg:grid-cols-12 lg:items-start">
-    <div class="mono min-w-0 rounded-xl border border-vx-ink p-5 text-xs leading-relaxed text-vx-ink/80 md:text-sm lg:col-span-7" aria-label="A permission ask as the Sessions page shows it" role="img">
-      <p><span class="text-[#B86E00]">── permission</span> <span class="text-vx-ink/50">Edit · waiting for an answer ──</span></p>
-      <p class="mt-3 pl-4"><span class="text-[#B86E00]">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
-      <p class="pl-4 text-vx-ink/55">allow always adds Edit(internal/server/handler.go)</p>
+  <WhereItRuns />
+  <p class="mt-3 text-sm text-vx-ink/75">A prompt from the web is checked the same way as one you type.</p>
+
+  <div class="mt-10 grid gap-8 @4xl:grid-cols-12 @4xl:items-start">
+    <div class="mono min-w-0 rounded-xl border border-vx-ink p-5 text-xs leading-relaxed text-vx-ink/80 md:text-sm @4xl:col-span-7" aria-label="A permission ask as the Sessions page shows it" role="img">
+      <p><span class="text-vx-amber-deep">── permission</span> <span class="text-vx-ink/70">Edit · waiting for an answer ──</span></p>
+      <p class="mt-3 pl-4"><span class="text-vx-amber-deep">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
+      <p class="pl-4 text-vx-ink/70">allow always adds Edit(internal/server/handler.go)</p>
       <div class="ml-4 mt-3 overflow-x-auto rounded-lg bg-vx-ink/5 py-1">
-        <p class="whitespace-pre px-3"><span class="text-vx-ink/50"> 41</span>   ctx := r.Context()</p>
-        <p class="whitespace-pre bg-vx-coral/15 px-3"><span class="text-[#B8332E]">−42</span>   user := r.URL.Query().Get("user")</p>
+        <p class="whitespace-pre px-3"><span class="text-vx-ink/70"> 41</span>   ctx := r.Context()</p>
+        <p class="whitespace-pre bg-vx-coral/15 px-3"><span class="text-vx-red-deep">−42</span>   user := r.URL.Query().Get("user")</p>
         <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+42</span>   name := r.URL.Query().Get("user")</p>
         <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+43</span>   if name == "" {'{'}</p>
       </div>
       <p class="mt-4 flex flex-wrap gap-2 pl-4">
         <span class="rounded-md border border-vx-mint-strong px-3 py-1 text-vx-mint-strong">Allow once</span>
         <span class="rounded-md border border-vx-ink/30 px-3 py-1">Allow always</span>
-        <span class="rounded-md border border-vx-ink/30 px-3 py-1 text-[#B8332E]">Deny</span>
+        <span class="rounded-md border border-vx-ink/30 px-3 py-1 text-vx-red-deep">Deny</span>
       </p>
     </div>
-    <div class="min-w-0 lg:col-span-5">
-      <h3 class="text-2xl font-bold">Drawn like the TUI</h3>
+    <div class="min-w-0 @4xl:col-span-5">
+      <h3 class="text-2xl font-bold">Answer from the page</h3>
       <p class="mt-3 text-vx-ink/80">
-        The page draws with the TUI's own design system: thread blocks with a top rule, quiet tool rows that
-        only turn red when they fail, reasoning folded to one line, diffs with line numbers and syntax colour,
-        the plan with <span class="mono">◆ ◇ ✓</span>, and the footer's mode, model, switches and context
-        gauge. Amber still means the host needs you. Open questions are also pinned above the composer, so
-        you can find them in a long transcript.
+        Tool calls, diffs, plans and decisions show up as they happen, and open questions stay pinned above
+        the composer. Amber means the host needs you.
       </p>
       <p class="mt-3 text-vx-ink/80">
-        Classifier and role-manager decisions appear in the transcript as they happen: what was checked, the
-        verdict, the model that gave it and how long it took. Switch on <span class="mono">all decisions</span>{' '}
-        to also see the ones the TUI folds into its own lines, like mode selection and goal evaluation.
+        Each classifier decision appears with its verdict, the model that gave it and how long it took.
       </p>
     </div>
   </div>
+
+  <SubHead id="rc" title="Start a session from the website">
+    Run <code class="mono">belai rc</code>, or <code class="mono">/rc</code> inside Belai, and the machine
+    appears under <strong>Belai → Sessions</strong>. Pick a directory, write a prompt and start a session
+    there. The page follows it live.
+  </SubHead>
+  <Limits items={remote} class="mt-head" />
 
   <SubHead title="What you can answer from the web">
     When the host stops to ask you something, the page shows the question and you can answer it there.
     The host carries on as if you had pressed the key.
   </SubHead>
-  <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+  <div class="mt-8 grid gap-5 @2xl:grid-cols-2 @5xl:grid-cols-4">
     {answers.map((a, i) => (
       <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
@@ -114,24 +153,27 @@ const limits = [
     ))}
   </div>
 
-  <SubHead title="From the terminal to the page">
+  <SubHead title="From the terminal to the page" surfaces={['tui', 'vulnetix only']}>
     The terminal never blocks on sync. Your answer travels the same way back to the host.
   </SubHead>
-  <ol class="mt-8 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+  <ol class="mt-8 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
     {path.map(([who, what], i) => (
       <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 0 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <span class={`mono text-xs ${i === 0 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
         <p class={`mono mt-2 text-lg font-semibold ${i === 0 ? 'text-vx-mint' : ''}`}>{who}</p>
         <p class={`mt-1 text-sm ${i === 0 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
-        {i < path.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong lg:block" aria-hidden="true">▸</span>}
+        {i < path.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @4xl:block" aria-hidden="true">▸</span>}
       </li>
     ))}
   </ol>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-7">
+  <details class="deep deep--wide">
+    <summary>The session file, resuming and teleporting a session, and the Agent Builder</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-7">
       <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE SESSION FILE HOLDS</p>
-      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm @xl:grid-cols-[8rem_minmax(0,1fr)]">
         {records.map(([name, what]) => (
           <>
             <dt class="text-vx-mint">{name}</dt>
@@ -140,11 +182,19 @@ const limits = [
         ))}
       </dl>
     </div>
-    <div class="min-w-0 lg:col-span-5">
+    <div class="min-w-0 @4xl:col-span-5">
       <p class="text-vx-ink/80">
         A resumed session reads the same lines, so the page and the terminal show the same events. Resume
         a session with <code class="mono">belai -r</code> and its diffs and answered questions are back on
         screen. History hides sessions run in <code class="mono">/tmp</code> until you ask for them.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">belai -teleport &lt;id&gt;</code> continues a session on another host. The session can have
+        run on a host, in a Pix Sandbox or on the web, and it opens on a host with a terminal. Only the transcript
+        and the agent profile it ran under travel, with the crews that list it when the new host lacks them. The
+        session opens in the checkout you are in, or in a worktree at the commit it was at, under a new id, and
+        the original keeps running. Every session card on the website copies the command, and a teleported
+        session links back to where it came from.
       </p>
       <p class="mt-4 text-vx-ink/80">
         The website's Agent Builder uses a live session too. It sends the host a one-line premise, and the
@@ -154,9 +204,82 @@ const limits = [
       </p>
       <p class="mt-4 text-sm">
         <a class="text-vx-ink underline" href={`${docBase}session-sync.md`}>docs/session-sync.md</a>
+        · <a class="text-vx-ink underline" href={`${docBase}teleport.md`}>docs/teleport.md</a>
       </p>
     </div>
   </div>
+    </div>
+  </details>
 
-  <Limits items={limits} class="mt-16" />
+  <SubHead title="An audit trail of hosts and agents" surfaces={['vulnetix only']} id="audit">
+    Sync also carries a second record: what your hosts and agents did. <strong>Belai → History</strong> shows
+    it in two tabs beside the session list.
+  </SubHead>
+  <div class="mt-head grid gap-5 @2xl:grid-cols-2">
+    <article class="rounded-xl border border-vx-ink p-5">
+      <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+      <h4 class="mt-3 text-xl font-bold">Hosts</h4>
+      <p class="mt-3 text-sm text-vx-ink/80">
+        Each machine that runs Belai: when it was first seen, the Belai versions and hostnames it has run under,
+        when remote control came online or went offline, and every request the website made of it with how the
+        host answered. Open a host to read its own log, which follows new events as they arrive.
+      </p>
+    </article>
+    <article class="rounded-xl border border-vx-ink bg-vx-ink p-5 text-vx-cream">
+      <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+      <h4 class="mt-3 text-xl font-bold">Agents</h4>
+      <p class="mt-3 text-sm text-vx-cream/80">
+        Every claim and release of a card, the commit an agent left on the item's branch, each gate decided by
+        its exit code, the draft pull request and the VEX. A row about a vulnerability links to it, to the card
+        and to the session that did the work. Filter by vulnerability, card, agent or repository.
+      </p>
+    </article>
+  </div>
+
+  <details class="deep deep--wide">
+    <summary>What the audit log holds and how the hash chain works</summary>
+    <div class="deep__body">
+  <div class="mt-4 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-7">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE AUDIT LOG HOLDS</p>
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm @xl:grid-cols-[13rem_minmax(0,1fr)]">
+        {audit.map(([name, what]) => (
+          <>
+            <dt class="text-vx-mint">{name}</dt>
+            <dd class="m-0 font-sans text-vx-cream/80">{what}</dd>
+          </>
+        ))}
+      </dl>
+    </div>
+    <div class="min-w-0 @4xl:col-span-5">
+      <p class="text-vx-ink/80">
+        An event is a fixed set of identifiers: a worker profile, a card id, a branch, a commit id, an advisory
+        id and an enum verdict. A prompt, a reply, a command, tool output or a file has no field to go in, and
+        Belai stamps the time and the order itself.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Each event carries the SHA-256 of itself and the event before it, so an edited or missing row breaks
+        every hash after it. The Verify chain button on the page re-checks the stored rows and names the
+        first event that no longer fits.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The log travels with sync: <span class="mono">/sync off</span> stops it, a repository can switch sync
+        off, and switching it on belongs to your own settings.
+      </p>
+      <p class="mt-4 text-sm">
+        <a class="text-vx-ink underline" href={`${docBase}audit.md`}>docs/audit.md</a>
+      </p>
+    </div>
+  </div>
+    </div>
+  </details>
+
+  <SubHead title="The library on the website" surfaces={['vulnetix only']} id="library-web">
+    With <code class="mono">belai rc</code> running, the website's Library keeps what your hosts hold and shows
+    where each repository and document lives. A host sends facts about what it holds, and a person
+    decides what to back up or install.
+  </SubHead>
+  <Limits items={library} class="mt-head" />
+
+  <Limits items={limits} />
 </SealedSection>

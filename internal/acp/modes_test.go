@@ -37,7 +37,7 @@ func TestSetMode(t *testing.T) {
 
 func TestNewSessionOffersModes(t *testing.T) {
 	m := modeState(modeAuto)
-	if m["currentModeId"] != "auto" || len(m["availableModes"].([]any)) != 4 {
+	if m["currentModeId"] != "auto" || len(m["availableModes"].([]any)) != 5 {
 		t.Fatalf("modes = %v", m)
 	}
 }

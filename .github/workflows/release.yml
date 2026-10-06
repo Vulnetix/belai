@@ -127,7 +127,7 @@ jobs:
           LDFLAGS="-s -w -X github.com/vulnetix/belai/internal/version.Version=${VERSION} -X github.com/vulnetix/belai/internal/version.Commit=${COMMIT} -X github.com/vulnetix/belai/internal/version.BuildDate=${BUILD_DATE}"
           mkdir -p bin
 
-          # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak
+          # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak, pix-sandbox
           build_target() {
             local variant="$1" goos="$2" goarch="$3" suffix="$4"
             # The plain belai build embeds nothing, the speech model included: it
@@ -149,6 +149,11 @@ jobs:
                 tags="-tags belai_bert_jailbreak,belai_voice"
                 extra="-X github.com/vulnetix/belai/internal/version.Variant=bert-guardrails-jailbreak"
                 ;;
+              pix-sandbox)
+                name="belai-pix-sandbox"
+                tags="-tags belai_voice,belai_sandbox"
+                extra="-X github.com/vulnetix/belai/internal/version.Variant=pix-sandbox"
+                ;;
             esac
             echo "  bin/${name}-${goos}-${goarch}${suffix}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
@@ -156,7 +161,7 @@ jobs:
               -o "bin/${name}-${goos}-${goarch}${suffix}" ./cmd/belai
           }
 
-          for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
+          for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak pix-sandbox; do
             build_target "$variant" linux   amd64 ""
             build_target "$variant" linux   arm64 ""
             build_target "$variant" darwin  amd64 ""
@@ -173,7 +178,9 @@ jobs:
   release:
     needs: [version, build]
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
-    timeout-minutes: 20
+    # The binaries artifact is about 3.4 GB; on a local podman runner its
+    # download alone ran past 20 minutes and v0.109.0's release was cancelled.
+    timeout-minutes: 60
     outputs:
       version: ${{ needs.version.outputs.version }}
     steps:

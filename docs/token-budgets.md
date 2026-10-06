@@ -30,6 +30,18 @@ after it — `TestBudgetRule7_…`, `TestBudgetEdge3_…` — and
 `TestBudgetDocParity` fails when an ID here has no test or a test names an ID
 that is not here.
 
+## The library
+
+With the Vulnetix CLI signed in and `belai rc` running, the host's token-budget
+configuration (`token_budgets`, `ui.budget_cycle_seconds` and `ui.budget_warn`) is
+kept in the website's library as one budget set: a change here is pushed as a new
+version, a set saved on the website can be installed on any connected host, and
+`sync.budgets` (default on) switches all of it off. An install replaces the whole
+configuration, so it is refused unless the request says replace, and Belai's own
+`ValidateTokenBudgets` runs on the result. `belai budget list`, `validate`, `import` and
+`export` do the same by hand; a project settings file still cannot set budgets. See
+[library-items.md](library-items.md#budgets).
+
 ## Settings
 
 | Key | Layer | Default | Meaning |
@@ -241,6 +253,24 @@ Settings are in the table above. `ui.intel` may be set by any layer;
   themselves. `intel.plan_limits` (global only, default on) turns the header
   parsing off. A project layer's `intel` key is dropped with a note: what a user
   learns about their own account limits is theirs to decide, not a repository's.
+- **R23. The snapshot is synced.** The ledger lives on this machine, so the
+  website cannot read the limits, pace, trend, runway or roles from it. The
+  host writes them into the session as an `intel_state` entry (see
+  [session-sync.md](session-sync.md)): `version` 1, `provider`, `at`, the
+  `limits` (`provider`, `window`, `used`, `resetsAt`, `observedAt`, times in unix
+  milliseconds), `pace` (`label`, `tokensPerHour`, `pctPerHour`), `trend`
+  (`label`, `ratio`), `runway` (`kind`, `lasts`, `untilSeconds`,
+  `resetSeconds`) and the process's `roles`, largest first. Like a plan limit
+  it holds numbers, window names and the harness's own words only (R19): no
+  provider text can reach the website through it.
+- **R24. When it is written.** After each completed model call, when the
+  snapshot's signature differs from the last one written and at least a minute
+  has passed since it was. The signature is each limit at a whole percent and
+  its reset minute, plus the pace, trend and runway words; token counts, roles
+  and the clock are not part of it, so a busy session writes a line only when a
+  reader would see something move. The first call of a session always writes
+  one. The entry is a state line: a resumed session and an export skip it, and
+  it never reaches a model.
 
 ### Session intelligence edge cases
 
@@ -255,3 +285,8 @@ Settings are in the table above. `ui.intel` may be set by any layer;
 | E25 | A narrow or short terminal | The footer sheds the slot's detail first, then the left side to 20 cells, and keeps the label and the picture; the hint is dropped when tight. The pane drops header lines from the bottom, keeping the tab bar, the help line and at least one list row |
 | E26 | `ui.intel` is off | The slot, the tab, `f12` and `/intel` are gone (`/intel` says so); budgets alone hold the cycle |
 | E27 | Retention | Hour buckets and limit readings are pruned after eight days; day totals after 13 months |
+| E28 | A window has reset when the snapshot is taken | The snapshot leaves that limit out (E24); the website also drops any limit whose `resetsAt` has passed, so a stale line never draws a bar |
+| E29 | The session store is off or failed | No `intel_state` entry is written and nothing retries; the footer is unaffected |
+| E30 | A call moves no limit by a whole percent and no word changes | Nothing is written, however many tokens it spent |
+| E31 | More than eight roles | The snapshot keeps the eight largest; the rest are dropped |
+| E32 | A session with `intel_state` lines is resumed or exported | The lines are ignored: no message is rebuilt from them, none is counted as dropped, and the export skips them |

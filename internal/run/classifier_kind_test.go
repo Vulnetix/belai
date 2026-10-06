@@ -10,17 +10,20 @@ import (
 	"github.com/vulnetix/belai/internal/firewall"
 )
 
-func TestClassifierKindDerivesJev(t *testing.T) {
+func TestClassifierKindDerivesSystemOne(t *testing.T) {
 	cases := []struct {
 		name string
 		cls  *config.ClassifierSettings
 		want string
 	}{
-		{"explicit jev", &config.ClassifierSettings{Kind: "jev"}, "jev"},
+		{"explicit systemone", &config.ClassifierSettings{Kind: "systemone"}, "systemone"},
+		{"legacy jev reads as systemone", &config.ClassifierSettings{Kind: "jev"}, "systemone"},
 		{"legacy jev on openrouter reads as openrouter-decisions", &config.ClassifierSettings{Kind: "jev", Provider: "openrouter", Model: "typesafe/jev-1.13"}, "openrouter-decisions"},
 		{"legacy jev on the local model reads as openrouter-decisions", &config.ClassifierSettings{Kind: "jev", Provider: decisions.LocalProvider}, "openrouter-decisions"},
-		{"jev on typesafe stays jev", &config.ClassifierSettings{Kind: "jev", Provider: decisions.TypeSafeProvider}, "jev"},
-		{"llm with typesafe reads as jev", &config.ClassifierSettings{Kind: "llm", Provider: decisions.TypeSafeProvider}, "jev"},
+		{"legacy jev on typesafe reads as systemone", &config.ClassifierSettings{Kind: "jev", Provider: decisions.TypeSafeProvider}, "systemone"},
+		{"llm with typesafe reads as systemone", &config.ClassifierSettings{Kind: "llm", Provider: decisions.TypeSafeProvider}, "systemone"},
+		{"no kind with strands-decider reads as systemone", &config.ClassifierSettings{Provider: decisions.DeciderProvider, Model: "decider-2b"}, "systemone"},
+		{"llm with an openrouter decider model reads as openrouter-decisions", &config.ClassifierSettings{Kind: "llm", Provider: "openrouter", Model: "strandsagents/strands-decider-2b"}, "openrouter-decisions"},
 		{"llm with an openrouter jev model reads as openrouter-decisions", &config.ClassifierSettings{Kind: "llm", Provider: "openrouter", Model: "typesafe/jev-1.13"}, "openrouter-decisions"},
 		{"llm with the local decision model reads as openrouter-decisions", &config.ClassifierSettings{Kind: "llm", Provider: decisions.LocalProvider}, "openrouter-decisions"},
 		{"llm with a chat model stays llm", &config.ClassifierSettings{Kind: "llm", Provider: "openrouter", Model: "openai/gpt-5"}, "llm"},

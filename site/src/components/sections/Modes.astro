@@ -7,11 +7,11 @@ import Limits from '../ui/Limits.astro';
 import Shot from '../ui/Shot.astro';
 import planReviewShot from '../../assets/shots/plan-review.svg';
 
-// Modes as a ladder of agent, plan and goal, then how they differ, how a
+// Modes as a ladder of agent, plan, goal and code, then how they differ, how a
 // prompt picks one, and how a goal runs pass by pass.
 
 const sealText =
-  'Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. In any mode the model can ask you multiple-choice questions; in plan mode your answers start a new agent turn with every tool. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report.';
+  'Modes: agent for general coding, plan for read-only investigation with Bash absent, goal for one tracked objective, and code for agent work that batches many tool calls in one script, with MCP reachable only from inside a script. Code is chosen by name and never picked by the classifier. In any mode the model can ask you multiple-choice questions; in plan mode your answers start a new agent turn with every tool. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report.';
 
 const modes = [
   {
@@ -32,6 +32,12 @@ const modes = [
     key: 'one objective',
     lead: 'Works on one named objective until it is done, checking progress each pass against a todo list, and ends on a report of what changed.',
   },
+  {
+    n: '04',
+    name: 'Code',
+    key: '/mode code',
+    lead: 'Agent work with one extra tool, `Code`: the model writes a short script that calls tools as functions, and only what it prints comes back. Every call inside still asks, is sandboxed and is classified.',
+  },
 ];
 
 const rows = ['Tools offered', 'Ends on', 'When the model asks you', 'Afterwards'] as const;
@@ -41,21 +47,25 @@ const facts: Record<string, string[]> = {
     'Every tool, behind the permission rules',
     'Read-only tools, with no `Bash` unless an explicit allow rule adds a read-only one. The last pass offers only `update_plan`, `ExitPlanMode` and `AskUserQuestion`',
     'Every tool, behind the permission rules',
+    'The agent surface plus `Code`. MCP tools are not offered directly: a script calls them as `mcp.server.tool()`',
   ],
   'Ends on': [
     'A `✓ done` panel Belai writes itself: tool calls, edits and the time taken',
     'A plan or a question, every time',
     'A final report of what changed and how it was checked, or of what is left if it stopped early',
+    'A `✓ done` panel, like agent mode',
   ],
   'When the model asks you': [
     'Your answers come back to it straight away and the work carries on',
     'Your answers start a new agent turn with every tool, so the model acts on them',
+    'Your answers come back to it straight away and the work carries on',
     'Your answers come back to it straight away and the work carries on',
   ],
   Afterwards: [
     'The next prompt',
     'Approve, refine or cancel the plan. An approved plan runs like a goal and ends on the same report',
     'With `auto-commit per task` on, one conventional commit of exactly the files it changed. With `tests.post_end` on, the detected tests run: a pass gets a short report and a failure starts a bounded fix loop',
+    'The next prompt',
   ],
 };
 
@@ -68,6 +78,9 @@ const loop = [
 
 const limits = [
   ['A mode you pick stays picked', 'Later turns do not re-classify it. When a request reads like another mode, a panel asks before switching.'],
+  ['Code mode is never picked for you', 'Only `/mode code`, `-mode code` or an editor\'s mode picker engages it. The classifier, the mode-choice panel and the mode key skip it.'],
+  ['A script has no more authority than its calls', 'Each call in a script is permission-checked, asks, runs in the sandbox and is classified like a direct call. A withheld result reaches the script as the withheld message.'],
+  ['MCP is unchanged outside code mode', 'Agent, plan and goal mode offer MCP tools exactly as before. Only a code-mode script reaches them through `mcp`.'],
   ['Plan mode has no Bash', 'The model cannot call a tool it is not offered. Guardrails off restores the full surface.'],
   ['An approved plan is the gate', 'Once you approve a plan, its run is no longer plan mode and gets the full surface.'],
   ['A question is asked once', 'A question already asked in the session is never asked again.'],
@@ -80,12 +93,12 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="modes" sealText={sealText} id="modes">
-  <SectionHead title="Modes">
-    Belai has three modes: agent, plan and goal. A prompt sent without a mode is classified into one of
-    them. A mode you pick yourself is kept as it is.
+  <SectionHead title="Modes" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
+    Belai has four modes: agent, plan, goal and code. A prompt sent without a mode is classified into agent,
+    plan or goal. A mode you pick yourself is kept as it is, and code is only ever picked by you.
   </SectionHead>
 
-  <Ladder steps={modes} from="reads and writes behind your rules" to="keeps going until the objective is met">
+  <Ladder steps={modes} from="reads and writes behind your rules" to="batches many calls in one script" cols={4}>
     <svg slot="art-0" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
       <rect x="10" y="20" width="200" height="70" rx="8" class="fill-vx-bone" />
       <path d="M26 42 H150 M26 58 H190 M26 74 H120" />
@@ -111,21 +124,33 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       <text x="14" y="50" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">✓ todo</text>
       <text x="14" y="70" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">◇ todo</text>
     </svg>
+    <svg slot="art-3" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="14" width="190" height="82" rx="8" />
+      <text x="24" y="38" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">for f of files {'{'}</text>
+      <text x="38" y="58" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">tools.Grep(…)</text>
+      <text x="24" y="78" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">{'}'} print(sum)</text>
+      <path d="M200 55 H236" />
+      <rect x="236" y="38" width="74" height="36" rx="6" class="fill-vx-mint" stroke="none" />
+      <text x="246" y="61" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink" stroke="none">1 result</text>
+    </svg>
   </Ladder>
 
-  <SubHead title="How the three modes differ">
+  <SubHead title="How the four modes differ">
     In any mode the model can ask you multiple-choice questions with <code class="mono">AskUserQuestion</code>{' '}
     instead of guessing. What happens to your answers depends on the mode. With a decision backend
     configured, the option you are most likely to pick comes first and carries a{' '}
     <code class="mono">(Recommended)</code> mark when the choice is clear. The model cannot add that mark itself.
   </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+  <details class="deep deep--wide">
+    <summary>Compare tools, writes, asks and stopping rules across the modes</summary>
+    <div class="deep__body">
+  <table class="mt-4 hidden w-full border-collapse text-left @3xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="w-[17%] pb-4"><span class="sr-only">Property</span></th>
         {modes.map((m, i) => (
-          <th scope="col" class={`px-5 pb-4 pt-3 text-lg font-bold ${i === 2 ? 'bg-vx-sand' : ''}`}>
+          <th scope="col" class={`px-5 pb-4 pt-3 text-lg font-bold ${i === modes.length - 1 ? 'bg-vx-sand' : ''}`}>
             <span class="mono text-xs font-medium text-vx-ink/60">{m.n} </span>{m.name}
           </th>
         ))}
@@ -136,7 +161,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         <tr class="border-b border-vx-ink/20 last:border-b-0">
           <th scope="row" class="py-5 pr-5 align-top font-semibold">{r}</th>
           {facts[r].map((f, i) => (
-            <td class={`px-5 py-5 align-top text-vx-ink/85 ${i === 2 ? 'bg-vx-sand/40' : ''}`}>
+            <td class={`px-5 py-5 align-top text-vx-ink/85 ${i === modes.length - 1 ? 'bg-vx-sand/40' : ''}`}>
               {split(f).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
             </td>
           ))}
@@ -144,14 +169,14 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       ))}
     </tbody>
   </table>
-  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+  <div class="mt-8 grid gap-4 @3xl:hidden">
     {modes.map((m, i) => (
-      <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+      <article class={`rounded-xl border border-vx-ink p-5 ${i === modes.length - 1 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <h4 class="text-xl font-bold">{m.name}</h4>
-        <dl class={`mt-4 grid gap-y-3 border-t pt-4 text-sm ${i === 2 ? 'border-vx-cream/20' : 'border-vx-ink/20'}`}>
+        <dl class={`mt-4 grid gap-y-3 border-t pt-4 text-sm ${i === modes.length - 1 ? 'border-vx-cream/20' : 'border-vx-ink/20'}`}>
           {rows.map((r) => (
             <div>
-              <dt class={i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}>{r}</dt>
+              <dt class={i === modes.length - 1 ? 'text-vx-cream/70' : 'text-vx-ink/60'}>{r}</dt>
               <dd class="m-0">{split(facts[r][i]).map(({ p, c }) => (c ? <code class="mono">{p}</code> : p))}</dd>
             </div>
           ))}
@@ -160,27 +185,30 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
+    </div>
+  </details>
+
   <SubHead title="A goal, pass by pass">
     A goal starts work at once. Its completion contract is drafted alongside and joins at the next pass
     when it is ready, and it is not held back by a read-only survey unless{' '}
     <code class="mono">resilience.goal_explore</code> is on.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 sm:grid-cols-2 lg:col-span-8 xl:grid-cols-4">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 @xl:grid-cols-2 @4xl:col-span-8 @5xl:grid-cols-4">
       {loop.map(([step, what], i) => (
         <li class="relative rounded-xl border border-vx-ink p-4">
           <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
           <p class="mono mt-2 font-semibold">{step}</p>
           <p class="mt-1 text-sm text-vx-ink/75">{what}</p>
-          {i < loop.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong xl:block" aria-hidden="true">▸</span>}
+          {i < loop.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @5xl:block" aria-hidden="true">▸</span>}
         </li>
       ))}
     </ol>
-    <aside class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-4">
+    <aside class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-4">
       <p class="mono text-xs tracking-wider text-vx-cream/70">SWITCH OR ASK</p>
       <p class="mt-3 flex items-baseline gap-3 text-vx-cream">
         <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">shift+tab</kbd>
-        <span>cycles agent, plan, goal and auto</span>
+        <span>cycles agent, plan, goal, code and auto</span>
       </p>
       <p class="mt-2 text-sm text-vx-cream/75">In auto the classifier picks the mode for each prompt.</p>
       <pre class="mono mt-4 overflow-x-auto text-sm leading-7 text-vx-mint"><code>/handoff plans/step-1.md</code></pre>
@@ -190,10 +218,18 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </aside>
   </div>
 
-  <SubHead title="Reviewing a plan">
+  <SubHead title="Reviewing a plan" surfaces={['tui', 'acp', 'pix sandbox']}>
     The plan is saved as a structured document. You approve it, send it back with notes, or cancel it.
   </SubHead>
-  <Shot class="mt-8" src={planReviewShot.src} alt="The plan review pane with Approve, Refine and Cancel" caption="plan review pane" />
+  <Shot
+    class="mt-8"
+    shot={planReviewShot}
+    title="plan review"
+    alt="The plan review pane with two steps, each naming its files and its check, then Approve, Refine and Cancel"
+    rows={[2, 18]}
+    marks={[{ row: 9, col: 40 }, { row: 19, col: 33 }]}
+    notes={['Each step names its files and the check that proves it.', 'Approve, refine with notes, or cancel.']}
+  />
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

@@ -11,6 +11,7 @@ text.
 - [Configuring servers](#configuring-servers)
 - [How tools appear](#how-tools-appear)
 - [Security model](#security-model)
+- [Built-in server (Pix Sandbox only)](#built-in-server-pix-sandbox-only)
 - [Commands](#commands)
 - [Limitations](#limitations)
 - [Edge cases](#edge-cases)
@@ -57,9 +58,10 @@ Servers are declared in your global `settings.json`
 Server names are letters, digits, `_` and `-`, at most 32.
 
 Servers start in the background once the first-run trust gate has passed, so
-a slow server never delays startup. They stop when Belai exits. A server that
-fails to start is reported by `/mcp` and offers no tools; the session carries
-on without it. A one-shot `-prompt` run waits for every server to connect or
+a slow server never delays startup. They stop when Belai exits. Connecting
+(the handshake and the tool listing together) gets 30 seconds. A server that
+fails to start, or does not connect in time, is reported by `/mcp` and offers
+no tools; the session carries on without it. A one-shot `-prompt` run waits for every server to connect or
 fail before its turn.
 
 The `mcp` key is read from your global settings only. A repository's
@@ -80,6 +82,9 @@ The `mcp` key is read from your global settings only. A repository's
   asks, because a server tool may do anything.
 - Server tools are not offered in plan mode, and an agent profile's tool
   allowlist drops them.
+- In [code mode](code-mode.md) they are not advertised either: a script calls
+  them as `mcp.<server>.<tool>(args)`, with the same permission rules and
+  classification. Agent, plan and goal mode are unchanged.
 
 ## Security model
 
@@ -94,6 +99,8 @@ The `mcp` key is read from your global settings only. A repository's
   `*_TOKEN`, `*_SECRET`, `BELAI_*` from your shell), gets only the variables
   you list, and runs in its own process group. With `sandbox: true` it runs
   under the OS sandbox too.
+- A profile's [facts](agent-profiles.md#facts) are not passed to MCP servers. A
+  server that needs a credential gets it through its own `env` entry.
 - Belai offers servers nothing to call back: no roots, sampling or
   elicitation. It only answers `ping`.
 - The `vulnetix:cli` header reference is resolved when the server is dialled
@@ -101,6 +108,30 @@ The `mcp` key is read from your global settings only. A repository's
   an `https` URL on `vulnetix.com` or a subdomain; any other use fails the
   server with the reason, so a hand-edited entry cannot send the credential
   elsewhere.
+
+## Built-in server (Pix Sandbox only)
+
+The Pix Sandbox build of Belai (`-tags belai_sandbox`, the `belai-pix-sandbox`
+release) carries one server of its own, `clef`. It is the only built-in server,
+and no other build has it: the code is not compiled in, so there is nothing to
+list or turn off.
+
+- It runs inside Belai on an in-process pipe speaking the same JSON-RPC as a
+  stdio server, so it goes through the same client, the same tool naming
+  (`mcp__clef__<tool>`), the same sanitizing and the same 64 KiB result cap. Its
+  tools carry kind `mcp`: mutating, always classified, and asking unless an allow
+  rule that names them (rules match a tool name exactly, so one rule per tool, for
+  example `mcp__clef__rank_options`) covers them.
+- It does not come from `mcp.servers`. A settings entry named `clef` is ignored,
+  `/mcp` shows it with the transport `builtin`, and `Upsert` and `Remove` leave
+  it alone. `/mcp restart clef` reconnects it.
+- Its tools ask the classifier's decision model for a true/false answer, an enum
+  pick, weights or an ordering, and return numbers and the caller's own options.
+  It starts only a decision model that speaks Clef or SystemOne; with none, a
+  call returns a tool error.
+
+The tools, their limits and their rules are in
+[Pix Sandbox](pix-sandbox.md#the-decider-mcp).
 
 ## Commands
 
@@ -130,5 +161,7 @@ reconnects one; the next turn uses its current tools.
 - An http server answering with a non-2xx status fails that call with the
   status. During connection, the status and a short excerpt of the body are
   the reason `/mcp` shows.
+- An http server's response is read up to 16 MiB; a larger one cannot be
+  decoded and fails the call.
 - A stdio server still running two seconds after Belai closes its input is
   killed with its process group.

@@ -265,3 +265,15 @@ func TestResolveKanbanDirection(t *testing.T) {
 		t.Error("Override must let a project file turn the board off")
 	}
 }
+
+// An unknown sandbox mode is skipped when layers merge, so the layer below
+// stands; on its own it reads as auto.
+func TestUnknownSandboxModeDoesNotLowerAValidOne(t *testing.T) {
+	merged := (Settings{Sandbox: &SandboxSettings{Mode: "required"}}).Override(Settings{Sandbox: &SandboxSettings{Mode: "strict"}})
+	if got := merged.Sandbox.ModeOr(); got != "required" {
+		t.Fatalf("an unknown project mode lowered required to %q", got)
+	}
+	if got := (&SandboxSettings{Mode: "strict"}).ModeOr(); got != "auto" {
+		t.Fatalf("an unknown mode alone reads as %q, want auto", got)
+	}
+}

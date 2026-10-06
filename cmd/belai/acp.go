@@ -34,6 +34,19 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	model := fs.String("model", "", "model id (default: the provider's)")
 	noTranscript := fs.Bool("no-transcript", false, "do not keep a session transcript of editor sessions")
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	// Nothing but protocol may follow on stdout, so a stray word is refused
+	// here rather than starting a server the caller did not mean to run.
+	if fs.NArg() > 0 {
+		if fs.Arg(0) == "help" {
+			fs.Usage()
+			return 0
+		}
+		fmt.Fprintf(stderr, "belai acp: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	wd, _ := os.Getwd()
@@ -49,6 +62,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	// The mcp key is read from the user's own settings only, so one set of
 	// servers serves every session on this connection.
 	mcpMgr := mcp.StartAsync(ctx, global.MCP, mcp.Options{
+		Builtins:   builtinMCP(global, wd),
 		Workdir:    wd,
 		HTTPClient: httpclient.Default(),
 		VulnetixAuth: func() (string, error) {
@@ -117,7 +131,8 @@ func buildACPSessionWith(ctx context.Context, cwd, sessionID, providerName, mode
 	if err != nil {
 		return nil, err
 	}
-	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true)
+	// No git sync: an editor owns this working copy and its open buffers.
+	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true, nil)
 }
 
 // acpConfig resolves the model config, merged settings and effective posture

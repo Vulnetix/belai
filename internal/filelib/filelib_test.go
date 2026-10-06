@@ -515,3 +515,251 @@ func TestMatchAgainstBody(t *testing.T) {
 		t.Fatalf("expected no match")
 	}
 }
+
+func TestPut(t *testing.T) {
+	for name, s := range specs() {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			load := func() []Entry {
+				l, err := s.Load(config.ScopeProject, dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return l.Entries
+			}
+			// A new entry with no order goes after the last, like Create.
+			a, err := s.Put(config.ScopeProject, dir, "alpha", "one", 0, true)
+			if err != nil || a.Order != 10 || !a.Enabled {
+				t.Fatalf("new, no order: %+v, %v", a, err)
+			}
+			// A new disabled entry with no order is disabled at the next slot.
+			b, err := s.Put(config.ScopeProject, dir, "beta", "two", 0, false)
+			if err != nil || b.Order != 20 || b.Enabled {
+				t.Fatalf("new disabled: %+v, %v", b, err)
+			}
+			// An explicit order is taken as given, even if it shares a number.
+			c, err := s.Put(config.ScopeProject, dir, "gamma", "three", 10, true)
+			if err != nil || c.Order != 10 {
+				t.Fatalf("explicit order: %+v, %v", c, err)
+			}
+			// A replace with order 0 keeps the entry's order and its place.
+			a2, err := s.Put(config.ScopeProject, dir, "alpha", "ONE", 0, true)
+			if err != nil || a2.Order != 10 || a2.Path != a.Path {
+				t.Fatalf("replace keeps order: %+v (was %+v), %v", a2, a, err)
+			}
+			// A replace that changes order and enabled moves the file: one file per name.
+			a3, err := s.Put(config.ScopeProject, dir, "alpha", "uno", 300, false)
+			if err != nil || a3.Order != 300 || a3.Enabled || a3.Path == a.Path {
+				t.Fatalf("replace moves: %+v, %v", a3, err)
+			}
+			if _, err := os.Stat(a.Path); !os.IsNotExist(err) {
+				t.Errorf("the replaced file is still there: %v", err)
+			}
+			var names []string
+			for _, e := range load() {
+				names = append(names, fmt.Sprintf("%s:%d:%v:%s", e.Name, e.Order, e.Enabled, e.Body))
+			}
+			want := []string{"gamma:10:true:three", "beta:20:false:two", "alpha:300:false:uno"}
+			if fmt.Sprint(names) != fmt.Sprint(want) {
+				t.Fatalf("library = %v, want %v", names, want)
+			}
+			// No temp file is left behind.
+			des, _ := os.ReadDir(libDir(t, s, dir))
+			for _, de := range des {
+				if _, _, _, ok := s.ParseFileName(de.Name()); !ok {
+					t.Errorf("stray %s after Put", de.Name())
+				}
+			}
+		})
+	}
+}
+
+func TestPutRefusesWhatItCannotPlace(t *testing.T) {
+	s := specs()["prompt"]
+	dir := t.TempDir()
+	for _, name := range []string{"Upper", "a b", "a_b", ""} {
+		if _, err := s.Put(config.ScopeProject, dir, name, "x", 0, true); err == nil {
+			t.Errorf("name %q was put", name)
+		}
+	}
+	for _, order := range []int{-1, 1000} {
+		if _, err := s.Put(config.ScopeProject, dir, "ok", "x", order, true); err == nil {
+			t.Errorf("order %d was put", order)
+		}
+	}
+	d := filepath.Join(dir, ".vulnetix", "prompts")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 999; i++ {
+		if err := os.WriteFile(filepath.Join(d, fmt.Sprintf("%03d-p%d.md", i, i)), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Put(config.ScopeProject, dir, "extra", "x", 5, true); !errors.Is(err, ErrLibraryFull) {
+		t.Errorf("a full library took another: %v", err)
+	}
+	if _, err := s.Put(config.ScopeProject, dir, "extra", "x", 0, true); !errors.Is(err, ErrLibraryFull) {
+		t.Errorf("a full library took another at the end: %v", err)
+	}
+	// Replacing an entry of a full library is fine.
+	if _, err := s.Put(config.ScopeProject, dir, "p5", "new", 0, true); err != nil {
+		t.Errorf("replace in a full library: %v", err)
+	}
+}
+
+// A spec with an alternate extension reads both and keeps each file's own
+// extension through every operation.
+func mixedSpec() Spec {
+	return Spec{Ext: ".sh", AltExts: []string{".json"}, TempPrefix: ".tmp-process-", GlobalDir: config.GlobalProcessesDir, ProjectDir: config.ProjectProcessesDir}
+}
+
+func writeAt(t *testing.T, dir, name, body string) {
+	t.Helper()
+	d := filepath.Join(dir, ".vulnetix", "processes")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, name), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAltExtsAreEntries(t *testing.T) {
+	s := mixedSpec()
+	dir := t.TempDir()
+	writeAt(t, dir, "010-legacy.sh", "echo hi\n")
+	writeAt(t, dir, "020-structured.json", `{"name":"x"}`+"\n")
+	writeAt(t, dir, "_030-off.json", "{}\n")
+	writeAt(t, dir, "040-other.txt", "stray")
+	l, err := s.Load(config.ScopeProject, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range l.Entries {
+		got = append(got, fmt.Sprintf("%s:%s:%v", e.Name, e.Ext, e.Enabled))
+	}
+	if fmt.Sprint(got) != "[legacy:.sh:true structured:.json:true off:.json:false]" || fmt.Sprint(l.Strays) != "[040-other.txt]" {
+		t.Fatalf("entries %v strays %v", got, l.Strays)
+	}
+	if o, slug, en, ext, ok := s.ParseFileNameExt("_030-off.json"); !ok || o != 30 || slug != "off" || en || ext != ".json" {
+		t.Errorf("ParseFileNameExt = %d %s %v %s %v", o, slug, en, ext, ok)
+	}
+	// The plain parser still answers for either extension.
+	if _, _, _, ok := s.ParseFileName("010-a.json"); !ok {
+		t.Error("ParseFileName rejects the alternate extension")
+	}
+	if _, _, _, ok := s.ParseFileName("010-a.md"); ok {
+		t.Error("ParseFileName accepts an extension the spec does not read")
+	}
+}
+
+func TestSameSlugUnderTwoExtensionsTheAlternateWins(t *testing.T) {
+	s := mixedSpec()
+	dir := t.TempDir()
+	writeAt(t, dir, "010-web.sh", "old\n")
+	writeAt(t, dir, "020-web.json", "{}\n")
+	l, err := s.Load(config.ScopeProject, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(l.Entries) != 1 || l.Entries[0].Ext != ".json" || fmt.Sprint(l.Strays) != "[010-web.sh]" {
+		t.Fatalf("entries %+v strays %v", l.Entries, l.Strays)
+	}
+	// The stray is never touched.
+	if _, err := os.Stat(filepath.Join(dir, ".vulnetix", "processes", "010-web.sh")); err != nil {
+		t.Errorf("the stray was removed: %v", err)
+	}
+	// Create refuses the name, as it does for any slug in use.
+	if _, err := s.Create(config.ScopeProject, dir, "web", "x"); !errors.Is(err, ErrNameExists) {
+		t.Errorf("Create over a json entry: %v", err)
+	}
+}
+
+func TestAltExtsSurviveToggleAndReorder(t *testing.T) {
+	s := mixedSpec()
+	dir := t.TempDir()
+	writeAt(t, dir, "010-a.sh", "a\n")
+	writeAt(t, dir, "020-b.json", "{}\n")
+	writeAt(t, dir, "030-c.sh", "c\n")
+	l, _ := s.Load(config.ScopeProject, dir)
+	b, err := s.SetEnabled(l.Entries[1], false)
+	if err != nil || filepath.Base(b.Path) != "_020-b.json" {
+		t.Fatalf("SetEnabled: %+v %v", b, err)
+	}
+	l, _ = s.Load(config.ScopeProject, dir)
+	moved, err := s.Reorder(config.ScopeProject, dir, l.Entries, 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range moved {
+		names = append(names, filepath.Base(e.Path))
+	}
+	if fmt.Sprint(names) != "[010-c.sh 020-a.sh _030-b.json]" {
+		t.Fatalf("after reorder: %v", names)
+	}
+	des, _ := os.ReadDir(filepath.Join(dir, ".vulnetix", "processes"))
+	if len(des) != 3 {
+		t.Errorf("files after reorder: %d", len(des))
+	}
+}
+
+func TestPutExt(t *testing.T) {
+	s := mixedSpec()
+	dir := t.TempDir()
+	writeAt(t, dir, "010-web.sh", "old\n")
+	// A structured entry replaces a legacy one of the same name and keeps its order.
+	e, err := s.PutExt(config.ScopeProject, dir, "web", `{"name":"web"}`, 0, true, ".json")
+	if err != nil || e.Order != 10 || e.Ext != ".json" || filepath.Base(e.Path) != "010-web.json" {
+		t.Fatalf("replace: %+v %v", e, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".vulnetix", "processes", "010-web.sh")); !os.IsNotExist(err) {
+		t.Errorf("the legacy file is still there: %v", err)
+	}
+	// A new alternate entry with no order goes last.
+	e2, err := s.PutExt(config.ScopeProject, dir, "api", "{}", 0, false, ".json")
+	if err != nil || e2.Order != 20 || filepath.Base(e2.Path) != "_020-api.json" {
+		t.Fatalf("new: %+v %v", e2, err)
+	}
+	if _, err := s.PutExt(config.ScopeProject, dir, "x", "{}", 0, true, ".yaml"); err == nil {
+		t.Error("an extension the spec does not read was put")
+	}
+	// Put keeps the primary extension.
+	e3, err := s.Put(config.ScopeProject, dir, "legacy", "echo", 0, true)
+	if err != nil || e3.Ext != ".sh" && e3.Ext != "" {
+		t.Fatalf("Put: %+v %v", e3, err)
+	}
+}
+
+// A reorder moves each file to the name of its own entry: the body travels with
+// the entry, whichever position it takes.
+func TestReorderKeepsEachBodyWithItsEntry(t *testing.T) {
+	for name, s := range specs() {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, n := range []string{"a", "b", "c", "d"} {
+				if _, err := s.Create(config.ScopeProject, dir, n, "body of "+n); err != nil {
+					t.Fatal(err)
+				}
+			}
+			l, _ := s.Load(config.ScopeProject, dir)
+			for _, mv := range [][2]int{{0, 3}, {3, 1}, {2, 0}} {
+				l, _ = s.Load(config.ScopeProject, dir)
+				if _, err := s.Reorder(config.ScopeProject, dir, l.Entries, mv[0], mv[1]); err != nil {
+					t.Fatal(err)
+				}
+				after, _ := s.Load(config.ScopeProject, dir)
+				if len(after.Entries) != 4 {
+					t.Fatalf("%d entries after %v", len(after.Entries), mv)
+				}
+				for _, e := range after.Entries {
+					if e.Body != "body of "+e.Name {
+						t.Fatalf("after %v: %s holds %q", mv, e.Name, e.Body)
+					}
+				}
+			}
+		})
+	}
+}

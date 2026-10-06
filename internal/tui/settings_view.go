@@ -144,6 +144,7 @@ var settingsGroupDefs = []struct{ key, title string }{
 	{"budgets", "Budgets"},
 	{"voice", "Voice"},
 	{"readaloud", "Read aloud"},
+	{"knowledge", "Knowledge"},
 	{"jevjobs", "Jev jobs"},
 	{"jevthresholds", "Jev thresholds"},
 }
@@ -157,6 +158,8 @@ func settingsGroupOf(key string) string {
 		return "voice"
 	case strings.HasPrefix(key, "tts."):
 		return "readaloud"
+	case strings.HasPrefix(key, knowledgeRowPrefix):
+		return "knowledge"
 	case strings.HasPrefix(key, jevRowPrefix):
 		return "jevjobs"
 	case strings.HasPrefix(key, jevThresholdRowPrefix):
@@ -164,7 +167,7 @@ func settingsGroupOf(key string) string {
 	}
 	switch key {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
-		"show_edits", "show_internal_work", "show_todos", "mouse", "show_session_names":
+		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "show_session_names", "idle_pane":
 		return "display"
 	case "max_agents", "plan_explore", "goal_explore":
 		return "agents"
@@ -184,6 +187,7 @@ func settingsWritesGlobalOnly(key string) bool {
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
+		strings.HasPrefix(key, knowledgeRowPrefix),
 		strings.HasPrefix(key, jevThresholdRowPrefix):
 		return true
 	}
@@ -381,6 +385,8 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_edits", label: "file edits", kind: "toggle", value: editsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_internal_work", label: "internal work", kind: "choose", opts: []string{"hidden", "decisions", "security", "all"}, value: s.InternalWorkLevel(), src: sourceLabel(origin["ui"])},
+		{key: "layout", label: "layout", kind: "choose", opts: config.LayoutNames, value: s.Layout(), src: sourceLabel(origin["ui"]), help: "clean is the usual thread; chronological places every late row by the time it happened and shows the time on each row"},
+		{key: "idle_pane", label: "empty composer pane", kind: "choose", opts: config.IdlePaneNames, value: s.IdlePane(), src: sourceLabel(origin["ui"]), help: "the one pane shown above an empty composer while the chat is idle: none, the kanban board, or a runs panel tab (activity, helpers, processes, crew, git, ci, intel). It goes away when you type; none by default"},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -417,6 +423,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "tts.cache_mb", label: "read aloud cache", kind: "choose", opts: []string{"0", "64", "256", "1024"}, value: strconv.Itoa(s.TTS.TTSCacheMBOr()), src: sourceLabel(origin["tts"]), help: "megabytes of audio kept for replay, least recently used out first; 0 keeps none"},
 		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
+	rows = append(rows, knowledgeRows(s, origin)...)
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.
 	if s.JevConfigured() {
@@ -446,6 +453,9 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevHandoffClarity:  "jev handoff clarity",
 	config.JevGateAlignment:   "jev gate alignment",
 	config.JevRequestCoverage: "jev request coverage",
+	config.JevKnowledgeTopics: "jev knowledge topics",
+	config.JevAgentPick:       "jev agent pick",
+	config.JevTeleportVerify:  "jev teleport verify",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -462,6 +472,9 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevHandoffClarity:  "send a delivery handoff to review when it rates as unclear, instead of straight to backlog",
 	config.JevGateAlignment:   "flag a runnable gate whose suite and test may not show its stated outcome, and send its card to review",
 	config.JevRequestCoverage: "file a gap card for a request clause whose covering tasks do not seem to do it",
+	config.JevKnowledgeTopics: "label indexed documents with the topics they are about, by showing the backend a sample of each document's text",
+	config.JevAgentPick:       "in auto mode, engage one of your agent profiles when it is a clear fit for a general request",
+	config.JevTeleportVerify:  "rate a teleport replay against the origin's summary, accepting it only when clear, and otherwise ask the model verifier with the scores as a hint",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the
@@ -727,6 +740,9 @@ func (a *App) settingsStepGroup(delta int) tea.Cmd {
 }
 
 func (a *App) rawValue(key string) string {
+	if strings.HasPrefix(key, knowledgeRowPrefix) {
+		return a.knowledgeRaw(key)
+	}
 	switch key {
 	case "provider":
 		return a.settings.Provider
@@ -768,6 +784,9 @@ func (a *App) rawValue(key string) string {
 
 func (a *App) commitTextRow(row settingsRow, raw string) error {
 	val := strings.TrimSpace(raw)
+	if strings.HasPrefix(row.key, knowledgeRowPrefix) {
+		return a.knowledgeCommit(row.key, val)
+	}
 	switch row.key {
 	case "provider":
 		if val == "" {
@@ -1010,6 +1029,20 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.ShowInternalWork = &next
+		case "layout":
+			idx := indexOfString(opts, s.Layout())
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			next := opts[(idx+1)%len(opts)]
+			s.UI.Layout = &next
+		case "idle_pane":
+			idx := indexOfString(opts, s.IdlePane())
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			next := opts[(idx+1)%len(opts)]
+			s.UI.IdlePane = &next
 		case "tests.post_end":
 			if s.Tests == nil {
 				s.Tests = &config.TestsSettings{}
@@ -1046,6 +1079,9 @@ func (a *App) unsetSetting(key string) error {
 	}
 	if strings.HasPrefix(key, "tests.") {
 		return a.unsetTestsKey(key)
+	}
+	if strings.HasPrefix(key, knowledgeRowPrefix) {
+		return a.knowledgeUnset(key)
 	}
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceUnset(key)
@@ -1102,6 +1138,14 @@ func (a *App) unsetSetting(key string) error {
 		case "show_internal_work":
 			if s.UI != nil {
 				s.UI.ShowInternalWork = nil
+			}
+		case "layout":
+			if s.UI != nil {
+				s.UI.Layout = nil
+			}
+		case "idle_pane":
+			if s.UI != nil {
+				s.UI.IdlePane = nil
 			}
 		case "show_todos":
 			if s.UI != nil {

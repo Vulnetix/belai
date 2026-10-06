@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // The kanban tools read and write the global board (internal/kanban). They are
@@ -111,6 +114,14 @@ type WorkerClaim struct {
 	// Coverage is true for a worker that plans a request card: it records the
 	// request's clauses with KanbanContract and every handoff covers some.
 	Coverage bool
+	// HandoffRepos is true when the profile lets a handoff name a repository.
+	// Repos resolves a name against the harness's local repository index and
+	// returns the checkout's directory; RepoNames lists the names it knows. The
+	// harness derives the project and directory from that checkout, so no model
+	// text becomes provenance. Both are set by the harness, never by an argument.
+	HandoffRepos bool
+	Repos        func(ref string) (dir string, ok bool)
+	RepoNames    func() []string
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -503,6 +514,10 @@ func (t KanbanHandoff) Definition() Definition {
 		props["gates"] = Property{Type: "array", Items: &gate, Description: gatesHelp}
 		desc += "Give acceptance gates so the harness can prove the task done. "
 	}
+	if t.Claim != nil && t.Claim.HandoffRepos && t.Claim.Repos != nil {
+		props["repo"] = Property{Type: "string", Description: "The repository the task belongs to, as owner/name or a bare name from the Repos listing. The item is filed under that repository's project, where its agents take it. Omit it to file under this agent's own project."}
+		desc += "Use repo to file a task under the repository that owns the problem. "
+	}
 	if t.Claim != nil && len(t.Claim.HandoffTo) > 0 {
 		props["assignee"] = Property{Type: "string", Enum: slices.Clone(t.Claim.HandoffTo), Description: "The agent that should take it; omit for any agent matching its labels."}
 	}
@@ -598,7 +613,15 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 			in.Body = strings.TrimSpace(in.Body + "\n\nreview: " + strings.Join(why, "; "))
 		}
 	}
-	it, dup, err := t.Store.Add(in, t.prov())
+	prov := t.prov()
+	if ref, _ := argString(args, "repo"); strings.TrimSpace(ref) != "" {
+		own := prov
+		if prov, err = t.repoProvenance(strings.TrimSpace(ref)); err != nil {
+			return Result{}, err
+		}
+		prov.SessionID, prov.HostID = own.SessionID, own.HostID
+	}
+	it, dup, err := t.Store.Add(in, prov)
 	if err != nil {
 		return Result{}, kanbanErr(err, "")
 	}
@@ -607,10 +630,14 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 		c.handoff = append(c.handoff, it.ID)
 	}
 	c.mu.Unlock()
-	if dup {
-		return kanbanWrite("duplicate", it, fmt.Sprintf("already on the board as %s [%s]", it.Short(), it.List)), nil
+	where := ""
+	if prov.ProjectKey != t.prov().ProjectKey || prov.Dir != t.prov().Dir {
+		where = " under " + sanitize.Line(it.Project, 80)
 	}
-	return kanbanWrite("handoff", it, fmt.Sprintf("%s handed off to %s", it.Short(), it.List)), nil
+	if dup {
+		return kanbanWrite("duplicate", it, fmt.Sprintf("already on the board as %s [%s]%s", it.Short(), it.List, where)), nil
+	}
+	return kanbanWrite("handoff", it, fmt.Sprintf("%s handed off to %s%s", it.Short(), it.List, where)), nil
 }
 
 // argStrings reads a string-array argument: an array, a JSON array string,
@@ -796,3 +823,68 @@ var (
 	_ Tool    = KanbanHandoff{}
 	_ Mutator = KanbanSearch{}
 )
+
+// repoProvenance resolves a handoff's repo argument against the harness's
+// local repository index. The argument only chooses among checkouts the harness
+// found beneath the worker's directory: the project and directory come from the
+// checkout, never from the text. An unknown or ambiguous name is refused with
+// the names the index holds.
+func (t KanbanHandoff) repoProvenance(ref string) (kanban.Provenance, error) {
+	c := t.Claim
+	if c == nil || !c.HandoffRepos || c.Repos == nil {
+		return kanban.Provenance{}, errors.New("this agent's profile does not file handoffs under other repositories")
+	}
+	dir, ok := c.Repos(ref)
+	if !ok || dir == "" {
+		msg := fmt.Sprintf("repo %q is not a repository in the local index (a name must match exactly one checkout beneath this directory)", sanitize.Line(ref, 80))
+		if c.RepoNames != nil {
+			if names := c.RepoNames(); len(names) > 0 {
+				shown := names
+				if len(shown) > 20 {
+					shown = shown[:20]
+				}
+				for i, n := range shown {
+					shown[i] = sanitize.Line(n, 80)
+				}
+				msg += ": " + strings.Join(shown, ", ")
+				if len(names) > len(shown) {
+					msg += fmt.Sprintf(" and %d more", len(names)-len(shown))
+				}
+			}
+		}
+		return kanban.Provenance{}, errors.New(msg)
+	}
+	return kanban.ProvenanceFor(dir, "", ""), nil
+}
+
+// UseRepoIndex has a handoff's repo argument resolve against ix: the git
+// checkouts the harness found beside and beneath the worker's directory. A name
+// is owner/name from the checkout's origin remote, or a bare name that exactly
+// one checkout has. A checkout with no parseable origin is named by its
+// directory, the name the refusal lists for it. Matching is case-insensitive.
+func (c *WorkerClaim) UseRepoIndex(ix repoindex.Index) {
+	c.Repos = func(ref string) (string, bool) {
+		if e, ok := ix.Lookup(ref); ok {
+			return e.Path, true
+		}
+		var hit string
+		n := 0
+		for _, e := range ix.Entries() {
+			if e.Owner == "" && e.Name == "" && strings.EqualFold(filepath.Base(e.Path), strings.TrimSpace(ref)) {
+				hit, n = e.Path, n+1
+			}
+		}
+		return hit, n == 1
+	}
+	c.RepoNames = func() []string {
+		var names []string
+		for _, e := range ix.Entries() {
+			if e.Owner != "" && e.Name != "" {
+				names = append(names, e.Owner+"/"+e.Name)
+			} else {
+				names = append(names, filepath.Base(e.Path))
+			}
+		}
+		return names
+	}
+}

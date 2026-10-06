@@ -524,6 +524,7 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 	} else if m.sentinel.IsSafe() || a.effectivePosture().Level(posture.ToolResultUnsafe) == posture.Ignore {
 		att.body = m.body
 		att.state = attachSafe
+		a.indexAttachment(att)
 	} else {
 		att.state = attachRejected
 		att.reason = fmt.Sprintf("%s: classified %s", att.text, m.sentinel.Label())

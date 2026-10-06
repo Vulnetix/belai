@@ -35,7 +35,12 @@ type KanbanSpec struct {
 	// may route new items to. Both empty: no handoffs.
 	HandoffTo     []string `json:"handoff_to,omitempty"`
 	HandoffLabels []string `json:"handoff_labels,omitempty"`
-	MaxAttempts   int      `json:"max_attempts,omitempty"`
+	// HandoffRepos gives KanbanHandoff a repo argument that files the task
+	// under a repository checked out beneath the worker's directory, chosen
+	// from the harness's local repository index. It is for a worker that runs
+	// in a plain folder holding several repositories and finds work for each.
+	HandoffRepos bool `json:"handoff_repos,omitempty"`
+	MaxAttempts  int  `json:"max_attempts,omitempty"`
 	// Lease is how long a claim holds without renewal; Poll how often an
 	// idle worker looks for work. Go durations.
 	Lease string `json:"lease,omitempty"`
@@ -161,6 +166,16 @@ func (s SurveySpec) EveryOr() time.Duration {
 	return DefaultSurveyEvery
 }
 
+// SurveyGrace is how early a start may be and still survey. The interval is
+// measured from the stamp the previous survey wrote, which is written after the
+// item is filed, so a start exactly one interval later (an hourly cron, an
+// hourly schedule) lands a fraction of a second short and would be skipped about
+// as often as not. The grace is two minutes, and never more than a tenth of the
+// interval.
+func (s SurveySpec) SurveyGrace() time.Duration {
+	return min(2*time.Minute, s.EveryOr()/10)
+}
+
 // Route is a destination list plus label edits.
 type Route struct {
 	List       string   `json:"list,omitempty"`
@@ -186,6 +201,10 @@ type WorkspaceSpec struct {
 	// Publish is "none" (default) or "draft_pr": when the item reaches done,
 	// push its branch and open a draft pull request.
 	Publish string `json:"publish,omitempty"`
+	// Sync lists files and directories under .vulnetix/crews that the harness
+	// copies into the worktree before each turn and, with write access, merges
+	// back after it (see sync.go). It needs isolation: worktree.
+	Sync []SyncSpec `json:"sync,omitempty"`
 }
 
 // MemorySpec turns on the worker's lessons file.
@@ -374,6 +393,14 @@ func (p AgentProfile) validateWorker() error {
 			return fmt.Errorf("kanban.handoff_labels: %q is not a normalised label (lower-case [a-z0-9:_-])", l)
 		}
 	}
+	if k.HandoffRepos {
+		if len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+			return errors.New("kanban.handoff_repos needs handoff_to or handoff_labels: it files handoffs under other repositories")
+		}
+		if k.Gates != nil {
+			return errors.New("kanban.handoff_repos cannot be combined with kanban.gates: a gate names a test suite of the worker's own repository")
+		}
+	}
 	if k.Lease != "" {
 		d, err := time.ParseDuration(k.Lease)
 		if err != nil || d < kanban.MinLease || d > kanban.MaxLease {
@@ -453,6 +480,9 @@ func (p AgentProfile) validateWorker() error {
 		}
 		if strings.HasPrefix(strings.TrimSpace(w.Base), "-") {
 			return errors.New("workspace.base must be a commit or branch, not an option")
+		}
+		if err := validateSync(w); err != nil {
+			return err
 		}
 	}
 	if b := p.Budget; b != nil {

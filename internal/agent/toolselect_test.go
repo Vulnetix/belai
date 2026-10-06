@@ -466,3 +466,62 @@ func TestWithoutABackendEverySkillIsListed(t *testing.T) {
 		t.Fatalf("system block:\n%s", system)
 	}
 }
+
+// A session whose registry carries a profile's skills list shows that skill and
+// no other; an ordinary session shows no builtin skill at all.
+func TestSystemBlockListsOnlyTheProfilesSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BELAI_HOME", home)
+	writeSkill(t, home, "git-ops", "Rebase and open pull requests")
+	systemFor := func(reg *tools.Registry) string {
+		var mu sync.Mutex
+		var system string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var req struct {
+				Messages []struct{ Role, Content string } `json:"messages"`
+			}
+			_ = json.Unmarshal(raw, &req)
+			sys := ""
+			for _, m := range req.Messages {
+				if m.Role == "system" {
+					sys = m.Content
+				}
+			}
+			if strings.Contains(sys, "security classifier") {
+				writeChatJSON(w, "SAFE")
+				return
+			}
+			mu.Lock()
+			system = sys
+			mu.Unlock()
+			writeChatJSON(w, "done")
+		}))
+		defer srv.Close()
+		root := t.TempDir()
+		sess, err := NewSession(Options{
+			Cfg: run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "m"}, Client: srv.Client(),
+			Registry: reg, Posture: posture.Defaults(), Workdir: root, SkipNonceSeed: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sess.RunInput(context.Background(), TurnInput{Prompt: "hello there", ForceMode: modes.ModeAgent}); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return system
+	}
+	root := t.TempDir()
+	base := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.Skill{})
+
+	plain := systemFor(base)
+	if !strings.Contains(plain, "git-ops") || strings.Contains(plain, "belai-scout") {
+		t.Fatalf("an ordinary session:\n%s", plain)
+	}
+	scoped := systemFor(base.WithSkills([]string{"belai-scout"}))
+	if !strings.Contains(scoped, "belai-scout: ") || strings.Contains(scoped, "git-ops") || strings.Contains(scoped, "belai-patcher") {
+		t.Fatalf("a session scoped to belai-scout:\n%s", scoped)
+	}
+}

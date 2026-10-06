@@ -469,8 +469,7 @@ func (a *App) handleRunsProcessKey(m tea.KeyMsg) tea.Cmd {
 		if p.ID == "" {
 			return nil
 		}
-		_ = a.procManager.Stop(pid)
-		_, _ = a.procManager.Start(p.Name, p.Command)
+		_, _ = a.procManager.Relaunch(pid)
 	}
 	return nil
 }
@@ -552,6 +551,11 @@ func (a *App) handleRunsSubagentKey(m tea.KeyMsg) tea.Cmd {
 // which tab opens when the panel is currently closed; when the panel is
 // already open, f9 closes it regardless of focus.
 func (a *App) toggleRunsPanel(tab int) tea.Cmd {
+	if a.takeIdleRuns() {
+		// The pane ui.idle_pane opened: the first press takes the keyboard
+		// and makes it an ordinary panel, the next closes it.
+		return nil
+	}
 	if !a.runsOpen {
 		if a.height < minRunsPanelOpenHeight {
 			return nil

@@ -115,7 +115,7 @@ type ClassifierConfig struct {
 // fail-closed: no inheritance, and phase 3 only when a classifier provider
 // and model are both explicitly set.
 type SecurityClassifierConfig struct {
-	// Kind is "llm", "jev" or "models".
+	// Kind is "llm", "models", "openrouter-decisions" or "systemone".
 	Kind string
 	// Phase1 and Phase2 configure the two local gates; nil disables that gate.
 	Phase1 *mlclassify.ModelConfig
@@ -217,11 +217,11 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		return out, nil
 	}
 
-	// Kind "jev" is a Jev decision backend and nothing else: a provider and
+	// A decision kind is a decision backend and nothing else: a provider and
 	// model that would chat are refused rather than quietly classified by a
 	// model the user did not ask for.
-	if IsDecisionKind(cls.Kind) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
-		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, a Jev provider profile, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.LocalProvider)
+	if IsDecisionKind(config.CanonicalKind(cls.Kind)) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
+		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, %s, Clef on cloudflare-workers-ai or cloudflare-ai-gateway, a provider profile of kind systemone, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.DeciderProvider, decisions.LocalProvider)
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -390,16 +390,18 @@ func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierS
 // "llm".
 const ClassifierKindOpenRouterDecisions = "openrouter-decisions"
 
-// ClassifierKindJev is the classifier kind that answers through a Jev server
-// speaking TypeSafe's native /v1/systemone API: the hosted typesafe provider
-// or a self-hosted Jev profile. Before the kinds were split, "jev" also named
-// the OpenRouter and local backends; ClassifierKind reads such a file as
-// ClassifierKindOpenRouterDecisions.
-const ClassifierKindJev = "jev"
+// ClassifierKindSystemOne is the classifier kind that answers through a
+// server speaking the /v1/systemone decision API: the hosted typesafe
+// provider, Strands Decider-2B, or a provider profile of kind systemone. It
+// was named "jev" before the protocol was named for itself, and
+// config.CanonicalKind still reads that name as this kind. Before the kinds
+// were split, "jev" also named the OpenRouter and local backends;
+// ClassifierKind reads such a file as ClassifierKindOpenRouterDecisions.
+const ClassifierKindSystemOne = "systemone"
 
 // IsDecisionKind reports whether a classifier kind is a decision backend.
 func IsDecisionKind(kind string) bool {
-	return kind == ClassifierKindOpenRouterDecisions || kind == ClassifierKindJev
+	return kind == ClassifierKindOpenRouterDecisions || kind == ClassifierKindSystemOne
 }
 
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
@@ -412,7 +414,7 @@ func IsDecisionKind(kind string) bool {
 func ClassifierKind(cls *config.ClassifierSettings) string {
 	kind := ""
 	if cls != nil {
-		kind = cls.Kind
+		kind = config.CanonicalKind(cls.Kind)
 	}
 	if kind == "" && mlclassify.Embedded() {
 		return "models"
@@ -422,15 +424,16 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 			switch {
 			case cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model):
 				return ClassifierKindOpenRouterDecisions
-			case cls.Provider == decisions.TypeSafeProvider:
-				return ClassifierKindJev
+			case cls.Provider == decisions.TypeSafeProvider, cls.Provider == decisions.DeciderProvider, decisions.IsHostedClef(cls.Provider, cls.Model),
+				decisions.IsHostedTev1(cls.Provider, cls.Model), decisions.IsOllamaTev1(cls.Provider, cls.Model):
+				return ClassifierKindSystemOne
 			}
 		}
 		return "llm"
 	}
 	// Files written before the split say "jev" for the OpenRouter and local
 	// backends too.
-	if kind == ClassifierKindJev && cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
+	if kind == ClassifierKindSystemOne && cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
 		return ClassifierKindOpenRouterDecisions
 	}
 	return kind
@@ -620,20 +623,22 @@ type RoutingConfig struct {
 // plan mode's pre-planning latency. Compaction stays on the main model, whose
 // quality shapes the agent's later work.
 var fastUseCases = map[string]bool{
-	rolemanager.UseCaseModeEval:       true,
-	rolemanager.UseCaseSessionName:    true,
-	rolemanager.UseCaseGoalEval:       true,
-	rolemanager.UseCasePlanEval:       true,
-	rolemanager.UseCaseAgentEval:      true,
-	rolemanager.UseCaseGoalContract:   true,
-	rolemanager.UseCaseClarify:        true,
-	rolemanager.UseCaseDepChange:      true,
-	rolemanager.UseCaseWebFetch:       true,
-	rolemanager.UseCaseBashReplan:     true,
-	rolemanager.UseCaseTestReport:     true,
-	rolemanager.UseCaseVoiceCleanup:   true,
-	rolemanager.UseCaseGateDraft:      true,
-	rolemanager.UseCaseDeliveryReport: true,
+	rolemanager.UseCaseModeEval:        true,
+	rolemanager.UseCaseSessionName:     true,
+	rolemanager.UseCaseGoalEval:        true,
+	rolemanager.UseCasePlanEval:        true,
+	rolemanager.UseCaseAgentEval:       true,
+	rolemanager.UseCaseGoalContract:    true,
+	rolemanager.UseCaseClarify:         true,
+	rolemanager.UseCaseDepChange:       true,
+	rolemanager.UseCaseWebFetch:        true,
+	rolemanager.UseCaseBashReplan:      true,
+	rolemanager.UseCaseTestReport:      true,
+	rolemanager.UseCaseVoiceCleanup:    true,
+	rolemanager.UseCaseGateDraft:       true,
+	rolemanager.UseCaseDeliveryReport:  true,
+	rolemanager.UseCaseTeleportDistill: true,
+	rolemanager.UseCaseTeleportVerify:  true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.
@@ -1656,6 +1661,18 @@ func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.
 	return r
 }
 
+// NewFastClassifier is the fast tier on its own, for a caller that runs it
+// beside the main model whatever the use case. It is nil when there is no fast
+// tier, or when the fast tier is the main model, which a second call would only
+// repeat.
+func NewFastClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
+	f := cfg.Routing.Fast
+	if f == nil || (f.Provider == cfg.Provider && f.Model == cfg.Model) {
+		return nil
+	}
+	return classifierFromConfig(mainClassifierConfig(*f), client, onRetry)
+}
+
 // tieredClassifier sends fast use cases to the fast tier and everything else
 // to the main model.
 type tieredClassifier struct {
@@ -1943,6 +1960,13 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	if opts.Model == "" {
 		opts.Model = cfg.Model
 	}
+	// The Pix Sandbox build adds the machine's own facts to an agent turn's
+	// prompt; a tool-less turn (the classifier) never carries them, and no
+	// other build sets the hook.
+	toolsText := prompt.ToolsBlock(opts.Tools)
+	if opts.Environment == "" && toolsText != "" && environmentFacts != nil {
+		opts.Environment = environmentFacts()
+	}
 	sysText, err := prompt.System(opts)
 	if err != nil {
 		return "", fmt.Errorf("build system prompt: %w", err)
@@ -1953,7 +1977,7 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	// enforces elsewhere (the registry and the plan-mode gate), so keeping it
 	// separately sealed means a forged tool list cannot ride in on the
 	// system block's integrity hash.
-	if toolsText := prompt.ToolsBlock(opts.Tools); toolsText != "" {
+	if toolsText != "" {
 		blocks = append(blocks, rolemanager.SystemBlock{
 			Source:  rolemanager.SourceHarness,
 			Content: toolsText,

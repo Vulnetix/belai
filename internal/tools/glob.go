@@ -29,8 +29,12 @@ type Glob struct {
 	Cwd        *Cwd
 	Root       string
 	MaxResults int
-	fdPath     string // cached; "" when fd is unavailable
-	fdLooked   bool   // fd lookup already attempted
+	// Knowledge, when set, lets a model's Glob also list the session's
+	// reference documents whose address matches, or whose text resembles the
+	// pattern's words (docs/knowledge.md).
+	Knowledge *KnowledgeHub
+	fdPath    string // cached; "" when fd is unavailable
+	fdLooked  bool   // fd lookup already attempted
 }
 
 // Definition returns the static tool metadata.
@@ -122,7 +126,16 @@ func (g *Glob) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if len(matches) > max {
 		matches = matches[:max]
 	}
-	return GlobResult(strings.Join(matches, "\n"), backend), nil
+	content := strings.Join(matches, "\n")
+	if k := knowledgeFor(ctx, g.Knowledge); k != nil && !hasArg(args, "path") {
+		if sec := knowledgeGlob(k, pattern, max); sec != "" {
+			if content != "" {
+				content += "\n"
+			}
+			content += sec
+		}
+	}
+	return GlobResult(content, backend), nil
 }
 
 // candidate is one enumerated file: rel is the slash path relative to the

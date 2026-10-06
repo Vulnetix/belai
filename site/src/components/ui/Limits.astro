@@ -8,13 +8,13 @@ interface Props {
   class?: string;
 }
 
-const { items, cols = 3, class: cls = 'mt-8' } = Astro.props;
+const { items, cols = 3, class: cls = 'mt-sub' } = Astro.props;
 const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
 ---
 
-<div class={`grid border-t-2 border-vx-ink md:grid-cols-2 ${cols === 3 ? 'xl:grid-cols-3' : ''} ${cls}`}>
+<div class={`grid border-t border-vx-ink/60 @xl:grid-cols-2 ${cols === 3 ? '@4xl:grid-cols-3' : ''} ${cls}`}>
   {items.map(([title, body]) => (
-    <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+    <div class="border-b border-vx-ink/20 py-6 @xl:pr-8">
       <h4 class="text-lg font-bold">{title}</h4>
       <p class="mt-2 text-sm text-vx-ink/80">
         {split(body).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}

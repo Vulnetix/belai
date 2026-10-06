@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -74,6 +75,8 @@ var harnessEvents = map[Event]bool{
 	EventExploreLocate:             true,
 	EventVoiceCommand:              true,
 	EventRequestScale:              true,
+	EventAgentPick:                 true,
+	EventKnowledgeTopics:           true,
 	EventGoalJudge:                 true,
 	EventHandoffClarity:            true,
 	EventGateAlignment:             true,
@@ -171,8 +174,12 @@ var presentations = map[Event]presentation{
 	EventExploreLocate:             {CategoryCode, "locate"},
 	EventVoiceCommand:              {CategoryAsk, "voicecmd"},
 	EventRequestScale:              {CategoryMode, "scale"},
+	EventAgentPick:                 {CategoryMode, "agentpick"},
+	EventKnowledgeTopics:           {CategoryContext, "topics"},
 	EventGoalJudge:                 {CategoryMode, "goaljudge"},
 	EventGateDraft:                 {CategoryContext, "gatedraft"},
+	EventTeleportDistill:           {CategoryContext, "teleport"},
+	EventTeleportVerify:            {CategoryCode, "teleportverify"},
 	EventDeliveryReport:            {CategoryContext, "delivery"},
 	EventHandoffClarity:            {CategoryCode, "clarity"},
 	EventGateAlignment:             {CategoryCode, "align"},
@@ -211,6 +218,20 @@ func Icons() []string {
 			out = append(out, p.Icon)
 		}
 	}
+	return out
+}
+
+// IconCategories maps each icon id to the category of the events that use it,
+// for the design system's parity test. An icon shared by events of different
+// categories would be a mistake the test reports, so the map keeps every one.
+func IconCategories() map[string][]Category {
+	out := map[string][]Category{}
+	for _, p := range presentations {
+		if !slices.Contains(out[p.Icon], p.Category) {
+			out[p.Icon] = append(out[p.Icon], p.Category)
+		}
+	}
+	out["dot"] = append(out["dot"], CategoryHousekeeping)
 	return out
 }
 

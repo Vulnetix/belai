@@ -11,9 +11,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -84,14 +86,25 @@ func (a *App) startSessionSync() {
 		a.syncNote = "off (" + err.Error() + ")"
 		return
 	}
+	host := sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}
 	a.syncer = sessionsync.New(sessionsync.Options{
 		Client:        client,
 		HostID:        hostID,
-		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
+		Host:          host,
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
 		RemoteAnswers: a.settings.SyncRemoteAnswersEnabled(),
+		Git:           a.gitSyncRaw(),
+		OnControls:    a.gitSyncControls(),
 	})
 	a.syncer.Start(context.Background())
+	// The audit log goes where session sync goes: its own hash-chained facts
+	// stream (docs/audit.md), uploaded with the same client and credential.
+	a.audit = sessionsync.StartAudit(context.Background(), client, hostID, host, dir)
+	if t := a.teleported; t != nil {
+		audit.Emit(audit.Fact{Kind: audit.HostTeleport, ActorKind: audit.ActorHuman, SessionID: t.SessionID, Outcome: "completed",
+			Data: map[string]string{"from": t.OriginID, "status": "completed"}})
+		a.teleported = nil
+	}
 	// The kanban board mirrors through the same client, so it goes only
 	// where session sync goes and only with the same credential.
 	a.startKanbanSync(client, hostID)
@@ -171,6 +184,8 @@ func (a *App) closeSync() {
 	}
 	a.syncer.Close(3 * time.Second)
 	a.syncer = nil
+	a.audit.Close(3 * time.Second)
+	a.audit = nil
 	a.syncedID = ""
 	a.remoteQueue = nil
 }
@@ -231,8 +246,8 @@ func (a *App) drainRemoteQueue() tea.Cmd {
 
 // submitRemote runs a website prompt as a typed prompt would run, minus the
 // composer: the user's draft and pending attachments are left alone, and a
-// leading "/" or "!" is plain text — the website can never run a slash
-// command or a shell command. Admission (sanitize + classifier) happens in
+// leading "/" or "!" is plain text: a prompt is never a slash command or a
+// shell command (a shell line has its own channel, internal/rc/shell.go). Admission (sanitize + classifier) happens in
 // the turn exactly as for a typed prompt, and a refusal lands in the
 // transcript, which the website then shows.
 func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {
@@ -241,11 +256,12 @@ func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {
 		a.syncer.Ack(p.ID, sessionsync.AckRefused, "the prompt was empty after cleaning", "")
 		return nil
 	}
-	// Agent mode with no carrier waits on the host's agent picker; the
-	// website cannot answer it.
-	if a.mode == "agent" && a.namedAgent == "" {
-		a.syncer.Ack(p.ID, sessionsync.AckRefused, "the host is in agent mode with no agent selected; choose one on the host", "")
-		return nil
+	// Agent mode with no carrier would wait on the host's agent picker, which
+	// the website cannot answer. The host moves to Auto instead, so the role
+	// manager decides the mode and the agent profile for this prompt, as it
+	// does for a prompt typed in Auto. The website never names an agent.
+	if a.mode == "agent" && a.namedAgent == "" && !a.modeAuto {
+		a.enterAutoMode()
 	}
 	firstUser := !a.hasUserMessage()
 	before := a.lastEntryID
@@ -256,6 +272,21 @@ func (a *App) submitRemote(p sessionsync.RemotePrompt) tea.Cmd {
 	}
 	a.syncer.Ack(p.ID, sessionsync.AckAccepted, "", entryID)
 	return a.dispatchPrompt(text, nil, "", firstUser)
+}
+
+// enterAutoMode moves the live session to Auto for a website prompt that
+// arrived with no agent engaged. It is the session's own state only: unlike
+// /mode auto it saves no preference, because a website prompt never changes
+// what the host remembers.
+func (a *App) enterAutoMode() {
+	a.mode = "agent"
+	a.modeAuto = true
+	a.modeExplicit = false
+	a.modeSticky = false
+	a.modeDecision = rolemanager.ModeDecision{}
+	a.syncPlanMode()
+	a.addSystem("auto mode on: no agent was selected, so the role manager picks the mode and agent for this prompt")
+	a.refreshFooter()
 }
 
 // userEntry is the session entry for a user message; a website prompt keeps

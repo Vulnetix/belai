@@ -46,6 +46,8 @@ var allEvents = []Event{
 	EventExploreLocate,
 	EventVoiceCommand,
 	EventRequestScale,
+	EventAgentPick, EventTeleportDistill, EventTeleportVerify,
+	EventKnowledgeTopics,
 	EventGoalJudge,
 	EventGateDraft,
 	EventDeliveryReport,
@@ -161,6 +163,24 @@ func TestSecurityFallbackDescription(t *testing.T) {
 	}
 	if desc.Levels != LevelSecurity {
 		t.Fatalf("security_fallback: Levels = %v, want security", desc.Levels)
+	}
+}
+
+func TestSecurityFallbackNamesTheDecider(t *testing.T) {
+	cases := map[string]string{
+		"clef/clef-flash":              "Clef couldn't settle the security verdict",
+		"openrouter/typesafe/jev-1.13": "Jev couldn't settle the security verdict",
+		"":                             "The decision model couldn't settle the security verdict",
+	}
+	for id, want := range cases {
+		a := Activity{Event: EventSecurityFallback, Verdict: "fallback", Subject: "security"}
+		if id != "" {
+			a.Detail = "decider=" + id
+		}
+		desc, _ := Describe(a)
+		if desc.Summary != want {
+			t.Errorf("decider %q: summary = %q, want %q", id, desc.Summary, want)
+		}
 	}
 }
 

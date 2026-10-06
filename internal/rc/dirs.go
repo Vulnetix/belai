@@ -168,6 +168,32 @@ func Allowed(dirs []Dir, cwd string) (string, bool) {
 	return "", false
 }
 
+// MaxExtraDirs bounds the extra workspace directories one session may add.
+const MaxExtraDirs = 16
+
+// AllowedExtra normalises the extra workspace directories a start request
+// names and checks each is one the host offers. The primary directory and
+// repeats are dropped. ok is false when any directory is not offered or there
+// are more than MaxExtraDirs.
+func AllowedExtra(dirs []Dir, primary string, extra []string) (out []string, ok bool) {
+	if len(extra) > MaxExtraDirs {
+		return nil, false
+	}
+	seen := map[string]bool{primary: true}
+	for _, e := range extra {
+		p, allowed := Allowed(dirs, e)
+		if !allowed {
+			return nil, false
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out, true
+}
+
 // IsTempDir reports a scratch directory (tests, throwaway checkouts), which
 // the offer hides even when trusted; pass one with --dir to offer it anyway.
 func IsTempDir(p string) bool {

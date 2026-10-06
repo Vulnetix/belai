@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -57,6 +58,13 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err != nil {
 		return eff, err
 	}
+	// A preference that would fail validation is left out rather than
+	// stopping Belai: the file is the user's, but it is edited from the web.
+	if err := prefs.ValidateOver(global); err != nil {
+		eff.Notes = append(eff.Notes, "project preferences ignored: "+err.Error())
+		prefs = ProjectPrefs{Guardrails: prefs.Guardrails, AskPermission: prefs.AskPermission,
+			FirewallEnabled: prefs.FirewallEnabled, Caveman: prefs.Caveman, Mode: prefs.Mode, Agent: prefs.Agent}
+	}
 	eff.apply(prefs.toSettings(), SourceProjectPrefs)
 
 	// 3. project settings.json.
@@ -90,6 +98,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if len(proj.TokenBudgets) > 0 {
 		proj.TokenBudgets = nil
 		eff.Notes = append(eff.Notes, "project token_budgets ignored (budgets are global; set them in /budgets)")
+	}
+	// The repositories a host keeps cloned are the user's own: a repository must
+	// not be able to make a host clone another.
+	if len(proj.GitRepos) > 0 {
+		proj.GitRepos = nil
+		eff.Notes = append(eff.Notes, "project repos ignored (the list of repositories to keep is global; see belai repo)")
 	}
 	// Plan-limit parsing is global: what a user learns about their own account
 	// limits is theirs to decide, not a repository's.
@@ -145,33 +159,36 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	// 5. CLI flags.
 	eff.apply(flags, SourceFlag)
 
-	if err := ValidateProviders(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateLSP(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateTokenBudgets(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateRouting(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateJev(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateVoice(eff.Settings); err != nil {
-		return eff, err
-	}
-	if err := ValidateTTS(eff.Settings); err != nil {
+	if err := ValidateSettings(eff.Settings); err != nil {
 		return eff, err
 	}
 	SetActiveJevThresholds(eff.Settings.JevThresholds())
-	if err := ValidateFirewall(eff.Settings); err != nil {
-		return eff, err
-	}
 
 	return eff, nil
+}
+
+// ValidateSettings runs every validator Resolve applies to the merged settings, in
+// the same order, so a settings value that would make Belai refuse to start can be
+// caught before it is written. It is what the library install runs on the user's
+// settings it is about to save.
+func ValidateSettings(s Settings) error {
+	for _, v := range []func(Settings) error{
+		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateJev, ValidateVoice,
+		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall,
+	} {
+		if err := v(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// vulnetix returns the effective vulnetix block, creating it on first use.
+func (e *Effective) vulnetix() *VulnetixSettings {
+	if e.Settings.Vulnetix == nil {
+		e.Settings.Vulnetix = &VulnetixSettings{}
+	}
+	return e.Settings.Vulnetix
 }
 
 // apply merges a partial settings view over eff, recording the provenance of
@@ -236,6 +253,36 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Vulnetix.GatewayURL = s.Vulnetix.GatewayURL
 		e.Origin["gateway_url"] = src
 	}
+	// The background sweep that finds other .vulnetix projects under your home
+	// directory: a repo-visible project layer may turn it off, never choose
+	// where it walks, so a repository cannot point it at directories of its own.
+	if s.VulnetixSweepEnabled != nil && (!*s.VulnetixSweepEnabled || src != SourceProject) {
+		e.Settings.VulnetixSweepEnabled = s.VulnetixSweepEnabled
+		e.Origin["vulnetix_sweep_enabled"] = src
+	}
+	if src != SourceProject && len(s.VulnetixSweepRoots) > 0 {
+		e.Settings.VulnetixSweepRoots = slices.Clone(s.VulnetixSweepRoots)
+		e.Origin["vulnetix_sweep_roots"] = src
+	}
+	if v := s.Vulnetix; v != nil {
+		// The review keys. autofix lets `/vulnetix review` run `vulnetix fix
+		// --yes` on the tree, so a repo-visible project layer may turn it off
+		// but never on. subcommands and timeout shape what a review scans and
+		// for how long: only the user's own layers set them, so a repository
+		// cannot narrow the scanners that look at it.
+		if v.AutoFix != nil && (!*v.AutoFix || src != SourceProject) {
+			e.vulnetix().AutoFix = v.AutoFix
+			e.Origin["vulnetix.autofix"] = src
+		}
+		if src != SourceProject && len(v.Subcommands) > 0 {
+			e.vulnetix().Subcommands = slices.Clone(v.Subcommands)
+			e.Origin["vulnetix.subcommands"] = src
+		}
+		if src != SourceProject && v.Timeout != "" {
+			e.vulnetix().Timeout = v.Timeout
+			e.Origin["vulnetix.timeout"] = src
+		}
+	}
 	if s.Sync != nil {
 		// Session sync sends transcripts off the machine and lets the website
 		// prompt the session and answer its asks: a repo-visible project
@@ -259,6 +306,20 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Origin["sync"] = src
 	}
+	if s.Git != nil {
+		// The git sync changes the repository: a repo-visible project layer
+		// may opt out of it, never switch it on over the user's choice.
+		if src == SourceProject {
+			e.Settings.Git = mergeGitOffOnly(e.Settings.Git, s.Git)
+		} else {
+			t := *s.Git
+			if t.Sync == nil && e.Settings.Git != nil {
+				t.Sync = e.Settings.Git.Sync
+			}
+			e.Settings.Git = &t
+		}
+		e.Origin["git"] = src
+	}
 	if s.Notifications != nil && src != SourceProject {
 		// Notifications are a per-user preference: a repository has no say
 		// in whether, or how, the desktop is interrupted.
@@ -267,6 +328,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
+	}
+	if s.Teleport != nil && src != SourceProject {
+		// Whether this host may push a branch for a teleport is the user's
+		// alone: a repository cannot make a host publish to its forge.
+		if e.Settings.Teleport == nil {
+			e.Settings.Teleport = &TeleportSettings{}
+		}
+		e.Settings.Teleport.merge(s.Teleport)
+		e.Origin["teleport"] = src
 	}
 	if s.Voice != nil && src != SourceProject {
 		// The microphone is the user's alone: a repository cannot switch it
@@ -285,6 +355,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.TTS.merge(s.TTS)
 		e.Origin["tts"] = src
+	}
+	if s.Knowledge != nil && src != SourceProject {
+		// How much the host indexes and returns is the user's own sizing: a
+		// repository cannot raise it.
+		if e.Settings.Knowledge == nil {
+			e.Settings.Knowledge = &KnowledgeSettings{}
+		}
+		e.Settings.Knowledge.merge(s.Knowledge)
+		e.Origin["knowledge"] = src
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.
@@ -442,6 +521,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Offload = mergeOffload(e.Settings.Offload, s.Offload)
 		e.Origin["offload"] = src
 	}
+	if s.WebFetch != nil {
+		// The WebFetch cache and index change only what a session re-fetches;
+		// every hit and every chunk still takes the classify path, so any
+		// layer may set them.
+		e.Settings.WebFetch = mergeWebFetch(e.Settings.WebFetch, s.WebFetch)
+		e.Origin["web_fetch"] = src
+	}
 	if s.Jev != nil {
 		// Jev jobs narrow or reorder what a request carries and never approve
 		// anything, but a repository still may not switch one on or widen where
@@ -455,9 +541,22 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Kanban = s.Kanban
 		e.Origin["kanban"] = src
 	}
+	if s.BashRewrite != nil {
+		// Rules rewrite what a model runs: only the user's layers may name
+		// them, and a project layer may only switch the table off.
+		before := e.Settings.BashRewrite
+		e.Settings.BashRewrite = mergeBashRewrite(before, s.BashRewrite, src == SourceProject)
+		if e.Settings.BashRewrite != before {
+			e.Origin["bash_rewrite"] = src
+		}
+	}
 	if s.Screenshot != nil {
 		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
 		e.Origin["screenshot"] = src
+	}
+	if s.Code != nil {
+		e.Settings.Code = mergeCode(e.Settings.Code, s.Code, src == SourceProject)
+		e.Origin["code"] = src
 	}
 	if s.Agents != nil {
 		// Fleet workers run unattended on the user's account: a project
@@ -505,6 +604,11 @@ func (e *Effective) apply(s Settings, src Source) {
 		// Replace, not append: the global list is the whole set.
 		e.Settings.TokenBudgets = s.TokenBudgets
 		e.Origin["token_budgets"] = src
+	}
+	if s.GitRepos != nil {
+		// Replace, not append: the global list is the whole set.
+		e.Settings.GitRepos = s.GitRepos
+		e.Origin["repos"] = src
 	}
 	if s.Intel != nil && s.Intel.PlanLimits != nil {
 		if e.Settings.Intel == nil {

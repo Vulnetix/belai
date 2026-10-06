@@ -113,7 +113,10 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
-	r.Register("model", "pick provider and model for each role", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("model", "pick provider and model for each role; /model <provider> <model> [effort] switches this session", nil, func(a *App, arg string) tea.Cmd {
+		if strings.TrimSpace(arg) != "" {
+			return a.runControl("/model " + arg)
+		}
 		return a.push(viewModel)
 	})
 	r.Register("mode", "show or set operating mode", nil, func(a *App, arg string) tea.Cmd {
@@ -266,13 +269,21 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
-	r.Register("lsp", "manage language-server diagnostics", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("lsp", "manage language-server diagnostics; /lsp on|off [language] switches this session", nil, func(a *App, arg string) tea.Cmd {
+		if strings.TrimSpace(arg) != "" {
+			return a.runControl("/lsp " + arg)
+		}
 		return a.push(viewLSP)
 	})
 	r.Register("sync", "show or change session sync to the Vulnetix website", func() []string {
 		return []string{"status", "on", "off", "backfill"}
 	}, func(a *App, arg string) tea.Cmd {
 		return a.syncCommand(arg)
+	})
+	r.Register("gitsync", "rebase the branch onto origin's default branch before turns: on, off, or global on|off", func() []string {
+		return []string{"status", "on", "off", "global on", "global off"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.gitSyncCommand(arg)
 	})
 	r.Register("budgets", "manage token budgets per provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.openBudgets()
@@ -283,6 +294,9 @@ func NewRegistry(workdir string) *Registry {
 			return nil
 		}
 		return a.openIntel()
+	})
+	r.Register("diff", "read-only pane of the working tree's changes: staged, unstaged and untracked, per-file hunks", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewDiff)
 	})
 	r.Register("locate", "list the files explore locate may look at and where it would send its questions (/locate --dry-run)", func() []string {
 		return []string{"--dry-run"}
@@ -542,6 +556,18 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("trusted", "manage trusted directories, the ones remote control offers", nil, func(a *App, arg string) tea.Cmd {
 		return a.openTrusted()
 	})
+	r.Register("knowledge", "browse and search indexed knowledge: this project, every project, the agents", func() []string {
+		return []string{"project", "global", "agents"}
+	}, func(a *App, arg string) tea.Cmd {
+		tab := knowTabProject
+		switch strings.ToLower(strings.TrimSpace(arg)) {
+		case "global":
+			tab = knowTabGlobal
+		case "agents", "agent":
+			tab = knowTabAgents
+		}
+		return a.openKnowledge(tab)
+	})
 	r.Register("fleet", "kanban worker agents: start, stop and watch them", func() []string {
 		return []string{"start", "crew", "stop"}
 	}, func(a *App, arg string) tea.Cmd {
@@ -594,6 +620,7 @@ func NewRegistry(workdir string) *Registry {
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
 	r.RegisterHiddenAlias("provider", "providers")
+	registerSessionControls(r)
 	return r
 }
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -120,3 +121,136 @@ func TestToolCallDeltaDoesNotLeakIntoPreviousToolRow(t *testing.T) {
 		t.Fatalf("finished row args = %q, want %q", got, want)
 	}
 }
+
+func rowTimes(a *App) []time.Time {
+	var out []time.Time
+	for _, m := range a.messages {
+		if m.Role != "user" {
+			out = append(out, m.CreatedAt)
+		}
+	}
+	return out
+}
+
+// A decision made before a tool result can reach the thread after it, because
+// agent events and decisions are read from separate channels. The thread is
+// time ordered whichever arrives first, and nothing is written twice or lost.
+func TestARoleManagerRowArrivingLateIsPlacedByTime(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run it")
+	a.cancel = func() {} // a turn in flight
+
+	t0 := time.UnixMilli(1_790_000_000_000)
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolStartKind, At: t0.Add(1 * time.Second), Tool: &rolemanager.ToolCall{ID: "c1", Name: "Bash", Args: map[string]any{"command": "ls"}}})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolResultKind, At: t0.Add(3 * time.Second), ToolName: "Bash", ToolCallID: "c1", ToolResult: "ok"})
+	a.persistTail()
+	// The decision about the call was made at t0+500ms and arrives last.
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "Bash", At: t0.Add(500 * time.Millisecond)}))
+	a.cancel = nil
+	a.persistTailMode(true)
+
+	times := rowTimes(a)
+	for i := 1; i < len(times); i++ {
+		if times[i].Before(times[i-1]) {
+			t.Fatalf("the thread is not time ordered at row %d: %v", i, times)
+		}
+	}
+	if a.messages[1].Role != "rolemanager" {
+		t.Fatalf("the decision was not placed before the tool call: %v", rolesOf(a))
+	}
+
+	// Each row is written once: the cursor still counts the moved row.
+	var counts = map[string]int{}
+	for _, e := range persistedEntries(t, a) {
+		counts[e.Type]++
+	}
+	if counts["user"] != 1 || counts["assistant"] != 1 || counts["tool"] != 1 || counts["rolemanager"] != 1 {
+		t.Fatalf("entries = %v, want one of each", counts)
+	}
+}
+
+func rolesOf(a *App) []string {
+	var out []string
+	for _, m := range a.messages {
+		out = append(out, m.Role)
+	}
+	return out
+}
+
+// A row never crosses a prompt: an earlier turn's rows stay where they are.
+func TestAPlacedRowNeverCrossesAUserPrompt(t *testing.T) {
+	a := newPersistApp(t)
+	t0 := time.UnixMilli(1_790_000_000_000)
+	a.echoUser("first")
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "prompt", At: t0.Add(5 * time.Second)}))
+	a.persistTailMode(true)
+	a.echoUser("second")
+	// An old timestamp, as from a straggler of the first turn.
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "prompt", At: t0}))
+	roles := rolesOf(a)
+	if roles[len(roles)-2] != "user" || roles[len(roles)-1] != "rolemanager" {
+		t.Fatalf("rows = %v, the row crossed the prompt", roles)
+	}
+}
+
+// An in-order row stays where it was appended.
+func TestAnInOrderRoleManagerRowStaysPut(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("hi")
+	t0 := time.UnixMilli(1_790_000_000_000)
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "a", At: t0}))
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "b", At: t0.Add(time.Second)}))
+	times := rowTimes(a)
+	if len(times) != 2 || !times[0].Equal(t0) || !times[1].Equal(t0.Add(time.Second)) {
+		t.Fatalf("times = %v", times)
+	}
+}
+
+// In the chronological layout a notice an agent event raised is placed by the
+// event's time too, but a notice that still has to be written never moves behind
+// the persistence cursor, so it is written once.
+func TestChronologicalLayoutPlacesNoticesButNeverBehindTheCursor(t *testing.T) {
+	a := newPersistApp(t)
+	a.settings.UI = &config.UISettings{Layout: ptrString(config.LayoutChronological)}
+	a.echoUser("run it")
+	a.cancel = func() {}
+
+	t0 := time.UnixMilli(1_790_000_000_000)
+	// A decision stamped late is already in the thread.
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "prompt", At: t0.Add(5 * time.Second)}))
+	// An older event raises a warning: it was emitted before that decision.
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventWarningKind, At: t0.Add(1 * time.Second), Warning: "slow provider"})
+	a.cancel = nil
+	a.persistTailMode(true)
+
+	times := rowTimes(a)
+	for i := 1; i < len(times); i++ {
+		if times[i].Before(times[i-1]) {
+			t.Fatalf("the thread is not time ordered: %v (%v)", times, rolesOf(a))
+		}
+	}
+	counts := map[string]int{}
+	for _, e := range persistedEntries(t, a) {
+		counts[e.Type]++
+	}
+	if counts["system"] != 1 || counts["rolemanager"] != 1 || counts["user"] != 1 {
+		t.Fatalf("entries = %v, want one of each", counts)
+	}
+}
+
+// The clean layout leaves notices where the event stream put them.
+func TestCleanLayoutLeavesNoticesInArrivalOrder(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run it")
+	a.cancel = func() {}
+	t0 := time.UnixMilli(1_790_000_000_000)
+	a.Update(rmActivityMsg(rolemanager.Activity{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "prompt", At: t0.Add(5 * time.Second)}))
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventWarningKind, At: t0.Add(1 * time.Second), Warning: "slow provider"})
+	a.cancel = nil
+	roles := rolesOf(a)
+	if roles[len(roles)-1] != "system" {
+		t.Fatalf("rows = %v, the notice moved in the clean layout", roles)
+	}
+}
+
+func ptrString(s string) *string { return &s }

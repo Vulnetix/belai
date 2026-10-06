@@ -67,6 +67,7 @@ func OpenSettings(scope Scope, workdir string) (*Document, error) {
 	if err := json.Unmarshal(data, &d.Settings); err != nil {
 		return nil, fmt.Errorf("parse settings %s: %w", path, err)
 	}
+	NormalizeKinds(&d.Settings)
 	return d, nil
 }
 

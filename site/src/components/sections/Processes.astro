@@ -1,5 +1,7 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
 import CopyButton from '../ui/CopyButton.tsx';
 
 // Supervised processes as a ladder: start with no model, watch in the runs
@@ -7,7 +9,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 // the git and ci tabs.
 
 const sealText =
-  'Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary. The f9 runs panel cycles activity, subagents, processes, git and ci; the git tab manages worktrees and opens a PR or MR behind a confirmation, and forge text stays in the panel.';
+  'Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary. The f9 runs panel cycles activity, subagents, processes, git and ci; the git tab manages worktrees and opens a PR or MR behind a confirmation, and forge text stays in the panel. Provider failures retry themselves in five layers: typed errors, a transport retry before the first byte, a whole-turn retry, semantic repair of malformed or dangling tool calls, and a goal pass boundary that compacts once on overflow. Classification fails closed, so billing, quota and key errors are never retried.';
 
 const steps = [
   {
@@ -55,6 +57,14 @@ const gitKeys = [
   ['p', 'Open a PR or MR, after a confirmation that names the forge, repository and branch'],
 ];
 
+const layers: [string, string, string][] = [
+  ['L0', 'Typed errors', 'Every provider failure carries its status, retry-after and a redacted body, so what happens next is decided from facts and not from message text alone.'],
+  ['L1', 'Transport retry', 'A reset, a GOAWAY or a timeout before the first byte is retried on a fresh connection. A request that has already streamed output is not replayed.'],
+  ['L2', 'Turn retry', 'The agent loop re-issues the same turn after a retryable error, honouring the provider\'s retry-after up to a ceiling.'],
+  ['L3', 'Semantic repair', 'A malformed, truncated or dangling tool call becomes a tool result, so the model corrects itself and the turn does not fail.'],
+  ['L4', 'Pass boundary', 'In goal mode, a context overflow compacts the session once and runs the pass again.'],
+];
+
 const limits = [
   ['Starts without a model','!!cmd runs the command and saves it. Nothing is sent to a model.'],
   ['Forge text stays in the panel', 'PR titles, check names and other text from the forge are shown to you and never sent to the model.'],
@@ -73,18 +83,13 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
 ---
 
 <SealedSection label="processes" sealText={sealText} id="processes">
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Supervised processes</h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Processes and recovery" surfaces={['tui', 'cli', 'self-hosted']}>
       Run a dev server, a file watcher or a tunnel inside Belai instead of in another terminal. Belai
       saves the command for the next session, and a process that crashes gets a limited number of
-      restarts.
-    </p>
-  </div>
+      restarts. Failures between Belai and a provider recover on their own as well.
+    </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+  <ol class="mt-head grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {steps.map((s, i) => {
       const dark = i === 2;
       return (
@@ -137,33 +142,30 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
       );
     })}
   </ol>
-  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+  <div class="mono mt-3 hidden items-center gap-4 text-sm @4xl:flex" aria-hidden="true">
     <span class="text-vx-ink/60">no model involved</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>a model restarts it, up to a cap</span>
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">The runs panel</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="The runs panel" surfaces={['tui']}>
       <code class="mono">f9</code> opens on the activity tab, and <code class="mono">tab</code> moves on to
       subagents, processes, git and ci. The processes tab lists only the library's running processes.
-    </p>
-  </div>
+    </SubHead>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="mono min-w-0 rounded-xl bg-tui-ink p-4 text-tui-cream md:p-5 lg:col-span-8" role="img" aria-label="An illustration of the processes tab with three example processes and the keys that act on them">
+  <div class="mt-head grid gap-8 @4xl:grid-cols-12">
+    <div class="mono min-w-0 rounded-xl bg-tui-ink p-4 text-tui-cream md:p-5 @4xl:col-span-8" role="img" aria-label="An illustration of the processes tab with three example processes and the keys that act on them">
       <p class="flex flex-wrap gap-x-4 gap-y-1 border-b border-tui-cream/20 pb-3 text-[13px]">
         <span class="opacity-60">activity</span><span class="opacity-60">subagents</span>
         <span class="rounded bg-tui-teal-soft px-2 text-tui-ink">processes</span>
         <span class="opacity-60">git</span><span class="opacity-60">ci</span>
       </p>
       {procs.map(([cmd, state, colour, scope], i) => (
-        <p class={`grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 py-2.5 text-sm md:grid-cols-[1.25rem_minmax(0,1fr)_9rem_5rem] ${i === 0 ? 'bg-tui-teal-soft/10' : ''}`}>
+        <p class={`grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 py-2.5 text-sm @2xl:grid-cols-[1.25rem_minmax(0,1fr)_9rem_5rem] ${i === 0 ? 'bg-tui-teal-soft/10' : ''}`}>
           <span class="text-tui-teal">{i === 0 ? '▸' : ''}</span>
           <span class="truncate">{cmd}</span>
           <span class={colour}>{state}</span>
-          <span class="hidden opacity-60 md:inline">{scope}</span>
+          <span class="hidden opacity-60 @2xl:inline">{scope}</span>
         </p>
       ))}
       <pre class="mt-2 overflow-x-auto border-t border-tui-cream/20 pt-3 text-[13px] leading-7 opacity-85">  VITE ready
@@ -173,7 +175,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
       </p>
     </div>
 
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">FROM THE COMPOSER</p>
         <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{composer}</code></pre>
@@ -204,15 +206,15 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
     </aside>
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What recovery can touch</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="What recovery can touch">
       The recovery subagent is the only model that acts on a process. It gets enough to read the log
       and fix a bad flag, and nothing else.
-    </p>
-  </div>
+    </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left md:table">
+  <details class="deep deep--wide">
+    <summary>What the recovery subagent can and cannot do</summary>
+    <div class="deep__body">
+  <table class="mt-4 hidden w-full border-collapse text-left @2xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="w-[18%] pb-4"><span class="sr-only">Property</span></th>
@@ -230,7 +232,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
       ))}
     </tbody>
   </table>
-  <dl class="mt-8 grid gap-3 md:hidden">
+  <dl class="mt-4 grid gap-3 @2xl:hidden">
     {recovery.map(([row, can, cannot]) => (
       <div class="rounded-xl border border-vx-ink p-4 text-sm">
         <dt class="font-semibold">{row}</dt>
@@ -241,16 +243,15 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
       </div>
     ))}
   </dl>
+    </div>
+  </details>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">The git and ci tabs</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="The git and ci tabs" surfaces={['tui']}>
       The git tab shows the branch and its upstream, the origin URL with credentials masked, the open
       PR or MR, and every worktree. The ci tab lists the checks or pipeline jobs for the branch, and
       appears only while a PR or MR is open.
-    </p>
-  </div>
-  <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    </SubHead>
+  <div class="mt-head grid gap-4 @xl:grid-cols-2 @4xl:grid-cols-4">
     {gitKeys.map(([key, what], i) => (
       <div class={`flex flex-col gap-3 rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <kbd class={`mono self-start rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${i === 3 ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{key}</kbd>
@@ -259,16 +260,41 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
     ))}
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits</h3>
-    <p class="text-vx-ink/80">
+  <SubHead id="retries" title="Provider failures that retry themselves">
+    A short outage between Belai and a provider should not end a long session. Five layers handle it, and
+    each one has a stated boundary.
+  </SubHead>
+  <ol class="mt-head list-none p-0">
+    {layers.map(([n, name, what]) => (
+      <li class="grid gap-x-10 gap-y-1 border-b border-vx-ink/20 py-5 first:border-t first:border-vx-ink/60 @3xl:grid-cols-[14rem_minmax(0,1fr)]">
+        <h4 class="text-lg font-bold"><span class="mono mr-3 text-sm font-medium text-vx-mint-strong">{n}</span>{name}</h4>
+        <p class="text-vx-ink/85">{what}</p>
+      </li>
+    ))}
+  </ol>
+  <details class="deep">
+    <summary>What is retried and what is not</summary>
+    <div class="deep__body">
+      <p>
+        Classification fails closed. A cancelled call ends. A transport fault, a timeout, a stream reset, a
+        rate limit or a status of 408, 409 or 500 and above is retried, with the provider's retry-after
+        honoured and clamped. Billing, quota and key errors, and a 400, 401, 403, 404 or 422, are never
+        retried, and anything unrecognised is treated as final.
+      </p>
+      <p>
+        A context overflow is not retried either: Belai tells you to <code class="mono">/compact</code>, and
+        in goal mode it compacts once itself at the pass boundary.
+      </p>
+    </div>
+  </details>
+
+  <SubHead title="Limits">
       Process output and forge text were written by someone else, so the panel shows them to you and
       keeps them away from the model.
-    </p>
-  </div>
-  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
+    </SubHead>
+  <div class="mt-head grid border-t border-vx-ink/60 @xl:grid-cols-2 @4xl:grid-cols-3">
     {limits.map(([title, body]) => (
-      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+      <div class="border-b border-vx-ink/20 py-6 @xl:pr-8">
         <h4 class="text-lg font-bold">{title}</h4>
         <p class="mt-2 text-sm text-vx-ink/80">{split(body).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
       </div>

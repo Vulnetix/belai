@@ -36,7 +36,7 @@ type bashSwap struct {
 // model knows its call was run differently. It names tools and a percentage
 // and nothing the model or the fast model wrote.
 func (sw *bashSwap) note() string {
-	return fmt.Sprintf("[harness: your Bash call was replaced by %s (Jev rated it %d%% equivalent); the Bash command was not run; the output below is from %s]\n",
+	return fmt.Sprintf("[harness: your Bash call was replaced by %s (the decision model rated it %d%% equivalent); the Bash command was not run; the output below is from %s]\n",
 		sanitize.Ident(sw.name, 64), sw.scorePct, sanitize.Ident(sw.name, 64))
 }
 

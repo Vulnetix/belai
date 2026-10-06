@@ -225,18 +225,19 @@ func (r ClaimRequest) lists() []List {
 }
 
 // reapLocked returns every lapsed claim to the list it was claimed from and
-// counts it as a failed attempt. It reports how many it reaped.
-func reapLocked(b *Board, now int64) int {
-	n := 0
+// counts it as a failed attempt. It returns a copy of each item it reaped, taken
+// before the release so the claim is still on it, for the audit log.
+func reapLocked(b *Board, now int64) []Item {
+	var lapsed []Item
 	for i := range b.Items {
 		it := &b.Items[i]
 		if it.Deleted || it.ClaimedBy == "" || it.LeaseUntil > now {
 			continue
 		}
+		lapsed = append(lapsed, cloneItem(*it))
 		releaseLocked(it, it.claimSource(), "claim lapsed: the worker stopped renewing its lease", "", now, true)
-		n++
 	}
-	return n
+	return lapsed
 }
 
 // claimSource is where a released item goes back to.
@@ -310,10 +311,12 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 		return Item{}, err
 	}
 	var out Item
+	var lapsed []Item
 	found := false
 	err := s.mutate(true, func(b *Board) error {
 		now := s.nowMs()
 		reaped := reapLocked(b, now)
+		lapsed = reaped
 		best := -1
 		for i, it := range b.Items {
 			if !r.matches(b, it, now) {
@@ -325,7 +328,7 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 			}
 		}
 		if best < 0 {
-			if reaped > 0 {
+			if len(reaped) > 0 {
 				return nil // write the reap; the caller still sees ErrNoWork
 			}
 			return ErrNoWork
@@ -334,6 +337,9 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 		out, found = cloneItem(b.Items[best]), true
 		return nil
 	})
+	if err == nil {
+		auditLapsed(lapsed)
+	}
 	if err == nil && !found {
 		return Item{}, ErrNoWork
 	}
@@ -347,9 +353,10 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 		return Item{}, err
 	}
 	var out Item
+	var lapsed []Item
 	err := s.mutate(true, func(b *Board) error {
 		now := s.nowMs()
-		reapLocked(b, now)
+		lapsed = reapLocked(b, now)
 		i, err := find(b, ref)
 		if err != nil {
 			return err
@@ -368,6 +375,9 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 		out = cloneItem(b.Items[i])
 		return nil
 	})
+	if err == nil {
+		auditLapsed(lapsed)
+	}
 	return out, err
 }
 
@@ -508,10 +518,10 @@ func (s *Store) UnclaimWorker(worker, note string) ([]string, error) {
 
 // Reap returns every lapsed claim to its source list.
 func (s *Store) Reap() (int, error) {
-	n := 0
+	var lapsed []Item
 	err := s.mutate(true, func(b *Board) error {
-		n = reapLocked(b, s.nowMs())
-		if n == 0 {
+		lapsed = reapLocked(b, s.nowMs())
+		if len(lapsed) == 0 {
 			return errNoWrite
 		}
 		return nil
@@ -519,7 +529,10 @@ func (s *Store) Reap() (int, error) {
 	if errors.Is(err, errNoWrite) {
 		return 0, nil
 	}
-	return n, err
+	if err == nil {
+		auditLapsed(lapsed)
+	}
+	return len(lapsed), err
 }
 
 // MoveAs is Move for a model's tool call. holder is the calling worker's id,

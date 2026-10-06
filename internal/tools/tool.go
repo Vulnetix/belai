@@ -52,6 +52,19 @@ type Registry struct {
 	// over the same tools, and all of them must keep pointing at the same
 	// tracker — two trackers would mean two answers to "where am I".
 	cwd *Cwd
+	// hub is where the session installs its knowledge store (docs/knowledge.md).
+	// It rides on the registry for the same reason cwd does: every narrowing
+	// produces a new registry over the same tools, and Grep, Glob and Read
+	// must keep consulting the one hub.
+	hub *KnowledgeHub
+	// cloud holds the profile's facts and an assumed role's credentials for the
+	// cloud tools. It rides on the registry for the same reason hub does.
+	cloud *CloudHub
+	// pages is the session's WebFetch cache and fetched-page index
+	// (docs/web-fetch.md). It rides on the registry like hub does, so a
+	// narrowed registry keeps the one store; a registry built for a subagent
+	// has its own, switched off.
+	pages *WebPages
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -71,6 +84,9 @@ func (r *Registry) Cwd() *Cwd {
 // withCwd returns a registry carrying the same tracker as r.
 func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.cwd = r.cwd
+	reg.hub = r.hub
+	reg.cloud = r.cloud
+	reg.pages = r.pages
 	return reg
 }
 

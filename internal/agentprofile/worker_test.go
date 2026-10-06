@@ -3,6 +3,7 @@ package agentprofile
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 var workerProfiles = []string{"belai:scout", "belai:builder", "belai:reviewer", "belai:vuln-scout", "belai:patcher", "belai:verifier"}
@@ -149,5 +150,76 @@ func TestSecurityCrewProfilesCarryTheirHarnessDuties(t *testing.T) {
 	}
 	if s := patcher.Kanban.Security; s == nil || !s.Reconcile {
 		t.Fatalf("patcher must reconcile: %+v", s)
+	}
+}
+
+// An hourly start lands a fraction of a second short of the interval, so the
+// survey tolerates a start two minutes early, and never more than a tenth of
+// the interval.
+func TestSurveyGraceIsTwoMinutesCappedAtATenth(t *testing.T) {
+	for every, want := range map[string]time.Duration{
+		"1h":  2 * time.Minute,
+		"24h": 2 * time.Minute,
+		"":    2 * time.Minute, // the 24h default
+		"30m": 2 * time.Minute, // refused by Validate, but the arithmetic holds
+		"10m": time.Minute,
+		"1m":  6 * time.Second,
+		"bad": 2 * time.Minute, // unparsable falls back to the default interval
+		"-5h": 2 * time.Minute,
+	} {
+		if got := (SurveySpec{Every: every}).SurveyGrace(); got != want {
+			t.Errorf("every %q: grace = %s, want %s", every, got, want)
+		}
+	}
+}
+
+// handoff_repos files a handoff under another repository, so it needs somewhere
+// to hand off to, and it cannot be combined with gates, which name a test suite
+// of the worker's own repository.
+func TestHandoffReposRules(t *testing.T) {
+	p := worker()
+	p.Kanban.HandoffRepos = true
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "handoff_repos needs handoff_to or handoff_labels") {
+		t.Fatalf("no handoff target: %v", err)
+	}
+	p.Kanban.HandoffLabels = []string{"infra"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("labels and handoff_repos: %v", err)
+	}
+	p.Kanban.HandoffLabels = nil
+	p.Kanban.HandoffTo = []string{"terraform-builder"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("assignee and handoff_repos: %v", err)
+	}
+	p.Kanban.Gates = &GatesSpec{Require: true}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "cannot be combined with kanban.gates") {
+		t.Fatalf("gates and handoff_repos: %v", err)
+	}
+}
+
+func TestHandoffReposRoundTripsAndIsOffByDefault(t *testing.T) {
+	p := worker()
+	p.Kanban.HandoffLabels = []string{"infra"}
+	data, err := MarshalMarkdown(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "handoff_repos") {
+		t.Errorf("an unset handoff_repos should not be written:\n%s", data)
+	}
+	p.Kanban.HandoffRepos = true
+	data, err = MarshalMarkdown(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseMarkdown(data)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, data)
+	}
+	if !got.Kanban.HandoffRepos {
+		t.Fatal("handoff_repos did not survive a markdown round trip")
+	}
+	if ProfileHashChanges := p.Behavioural(); !ProfileHashChanges.Kanban.HandoffRepos {
+		t.Error("handoff_repos changes what a worker may do, so a running worker must pin it")
 	}
 }

@@ -42,8 +42,12 @@ type Syncer struct {
 	busy   sync.Mutex // one push/pull at a time, Flush included
 }
 
-// SyncOptions configures a Syncer. Zero PullEvery is 15s. OnPull, when set,
-// runs on the syncer goroutine after a pull that changed the board.
+// DefaultPullEvery is how often the TUI pulls the website's changes when
+// SyncOptions names no interval.
+const DefaultPullEvery = 15 * time.Second
+
+// SyncOptions configures a Syncer. Zero PullEvery is DefaultPullEvery. OnPull,
+// when set, runs on the syncer goroutine after a pull that changed the board.
 type SyncOptions struct {
 	PullEvery time.Duration
 	OnPull    func(changed int)
@@ -52,7 +56,7 @@ type SyncOptions struct {
 // NewSyncer builds a syncer and subscribes it to local changes.
 func NewSyncer(store *Store, remote Remote, o SyncOptions) *Syncer {
 	if o.PullEvery <= 0 {
-		o.PullEvery = 15 * time.Second
+		o.PullEvery = DefaultPullEvery
 	}
 	s := &Syncer{
 		store: store, remote: remote, pullEvery: o.PullEvery, onPull: o.OnPull,
@@ -231,6 +235,7 @@ func ToWire(it Item) sessionsync.KanbanItem {
 			Parent: it.Parent, DependsOn: slices.Clone(it.DependsOn), Hops: it.Hops,
 			ClaimedBy: it.ClaimedBy, ClaimHost: it.ClaimHost, ClaimFrom: string(it.ClaimFrom),
 			LeaseUntil: it.LeaseUntil, Attempts: it.Attempts, Branch: it.Branch, PR: it.PR,
+			Finding: it.Finding, SeenRef: it.SeenRef, Verdict: string(it.Verdict), VEX: it.VEX,
 		},
 	}
 	for _, m := range it.History {
@@ -256,6 +261,8 @@ func FromWire(w sessionsync.KanbanItem) Item {
 		it.Parent, it.DependsOn, it.Hops = a.Parent, slices.Clone(a.DependsOn), a.Hops
 		it.ClaimedBy, it.ClaimHost, it.ClaimFrom = a.ClaimedBy, a.ClaimHost, List(a.ClaimFrom)
 		it.LeaseUntil, it.Attempts, it.Branch, it.PR = a.LeaseUntil, a.Attempts, a.Branch, a.PR
+		// Validated by cleanRemote and applied by Merge only to an empty field.
+		it.Finding, it.SeenRef, it.Verdict, it.VEX = a.Finding, a.SeenRef, Verdict(a.Verdict), a.VEX
 	}
 	for _, m := range w.History {
 		it.History = append(it.History, Move{

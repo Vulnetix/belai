@@ -18,6 +18,7 @@ var modeList = []map[string]any{
 	{"id": string(modes.ModeAgent), "name": "Agent", "description": "Work on the task with the full tool surface"},
 	{"id": string(modes.ModePlan), "name": "Plan", "description": "Read only: explore and write a plan, no edits and no shell"},
 	{"id": string(modes.ModeGoal), "name": "Goal", "description": "Pursue the goal in passes until it is met"},
+	{"id": string(modes.ModeCode), "name": "Code", "description": "Work with the full tool surface and batch many tool calls in one script"},
 }
 
 // modeState is the session/new answer's mode block.

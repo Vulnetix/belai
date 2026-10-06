@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/proc"
@@ -21,6 +22,10 @@ import (
 // that root and results are returned as absolute paths so they can be handed
 // straight back to Read.
 type Grep struct {
+	// Knowledge, when set, lets a model's unscoped Grep also return similar
+	// passages from the session's reference documents (docs/knowledge.md).
+	Knowledge *KnowledgeHub
+
 	Cwd        *Cwd
 	Root       string
 	MaxMatches int
@@ -195,6 +200,20 @@ func (g *Grep) Execute(ctx context.Context, args map[string]any) (Result, error)
 		sub = g.Cwd.Rel()
 	}
 	q.searchTarget = sub
+	// A model's unscoped search also asks the knowledge store, concurrently:
+	// a path, glob or type restricts the search to the checkout, and a count
+	// has no passage to show.
+	var kHits []KnowledgeHit
+	var kWait sync.WaitGroup
+	if k := knowledgeFor(ctx, g.Knowledge); k != nil && q.mode != grepModeCount && q.glob == "" && q.fileType == "" && !hasArg(args, "path") {
+		if words := knowledgeQuery(q.pattern); words != "" {
+			kWait.Add(1)
+			go func() {
+				defer kWait.Done()
+				kHits = k.Search(words)
+			}()
+		}
+	}
 	if g.rgPath == "" && !g.noRg {
 		g.rgPath, _ = exec.LookPath("rg")
 	}
@@ -224,6 +243,16 @@ func (g *Grep) Execute(ctx context.Context, args map[string]any) (Result, error)
 		lines = normaliseGrepLines(dropZeroCounts(out), maxLineLen, q.limit, root, g.Root)
 	default:
 		lines = normaliseGrepLines(out, maxLineLen, q.limit, root, g.Root)
+	}
+	kWait.Wait()
+	switch {
+	case len(kHits) == 0:
+	case q.mode == grepModeFiles:
+		if sec := knowledgeFileList(knowledgeAddresses(kHits), nil); sec != "" {
+			lines = append(lines, sec)
+		}
+	default:
+		lines = append(lines, knowledgeRows(kHits))
 	}
 	return GrepResult(strings.Join(lines, "\n"), backend), nil
 }

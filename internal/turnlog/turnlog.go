@@ -10,9 +10,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/vulnid"
 )
 
 // Log wraps a session.Writer. A nil Writer makes every method a no-op, so a
@@ -23,6 +26,14 @@ type Log struct {
 	mu    sync.Mutex
 	text  strings.Builder
 	calls []map[string]any
+
+	// diffs holds what a mutating call changed on disk until its result is
+	// written: the agent reports the change just before the result.
+	diffs map[string]filediff.WireChange
+
+	// vulns notes the advisory identifiers a turn shows, so the website gets
+	// the same vulnerability row the terminal draws (docs/vuln-row.md).
+	vulns vulnid.Tracker
 
 	turnID    string
 	turnStart time.Time
@@ -56,6 +67,72 @@ func (l *Log) System(text string) {
 	}
 }
 
+// ShellEntry is the transcript type and role of a `!cmd` line: what the TUI
+// writes for its shell panel and what the website renders as a shell block.
+const ShellEntry = "shell"
+
+// maxDiffWireBytes caps the rendered diff a tool entry carries, as the TUI does.
+const maxDiffWireBytes = 256 << 10
+
+// maxShellBytes caps a shell entry's content, as the TUI caps a tool result.
+const maxShellBytes = 32 << 10
+
+// Shell writes a shell line's result and returns its entry id ("" when not
+// written). meta carries command, shell_id and status like the TUI's entry;
+// content is cut at a rune boundary when it is over the cap.
+func (l *Log) Shell(content string, meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	if len(content) > maxShellBytes {
+		cut := maxShellBytes
+		for cut > 0 && !utf8.RuneStart(content[cut]) {
+			cut--
+		}
+		meta = copyMeta(meta)
+		meta["truncated"] = true
+		meta["orig_len"] = len(content)
+		content = content[:cut]
+	}
+	return l.w.Entry(session.Entry{Type: ShellEntry, Role: ShellEntry, Content: content, Meta: meta})
+}
+
+// Entry types a web shell line writes while it runs. The final ShellEntry still
+// carries the whole result; these let the website show the output as it
+// arrives. A resumed TUI session ignores both.
+const (
+	// ShellRunEntry marks a line that has started: meta has shell_id, command,
+	// cwd, source and attach.
+	ShellRunEntry = "shell_run"
+	// ShellOutEntry is a slice of the running line's output, in order: meta has
+	// shell_id and n.
+	ShellOutEntry = "shell_out"
+)
+
+// ShellRun records that a web shell line began running.
+func (l *Log) ShellRun(meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	return l.w.Entry(session.Entry{Type: ShellRunEntry, Role: ShellRunEntry, Meta: meta})
+}
+
+// ShellOut records a slice of a running web shell line's output.
+func (l *Log) ShellOut(content string, meta map[string]any) string {
+	if l.w == nil {
+		return ""
+	}
+	return l.w.Entry(session.Entry{Type: ShellOutEntry, Role: ShellOutEntry, Content: content, Meta: meta})
+}
+
+func copyMeta(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m)+2)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 // Flush writes the assistant text and calls gathered so far.
 func (l *Log) Flush() {
 	if l.w == nil {
@@ -66,6 +143,7 @@ func (l *Log) Flush() {
 	l.text.Reset()
 	l.calls = nil
 	l.mu.Unlock()
+	l.vulns.Observe(text)
 	if strings.TrimSpace(text) != "" || len(calls) > 0 {
 		l.w.Assistant(text, calls, nil)
 	}
@@ -94,9 +172,27 @@ func (l *Log) Observe(e agent.Event) {
 		l.mu.Lock()
 		l.calls = append(l.calls, map[string]any{"id": e.Tool.ID, "name": e.Tool.Name, "args": args})
 		l.mu.Unlock()
+	case agent.EventToolDiffKind:
+		if e.Diff == nil || e.Diff.Empty() || e.ToolCallID == "" {
+			return
+		}
+		l.mu.Lock()
+		if l.diffs == nil {
+			l.diffs = map[string]filediff.WireChange{}
+		}
+		l.diffs[e.ToolCallID] = e.Diff.Wire(maxDiffWireBytes)
+		l.mu.Unlock()
 	case agent.EventToolResultKind:
 		l.Flush()
-		l.w.Tool(e.ToolCallID, e.ToolName, e.ToolArgs, "done", e.ToolResult)
+		var extra map[string]any
+		l.mu.Lock()
+		if d, ok := l.diffs[e.ToolCallID]; ok {
+			extra = map[string]any{"diff": d}
+			delete(l.diffs, e.ToolCallID)
+		}
+		l.mu.Unlock()
+		l.w.ToolWith(e.ToolCallID, e.ToolName, e.ToolArgs, "done", e.ToolResult, extra)
+		l.vulns.Observe(e.ToolResult)
 	case agent.EventWarningKind:
 		if e.Warning != "" {
 			l.w.System(e.Warning)
@@ -127,6 +223,7 @@ func (l *Log) TurnStarted(facts map[string]any) {
 // ("ended", "error" or "interrupted").
 func (l *Log) TurnEnded(state string, facts map[string]any) {
 	l.Flush()
+	l.vulnRows()
 	if l.w == nil || l.turnID == "" {
 		return
 	}
@@ -164,4 +261,17 @@ func Open(workdir, id string, meta session.Meta) (*Log, error) {
 		return New(nil), err
 	}
 	return New(w), nil
+}
+
+// vulnRows writes a vuln entry for each identifier the turn newly showed: the
+// canonical identifier and what the row offers, all composed from it by vulnid
+// and never from the text around it.
+func (l *Log) vulnRows() {
+	ids := l.vulns.Flush()
+	if l.w == nil {
+		return
+	}
+	for _, id := range ids {
+		l.w.Entry(session.Entry{Type: vulnid.EntryType, Role: "system", Content: id, Meta: vulnid.EntryMeta(id)})
+	}
 }

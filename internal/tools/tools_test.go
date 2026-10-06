@@ -396,9 +396,15 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindToolSearch: true,
 		KindPublish:    false,
 		KindOffload:    true,
+		// SearchFetched is a lookup over the session's own index.
+		KindFetched: true,
 		// A screenshot observes the desktop, so it is mutating: it asks and
 		// runs on the sequential path.
 		KindScreenshot: false,
+		// A script may edit files, so it is mutating.
+		KindCode: false,
+		// No tool carries KindTeleport; it stays off the read-only list.
+		KindTeleport: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

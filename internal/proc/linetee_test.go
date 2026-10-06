@@ -2,7 +2,9 @@ package proc
 
 import (
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestLineTeeReportsWholeLinesAndFlushesPartial(t *testing.T) {
@@ -70,4 +72,35 @@ func TestLineTeeKeepTailUnderCap(t *testing.T) {
 	if got := tee.Content(); got != "0123456789abcdefghijklmnopqrst" {
 		t.Fatalf("content = %q", got)
 	}
+}
+
+// A command that prints a burst of lines and then waits (gh auth login prints
+// its one-time code and polls) must still have those lines reported while it
+// waits, not when it exits.
+func TestLineTeeFlushesHeldBackLinesWhenOutputGoesQuiet(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	tee := NewLineTee(64*1024, func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, strings.Split(s, "\n")...)
+	})
+
+	_, _ = tee.Write([]byte("first\n"))
+	_, _ = tee.Write([]byte("code: F00E-9114\n"))
+	_, _ = tee.Write([]byte("open https://github.com/login/device\n"))
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(got)
+		mu.Unlock()
+		if n == 3 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("lines before Flush = %v, want all 3", got)
 }

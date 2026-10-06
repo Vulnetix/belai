@@ -18,9 +18,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // Modes and network settings.
@@ -244,6 +246,12 @@ func BwrapArgs(p Policy, dir string, argv []string) []string {
 	}
 	if p.DenyNetwork {
 		args = append(args, "--unshare-net")
+	}
+	// With vault variables in the command's environment, give it its own pid
+	// namespace: it cannot see another process (a background command, an earlier
+	// call's leftovers) to read its /proc/PID/environ.
+	if vaultenv.Default.HasActive(time.Now()) {
+		args = append(args, "--unshare-pid")
 	}
 	if dir != "" {
 		args = append(args, "--chdir", dir)

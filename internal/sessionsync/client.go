@@ -133,6 +133,124 @@ type RCInfo struct {
 	MaxWorkers int         `json:"maxWorkers"`
 	Profiles   []RCProfile `json:"profiles"`
 	Crews      []RCCrew    `json:"crews"`
+	// Agents are the agent profiles a web-started session can be engaged
+	// with (agent mode): names only, never a prompt or a tool list. Nil from
+	// an older daemon, which offers no choice.
+	Agents []RCAgent `json:"agents,omitempty"`
+	// Items are the library items (skills, prompts, ...) this host holds, by
+	// kind, name and the hash of their canonical document: facts only, no
+	// content, and only for the kinds whose sync switch is on.
+	Items []RCItem `json:"items"`
+	// Knowledge is the catalogue of this host's knowledge indexes: document
+	// facts only (rc knowledge.go), never passage text. Nil from an older daemon.
+	Knowledge []RCKnowledge `json:"knowledge,omitempty"`
+	// Models is what a web-started session can run on: the model a session
+	// gets when the request names none, and the providers this host has
+	// credentials for. Names only, never a key or an endpoint. Nil from an
+	// older daemon.
+	Models *RCModels `json:"models,omitempty"`
+	// Controls says web sessions on this host take session controls (belai rc
+	// --web-controls), and ControlCatalogue is the table of them: ids,
+	// commands, keys and values, from internal/sessionctl. GuardrailsOff says
+	// a web session may turn guardrails off (--web-allow-guardrails-off).
+	Controls         bool        `json:"controls"`
+	GuardrailsOff    bool        `json:"guardrailsOff"`
+	ControlCatalogue []RCControl `json:"controlCatalogue,omitempty"`
+	// ProjectSettings says the website may read and edit each offered
+	// directory's project preferences (--web-project-settings); each RCDir then
+	// carries them.
+	ProjectSettings bool `json:"projectSettings"`
+}
+
+// RCControl is one session control as the website offers it.
+type RCControl struct {
+	ID      string   `json:"id"`
+	Command string   `json:"command"`
+	Usage   string   `json:"usage"`
+	Keys    []string `json:"keys,omitempty"`
+	Values  []string `json:"values,omitempty"`
+	Kind    string   `json:"kind"`
+}
+
+// RCModels is a host's model advertisement.
+type RCModels struct {
+	Default   RCModelDefault `json:"default"`
+	Providers []RCProvider   `json:"providers"`
+}
+
+// RCModelDefault is the provider and model a web session runs on with no
+// override. Routed means routing.kind is "routed": the use-case table picks
+// the model per turn, and Provider and Model are the main model it falls
+// back to.
+type RCModelDefault struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Routed   bool   `json:"routed"`
+}
+
+// RCProvider is a configured provider and the models it offers a session.
+type RCProvider struct {
+	Name   string   `json:"name"`
+	Models []string `json:"models"`
+}
+
+// Caps on one advertisement's model list; the server applies the same caps.
+const (
+	MaxRCProviders         = 32
+	MaxRCModelsPerProvider = 64
+)
+
+// RCItem is one library item on the host, as the website lists where an item
+// lives: its kind (skill, prompt, ...), its name and the SHA-256 of the
+// canonical document the library would store for it.
+type RCItem struct {
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+}
+
+// MaxRCItems is how many items one advertisement carries; the server applies
+// the same cap.
+const MaxRCItems = 1000
+
+// RCKnowledge is one knowledge index on the host, as the Library's Documents
+// view lists it: an agent profile's index (Scope "profile", Key its id) or the
+// index of a directory the daemon offers (Scope "project", Root its path).
+// Facts only: each document's knowledge address, size, SHA-256 and the labels
+// and topics the harness tagged it with. No passage text and no index file.
+type RCKnowledge struct {
+	Scope string           `json:"scope"`
+	Key   string           `json:"key,omitempty"`
+	Name  string           `json:"name"`
+	Root  string           `json:"root,omitempty"`
+	Docs  []RCKnowledgeDoc `json:"docs"`
+}
+
+// RCKnowledgeDoc is one indexed document's facts.
+type RCKnowledgeDoc struct {
+	Address string   `json:"address"`
+	Bytes   int64    `json:"bytes"`
+	SHA256  string   `json:"sha256"`
+	Kind    string   `json:"kind,omitempty"`
+	Lang    string   `json:"lang,omitempty"`
+	Labels  []string `json:"labels"`
+	Topics  []string `json:"topics"`
+}
+
+// Caps on the knowledge catalogue one advertisement carries; the server
+// applies the same caps.
+const (
+	MaxRCKnowledgeIndexes = 32
+	MaxRCKnowledgeDocs    = 256
+)
+
+// RCAgent is one agent profile a web session can be started with. The name is
+// what the start request carries and the host checks again; DisplayName is how
+// the console shows it.
+type RCAgent struct {
+	Name        string `json:"name"`
+	Builtin     bool   `json:"builtin"`
+	DisplayName string `json:"displayName,omitempty"`
 }
 
 // RCProfile is one worker profile's routing, as the website shows it.
@@ -150,6 +268,19 @@ type RCProfile struct {
 	Lease         string   `json:"lease"`
 	MaxWall       string   `json:"maxWall"`
 	MaxPasses     int      `json:"maxPasses"`
+	// How the console presents the agent (agentprofile identity fields): its
+	// UUID, display name, four colours and avatar id. Presentation only; empty
+	// for a profile that has none, and none of it is a prompt.
+	ID          string   `json:"id,omitempty"`
+	DisplayName string   `json:"displayName,omitempty"`
+	Palette     []string `json:"palette,omitempty"`
+	AvatarID    string   `json:"avatarId,omitempty"`
+	// SHA256 is the hash of the profile file as the library stores it (the same
+	// bytes a backup uploads and the automatic sync hashes), so the website can
+	// tell which library version this host holds. A hash only, never the
+	// profile text. Empty for a built-in or plugin profile, with sync.profiles
+	// off, or from an older daemon.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // RCRoute is a destination list plus label edits.
@@ -159,11 +290,19 @@ type RCRoute struct {
 	DropLabels []string `json:"dropLabels"`
 }
 
-// RCCrew is one crew and its members.
+// RCCrew is one crew and its members. ID is the crew's own uuid (none for a
+// built-in or a crew not yet stamped) and Description its one line, so the
+// website can tell which library crew this host holds.
 type RCCrew struct {
-	Name    string     `json:"name"`
-	Builtin bool       `json:"builtin"`
-	Members []RCMember `json:"members"`
+	ID          string     `json:"id,omitempty"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Builtin     bool       `json:"builtin"`
+	Members     []RCMember `json:"members"`
+	// SHA256 is the hash of the crew JSON as the library stores it, so the
+	// website can tell which library version this host holds. Empty for a
+	// built-in crew, with sync.profiles off, or from an older daemon.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // RCMember is one crew member and how many workers run it.
@@ -227,6 +366,29 @@ type RCDir struct {
 	Path   string `json:"path"`
 	Name   string `json:"name"`
 	Source string `json:"source"`
+	// The directory's git facts, when it is a checkout of a forge repository:
+	// owner/repo, the forge host, its kind, the checked-out branch and the
+	// default branch the clone recorded. Identifier-shaped values only, read
+	// from the repository's files (rc dirgit.go); never a URL or a credential.
+	Remote        string `json:"remote,omitempty"`
+	Host          string `json:"host,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+	// Prefs and Effective are the directory's project preferences, sent only
+	// with --web-project-settings: Prefs holds the keys set in the host's
+	// preference file for the directory (flat keys, internal/config
+	// PrefKeys), Effective each key's resolved value and the settings layer it
+	// came from. Values are booleans, fixed words and numbers only.
+	Prefs     map[string]any         `json:"prefs,omitempty"`
+	Effective map[string]RCEffective `json:"effective,omitempty"`
+}
+
+// RCEffective is one preference key's resolved value and its settings layer
+// (default, global, project_prefs, project, env, flag).
+type RCEffective struct {
+	Value  any    `json:"value"`
+	Origin string `json:"origin"`
 }
 
 // Dispatch is a website request to an rc daemon: start a session in Cwd with
@@ -240,12 +402,75 @@ type Dispatch struct {
 	Mode      string `json:"mode"`
 	Prompt    string `json:"prompt"`
 	SessionID string `json:"sessionId"`
+	// Dirs are the extra workspace directories a "start" request adds beyond
+	// Cwd (/add-dir): each is one the host offers, checked again by the daemon.
+	Dirs []string `json:"dirs,omitempty"`
 	// Profile or Crew names what a "worker" or "crew" request starts.
 	Profile string `json:"profile,omitempty"`
 	Crew    string `json:"crew,omitempty"`
+	// Fill makes a "crew" request start only the replicas the crew lacks in
+	// the directory (`belai agent start -crew CREW -fill`).
+	Fill bool `json:"fill,omitempty"`
 	// Worker is the worker id a "pause" or "resume" request names.
-	Worker    string `json:"worker,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	Worker string `json:"worker,omitempty"`
+	// A "profile_install" request names a library profile and one of its
+	// versions, and says whether it may replace this host's profile of the same
+	// name and id. A "profile_backup" request names the host's profile in
+	// Profile. Identifiers only: the profile text is fetched, never carried.
+	Library   string `json:"library,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Overwrite bool   `json:"overwrite,omitempty"`
+	// A "teleport_code" request names its teleport in Teleport, and says in Push
+	// that the target's user agreed to a teleport branch, and in Replay that the
+	// forge is not to be tried (the target could not fetch the branch).
+	Push   bool `json:"push,omitempty"`
+	Replay bool `json:"replay,omitempty"`
+	// An "avatar" request names the agent creator whose avatar to draw.
+	Creator string `json:"creator,omitempty"`
+	// A "crew_install" request names a library crew and version in Library and
+	// Version, and Members the library profile versions its members resolve to,
+	// which the host installs first. A "crew_backup" request names the host's
+	// crew in Crew. Identifiers only.
+	Members []CrewMemberRef `json:"members,omitempty"`
+	// An "item_backup" request names the host's library item in ItemKind (skill,
+	// prompt, ...) and Name. An "item_install" request names a library item and
+	// one of its versions in Library and Version, its kind in ItemKind, and says in
+	// Overwrite whether it may replace the host's item. ItemKind is not "kind":
+	// that field already names the request. Identifiers only: a document is
+	// fetched, never carried.
+	ItemKind string `json:"itemKind,omitempty"`
+	Name     string `json:"name,omitempty"`
+	// A "provider_keys_install" request names the catalogue slugs of the providers
+	// whose stored keys the host is to take. Slugs only: a key is fetched over TLS,
+	// once, never carried.
+	Providers []string `json:"providers,omitempty"`
+	// A "start" request may name the provider, model and effort the session
+	// runs on. Empty means the host's own default (or its routing table).
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	// GitSync, when set on a "start" request, switches the new session's git
+	// sync on or off; nil leaves it to the host's settings.
+	GitSync *bool `json:"gitSync,omitempty"`
+	// A "project_prefs" request names an offered directory in Cwd and the flat
+	// preference keys to set (with their values) and to clear. Keys and values
+	// are checked by the host against config.ProjectPrefs' shape.
+	PrefsSet   map[string]any `json:"prefsSet,omitempty"`
+	PrefsUnset []string       `json:"prefsUnset,omitempty"`
+	// A "teleport_backup" request names the profile the teleported session ran
+	// under in Profiles (the host also backs up the crews that list it and their
+	// members) and the teleport it serves in Teleport. Identifiers only.
+	Teleport  string   `json:"teleport,omitempty"`
+	Profiles  []string `json:"profiles,omitempty"`
+	CreatedAt int64    `json:"createdAt"`
+}
+
+// CrewMemberRef is one member profile a crew_install request puts on the host:
+// the profile name the crew lists and the library version that provides it.
+type CrewMemberRef struct {
+	Profile string `json:"profile"`
+	Library string `json:"library"`
+	Version string `json:"version"`
 }
 
 // Dispatch outcomes the daemon reports back.
@@ -257,23 +482,37 @@ const (
 
 // SessionMeta is the session's registration and display metadata.
 type SessionMeta struct {
-	HostID          string `json:"hostId"`
-	ProjectKey      string `json:"projectKey,omitempty"`
-	ProjectName     string `json:"projectName,omitempty"`
-	Cwd             string `json:"cwd,omitempty"`
-	Name            string `json:"name,omitempty"`
-	Model           string `json:"model,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	Mode            string `json:"mode,omitempty"`
+	HostID      string `json:"hostId"`
+	ProjectKey  string `json:"projectKey,omitempty"`
+	ProjectName string `json:"projectName,omitempty"`
+	Cwd         string `json:"cwd,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	// ActiveProfile is the agent profile the session ran under (belai:patcher).
+	ActiveProfile   string `json:"activeProfile,omitempty"`
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 	ResumedFromID   string `json:"resumedFromId,omitempty"`
 	RemotePrompts   bool   `json:"remotePrompts"`
 	// RemoteAnswers says the host takes web answers to its open asks.
-	RemoteAnswers bool  `json:"remoteAnswers"`
-	CreatedAt     int64 `json:"createdAt,omitempty"`
+	RemoteAnswers bool `json:"remoteAnswers"`
+	// Controls says the host takes session controls from the web (belai rc
+	// --web-controls). ControlState is the session's current controls as
+	// internal/sessionctl.State, opaque here; the server validates its shape.
+	Controls     bool            `json:"controls"`
+	ControlState json.RawMessage `json:"controlState,omitempty"`
+	// Shell says the host runs a shell line from the web (belai rc
+	// --web-shell).
+	Shell     bool  `json:"shell"`
+	CreatedAt int64 `json:"createdAt,omitempty"`
 	// DispatchID is the website request that started this session on an rc
 	// daemon; empty for a session someone started at the terminal.
 	DispatchID string `json:"dispatchId,omitempty"`
+	// Git is the session's repository as internal/gitsync.Info (branch,
+	// worktree, distance from main, pull request, last sync). Opaque here;
+	// the server validates it. Empty outside a repository.
+	Git json.RawMessage `json:"git,omitempty"`
 }
 
 // Entry is one JSONL line as uploaded: the session.Entry fields plus seq.
@@ -295,6 +534,9 @@ type RemotePrompt struct {
 	SessionID string `json:"sessionId"`
 	Content   string `json:"content"`
 	CreatedAt int64  `json:"createdAt"`
+	// Origin names a prompt the host raised itself (a failed shell line to
+	// analyse) rather than one that came from the web. It is never on the wire.
+	Origin string `json:"-"`
 }
 
 // RemoteAnswer is a web answer to a question the host asked, claimed from the
@@ -327,6 +569,26 @@ type RemoteDraft struct {
 	ExpiresAt int64 `json:"expiresAt"`
 }
 
+// RemoteCommand is a request sent from the website, claimed from the inbox: a
+// session control (a slash line "/caveman on" or a key "f4") or, from a host
+// run with --web-shell, one shell line; exactly one of Line, Key and Shell.
+// It is untrusted: a control is parsed by internal/sessionctl, which knows
+// only its fixed controls, and a shell line runs only after the TUI's own
+// permission rules and under its sandbox profile (internal/rc shell.go).
+type RemoteCommand struct {
+	ID        string `json:"id"`
+	SessionID string `json:"sessionId"`
+	Line      string `json:"line,omitempty"`
+	Key       string `json:"key,omitempty"`
+	// Shell is the line to run, Cwd the directory the page was showing and
+	// Attach whether its output may go to the model's next turn (the
+	// composer's `!cmd`; the console's remote shell never attaches).
+	Shell     string `json:"shell,omitempty"`
+	Cwd       string `json:"cwd,omitempty"`
+	Attach    bool   `json:"attach,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
 // Prompt outcomes the host reports back.
 const (
 	AckQueued   = "queued"
@@ -343,6 +605,33 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any, timeo
 }
 
 func (c *Client) doBody(ctx context.Context, method, path string, in, out any, timeout time.Duration, compress bool) error {
+	status, data, err := c.roundTrip(ctx, method, path, in, timeout, compress, defaultMaxBody)
+	if err != nil {
+		return err
+	}
+	switch {
+	case status == http.StatusNotFound:
+		return ErrNotFound
+	case status == http.StatusUnauthorized:
+		return ErrUnauthorized
+	case status == http.StatusConflict:
+		return ErrConflict
+	case status < 200 || status > 299:
+		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, status)
+	}
+	if out != nil && len(data) > 0 {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
+// defaultMaxBody caps a response the client reads.
+const defaultMaxBody = 4 << 20
+
+// roundTrip sends one authenticated request and returns the status and the body
+// (read up to limit bytes). It maps no status to an error: callers differ in how
+// they read one, and teleport reads the reason a 409 carries.
+func (c *Client) roundTrip(ctx context.Context, method, path string, in any, timeout time.Duration, compress bool, limit int64) (int, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var body io.Reader
@@ -350,7 +639,7 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
-			return err
+			return 0, nil, err
 		}
 		if compress && len(b) >= gzipMinBytes {
 			var buf bytes.Buffer
@@ -363,11 +652,11 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.Base+path, body)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	auth, err := c.AuthHeader()
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Accept", "application/json")
@@ -379,24 +668,11 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return ErrNotFound
-	case resp.StatusCode == http.StatusUnauthorized:
-		return ErrUnauthorized
-	case resp.StatusCode == http.StatusConflict:
-		return ErrConflict
-	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, resp.StatusCode)
-	}
-	if out != nil && len(data) > 0 {
-		return json.Unmarshal(data, out)
-	}
-	return nil
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
+	return resp.StatusCode, data, nil
 }
 
 // PutHost registers or refreshes this machine.
@@ -407,11 +683,28 @@ func (c *Client) PutHost(ctx context.Context, hostID string, h Host) error {
 // PutSession registers the session as live and returns the server's lastSeq
 // (-1 when it holds no lines yet).
 func (c *Client) PutSession(ctx context.Context, sessionID string, m SessionMeta) (int64, error) {
+	last, _, err := c.PutSessionControls(ctx, sessionID, m)
+	return last, err
+}
+
+// Controls are the per-session settings the website changed and the host has
+// not yet confirmed. Nil fields are untouched. The server sends one only until
+// the host's next report shows it applied, so a later local change is not
+// overridden by an old web one.
+type Controls struct {
+	// GitSync switches the session's git sync (internal/gitsync) on or off.
+	GitSync *bool `json:"gitSync,omitempty"`
+}
+
+// PutSessionControls is PutSession that also returns the website's pending
+// controls for the session.
+func (c *Client) PutSessionControls(ctx context.Context, sessionID string, m SessionMeta) (int64, Controls, error) {
 	var out struct {
-		LastSeq int64 `json:"lastSeq"`
+		LastSeq  int64    `json:"lastSeq"`
+		Controls Controls `json:"controls"`
 	}
 	err := c.do(ctx, http.MethodPut, "/sessions/"+url.PathEscape(sessionID), m, &out, requestTimeout)
-	return out.LastSeq, err
+	return out.LastSeq, out.Controls, err
 }
 
 // PostEntries uploads lines; repeats are ignored server-side.
@@ -426,7 +719,18 @@ func (c *Client) PostEntries(ctx context.Context, sessionID string, entries []En
 
 // Heartbeat keeps the session live.
 func (c *Client) Heartbeat(ctx context.Context, sessionID string) error {
-	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/heartbeat", nil, nil, requestTimeout)
+	_, err := c.HeartbeatControls(ctx, sessionID)
+	return err
+}
+
+// HeartbeatControls is Heartbeat that also returns the website's pending
+// controls for the session.
+func (c *Client) HeartbeatControls(ctx context.Context, sessionID string) (Controls, error) {
+	var out struct {
+		Controls Controls `json:"controls"`
+	}
+	err := c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/heartbeat", nil, &out, requestTimeout)
+	return out.Controls, err
 }
 
 // End moves the session into History.
@@ -439,17 +743,38 @@ func (c *Client) End(ctx context.Context, sessionID string) error {
 // that predates the session filter hands over the whole host's inbox, which
 // the TUI refuses per prompt as before.
 func (c *Client) Inbox(ctx context.Context, hostID, sessionID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, []RemoteDraft, error) {
-	var out struct {
-		Prompts []RemotePrompt `json:"prompts"`
-		Answers []RemoteAnswer `json:"answers"`
-		Drafts  []RemoteDraft  `json:"drafts"`
-	}
+	b, err := c.InboxBatch(ctx, hostID, sessionID, wait)
+	return b.Prompts, b.Answers, b.Drafts, err
+}
+
+// Inbox is everything one inbox poll returned.
+type Inbox struct {
+	Prompts  []RemotePrompt  `json:"prompts"`
+	Answers  []RemoteAnswer  `json:"answers"`
+	Drafts   []RemoteDraft   `json:"drafts"`
+	Commands []RemoteCommand `json:"commands"`
+}
+
+// InboxBatch is Inbox with session controls. A server that predates them
+// sends none.
+func (c *Client) InboxBatch(ctx context.Context, hostID, sessionID string, wait time.Duration) (Inbox, error) {
+	var out Inbox
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
 	if sessionID != "" {
 		path += "&session=" + url.QueryEscape(sessionID)
 	}
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
-	return out.Prompts, out.Answers, out.Drafts, err
+	return out, err
+}
+
+// AckCommand reports what the host did with a session control: accepted, with
+// the session's new controls, or refused, with a harness-worded reason.
+func (c *Client) AckCommand(ctx context.Context, commandID, status, reason string, state json.RawMessage) error {
+	body := map[string]any{"status": status, "reason": reason}
+	if len(state) > 0 {
+		body["state"] = state
+	}
+	return c.do(ctx, http.MethodPost, "/commands/"+url.PathEscape(commandID)+"/ack", body, nil, requestTimeout)
 }
 
 // Draft outcomes the host reports back.

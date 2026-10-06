@@ -1,11 +1,13 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
 
 // Model routing as a ladder of three tiers, then a table of which model
 // answers each of the nine use cases in defined and routed mode.
 
 const sealText =
-  'Model routing: the model you pick does the work, a fast tier answers one-token verdicts, drafts the goal contract and writes the report after a passing test run, and routed mode lets Jev pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed.';
+  'Model routing: the model you pick does the work, a fast tier answers one-token verdicts, drafts the goal contract and writes the report after a passing test run, and routed mode lets a systemone decision model pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed.';
 
 const tiers = [
   {
@@ -24,24 +26,24 @@ const tiers = [
     n: '03',
     name: 'Routed',
     key: 'tab',
-    lead: 'List candidate models for a use case. Jev scores them on the first call and Belai keeps the winner for the session, or falls back to your model.',
+    lead: 'List candidate models for a use case. A systemone model scores them on the first call, and Belai keeps the winner or falls back to yours.',
   },
 ];
 
 const FAST = 'Fast tier';
-const JEV = "Jev's pick from your candidates";
+const PICK = "The decision model's pick from your candidates";
 const uses: [string, string, string, string][] = [
-  ['main', 'The work itself', 'Your model', JEV],
-  ['clarify', 'Questions for you', 'Your model', JEV],
-  ['compaction', 'Summarising a long session', 'Your model', JEV],
-  ['mode_eval', 'Picking agent, plan or goal', FAST, `${FAST}, without Jev`],
-  ['plan_eval · goal_eval · agent_eval', 'One-token verdicts', FAST, `${FAST}, without Jev`],
-  ['goal_contract', "Drafting a goal's contract", FAST, `${FAST}, without Jev`],
-  ['session_name', 'Naming the session', FAST, `${FAST}, without Jev`],
-  ['voice_cleanup', 'Tidying dictated text', FAST, `${FAST}, without Jev`],
-  ['test_report', 'Reporting on a passing test run', FAST, `${FAST}, without Jev`],
-  ['gate_draft', 'Drafting gates for a card that has none', FAST, `${FAST}, without Jev`],
-  ['delivery_report', 'Noting how a card\'s gates were checked', FAST, `${FAST}, without Jev`],
+  ['main', 'The work itself', 'Your model', PICK],
+  ['clarify', 'Questions for you', 'Your model', PICK],
+  ['compaction', 'Summarising a long session', 'Your model', PICK],
+  ['mode_eval', 'Picking agent, plan or goal', FAST, `${FAST}, no decision model`],
+  ['plan_eval · goal_eval · agent_eval', 'One-token verdicts', FAST, `${FAST}, no decision model`],
+  ['goal_contract', "Drafting a goal's contract", FAST, `${FAST}, no decision model`],
+  ['session_name', 'Naming the session', FAST, `${FAST}, no decision model`],
+  ['voice_cleanup', 'Tidying dictated text', FAST, `${FAST}, no decision model`],
+  ['test_report', 'Reporting on a passing test run', FAST, `${FAST}, no decision model`],
+  ['gate_draft', 'Drafting gates for a card that has none', FAST, `${FAST}, no decision model`],
+  ['delivery_report', 'Noting how a card\'s gates were checked', FAST, `${FAST}, no decision model`],
 ];
 
 const fastModels = [
@@ -61,7 +63,7 @@ const keys = [
 const limits = [
   ['The classifier stays put', 'It follows classifier.tier and ignores the routing table. A smaller guard is easier to talk past, so moving it is your decision.'],
   ['Checked at load', 'A candidate needs a provider or a model, and the provider must be one Belai knows. A bad table stops startup, so traffic only goes where you listed.'],
-  ['A call always gets an answer', 'A failed Jev call, a tie or a winner missing from your list falls back to your model. Routing can make a call slower, and that is all.'],
+  ['A call always gets an answer', 'A failed decision call, a tie or a winner missing from your list falls back to your model. Routing can make a call slower, and that is all.'],
   ['Per project, key by key', "A project's settings can change one use case without repeating the global table."],
   ['Counted where served', 'Every routed or fast-tier call counts against the budget of the model that answered it.'],
   ['/model says what is in effect', 'The screen opens with four lines, resolved from the live settings: the work, the verdicts, the drafting and the security check.'],
@@ -70,17 +72,12 @@ const limits = [
 ---
 
 <SealedSection label="routing" sealText={sealText} id="routing">
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Model routing</h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Model routing" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
       A single prompt can make several model calls before the first edit, and most of them return one
       token. Routing sends those calls to a small model, so the model you picked is spent on the work.
-    </p>
-  </div>
+    </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+  <ol class="mt-10 grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {tiers.map((t, i) => {
       const dark = i === 2;
       return (
@@ -118,7 +115,7 @@ const limits = [
               </g>
               <path d="M68 23 C 100 23, 100 55, 130 55 M68 55 L130 55 M68 87 C 100 87, 100 55, 130 55" stroke-dasharray="3 4" />
               <circle cx="150" cy="55" r="20" />
-              <text x="137" y="60" font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">Jev</text>
+              <text x="150" y="60" text-anchor="middle" font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">pick</text>
               <path d="M170 55 L230 55" />
               <rect x="230" y="40" width="80" height="30" rx="6" class="fill-vx-mint" stroke="none" />
               <text x="244" y="60" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink" stroke="none">winner</text>
@@ -131,21 +128,18 @@ const limits = [
       );
     })}
   </ol>
-  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+  <div class="mono mt-3 hidden items-center gap-4 text-sm @4xl:flex" aria-hidden="true">
     <span class="text-vx-ink/60">one-token verdicts</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>a model chosen per use case</span>
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Who answers each call</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Who answers each call">
       In chat or on <code class="mono">/model</code>, <code class="mono">tab</code> switches between defined
       and routed. The footer then shows the one model in use, or how many models the router has active.
-    </p>
-  </div>
+    </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left md:table">
+  <table class="mt-8 hidden w-full border-collapse text-left @2xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="mono w-[26%] pb-4 text-sm font-medium text-vx-ink/60">use case</th>
@@ -174,7 +168,7 @@ const limits = [
     </tbody>
   </table>
 
-  <dl class="mt-8 grid gap-3 md:hidden">
+  <dl class="mt-8 grid gap-3 @2xl:hidden">
     {uses.map(([id, call, defined, routed]) => (
       <div class="rounded-xl border border-vx-ink p-4 text-sm">
         <dt><code class="mono font-semibold">{id}</code> <span class="text-vx-ink/70">{call}</span></dt>
@@ -190,24 +184,21 @@ const limits = [
     </div>
   </dl>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">When Jev cannot decide</h3>
-    <p class="text-vx-ink/80">
-      On the first call for a use case, the Jev Decisions API scores your candidates. Anything short of
+  <SubHead title="When the decision model cannot decide">
+      On the first call for a use case, the decision model scores your candidates. Anything short of
       a clear winner from your own list ends on your model.
-    </p>
-  </div>
+    </SubHead>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 rounded-xl border border-vx-ink bg-vx-bone/40 p-5 md:p-7 lg:col-span-8">
-      <svg viewBox="0 0 720 260" class="h-auto w-full" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="The first call for a use case goes to Jev. A winner from your list is kept for the session. A failed call, a tie or a winner not in your list falls back to your model.">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl border border-vx-ink bg-vx-bone/40 p-5 md:p-7 @4xl:col-span-8">
+      <svg viewBox="0 0 720 260" class="h-auto w-full" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="The first call for a use case goes to the decision model. A winner from your list is kept for the session. A failed call, a tie or a winner not in your list falls back to your model.">
         <rect x="10" y="100" width="150" height="56" rx="10" class="fill-vx-cream" />
         <text x="26" y="124" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">first call for</text>
         <text x="26" y="144" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">a use case</text>
         <path d="M160 128 L250 128 M242 122 L251 128 L242 134" stroke-linejoin="round" />
         <circle cx="296" cy="128" r="44" class="fill-vx-ink" stroke="none" />
-        <text x="282" y="124" font-family="Geist Mono, monospace" font-size="14" class="fill-vx-mint" stroke="none">Jev</text>
-        <text x="272" y="142" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream" stroke="none">scores</text>
+        <text x="296" y="124" text-anchor="middle" font-family="Geist Mono, monospace" font-size="14" class="fill-vx-mint" stroke="none">decision</text>
+        <text x="296" y="142" text-anchor="middle" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream" stroke="none">scores</text>
         <path d="M340 110 C 400 110, 410 50, 470 50 M462 44 L471 50 L462 56" stroke-linejoin="round" />
         <rect x="472" y="24" width="238" height="52" rx="10" class="fill-vx-mint" stroke="none" />
         <text x="488" y="48" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">a winner from your list</text>
@@ -219,7 +210,7 @@ const limits = [
         <text x="488" y="214" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">a failed call, a tie, or</text>
         <text x="488" y="230" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">a winner not in your list</text>
       </svg>
-      <div class="mt-5 grid grid-cols-2 gap-4 border-t border-vx-ink/20 pt-4 md:grid-cols-4">
+      <div class="mt-5 grid grid-cols-2 gap-4 border-t border-vx-ink/20 pt-4 @2xl:grid-cols-4">
         {fastModels.map(([provider, model]) => (
           <div>
             <p class="mono text-xs text-vx-ink/60">{provider}</p>
@@ -232,7 +223,7 @@ const limits = [
         <code class="mono">routing.fast_model</code> can point it at another provider.
       </p>
     </div>
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">FOUR SETTINGS</p>
         <dl class="mono mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-[13px]">
@@ -256,14 +247,11 @@ const limits = [
     </aside>
   </div>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits on routing</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Limits on routing">
       Routing changes what a session costs and how fast it answers. The security check stays where you
       put it.
-    </p>
-  </div>
-  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
+    </SubHead>
+  <div class="mt-8 grid border-t-2 border-vx-ink @2xl:grid-cols-2 @5xl:grid-cols-3">
     {limits.map(([title, body]) => (
       <div class="border-b border-vx-ink/20 py-6 md:pr-8">
         <h4 class="text-lg font-bold">{title}</h4>

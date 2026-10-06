@@ -6,7 +6,7 @@ import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 
 const sealText =
-  'Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read.';
+  'Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read. Knowledge: beside the usual Grep, Glob and Read answer, a model gets passages that resemble its query from the documents an agent profile lists and from the scanner output in .vulnetix and the files attached with @. Every chunk is sanitized and admitted by the security classifier when it is indexed, so a search calls no model, the search is pure Go with no embedding model or service, a deny rule hides a source path, and /knowledge shows what is indexed.';
 
 const tools = [
   { n: '01', name: 'SearchSessions', key: 'regex', lead: 'Searches past sessions with a regular expression, by default only those recorded in the current project. With `prompts_only`, only prompt history is searched, which is faster.' },
@@ -16,6 +16,15 @@ const tools = [
 
 const agents = ['Belai', 'Claude Code', 'Codex', 'pi', 'Goose', 'opencode', 'Copilot in VS Code', 'Copilot CLI', 'Antigravity'];
 const needsSqlite = new Set(['Goose', 'opencode']);
+
+const knowledge: [string, string][] = [
+  ['Two kinds of knowledge', 'Profile knowledge is the documents an agent profile lists, such as a handbook, a style guide or runbooks. Project knowledge is the scanner output in `.vulnetix` and the files you attach with `@`.'],
+  ['Through the tools it already uses', 'A model\'s own `Grep`, `Glob` and `Read` calls add labelled `kb+` rows after the filesystem result. A harness read, such as an `@` attachment, gets the filesystem alone.'],
+  ['Classified once, when indexed', 'Every chunk is sanitized and admitted by the security classifier at ingestion, and a flagged chunk is never stored. A search then calls no model.'],
+  ['Runs in the process', 'The search is pure Go, with no embedding model to download, no service to call and no cgo, so it works offline in every release build.'],
+  ['Permissions still apply', 'A deny rule on a document\'s source path hides it from search and listing, and a profile whose tools leave out `Grep` has no knowledge through `Grep`.'],
+  ['See what is indexed', '`/knowledge` opens the indexes read-only for this project, every project or the agents, with each document\'s type, labels and topics, and searches them as a model\'s tools would.'],
+];
 
 const hit = [
   ['agent', 'the agent that wrote it'],
@@ -53,10 +62,10 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="memory" sealText={sealText} id="memory">
-  <SectionHead title="Memory">
+  <SectionHead title="Memory and knowledge" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
     Other coding agents on your machine have probably explored this repository already. Belai can search
     what they found instead of exploring again, and each turn starts with what the session already knows
-    about the repository.
+    about the repository. It can also search the reference documents you give an agent, by meaning.
   </SectionHead>
 
   <Ladder steps={tools} from="finds a hit" to="rules and memory, across agents" />
@@ -65,8 +74,8 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     Every hit names the agent, session, turn, role, time and project it came from, so the model can cite
     it.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <ul class="m-0 grid min-w-0 list-none grid-cols-2 gap-2 p-0 sm:grid-cols-3 lg:col-span-7">
+  <div class="mt-head grid gap-8 @4xl:grid-cols-12">
+    <ul class="m-0 grid min-w-0 list-none grid-cols-2 gap-2 p-0 @xl:grid-cols-3 @4xl:col-span-7">
       {agents.map((a) => (
         <li class={`flex min-h-16 flex-col justify-center rounded-xl border px-4 py-3 ${a === 'Belai' ? 'border-vx-ink bg-vx-ink text-vx-mint' : 'border-vx-ink'}`}>
           <span class="font-semibold">{a}</span>
@@ -74,7 +83,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         </li>
       ))}
     </ul>
-    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-5">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 @4xl:col-span-5">
       <p class="mono text-xs tracking-wider text-vx-cream/70">EVERY HIT CARRIES</p>
       <dl class="mono mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
         {hit.map(([k, v]) => (
@@ -91,7 +100,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     Each turn starts with facts the harness worked out itself. None of them carries file contents, so
     the model does not have to ask again.
   </SubHead>
-  <div class="mt-8 grid gap-5 lg:grid-cols-3">
+  <div class="mt-head grid gap-5 @3xl:grid-cols-3">
     {knows.map((k) => (
       <article class="flex flex-col rounded-xl border border-vx-ink p-5">
         <h4 class="text-lg font-bold">{k.title}</h4>
@@ -102,5 +111,14 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     ))}
   </div>
 
-  <Limits items={limits} class="mt-16" />
+  <SubHead id="knowledge" title="Search your reference documents by meaning">
+    Beside the usual answer, a model gets passages that resemble its query from the documents an agent
+    profile lists and from the scanner output in <code class="mono">.vulnetix</code>.
+  </SubHead>
+  <Limits items={knowledge} cols={2} class="mt-head" />
+
+  <SubHead title="Limits on cross-agent search">
+    These apply to the session and memory search described above.
+  </SubHead>
+  <Limits items={limits} class="mt-head" />
 </SealedSection>

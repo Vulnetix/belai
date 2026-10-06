@@ -37,16 +37,19 @@ import (
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/inputhistory"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/machineprobe"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -99,6 +102,21 @@ type Options struct {
 	// its project. Both are set by the CLI --resume flag.
 	ResumeKey     session.Key
 	ResumeSession string
+
+	// Teleported is set by `belai -teleport` when ResumeSession was just
+	// teleported in: the TUI shows its notices once and records the host.teleport
+	// audit fact when the audit stream starts.
+	Teleported *Teleported
+}
+
+// Teleported describes a session teleport already wrote (internal/teleport).
+type Teleported struct {
+	// OriginID is the session it continues, SessionID the new one.
+	OriginID  string
+	SessionID string
+	// Notices are one-line facts for the user, such as an uncommitted origin or
+	// a profile that could not be installed.
+	Notices []string
 }
 
 // streamChunkMsg wraps one chunk from the streaming channel (legacy text path).
@@ -224,6 +242,12 @@ const (
 
 // App is the Bubble Tea model for the Belai TUI.
 type App struct {
+	// swap is the session-only fast/main toggle (model_swap.go); lastPrompt is
+	// the prompt the latest turn started from, which an interrupting swap
+	// retries.
+	swap       modelSwap
+	lastPrompt *promptRec
+
 	registry     *Registry
 	messages     []components.Message
 	editor       components.Editor
@@ -255,9 +279,13 @@ type App struct {
 	classifier rolemanager.Classifier
 	voice      voiceState      // speech input to the composer (docs/voice.md)
 	tts        ttsState        // reading replies aloud (docs/tts.md)
+	vulns      vulnState       // vulnerability rows (docs/vuln-row.md)
 	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
+	// personaFor is the engaged agent whose colours the TUI wears right now
+	// (syncPersona); empty is the brand palette.
+	personaFor string
 	// agentExplicit marks an agent the user engaged by hand (picker, /agent,
 	// /profile). While set, the mode classifier may not replace or clear the
 	// engaged name — that wipe was how the footer lost it mid-session.
@@ -301,7 +329,12 @@ type App struct {
 	live     *posture.Live
 	planMode bool
 	agent    *agent.Session
-	events   <-chan agent.Event
+	// knowStore is the knowledge store (docs/knowledge.md), opened on first use
+	// and kept across session rebuilds; knowProfile is the id of the engaged
+	// agent whose documents it holds.
+	knowStore   *knowledge.Store
+	knowProfile string
+	events      <-chan agent.Event
 	// rmEvents carries role-manager activity from the observer into the
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents *rmQueue
@@ -328,6 +361,11 @@ type App struct {
 	// intelReq sums what this session's agent calls sent, by part.
 	intelState intelViewState
 	intelReq   intelRequest
+	// intelSyncAt and intelSyncSig are when the last intel_state entry was
+	// written and what it said, so the next is written only when it differs
+	// (intel_sync.go).
+	intelSyncAt  time.Time
+	intelSyncSig string
 	// firewallState is the /firewall screen.
 	firewallState firewallViewState
 	pending       string  // pending prompt to send once configured
@@ -352,7 +390,10 @@ type App struct {
 	guardrailsOverride *bool
 	askOverride        *bool
 	firewallOverride   *bool
-	lastPlanText       string
+	// ctlOverlay holds the session-only control lines (/autocommit,
+	// /decisions, /tests, /lsp, /jev) re-applied over every settings reload.
+	ctlOverlay   []string
+	lastPlanText string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
 	// the agent to load the plan as the execution carrier.
@@ -403,6 +444,8 @@ type App struct {
 	gsState             gettingStartedState
 	rcState             rcViewState
 	trustedState        trustedViewState
+	knowledgeState      knowledgeViewState
+	diffState           diffViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -459,6 +502,8 @@ type App struct {
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
+	// decider is the Strands Decider-2B detection the pickers show.
+	decider deciderInfo
 	// lspDetect caches language-server PATH probes for the settings UI.
 	lspDetect lspDetectState
 
@@ -512,8 +557,10 @@ type App struct {
 	// session sync (session_sync.go): the website mirror of the session file
 	// and the prompts it sends back. nil when sync is off or not logged in.
 	syncer      *sessionsync.Syncer
+	audit       *sessionsync.AuditSyncer   // the audit log's upload, started with syncer
 	syncedID    string                     // the session the syncer was last pointed at
 	syncNote    string                     // why sync is off, for /sync status
+	teleported  *Teleported                // set when this session was teleported in
 	remoteQueue []sessionsync.RemotePrompt // web prompts waiting for the host to be idle
 
 	// context metering
@@ -566,6 +613,9 @@ type App struct {
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
+	// namedAgentSkills is the skills list of the engaged definition: the only
+	// skills the session lists and loads. Empty means the installed skills.
+	namedAgentSkills []string
 
 	// file picker: the @ file chooser above the composer.
 	files         []string  // workspace listing, slash paths relative to workdir
@@ -655,6 +705,11 @@ type App struct {
 	// whose per-turn status carries its facts. nil until Start creates it,
 	// so a bare New never probes; every forge.Cache method is nil-safe.
 	forgeCache *forge.Cache
+	// gitSync keeps the session's branch current with origin's default branch
+	// before turns (internal/gitsync, git_sync.go). nil until Start creates it,
+	// so a bare New never execs git; every use is nil-checked.
+	gitSync   *gitsync.Hygiene
+	gitCancel context.CancelFunc
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
 	// behind one settings-backed FIFO queue. The Role Manager owns it through
@@ -687,6 +742,12 @@ type App struct {
 	runsTab    int  // 0 == activity, 1 == subagents, 2 == processes
 	runsSel    int  // selected item index (into runsItems())
 	runsScroll int  // first visible item when the list is windowed
+	// runsIdle marks a panel that ui.idle_pane opened above an empty composer.
+	// idleArmed lets the next empty, quiet composer open it; idleSeen is the
+	// setting last acted on (idle_pane.go).
+	runsIdle  bool
+	idleArmed bool
+	idleSeen  string
 
 	// runsOutput is the full-screen reader for one run's output.
 	runsOutput runsOutputState
@@ -896,10 +957,10 @@ func New(opts Options) *App {
 	// allowlist) directly rather than through setNamedAgent, which persists
 	// session meta — New must not write session files yet.
 	namedAgent := prefs.Agent
-	var namedAgentTools []string
+	var namedAgentTools, namedAgentSkills []string
 	if namedAgent != "" {
 		if p, err := agentprofile.Load(namedAgent); err == nil {
-			namedAgentTools = p.Tools
+			namedAgentTools, namedAgentSkills = p.Tools, p.Skills
 		}
 	}
 
@@ -943,6 +1004,7 @@ func New(opts Options) *App {
 		modeExplicit:      modeExplicit,
 		namedAgent:        namedAgent,
 		namedAgentTools:   namedAgentTools,
+		namedAgentSkills:  namedAgentSkills,
 		ctx:               context.Background(),
 		cfg:               initial,
 		status:            initialStatus,
@@ -1078,10 +1140,20 @@ func New(opts Options) *App {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
 	}
 
+	// The persona colours are package state, and this App starts with none
+	// engaged until refreshFooter says otherwise (a profile the project pinned).
+	components.ResetPersona()
 	a.refreshFooter()
 
 	if opts.ResumeSession != "" {
 		a.initCmd = a.resumeSession(opts.ResumeKey, opts.ResumeSession)
+	}
+	if t := opts.Teleported; t != nil && opts.ResumeSession != "" {
+		a.teleported = t
+		a.addSystem("teleported from session " + shortID(t.OriginID) + ": the origin session carries on there")
+		for _, n := range t.Notices {
+			a.addSystem(n)
+		}
 	}
 	if len(scanCmds) > 0 {
 		a.initCmd = tea.Batch(a.initCmd, tea.Batch(scanCmds...))
@@ -1442,6 +1514,11 @@ func (a *App) sendPending() tea.Cmd {
 
 // send starts a streaming request with the given conversation turns.
 func (a *App) send(turns []run.Turn) tea.Cmd {
+	// A model switch scheduled with the swap key lands here, as the next turn
+	// starts.
+	a.applyModelSwap()
+	// A scan since the last turn is searchable on this one (throttled).
+	a.syncKnowledge()
 	if !a.status.Configured {
 		// The initial async credential resolution may not have landed yet, or
 		// a transient resolver/keychain failure left us unconfigured. Retry
@@ -1662,6 +1739,7 @@ func (a *App) echoUserMessage(m components.Message) {
 // validated attachments are folded into it rather than appending a duplicate
 // turn.
 func (a *App) sendTurnNoEcho(input string, atts []run.Attachment, directive string) tea.Cmd {
+	a.lastPrompt = &promptRec{input: input, atts: atts, directive: directive}
 	turns := a.buildTurns()
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		turns[n-1].Attachments = atts
@@ -1744,6 +1822,12 @@ func (a *App) applyLiveModeDecision(d rolemanager.ModeDecision) {
 	a.footerAgentOverride = ""
 	if d.Intent != "" && d.Mode == modes.ModeAgent {
 		a.footerAgentOverride = d.Intent.Label()
+	}
+	if d.Mode == modes.ModeAgent && d.Intent == rolemanager.IntentAgent && d.AgentName != "" {
+		// Auto chose one of the user's profiles for a general request.
+		a.footerAgentOverride = d.AgentName
+		a.addSystem("engaged agent: " + d.AgentName)
+		a.announceProfileGateDrops(d.AgentName)
 	}
 	a.planMode = a.mode == "plan"
 	switch {
@@ -1990,6 +2074,8 @@ type sessionBuildParams struct {
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
+	// skillAllow limits the Skill tool to those skills (an engaged definition's skills list).
+	skillAllow []string
 	// agentPool is the shared FIFO fan-out ceiling the session's explore
 	// subagents acquire a lease from.
 	agentPool *agentpool.Pool
@@ -2012,6 +2098,11 @@ type sessionBuildParams struct {
 	// nil when the kanban setting is off.
 	kanban    *kanban.Store
 	kanbanSrc *kanban.Source
+	// knowledge is the App's retrieval store; nil leaves the file tools
+	// filesystem-only.
+	knowledge *knowledge.Store
+	// gitSync is the App's git sync; nil runs no sync before turns.
+	gitSync *gitsync.Hygiene
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2038,6 +2129,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		profile:       p,
 		src:           credentialSourceOf(a.resolver),
 		toolAllow:     a.engagedAgentTools(),
+		skillAllow:    a.engagedAgentSkills(),
 		agentPool:     a.agentPool,
 		repoMap:       a.repoMap,
 		forge:         a.forgeCache,
@@ -2047,6 +2139,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		caps:          a.caps,
 		kanban:        kanbanStoreOf(a),
 		kanbanSrc:     kanbanSourceOf(a),
+		knowledge:     a.knowledgeStoreForBuild(),
+		gitSync:       a.gitSync,
 	}
 }
 
@@ -2062,6 +2156,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent), never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.workdir, false, caps, ix)
+	reg.CloudHub().SetFacts(p.profile.Facts.Map())
 	// Activated workspace dirs become real confinement roots, so a restored
 	// (or trust-accepted) directory is not just advertised but actually
 	// reachable through SanitizePath.
@@ -2079,7 +2174,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	// allowlisted session still reaches the footer. The kanban board's search
 	// and update ride on every main session after the allowlist, as in
 	// headless sessions, so an engaged definition can always hand work on.
-	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc)
+	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc).WithSkills(p.skillAllow)
 	if p.procManager != nil {
 		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
 		// Background launching rides on the same manager. Bash is this
@@ -2119,6 +2214,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		return nil, err
 	}
 	return agent.NewSession(agent.Options{
+		Knowledge:     p.knowledge,
+		GitSync:       p.gitSync,
+		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           cfg,
 		Client:        p.client,
 		Registry:      reg,
@@ -2208,6 +2306,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if vc := a.syncVoice(); vc != nil {
 		cmd = tea.Batch(cmd, vc)
 	}
+	if ic := a.syncIdlePane(); ic != nil {
+		cmd = tea.Batch(cmd, ic)
+	}
 	return model, cmd
 }
 
@@ -2225,6 +2326,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 	if cmd, ok := a.handleKiroLoginMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleKnowledgeMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleDiffMsg(msg); ok {
 		return a, cmd
 	}
 	switch m := msg.(type) {
@@ -2286,8 +2393,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case rmActivityMsg:
 		// Every decision is written to the session record, shown or not.
 		a.recordActivity(rolemanager.Activity(m))
+		before := len(a.messages)
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
+		// The decision may have happened before rows that arrived first.
+		a.placeLate(before)
 		return a, a.nextRMActivity()
 	case firewallVerdictMsg:
 		a.addFirewallCard(firewall.Verdict(m))
@@ -2304,6 +2414,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case availabilityMsg:
 		return a, a.handleAvailability(m)
+
+	case deciderProbedMsg:
+		return a, a.handleDeciderProbed(m)
 
 	case lspProbeMsg:
 		a.handleLSPProbe(m)
@@ -2536,6 +2649,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						vpCmd = hcmd
 						break
 					}
+					if hit, hcmd := a.vulnMouse(p); hit {
+						vpCmd = hcmd
+						break
+					}
 					a.sel.anchor = p
 					a.sel.cursor = p
 					a.sel.dragging = true
@@ -2623,6 +2740,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
 			a.addSystem("reasoning display: " + showLabel(a.reasoningVisible()))
 			return a, nil
+		case modelSwapKey:
+			// Fast/main toggle: scheduled for the next turn, or, mid-turn,
+			// the turn is interrupted and retried on the other model.
+			if a.view == viewChat {
+				return a, a.toggleModelSwap()
+			}
 		case "ctrl+t":
 			a.toolDisplay = (a.toolDisplay + 1) % 4
 			a.addSystem(a.toolDisplayNotice())
@@ -2687,6 +2810,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			if a.runsOpen && a.runsTab != tabIntel {
+				a.runsIdle = false
 				a.runsTab, a.runsSel, a.runsScroll = tabIntel, 0, 0
 				a.runsFocus = true
 				return a, nil
@@ -2941,7 +3065,8 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// In agent mode with no agent engaged, enter opens the picker rather
 		// than sending a turn that has no carrier. The submit is deferred, not
 		// dropped: acceptAgent finishes it once a carrier exists.
-		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
+		// Auto is the exception: the role manager picks the mode and agent.
+		if a.mode == "agent" && a.namedAgent == "" && !a.modeAuto && !a.agentPickerOpen {
 			a.openAgentPicker()
 			a.agentPickerSubmit = input != ""
 			a.relayout()
@@ -2982,7 +3107,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	case "down":
 		// Down on an empty composer browses the kanban pane; up stays
 		// prompt history.
-		if a.focusKanbanPane() {
+		if a.focusKanbanPane() || a.takeIdleRuns() {
 			return nil
 		}
 		return a.forwardToEditor(m)
@@ -3676,8 +3801,15 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	evStart := time.Now()
 	defer func() { a.trace.Event("tui", "agent_event", time.Since(evStart)) }()
-	// Rows this event creates take the event's own emit time.
-	defer a.stampMessages(m.At)
+	// Rows this event creates take the event's own emit time. In the
+	// chronological layout they are then placed by it.
+	firstNew := len(a.messages)
+	defer func() {
+		a.stampMessages(m.At)
+		if a.chronological() {
+			a.placeLate(firstNew)
+		}
+	}()
 	switch m.Kind {
 	case agent.EventModelCallKind:
 		a.noteModelCall(m.Duration)
@@ -3731,6 +3863,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// suites on top of a turn that errored.
 		a.testPass.fixing = false
 		// Edits made before the failure are on disk all the same.
+		a.flushVulnRows()
 		return a.flushDepWatch()
 	case agent.EventTextKind:
 		a.setPhaseWorking()
@@ -3891,6 +4024,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		a.setPhaseWorking()
+		a.observeVulnText(m.ToolResult)
 		// Key by ToolCallID: concurrent read-only tools may complete out of
 		// order, so the result must land on its own row rather than the last
 		// tool row.
@@ -4111,6 +4245,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.GoalSentinel == "" {
 			notifyDone = a.notifyTurnDone(elapsed)
 		}
+		a.observeVulnText(m.Result.Reply)
+		a.flushVulnRows()
 		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply))
 	}
 	return nil
@@ -4212,6 +4348,7 @@ func (a *App) chatView() string {
 		ShowTools:     a.toolCallsVisible(),
 		ShowEdits:     a.editsVisible(),
 		InternalWork:  rolemanager.ParseLevel(a.settings.InternalWorkLevel()),
+		Chronological: a.chronological(),
 	}.Render()
 	// The banner is the first entry of the scrollable transcript. Prepending it
 	// here — before the content compare, Highlight and SetContent — keeps the
@@ -4645,7 +4782,10 @@ func (a *App) cycleMode() {
 		a.mode = "goal"
 		a.addSystem("goal mode on")
 	case a.mode == "goal":
-		// goal leads to auto: no sticky choice, the classifier picks per
+		a.mode = "code"
+		a.addSystem("code mode on (agent mode with scripted tool calls)")
+	case a.mode == "code":
+		// code leads to auto: no sticky choice, the classifier picks per
 		// prompt.
 		a.mode = "agent"
 		a.modeAuto = true
@@ -4852,8 +4992,7 @@ func (a *App) saveMode() {
 }
 
 func (a *App) saveState() {
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -4864,8 +5003,7 @@ func (a *App) saveState() {
 // first — the reload was redundant disk I/O per mode keypress.
 func (a *App) saveSession() {
 	a.state.ActiveSession = a.sessionID
-	a.state.Model = a.cfg.Model
-	a.state.Provider = a.cfg.Provider
+	a.state.Provider, a.state.Model = a.persistedModel()
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
 }
@@ -5251,6 +5389,7 @@ func (a *App) reloadSettings() error {
 	}
 	a.settings = eff.Settings
 	a.eff = eff
+	a.applyCtlOverlay()
 	if a.resolver != nil {
 		a.resolver.SetSettings(a.settings)
 		a.resolver.SetFirewallEnabled(a.firewallOverride)
@@ -5261,6 +5400,7 @@ func (a *App) reloadSettings() error {
 	// A /settings edit of guardrails or ask_permission lands live through the
 	// shared holder, exactly like the f3/f4 toggles.
 	a.syncPosture()
+	a.syncKnowledge()
 	a.refreshFooter()
 	return nil
 }
@@ -5270,7 +5410,9 @@ func (a *App) refreshFooter() {
 	// the outer padding, not the terminal.
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
-	a.footer.Agent = a.engagedAgent()
+	a.syncPersona()
+	engaged := a.engagedAgent()
+	a.footer.Agent = lookupAgentLook(engaged).title(engaged)
 	if a.modeAuto {
 		// Auto: the chip names the mode the classifier picked for the last
 		// prompt (agent until one lands) in the profile slot.
@@ -5352,6 +5494,7 @@ func (a *App) refreshFooter() {
 	a.footer.Tokens = est.Tokens
 	a.footer.Estimated = est.LastUsageIndex < 0
 	a.footer.ContextStale = a.usageStale
+	a.footer.Tools, _ = turnToolCounts(a.messages)
 	if limit, ok := modelinfo.ResolveWith(a.cfg.Model, a.settings.ContextWindows, a.selectedModelWindow()); ok {
 		a.footer.ContextLimit = limit
 	} else {
@@ -5406,6 +5549,8 @@ func (a *App) firewallAvailable() bool {
 func (a *App) clearEngagedAgent() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.namedAgentSkills = nil
+	a.syncKnowledge()
 	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false
@@ -5436,7 +5581,7 @@ func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 // classifier may later replace the name.
 func (a *App) setNamedAgent(name string) {
 	loaded := name
-	var tools []string
+	var tools, skillNames []string
 	if name != "" {
 		// Resolve the allowlist from whichever tree owns the name — flat
 		// profiles first (they win the name in carrier resolution), then
@@ -5448,6 +5593,7 @@ func (a *App) setNamedAgent(name string) {
 		} else if p, err := agentprofile.Load(name); err == nil {
 			loaded = p.Name
 			tools = p.Tools
+			skillNames = p.Skills
 		}
 		// On a load failure the name is kept with no allowlist: carrier
 		// resolution reports the fallback at turn time, matching the old
@@ -5458,6 +5604,8 @@ func (a *App) setNamedAgent(name string) {
 	}
 	a.namedAgent = loaded
 	a.namedAgentTools = tools
+	a.namedAgentSkills = skillNames
+	a.syncKnowledge()
 	a.state.ActiveProfile = loaded
 	a.persistCarrierMeta()
 	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Agent = loaded })
@@ -6009,8 +6157,9 @@ func (a *App) localModelStopCmd(portArg string) tea.Cmd {
 
 // stopLocalServers stops every managed llama-server on quit.
 func (a *App) stopLocalServers() {
-	// The decision server is stopped only if this process launched it.
+	// The decision servers are stopped only if this process launched them.
 	decisionserver.StopAll()
+	deciderserver.StopAll()
 	for _, act := range a.activity.List() {
 		if act.Kind == activity.KindShell && act.Label == "llama-server" {
 			_ = a.activity.Kill(act.ID)
@@ -6292,6 +6441,7 @@ func (a *App) startNewSession() {
 	// a profile was written while this session ran.
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.namedAgentSkills = nil
 	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false

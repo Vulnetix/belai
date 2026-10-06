@@ -25,17 +25,15 @@ import (
 //     blocked or done, and its user turn carries a line of board facts —
 //     counts and ids, never item text — so the model can keep the items it
 //     touches current while it works;
-//   - after the report of a work turn, one short wrap-up pass is offered
-//     only KanbanSearch, KanbanUpdate, KanbanAdd (to review) and KanbanMove
-//     (to done), and asked to file what the report left open and close what
-//     the turn finished. Its reply is discarded: the report stays the reply.
+//   - after the report of a work turn, one wrap-up pass is offered the turn's
+//     own tool surface plus KanbanAdd (to review) and KanbanMove (to done),
+//     and asked to file what the report left open and close what the turn
+//     finished. Nothing is withheld from it: a model that stopped before the
+//     work was done can still finish it. Its reply is discarded: the report
+//     stays the reply.
 //
 // Explore, Task and recovery subagents are built without KanbanUpdate and get
 // none of this: they may search the board, never write it.
-
-// kanbanWrapUpBudget bounds the wrap-up pass. Filing a handful of items and
-// closing a handful more takes one or two rounds of parallel calls.
-const kanbanWrapUpBudget = 4
 
 // KanbanTriggers is the catalogue of what counts as open work in a report or
 // conversation. It is rendered into the wrap-up directive; a test pins it.
@@ -70,7 +68,8 @@ type kanbanState struct {
 	on       bool
 	worker   bool
 	loopMove tools.KanbanMove
-	wrapUp   kanbanSurface
+	// wrapUp is what the wrap-up pass adds to the turn's own surface.
+	wrapUp []tools.Tool
 
 	mu       sync.Mutex
 	surfaces map[string]kanbanSurface
@@ -87,26 +86,32 @@ func newKanbanState(reg *tools.Registry) *kanbanState {
 	}
 	ks.base, ks.on, ks.worker = base, true, base.Claim != nil
 	ks.loopMove = tools.KanbanMove{KanbanBase: base, Allowed: tools.KanbanLoopLists}
-	wrap := tools.NewRegistry(
-		tools.KanbanSearch{KanbanBase: base},
-		tools.KanbanUpdate{KanbanBase: base},
+	ks.wrapUp = []tools.Tool{
 		tools.KanbanAdd{KanbanBase: base},
 		tools.KanbanMove{KanbanBase: base, Allowed: tools.KanbanWrapUpLists},
-	)
-	oa, an := wireTools(wrap)
-	ks.wrapUp = kanbanSurface{reg: wrap, openAI: oa, anthropic: an}
+	}
 	return ks
 }
 
 // loopSurface returns base plus the loop's KanbanMove, rendered once per
 // named surface so the request bytes stay stable across calls.
 func (ks *kanbanState) loopSurface(name string, base *tools.Registry) kanbanSurface {
+	return ks.surfaceWith(name, base, ks.loopMove)
+}
+
+// wrapUpSurface returns base plus the wrap-up's KanbanAdd and KanbanMove.
+func (ks *kanbanState) wrapUpSurface(name string, base *tools.Registry) kanbanSurface {
+	return ks.surfaceWith("wrap-up:"+name, base, ks.wrapUp...)
+}
+
+// surfaceWith renders base plus extra once per cache key.
+func (ks *kanbanState) surfaceWith(name string, base *tools.Registry, extra ...tools.Tool) kanbanSurface {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 	if s, ok := ks.surfaces[name]; ok {
 		return s
 	}
-	reg := base.With(ks.loopMove)
+	reg := base.With(extra...)
 	oa, an := wireTools(reg)
 	s := kanbanSurface{reg: reg, openAI: oa, anthropic: an}
 	if ks.surfaces == nil {
@@ -117,8 +122,13 @@ func (ks *kanbanState) loopSurface(name string, base *tools.Registry) kanbanSurf
 }
 
 // withKanbanLoop is toolSurface's last step: while the loop latch is on, the
-// chosen surface gains KanbanMove.
+// chosen surface gains KanbanMove; during the wrap-up pass it gains KanbanAdd
+// and the wrap-up's KanbanMove instead.
 func (s *Session) withKanbanLoop(name string, reg *tools.Registry, oa []wire.OpenAITool, an []wire.AnthropicToolDef) (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
+	if s.kanbanWrapUpPass && s.kanban != nil && s.kanban.on {
+		ks := s.kanban.wrapUpSurface(name, reg)
+		return ks.reg, ks.openAI, ks.anthropic
+	}
 	if !s.turnKanbanLoop || s.kanban == nil || !s.kanban.on {
 		return reg, oa, an
 	}
@@ -133,10 +143,12 @@ func (s *Session) kanbanExecTool(name string) (t tools.Tool, refusal string, han
 		return nil, "", false
 	}
 	if s.kanbanWrapUpPass {
-		if t, ok := s.kanban.wrapUp.reg.Find(name); ok {
-			return t, "", true
+		for _, t := range s.kanban.wrapUp {
+			if strings.EqualFold(name, t.Definition().Name) {
+				return t, "", true
+			}
 		}
-		return nil, fmt.Sprintf("tool result withheld: %q is unavailable while updating the kanban board; use KanbanSearch, KanbanAdd, KanbanMove or KanbanUpdate, or reply KANBAN_DONE", name), true
+		return nil, "", false
 	}
 	switch {
 	case strings.EqualFold(name, tools.KanbanAddName):
@@ -159,6 +171,11 @@ func (s *Session) findCallable(name string) (tools.Tool, bool) {
 	if t, _, handled := s.kanbanExecTool(name); handled {
 		return t, t != nil
 	}
+	if s.turnCode && s.codeRegistry != nil {
+		if t, ok := s.codeRegistry.Find(name); ok {
+			return t, true
+		}
+	}
 	return s.registry.Find(name)
 }
 
@@ -166,6 +183,9 @@ func (s *Session) findCallable(name string) (tools.Tool, bool) {
 // mismatch check: the registry plus the phase's kanban tools.
 func (s *Session) callableNames() []string {
 	names := s.registry.Names()
+	if s.turnCode && s.codeRegistry != nil {
+		names = append(names, tools.CodeName)
+	}
 	if s.kanban != nil && s.kanban.on {
 		names = append(names, tools.KanbanAddName, tools.KanbanMoveName)
 	}
@@ -179,7 +199,9 @@ func (s *Session) kanbanDirective(prompt string) string {
 	if s.kanban != nil && s.kanban.worker {
 		return workerDirective(s.kanban.base.Claim)
 	}
-	if !s.turnKanbanLoop {
+	// A remediation turn is about the edit; the board waits until it lands, so
+	// its items are not offered to keep current (remediation.go).
+	if !s.turnKanbanLoop || s.turnRemediation {
 		return ""
 	}
 	prov := s.kanban.base.Source.Get()
@@ -260,13 +282,13 @@ type kanbanTurn struct {
 // kanbanWrapUpDirective renders the sealed wrap-up instruction.
 func kanbanWrapUpDirective(kt kanbanTurn) string {
 	var b strings.Builder
-	b.WriteString("The turn is over and your report above is final. Now update the global kanban board, and nothing else.\n\n")
+	b.WriteString("Your report is above. If the work it describes is not actually finished (an edit you described but did not make, a command you did not run), finish it now with your normal tools. Now update the global kanban board.\n\n")
 	b.WriteString("1. File open work to review. For every distinct piece of work the report or this conversation leaves open, call KanbanAdd once: an imperative title and a body with the context a fresh session needs (files, symbols, why). Search first (KanbanSearch) so you do not add what is already there; add a KanbanUpdate note to an existing item instead. Open work includes anything in these categories:\n")
 	for _, t := range KanbanTriggers {
 		fmt.Fprintf(&b, "   - %s: %s\n", t.Category, t.Signals)
 	}
 	b.WriteString("2. Close finished work. KanbanSearch this project's backlog, review, in_progress and blocked items, and KanbanMove to done every item this turn completed or showed was already resolved, with a note of what did it. A duplicate or superseded item moves to done with a note naming the item that replaces it.\n")
-	b.WriteString("3. Do not rewrite or repeat the report and do not call any other tool. When the board is current, reply exactly KANBAN_DONE.")
+	b.WriteString("3. Do not rewrite or repeat the report. When the work is done and the board is current, reply exactly KANBAN_DONE.")
 	var facts []string
 	if kt.sentinel != "" {
 		facts = append(facts, "the loop ended as "+kt.sentinel.Label())
@@ -302,11 +324,7 @@ func (s *Session) kanbanWrapUp(ctx context.Context, pipe *rolemanager.Pipeline, 
 		return
 	}
 	s.kanbanWrapUpPass = true
-	s.passBudgetOverride = kanbanWrapUpBudget
-	defer func() {
-		s.kanbanWrapUpPass = false
-		s.passBudgetOverride = 0
-	}()
+	defer func() { s.kanbanWrapUpPass = false }()
 	emit(Event{Kind: EventKanbanKind, Phase: KanbanPhaseStart})
 	s.traceRecord("kanban_wrap_up", "", "", "", 0)
 	summary := &KanbanSummary{}

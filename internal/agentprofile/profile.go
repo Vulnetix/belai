@@ -37,11 +37,38 @@ type AgentProfile struct {
 	// Identity is a worker's persona: who it is and how it works. It rides
 	// with system_prompt as the profile section of the system block.
 	Identity string `json:"identity,omitempty"`
+	// ID is the profile's own UUID. It follows the profile through backup and
+	// install, so the name can change without the profile becoming another.
+	ID string `json:"id,omitempty"`
+	// DisplayName, Palette and AvatarID present the agent in the console; see
+	// identity.go. None of them affects what the agent may do.
+	DisplayName string   `json:"display_name,omitempty"`
+	Palette     []string `json:"palette,omitempty"`
+	AvatarID    string   `json:"avatar_id,omitempty"`
+	// Personality is optional style guidance appended to the persona.
+	Personality *Personality `json:"personality,omitempty"`
 	// Worker blocks (mode: worker; see worker.go and docs/fleet.md).
 	Kanban    *KanbanSpec    `json:"kanban,omitempty"`
 	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
 	Memory    *MemorySpec    `json:"memory,omitempty"`
 	Budget    *BudgetSpec    `json:"budget,omitempty"`
+	// Knowledge lists documents the agent may search through Grep, Glob and
+	// Read (see knowledge.go and docs/knowledge.md). Any mode may use it. It
+	// is local to the host: a web install is refused if it carries it.
+	Knowledge *KnowledgeSpec `json:"knowledge,omitempty"`
+	// Facts are structured key/value pairs about the environment the agent
+	// works in: an AWS role, a Kubernetes context, a Terraform directory.
+	// Any key is accepted and shown to the model; a well-known key is also
+	// read by the tool it names (see facts.go and internal/factspec).
+	Facts Facts `json:"facts,omitempty"`
+	// Skills names the skills that guide this agent: a builtin one (belai-scout)
+	// or an installed one. A session engaged with the profile lists and loads
+	// only these through the Skill tool (see skills.go and docs/skills.md).
+	Skills []string `json:"skills,omitempty"`
+	// Metadata holds what an import could not place in a field of this schema.
+	// It is for people and tools, is never shown to a model, and changes nothing
+	// the agent may do (see skills.go).
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
@@ -126,6 +153,7 @@ var extraToolNames = map[string]bool{
 	"KanbanContract": true,
 	"Vulnetix":       true,
 	"ToolSearch":     true,
+	"SearchFetched":  true,
 	"SubAgentLog":    true,
 	"ProcessRestart": true,
 	"BashOutput":     true,
@@ -138,6 +166,24 @@ var extraToolNames = map[string]bool{
 	"GH":             true,
 	"Glab":           true,
 	"PublishBranch":  true,
+	"Git":            true,
+}
+
+// nativeToolNames are the native catalogue's tools (tools.CatalogueNames): the
+// cloud and SaaS CLIs, the local read-only commands, and the repository tools.
+// A session offers one only when its binary is installed, and an allowlist
+// naming one that is absent narrows rather than fails.
+var nativeToolNames = []string{
+	"Cat", "Head", "Tail", "File", "Strings", "LS", "Find", "JQ", "YQ", "Sed", "Awk", "Cut",
+	"Sort", "Uniq", "WC", "Tr", "Paste", "Join", "Echo", "Date", "Pwd", "Env", "Diff", "Cmp",
+	"AWS", "AZ", "GCloud", "Kubectl", "Terraform", "Pulumi", "Heroku", "Fly", "Vercel",
+	"Netlify", "Doctl", "Stripe", "OnePassword", "Bitwarden",
+}
+
+func init() {
+	for _, n := range nativeToolNames {
+		extraToolNames[n] = true
+	}
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -184,6 +230,9 @@ func loadBuiltins() map[string]AgentProfile {
 			continue
 		}
 		p.Builtin = true
+		if p.ID == "" {
+			p.ID = BuiltinID(p.Name)
+		}
 		if err := p.Validate(); err != nil {
 			continue
 		}
@@ -247,6 +296,21 @@ func (p AgentProfile) Validate() error {
 		if !KnownTool(t) {
 			return fmt.Errorf("unknown tool %q", t)
 		}
+	}
+	if err := p.validateIdentity(); err != nil {
+		return err
+	}
+	if err := p.validateKnowledge(); err != nil {
+		return err
+	}
+	if err := p.validateFacts(); err != nil {
+		return err
+	}
+	if err := p.validateSkills(); err != nil {
+		return err
+	}
+	if err := p.validateMetadata(); err != nil {
+		return err
 	}
 	return p.validateWorker()
 }

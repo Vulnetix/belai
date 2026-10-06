@@ -32,7 +32,7 @@ Belai offers the model different kanban tools at different points in a turn:
 |---|---|
 | Every call of a main session, plan mode included | `KanbanSearch`, `KanbanUpdate` |
 | While an agent, goal or plan-execute loop works | plus `KanbanMove` (to `in_progress`, `blocked` or `done`) |
-| After the report of a work turn (the wrap-up) | only `KanbanSearch`, `KanbanUpdate`, `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
+| After the report of a work turn (the wrap-up) | the turn's own tools, plus `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
 | Explore, Task and fan-out subagents | `KanbanSearch` only |
 | A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and its handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
 | A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
@@ -80,8 +80,9 @@ as the note, done once it is verified.
 
 ### The wrap-up
 
-A work turn gets one short wrap-up pass (at most four tool rounds) after its
-report. A work turn is one of: goal mode, running an approved plan, a
+A work turn gets one wrap-up pass after its report. Nothing is withheld from
+it: if the model stopped before the work was done, it can finish it with the
+turn's own tools (an edit it described but never made, a command it never ran). A work turn is one of: goal mode, running an approved plan, a
 `/vulnetix review`, or an agent turn that ran a tool. Plain question-and-answer
 turns, plan mode, subagents, cancelled turns and failed turns skip it.
 
@@ -127,7 +128,9 @@ wrap-up directive:
 
 ### The pane
 
-When nothing is running and the composer is empty, a pane above the composer
+With the empty composer pane set to `kanban` (`ui.idle_pane`, row `empty composer pane`
+in `/settings`; the default is `none`, see [settings](settings.md#empty-composer-pane)),
+when nothing is running and the composer is empty, a pane above the composer
 lists this project's backlog, review and blocked items:
 
 - Each row is colour-coded: backlog grey, review amber, blocked red.
@@ -232,8 +235,12 @@ any draft pull request show on the item.
 
 A security card also carries four fields only the harness sets, never a model
 argument: the **finding** id, the **seen ref** (the commit whose scan last
-showed it), the recorded **verdict** and the **VEX** path. They stay on the host
-that wrote them and a pulled copy never replaces them. The `vuln`, `gone` and
+showed it), the recorded **verdict** and the **VEX** path. They sync with the
+card so the website can link it to its vulnerability and a second host finds the
+card instead of filing another. Only a host sets them: the website ignores them
+on an edit, and a pulled copy fills a field this host holds none for, after the
+value is checked against the shape the harness gives it, and never replaces or
+clears one. The `vuln`, `gone` and
 `needs-verify` labels route a card through the
 [security crew](fleet.md#the-security-crew).
 
@@ -289,6 +296,14 @@ CLI's credential.
 - The TUI pulls the website's changes every 15 seconds, when `/kanban` opens,
   and on `r`.
 - A headless `-prompt` run, or an ACP connection, pushes once as it exits.
+- A web session (`belai rc-session`, started by `belai rc` for the website) runs for
+  hours, so it pulls the website's board once before its first turn, keeps pulling every
+  15 seconds like the TUI, and pushes what it changed when it ends. Without that, a card
+  filed on the website after the session started would never reach `KanbanSearch`. It
+  needs the same settings as any sync (`kanban` and `sync` on, a usable CLI
+  credential); with those off it keeps only its local board. An unreachable website does
+  not delay the first turn by more than 10 seconds or fail the session. A fleet worker
+  pulls once per poll instead.
 - Conflicts resolve per item: the most recent change wins. A newer local change
   that has not been pushed yet survives a pull. Histories are merged.
 
@@ -302,7 +317,8 @@ colours. You can move, edit, add and delete items there.
 ```
 
 `kanban` turns the whole feature on or off: the tools, the directive, the
-wrap-up, the pane, `/kanban` and sync. It is on by default. A project's
+wrap-up, the pane, `/kanban` and sync. It is on by default; the pane itself
+shows only when `ui.idle_pane` is `kanban`. A project's
 `.vulnetix/settings.json` may turn it off, but never on.
 
 ## Security

@@ -48,18 +48,18 @@ const limits = [
 ---
 
 <SealedSection label="diagnostics" sealText={sealText} id="diagnostics">
-  <SectionHead title="Diagnostics">
+  <SectionHead title="Diagnostics" surfaces={['tui', 'cli', 'self-hosted', 'pix sandbox']}>
     After the model edits a file, Belai checks it and returns any errors in the same{' '}
     <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
   </SectionHead>
 
-  <ol class="mt-10 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+  <ol class="mt-10 grid list-none gap-3 p-0 @xl:grid-cols-2 @4xl:grid-cols-4">
     {steps.map(([step, what], i) => (
       <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <span class={`mono text-xs ${i === 3 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
         <p class={`mono mt-2 text-lg font-semibold ${i === 3 ? 'text-vx-mint' : ''}`}>{step}</p>
         <p class={`mt-1 text-sm ${i === 3 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
-        {i < 3 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong lg:block" aria-hidden="true">▸</span>}
+        {i < 3 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong @4xl:block" aria-hidden="true">▸</span>}
       </li>
     ))}
   </ol>
@@ -78,7 +78,8 @@ const limits = [
     syntax check takes over, without a shell. Each language can be switched off in{' '}
     <code class="mono">/settings</code>.
   </SubHead>
-  <table class="mt-8 w-full border-collapse text-left text-sm md:text-base">
+  <div class="comparison-scroll mt-8">
+  <table class="w-full min-w-[34rem] border-collapse text-left text-sm md:text-base">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="pb-3 pr-4 font-bold">Language</th>
@@ -92,12 +93,13 @@ const limits = [
           <th scope="row" class="py-2.5 pr-4 font-semibold">{lang}</th>
           <td class="px-4 py-2.5"><code class="mono text-[0.9em]">{server}</code></td>
           <td class="bg-vx-sand/40 px-4 py-2.5">
-            {fallback ? <code class="mono text-[0.9em]">{fallback}</code> : <span class="text-vx-ink/55">nothing until a server is installed</span>}
+            {fallback ? <code class="mono text-[0.9em]">{fallback}</code> : <span class="text-vx-ink/70">nothing until a server is installed</span>}
           </td>
         </tr>
       ))}
     </tbody>
   </table>
+  </div>
 
   <SubHead title="When another pass will not help">
     From the second pass on, if errors are still reported for a file, the decision backend rates how likely
@@ -107,5 +109,5 @@ const limits = [
     The switch is <code class="mono">lsp_triage</code> in <code class="mono">/settings</code>.
   </SubHead>
 
-  <Limits items={limits} class="mt-16" />
+  <Limits items={limits} />
 </SealedSection>

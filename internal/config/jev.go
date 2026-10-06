@@ -72,6 +72,25 @@ const JevGateAlignment JevJob = "gate_alignment"
 // marks a clause covered.
 const JevRequestCoverage JevJob = "request_coverage"
 
+// JevKnowledgeTopics scores a document's sampled chunks against the knowledge
+// topic vocabulary in one decision call, so the index labels it by what it is
+// about. It only tags: a label is a search aid and never approves, permits or
+// admits anything. Unlike the other jobs it sends document text to the
+// backend, bounded to the sampled chunks of an admitted document.
+const JevKnowledgeTopics JevJob = "knowledge_topics"
+
+// JevAgentPick lets Auto mode choose one of the user's own agent profiles for a
+// general request. It only narrows what Auto already does: a profile that
+// lowers guardrails or ask is never offered, and the pick never changes the
+// mode, a permission or a gate.
+const JevAgentPick JevJob = "agent_pick"
+
+// JevTeleportVerify rates a replayed teleport checkout against the origin
+// host's summary as verified, incomplete or failed. A clear answer settles the
+// check; anything else goes to the model verifier with the scores as a hint. It
+// never replaces the exact tree comparison, which settles a replay without it.
+const JevTeleportVerify JevJob = "teleport_verify"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -89,6 +108,9 @@ var JevJobs = []JevJob{
 	JevHandoffClarity,
 	JevGateAlignment,
 	JevRequestCoverage,
+	JevKnowledgeTopics,
+	JevAgentPick,
+	JevTeleportVerify,
 }
 
 // LocatePreview values for jev.locate_previews.
@@ -277,11 +299,20 @@ func (s Settings) LocateDestination() (name string, previews bool) {
 	case decisions.BackendLocal:
 		name, local = "the local decision model", true
 	case decisions.BackendSystemOne:
-		if cls.Provider == decisions.TypeSafeProvider {
+		switch {
+		case cls.Provider == decisions.TypeSafeProvider:
 			name = "TypeSafe's hosted API"
-		} else {
+		case cls.Provider == decisions.DeciderProvider:
+			name, local = "Strands Decider-2B on this machine", true
+		case decisions.IsHostedClef(cls.Provider, cls.Model):
+			name = "Clef on Cloudflare Workers AI"
+		case decisions.IsOllamaTev1(cls.Provider, cls.Model):
+			name, local = "Tev1 on Ollama", true
+		default:
 			name, local = "your self-hosted server "+cls.Provider, true
 		}
+	case decisions.BackendChatLetters:
+		name = "Tev1 on Together AI"
 	default:
 		name = "OpenRouter's hosted Jev model"
 	}

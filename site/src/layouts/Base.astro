@@ -97,7 +97,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
             }
           }
         },
-        { threshold: 0.35 },
+        // A section verifies when it crosses the middle band of the viewport.
+        // A visible-share threshold never fires for a section taller than
+        // the screen.
+        { rootMargin: '-35% 0px -35% 0px', threshold: 0 },
       );
       for (const section of document.querySelectorAll('.sealed')) {
         sealObserver.observe(section);
@@ -133,6 +136,70 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         );
         for (const section of sections) railObserver.observe(section);
       }
+    </script>
+
+    <script>
+      // Jump menu (screens narrower than the rail): name the section being
+      // read, and close the list once a link is chosen.
+      const jumpLinks = Array.from(document.querySelectorAll('[data-jump]'));
+      const jumpCurrent = document.querySelector('[data-jump-current]');
+      const jumpBox = document.querySelector('.jump__box');
+      if (jumpLinks.length > 0) {
+        const targets = jumpLinks
+          .map((link) => document.getElementById(link.dataset.jump))
+          .filter(Boolean);
+
+        const show = (id) => {
+          for (const link of jumpLinks) {
+            const on = link.dataset.jump === id;
+            link.classList.toggle('is-active', on);
+            if (on && jumpCurrent) jumpCurrent.textContent = link.dataset.label;
+          }
+        };
+
+        const jumpObserver = new IntersectionObserver(
+          (entries) => {
+            const visible = entries
+              .filter((e) => e.isIntersecting)
+              .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+            if (visible.length > 0) show(visible[0].target.id);
+          },
+          { rootMargin: '-20% 0px -60% 0px', threshold: 0 },
+        );
+        for (const target of targets) jumpObserver.observe(target);
+
+        for (const link of jumpLinks) {
+          link.addEventListener('click', () => {
+            if (jumpBox) jumpBox.open = false;
+          });
+        }
+      }
+    </script>
+
+    <script>
+      // A link to an anchor inside a collapsed block opens the block first,
+      // then scrolls to the anchor, so a deep link never lands on hidden text.
+      const openFolds = () => {
+        // The Pix section was once #pix, which an inline Pix drawing also uses.
+        if (location.hash === '#pix') {
+          location.replace('#pix-sandbox');
+          return;
+        }
+        const id = decodeURIComponent(location.hash.slice(1));
+        if (!id) return;
+        const target = document.getElementById(id);
+        if (!target) return;
+        let opened = false;
+        for (let el = target; el; el = el.parentElement) {
+          if (el.tagName === 'DETAILS' && !el.open) {
+            el.open = true;
+            opened = true;
+          }
+        }
+        if (opened) target.scrollIntoView();
+      };
+      openFolds();
+      window.addEventListener('hashchange', openFolds);
     </script>
   </body>
 </html>

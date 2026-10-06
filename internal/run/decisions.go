@@ -1,19 +1,25 @@
 package run
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 )
 
 // DecisionsConfig is a resolved decision backend other than OpenRouter's
-// hosted Jev: the local decision model or a self-hosted Jev server. When set
+// hosted Jev: the local decision model, Strands Decider-2B on this machine,
+// or a server speaking /v1/systemone (TypeSafe or self-hosted). When set
 // on the classifier, it answers every Jev job (security, intent detection,
 // routing). The zero value means none.
 type DecisionsConfig struct {
@@ -30,6 +36,22 @@ type DecisionsConfig struct {
 	SendModel bool
 	Key       func() (string, error)
 	Local     decisions.LocalModel
+	// Decider is set for the strands-decider provider: the server is the one
+	// deciderserver finds or starts on loopback, and its URL is read from
+	// the supervisor on every call.
+	Decider *decisions.DeciderModel
+	// CriteriaObject and MaxOptions shape requests for a Strands Decider
+	// server (see decisions.SystemOne).
+	CriteriaObject bool
+	MaxOptions     int
+	// WireModel, MaxQuestions, Envelope and ExtraHeaders shape requests for
+	// Clef on Workers AI or AI Gateway (see decisions.SystemOne).
+	WireModel    string
+	MaxQuestions int
+	// MaxBodyBytes caps a systemone request body (Tev1 on Ollama).
+	MaxBodyBytes int
+	Envelope     bool
+	ExtraHeaders func() (map[string]string, error)
 	// Timeout and MaxStateBytes come from classifier.decision; zero keeps
 	// the backend default.
 	Timeout       time.Duration
@@ -61,15 +83,38 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			OnConnRefused: sup.Recover,
 		}
 	case decisions.BackendSystemOne:
-		return &decisions.SystemOne{
-			Name:      d.Provider,
-			Model:     d.Model,
-			SendModel: d.SendModel,
-			BaseURL:   d.BaseURL,
-			Path:      d.Path,
-			Key:       d.Key,
-			Client:    client,
-			Timeout:   d.Timeout,
+		s := &decisions.SystemOne{
+			Name:           d.Provider,
+			Model:          d.Model,
+			SendModel:      d.SendModel,
+			BaseURL:        d.BaseURL,
+			Path:           d.Path,
+			Key:            d.Key,
+			Client:         client,
+			Timeout:        d.Timeout,
+			CriteriaObject: d.CriteriaObject,
+			MaxOptions:     d.MaxOptions,
+			WireModel:      d.WireModel,
+			MaxQuestions:   d.MaxQuestions,
+			MaxBodyBytes:   d.MaxBodyBytes,
+			Envelope:       d.Envelope,
+			ExtraHeaders:   d.ExtraHeaders,
+		}
+		if d.Decider != nil {
+			sup := deciderserver.Shared(*d.Decider)
+			s.Resolve = sup.URL
+			s.OnConnRefused = sup.Recover
+		}
+		return s
+	case decisions.BackendChatLetters:
+		return &decisions.ChatLetters{
+			Name:          d.Provider,
+			BaseURL:       d.BaseURL,
+			Model:         d.Model,
+			Key:           d.Key,
+			Client:        client,
+			Timeout:       d.Timeout,
+			MaxStateBytes: d.MaxStateBytes,
 		}
 	}
 	return nil
@@ -88,7 +133,7 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		baseURL, path string
 		models        []string
 	}
-	if ps, ok := src.(ProviderSource); ok && cls.Provider != decisions.LocalProvider {
+	if ps, ok := src.(ProviderSource); ok && cls.Provider != decisions.LocalProvider && cls.Provider != decisions.DeciderProvider {
 		if p, ok := ps.Profile(cls.Provider); ok {
 			kind = p.Kind
 			prof.baseURL, prof.path, prof.models = p.BaseURL, p.DecisionPath, p.Models
@@ -112,7 +157,30 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 			return DecisionsConfig{}, true, fmt.Errorf("classifier.model %q is not a local decision model (want %s)", cls.Model, localModelIDs())
 		}
 		out.Local = m
+	case decisions.BackendChatLetters:
+		return resolveTev1(out, src)
 	case decisions.BackendSystemOne:
+		if decisions.IsHostedClef(cls.Provider, cls.Model) {
+			return resolveClef(out, cls, src)
+		}
+		if decisions.IsOllamaTev1(cls.Provider, cls.Model) {
+			return resolveOllamaTev1(out, src)
+		}
+		if cls.Provider == decisions.DeciderProvider {
+			// Strands Decider-2B on this machine: a loopback server the
+			// supervisor finds or starts, no key, no profile.
+			m, ok := decisions.DeciderModelByID(cls.Model)
+			if !ok {
+				return DecisionsConfig{}, true, fmt.Errorf("classifier.model %q is not a Strands Decider model (want %s)", cls.Model, deciderModelIDs())
+			}
+			out.Model = m.ID
+			out.Decider = &m
+			out.BaseURL = deciderserver.BaseURL()
+			out.Path = decisions.DefaultSystemOnePath
+			out.CriteriaObject = true
+			out.MaxOptions = m.MaxOptions
+			return out, true, nil
+		}
 		if cls.Provider == decisions.TypeSafeProvider {
 			// TypeSafe's hosted API: a fixed origin and path, a model the
 			// service names, and a key that is required.
@@ -141,6 +209,11 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		if out.Model == "" && len(prof.models) > 0 {
 			out.Model = prof.models[0]
 		}
+		// A profile serving Strands Decider (on another host, or a Hugging
+		// Face Inference Endpoint) takes the decider's request shape.
+		if n := decisions.DeciderMaxOptions(out.Model); n > 0 {
+			out.CriteriaObject, out.MaxOptions = true, n
+		}
 		name := cls.Provider
 		out.Key = func() (string, error) {
 			if src == nil {
@@ -151,6 +224,162 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 	}
 	return out, true, nil
+}
+
+// cfAccountID is the shape of a Cloudflare account id.
+var cfAccountID = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// cfGatewayID is the shape of an AI Gateway id.
+var cfGatewayID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// lookupCred reads one credential field, trimmed; "" when unset.
+func lookupCred(src CredentialSource, provider, field string) string {
+	if src == nil {
+		return ""
+	}
+	v, _, _ := src.Lookup(provider, field)
+	return strings.TrimSpace(v)
+}
+
+// resolveClef resolves Clef on Workers AI, directly or through AI Gateway,
+// from the user's own Cloudflare credentials. It is never firewall-routed:
+// the request is built here, not from a chat config. The key rides only in
+// the Authorization header to Cloudflare's API (or the gateway), and the
+// gateway token only in cf-aig-authorization to the gateway.
+func resolveClef(out DecisionsConfig, cls *config.ClassifierSettings, src CredentialSource) (DecisionsConfig, bool, error) {
+	m, _ := decisions.ClefByID(strings.TrimSpace(cls.Model))
+	out.Model = m.ID
+	out.WireModel = m.Wire
+	out.SendModel = true
+	out.Envelope = true
+	out.CriteriaObject = true
+	out.MaxOptions = decisions.ClefMaxOptions
+	out.MaxQuestions = decisions.ClefMaxQuestions
+	workersKey := func() (string, error) {
+		return lookupCred(src, decisions.CloudflareWorkersAIProvider, "api_key"), nil
+	}
+	switch cls.Provider {
+	case decisions.CloudflareWorkersAIProvider:
+		acct := lookupCred(src, decisions.CloudflareWorkersAIProvider, "account_id")
+		if !cfAccountID.MatchString(acct) {
+			return DecisionsConfig{}, true, fmt.Errorf("cloudflare-workers-ai: account_id must be a Cloudflare account id (32 hex characters) to run %s", m.ID)
+		}
+		out.BaseURL = "https://api.cloudflare.com/client/v4/accounts/" + acct
+		out.Path = "/ai/run/" + m.ID
+		out.Key = func() (string, error) {
+			k, _ := workersKey()
+			if k == "" {
+				return "", fmt.Errorf("cloudflare-workers-ai has no API token")
+			}
+			return k, nil
+		}
+	case decisions.CloudflareGatewayProvider:
+		base, err := clefGatewayBase(lookupCred(src, decisions.CloudflareGatewayProvider, "base_url"), lookupCred(src, decisions.CloudflareGatewayProvider, "account_id"))
+		if err != nil {
+			return DecisionsConfig{}, true, err
+		}
+		out.BaseURL = base
+		out.Path = "/workers-ai/" + m.ID
+		// The Workers AI token when one is configured; otherwise the
+		// gateway's stored key answers.
+		out.Key = workersKey
+		token := lookupCred(src, decisions.CloudflareGatewayProvider, "token")
+		out.ExtraHeaders = func() (map[string]string, error) {
+			if token == "" {
+				return nil, nil
+			}
+			return map[string]string{"cf-aig-authorization": "Bearer " + token}, nil
+		}
+	}
+	return out, true, nil
+}
+
+// resolveTev1 resolves Tev1 on Together from the user's own Together key. It
+// is never firewall-routed: the request is built here, not from a chat
+// config, and the key rides only in the Authorization header to Together's
+// API (or the base_url the user set, https or loopback http).
+func resolveTev1(out DecisionsConfig, src CredentialSource) (DecisionsConfig, bool, error) {
+	out.Model = decisions.Tev1HostedModel
+	base := lookupCred(src, decisions.TogetherProvider, "base_url")
+	if base == "" {
+		d, _ := provider.Lookup(decisions.TogetherProvider)
+		base = d.BaseURL
+	}
+	if err := config.ValidJevURL(base); err != nil {
+		return DecisionsConfig{}, true, fmt.Errorf("together: %w", err)
+	}
+	out.BaseURL = strings.TrimRight(base, "/")
+	out.Key = func() (string, error) {
+		k := lookupCred(src, decisions.TogetherProvider, "api_key")
+		if k == "" {
+			return "", fmt.Errorf("together has no API key (TOGETHER_API_KEY)")
+		}
+		return k, nil
+	}
+	return out, true, nil
+}
+
+// resolveOllamaTev1 resolves a Tev1 tag on Ollama, answered by Ollama's own
+// /v1/systemone (Ollama 0.35 and later) at the address the ollama provider is
+// configured with: https, or http on loopback.
+func resolveOllamaTev1(out DecisionsConfig, src CredentialSource) (DecisionsConfig, bool, error) {
+	fields := map[string]string{}
+	for _, f := range []string{"host", "port", "protocol"} {
+		fields[f] = lookupCred(src, decisions.OllamaProvider, f)
+	}
+	d, _ := provider.Lookup(decisions.OllamaProvider)
+	base := d.BaseURL
+	if d.BaseURLBuilder != nil {
+		base = d.BaseURLBuilder(fields)
+	}
+	base = strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1")
+	if err := config.ValidJevURL(base); err != nil {
+		return DecisionsConfig{}, true, fmt.Errorf("ollama: %w", err)
+	}
+	out.BaseURL, out.Path = base, decisions.DefaultSystemOnePath
+	out.Model = strings.ToLower(strings.TrimSpace(out.Model))
+	out.SendModel = true
+	out.MaxOptions = decisions.Tev1MaxOptions
+	out.MaxQuestions = decisions.ClefMaxQuestions
+	out.MaxBodyBytes = decisions.OllamaMaxBodyBytes
+	out.Key = func() (string, error) {
+		return lookupCred(src, decisions.OllamaProvider, "api_key"), nil
+	}
+	return out, true, nil
+}
+
+// clefGatewayBase is the AI Gateway root a Workers AI call goes under:
+// https://gateway.ai.cloudflare.com/v1/{account}/{gateway}. A configured
+// base_url (the compat URL the chat provider uses) names the gateway;
+// otherwise it is the account's "default" gateway.
+func clefGatewayBase(baseURL, account string) (string, error) {
+	gateway := "default"
+	if baseURL != "" {
+		u, err := url.Parse(baseURL)
+		if err != nil || u.Scheme != "https" || u.Host != "gateway.ai.cloudflare.com" || u.User != nil {
+			return "", fmt.Errorf("cloudflare-ai-gateway: base_url must be an https URL on gateway.ai.cloudflare.com to run Clef")
+		}
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) < 3 || parts[0] != "v1" {
+			return "", fmt.Errorf("cloudflare-ai-gateway: base_url must look like https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/compat")
+		}
+		account, gateway = parts[1], parts[2]
+	}
+	if !cfAccountID.MatchString(account) {
+		return "", fmt.Errorf("cloudflare-ai-gateway: account_id must be a Cloudflare account id (32 hex characters) to run Clef")
+	}
+	if !cfGatewayID.MatchString(gateway) {
+		return "", fmt.Errorf("cloudflare-ai-gateway: the gateway id in base_url is not a plain name")
+	}
+	return "https://gateway.ai.cloudflare.com/v1/" + account + "/" + gateway, nil
+}
+
+func deciderModelIDs() string {
+	ids := make([]string, 0, len(decisions.DeciderModels))
+	for _, m := range decisions.DeciderModels {
+		ids = append(ids, m.ID)
+	}
+	return strings.Join(ids, " or ")
 }
 
 func localModelIDs() string {
@@ -188,6 +417,19 @@ func isDecisionsTarget(provider, kind, model string) bool {
 // agent-model fallback.
 func WarmDecisions(cfg Config) string {
 	d := cfg.ClassifierOrDefault().Decisions
+	if d.Decider != nil {
+		root, err := deciderserver.Root()
+		if err != nil {
+			return ""
+		}
+		if !deciderserver.Present(root, *d.Decider) {
+			if _, _, ok := deciderserver.Running(context.Background(), deciderserver.Options{}); !ok {
+				return deciderserver.Describe(deciderserver.ErrWeightsMissing)
+			}
+		}
+		deciderserver.Shared(*d.Decider).Recover()
+		return ""
+	}
 	if d.Backend != decisions.BackendLocal {
 		return ""
 	}

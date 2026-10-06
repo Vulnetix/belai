@@ -1,5 +1,8 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Limits from '../ui/Limits.astro';
 import CopyButton from '../ui/CopyButton.tsx';
 import Walkthrough from '../ui/Walkthrough.astro';
 
@@ -8,7 +11,7 @@ import Walkthrough from '../ui/Walkthrough.astro';
 // and the MCP server follow the review.
 
 const sealText =
-  'Vulnetix integration: /vulnetix review runs nine code scanners, eight at once in lanes of their own, and each posts a card in the thread as it finishes. A read-only background agent per scanner checks every finding against the repository. The session then reads every report together, asks you when a finding has more than one fix, plans dependency fixes as a dry run, patches code under the permission prompts and writes a code-review report. Report blocks are size-limited, sanitised and classified. The AI Firewall routes model traffic through a filtering gateway, and its verdicts are shown to you only. The scanners, the firewall and the MCP server are free for everyone.';
+  'Vulnetix integration: /vulnetix review runs nine code scanners, eight at once in lanes of their own, and each posts a card in the thread as it finishes. A read-only background agent per scanner checks every finding against the repository. The session then reads every report together, asks you when a finding has more than one fix, plans dependency fixes as a dry run, patches code under the permission prompts and writes a code-review report. Report blocks are size-limited, sanitised and classified. The AI Firewall routes model traffic through a filtering gateway, and its verdicts are shown to you only. The scanners, the firewall and the MCP server are free for everyone. Dependency checks while the agent edits: a manifest a turn changes is matched against the table ported from the Vulnetix CLI, checked once per turn against the net change, judged by the fast tier, scanned with vulnetix sca, and any finding goes to a read-only background agent for that ecosystem, so no install script runs. A repository cannot turn the check off. The AI Firewall has seven adapters: Vulnetix, Fastly AI Runtime Control, Kong AI Gateway and the AI Security Gateway (the last three in beta), a custom proxy, and read-only OpenRouter and Cloudflare AI Gateway entries, in transparent, authorization or header mode, routed per provider, with nonces fetched from the firewall first.';
 
 type Stage = {
   n: string;
@@ -82,7 +85,7 @@ const lanes = [
 const stateLabel: Record<string, [string, string]> = {
   card: ['✓ card', 'text-vx-mint-strong'],
   running: ['● running', 'text-vx-ink'],
-  stopped: ['■ stopped', 'text-[#B8332E]'],
+  stopped: ['■ stopped', 'text-vx-red-deep'],
   queued: ['◌ queued', 'text-vx-ink/60'],
 };
 
@@ -117,6 +120,47 @@ const limits = [
   ['Dry run by default', 'Dependency fixes stay a plan until you turn on autofix. Code fixes go through your permission prompts.'],
 ];
 
+const deps: [string, string][] = [
+  ['Matched by a table', 'Every file a session tool changes is matched against the manifest table ported from the Vulnetix CLI. The path and the change decide it, and no model is asked whether a file is a manifest.'],
+  ['Checked once per turn', 'Edits are held until the turn ends, so a manifest edited several times is checked once, against the net change. A change undone within the turn, and a deleted manifest, are not checked.'],
+  ['The fast tier decides', 'A fast model sees a bounded, sanitized digest of the removed and added lines and answers whether dependencies changed. When it cannot answer, Belai checks anyway.'],
+  ['The scanner runs', '`vulnetix sca` runs in the manifest\'s directory with the malware, end-of-life, public exploit and severity flags set, so its exit status says whether anything was found. A Pro or Enterprise plan adds target versions from `vulnetix fix --dry-run`.'],
+  ['Read-only agents triage', 'A finding goes, sanitized and classified, to a background agent for that ecosystem. It has `Read`, `Grep` and `Glob` only, so the install scripts of a malicious package never run on its account.'],
+  ['Your settings decide', '`vulnetix.dep_watch` is on by default. A repository\'s own settings may turn it on and cannot turn it off, so a cloned project cannot hide the dependencies it asks you to add.'],
+];
+
+const ecosystems: [string, string][] = [
+  ['belai:deps-javascript', 'npm, pnpm, Yarn, Deno'],
+  ['belai:deps-python', 'pip, Pipenv, Poetry, uv, Conda'],
+  ['belai:deps-go', 'Go modules'],
+  ['belai:deps-rust', 'Cargo'],
+  ['belai:deps-ruby', 'Bundler'],
+  ['belai:deps-jvm', 'Maven, Gradle, sbt, Mill, Clojure'],
+  ['belai:deps-dotnet', 'NuGet, Paket'],
+  ['belai:deps-php', 'Composer'],
+  ['belai:deps-apple', 'SwiftPM, CocoaPods, Carthage'],
+  ['belai:deps-containers', 'Dockerfile, compose, Kubernetes, Helm, Terraform'],
+  ['belai:deps-ci', 'CI pipelines, GitHub Actions, shell install scripts'],
+  ['belai:deps-other', 'Dart, Elixir, Erlang, Haskell, OCaml, Nix, Conan, vcpkg and the rest'],
+];
+
+const adapters: [string, string, string][] = [
+  ['Vulnetix AI Firewall', 'stable', 'Guardrails, redaction and BYOK provider keys for your Vulnetix organisation.'],
+  ['Fastly AI Runtime Control', 'beta', 'ARC virtual keys and the ARC AI Firewall, in log or block mode.'],
+  ['Kong AI Gateway', 'beta', 'Your Kong route with ai-proxy and the prompt-guard, sanitizer or guardrails plugins.'],
+  ['AI Security Gateway', 'beta', 'The self-hosted gateway for DLP and prompt-injection detection, OpenAI chat completions only.'],
+  ['Custom firewall', 'stable', 'Any proxy, in any of the three modes.'],
+  ['OpenRouter Guardrails', 'read-only', 'OpenRouter\'s own workspace guardrails. Belai reads back its refusals.'],
+  ['Cloudflare AI Gateway', 'read-only', 'The gateway\'s Llama Guard guardrails and DLP profiles. Belai reads back its refusals.'],
+];
+
+const firewallRules: [string, string][] = [
+  ['Three modes', '`transparent` changes only the base URL and sends the provider\'s own key. `authorization` sends the firewall\'s key as a bearer token, and the firewall holds the provider key. `header` sends the firewall\'s key in a header you name.'],
+  ['Routed per provider', 'A firewall can be limited to some providers, and its URL can carry `{provider}`. Providers that sign in, such as Copilot and Kiro, and the classifier\'s decision backends are never routed.'],
+  ['Nonces from the gateway', 'A session\'s sealed-block nonces come from the active firewall first. When they all do, requests carry `X-Vulnetix-Nonce-Mode: enforce` and the Vulnetix gateway strips any sealed block it cannot verify.'],
+  ['Verdicts as report cards', 'Each firewall\'s verdict is read from its response headers and refusal bodies, cleaned and capped, then shown to you as a card. A matched value is never shown, and the card never reaches a model.'],
+];
+
 const products = [
   { cmd: '/vulnetix review', name: 'Code Scanner', what: 'Nine scanners, triage and fixes', href: 'https://www.vulnetix.com/features/code-scanner', accent: false },
   { cmd: '/vulnetix firewall', name: 'AI Firewall', what: 'A filtering gateway for model traffic', href: 'https://www.vulnetix.com/features/ai-firewall', accent: false },
@@ -128,25 +172,18 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
 ---
 
 <SealedSection label="vulnetix" sealText={sealText} id="vulnetix">
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
-        Vulnetix integration
-      </h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Vulnetix integration" surfaces={['tui', 'acp', 'cli', 'vulnetix only']}>
       Belai includes a code review that scans your repository, checks what it finds and fixes it, an
       AI Firewall in front of your provider, and an MCP server. The review has three stages, and
       each one can change more than the one before it.
-    </p>
-  </div>
+    </SectionHead>
 
   <figure class="mt-10 m-0">
     <Walkthrough id="ZyMn7kyyvuM" title="the Vulnetix review" />
     <figcaption class="mono mt-3 text-xs text-vx-ink/75">Vulnetix, in motion</figcaption>
   </figure>
 
-  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+  <ol class="mt-10 grid list-none gap-5 p-0 @3xl:grid-cols-3">
     {stages.map((s, i) => {
       const dark = i === 2;
       return (
@@ -220,30 +257,27 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
       );
     })}
   </ol>
-  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+  <div class="mono mt-3 hidden items-center gap-4 text-sm @4xl:flex" aria-hidden="true">
     <span class="text-vx-ink/60">reads and reports</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>changes code, behind your permission prompts</span>
   </div>
 
   <!-- A review as it runs -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What you see while it runs</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="What you see while it runs">
       Every scanner has its own lane and output file, so stopping one leaves the others running.
       Review scans have no timeout. The footer counts the scanners that are done and the ones still
       running.
-    </p>
-  </div>
+    </SubHead>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 @4xl:col-span-8">
       <div class="rounded-xl border border-vx-ink bg-vx-bone/40 p-4 md:p-5" role="img" aria-label="Nine scanner lanes during a review: four have posted cards, three are running, one was stopped and one is queued">
-        <div class="mono hidden grid-cols-[7rem_minmax(0,1fr)_6rem] gap-3 border-b border-vx-ink/20 pb-2.5 text-xs text-vx-ink/60 md:grid">
+        <div class="mono hidden grid-cols-[7rem_minmax(0,1fr)_6rem] gap-3 border-b border-vx-ink/20 pb-2.5 text-xs text-vx-ink/60 @2xl:grid">
           <span>scanner</span><span>lane, and what its card reports</span><span class="text-right">state</span>
         </div>
         {lanes.map((l) => (
-          <div class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/10 py-2.5 last:border-b-0 md:grid-cols-[7rem_minmax(0,1fr)_6rem] md:items-center">
+          <div class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/10 py-2.5 last:border-b-0 @2xl:grid-cols-[7rem_minmax(0,1fr)_6rem] @2xl:items-center">
             <code class="mono text-sm font-semibold">{l.name}</code>
             <div class="flex flex-col gap-1.5">
               <span class={`h-1.5 rounded-full ${barColour[l.state]} ${l.width}`}></span>
@@ -260,7 +294,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
 
       <ol class="mt-6 list-none p-0">
         {steps.map(([what, detail, who], i) => (
-          <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 md:grid-cols-[2rem_11rem_minmax(0,1fr)_9rem] md:text-[15px]">
+          <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 @2xl:grid-cols-[2rem_11rem_minmax(0,1fr)_9rem] md:text-[15px]">
             <span class="mono text-vx-ink/60">{i + 1}</span>
             <span class="mono font-semibold">{what}</span>
             <span class="col-start-2 md:col-start-auto">{detail.startsWith('.') ? <code class="mono">{detail}</code> : detail}</span>
@@ -270,7 +304,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
       </ol>
     </div>
 
-    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+    <aside class="flex min-w-0 flex-col gap-5 @4xl:col-span-4">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">THREE COMMANDS</p>
         <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{commands}</code></pre>
@@ -303,15 +337,15 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
   </div>
 
   <!-- How the stages differ -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">How the three stages differ</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="How the three stages differ">
       Every stage follows your guardrails switch. The table shows what each stage reads and writes,
       when it asks you, and what it hands back.
-    </p>
-  </div>
+    </SubHead>
 
-  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+  <details class="deep deep--wide">
+    <summary>Compare what each stage runs, writes, asks and hands back</summary>
+    <div class="deep__body">
+  <table class="mt-4 hidden w-full border-collapse text-left @3xl:table">
     <thead>
       <tr class="border-b-2 border-vx-ink">
         <th scope="col" class="w-[17%] pb-4"><span class="sr-only">Property</span></th>
@@ -336,7 +370,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
     </tbody>
   </table>
 
-  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+  <div class="mt-8 grid gap-4 @3xl:hidden">
     {stages.map((s, i) => (
       <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
         <h4 class="text-xl font-bold"><span class={`mono text-xs font-medium ${i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n} </span>{s.name}</h4>
@@ -352,17 +386,42 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
     ))}
   </div>
 
+    </div>
+  </details>
+
+  <!-- Dependency checks -->
+  <SubHead id="deps" title="Dependency checks as the agent edits">
+    When a turn changes a package manifest, Belai checks the new dependencies with the Vulnetix scanner
+    and hands anything it finds to a read-only agent for that ecosystem.
+  </SubHead>
+  <Limits items={deps} cols={2} class="mt-head" />
+  <details class="deep deep--wide">
+    <summary>The twelve ecosystem agents</summary>
+    <div class="deep__body">
+      <table class="mini mt-4">
+        <thead><tr><th scope="col">Background agent</th><th scope="col">Ecosystems</th></tr></thead>
+        <tbody>
+          {ecosystems.map(([name, what]) => (
+            <tr><th scope="row" class="mono font-medium">{name}</th><td>{what}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <p>
+        Each agent carries its ecosystem's patching reference: how to bump a direct dependency, how to
+        override a transitive one, which scopes ship and the lockfile command. Malware is never fixed with a
+        version bump.
+      </p>
+    </div>
+  </details>
+
   <!-- AI Firewall -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">AI Firewall</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="AI Firewall" surfaces={['vulnetix only', 'pix sandbox']}>
       <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a>{' '}
       sends your model traffic through a filtering gateway, which uses its own key in place of the
       provider's. If any of its four required settings is missing, Belai talks to the provider directly.
-    </p>
-  </div>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 rounded-xl border border-vx-ink p-5 md:p-7 lg:col-span-7">
+    </SubHead>
+  <div class="mt-head grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 rounded-xl border border-vx-ink p-5 md:p-7 @4xl:col-span-7">
       <svg viewBox="0 0 640 220" class="h-auto w-full" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="Belai sends model calls through the firewall to the provider, or straight to the provider when a required setting is missing">
         <rect x="10" y="60" width="130" height="60" rx="10" class="fill-vx-cream" />
         <text x="46" y="96" font-family="Geist, sans-serif" font-size="18" font-weight="700" fill="currentColor" stroke="none">belai</text>
@@ -379,7 +438,7 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
         <text x="252" y="30" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">a block → a report card for you</text>
       </svg>
     </div>
-    <div class="flex min-w-0 flex-col gap-4 lg:col-span-5">
+    <div class="flex min-w-0 flex-col gap-4 @4xl:col-span-5">
       <div class="rounded-xl bg-vx-ink p-5">
         <p class="mono text-xs tracking-wider text-vx-cream/70">STATUS FOOTER</p>
         <p class="mono mt-3 text-sm text-vx-cream"><span class="text-vx-mint">● firewall</span> reachable at start</p>
@@ -396,24 +455,34 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
     </div>
   </div>
 
+  <details class="deep deep--wide">
+    <summary>Seven firewall adapters, three modes and the rules that keep them safe</summary>
+    <div class="deep__body">
+      <p>
+        Exactly one firewall is active at a time, and <code class="mono">F10</code> turns it on or off for the
+        project. The Fastly, Kong and AI Security Gateway adapters are beta: they were built from each
+        product's public documentation and have not been tested against the real product.
+      </p>
+      <table class="mini mt-4">
+        <thead><tr><th scope="col">Adapter</th><th scope="col">Status</th><th scope="col">What it is</th></tr></thead>
+        <tbody>
+          {adapters.map(([name, status, what]) => (
+            <tr><th scope="row" class="font-medium">{name}</th><td class="mono">{status}</td><td>{what}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <Limits items={firewallRules} cols={2} class="mt-6" />
+    </div>
+  </details>
+
   <!-- Limits -->
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits on review content</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Limits on review content">
       A report quotes your repository and your dependencies, and either can contain an instruction
       meant for the model. So Belai handles findings like any other text it did not write.
-    </p>
-  </div>
-  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
-    {limits.map(([title, body]) => (
-      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
-        <h4 class="text-lg font-bold">{title}</h4>
-        <p class="mt-2 text-sm text-vx-ink/80">{body}</p>
-      </div>
-    ))}
-  </div>
+    </SubHead>
+  <Limits items={limits} class="mt-head" />
 
-  <div class="mt-20 grid gap-5 md:grid-cols-3">
+  <div class="mt-sub grid gap-5 @3xl:grid-cols-3">
     {products.map((p) => (
       <a href={p.href} class={`flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)] ${p.accent ? 'bg-vx-mint' : ''}`}>
         <span class={`mono text-xs ${p.accent ? 'text-vx-ink/70' : 'text-vx-ink/60'}`}>{p.cmd}</span>

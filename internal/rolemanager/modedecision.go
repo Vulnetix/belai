@@ -103,6 +103,12 @@ func DecideForcedMode(m modes.Mode, prompt string, hasReferences bool) ModeDecis
 		return DecideMode(ModePlan, in)
 	case modes.ModeAgent:
 		return DecideMode(ModeAgent, in)
+	case modes.ModeCode:
+		// Code is agent work on the code-mode surface, so it keeps the agent
+		// decision (a named agent's carrier included) and changes only the mode.
+		d := DecideMode(ModeAgent, in)
+		d.Mode = modes.ModeCode
+		return d
 	default:
 		return DecideMode(ModeUndetermined, in)
 	}

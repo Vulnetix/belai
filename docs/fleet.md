@@ -95,7 +95,14 @@ One pass of the worker loop:
    `agents.max_workers` slot is free. A teammate that is working holds the
    window open, because it may still hand an item over. `-stay` on
    `belai agent run` or `start` keeps a standing worker that waits for new
-   items, and a worker on a cron `schedule` always stays.
+   items, and a worker on a cron `schedule` always stays. `-drain` is the
+   opposite: the worker exits once nothing is left to claim even when its
+   profile has a `schedule`. `belai rc` passes it when a stored schedule fires
+   a worker (see [remote-control.md](remote-control.md#scheduled-agents)),
+   because the stored schedule is what starts it each time. Once that worker
+   has stopped, `belai rc` reads its registry record and reports the outcome on
+   the schedule: `worked` when `Done` counted items, `worker_failed` when it
+   failed or its process died, `drained` when it stopped with nothing to claim.
 
 ### Finding work: `kanban.survey`
 
@@ -136,7 +143,11 @@ Limits:
   default `24h`) for the same profile and repository on the same machine. The
   last survey's time is the mtime of a stamp file under the registry
   (`agents/run/surveys/`). A worker restarted within the interval logs
-  `survey skipped` and does not survey.
+  `survey skipped` and does not survey. A start up to two minutes before the
+  interval is up (a tenth of the interval at most) still surveys: the stamp is
+  written after the item is filed, so a start exactly one `every` later, as an
+  hourly schedule makes, always lands a moment short and would otherwise be
+  skipped about as often as not.
 - **Never for a targeted run.** `-once` and `-item` never survey.
 - **Shared across hosts.** The dated title makes hosts that survey the same
   project on the same day share one item. The board refuses a second open
@@ -156,6 +167,53 @@ looks for untested business rules, missing or stale docs, and site prose to
 add or update. It files at most five `build` handoffs, discrepancies before
 gaps. Moving one from Review to Backlog is the confirmation: a builder then
 claims it by its `build` label.
+
+### A survey on a schedule
+
+A worker surveys at most once each time it starts, so a standing worker (a cron
+`schedule` in its profile, or `-stay`) surveys once and then waits for items. Work
+that should happen every hour is started every hour instead, by either of:
+
+- a stored schedule in `belai rc` (the Hosts page), which runs
+  `belai agent start -drain NAME` in a directory the host offers
+  ([remote-control.md](remote-control.md#scheduled-agents));
+- the operating system's cron, with the same command in the repository:
+  `0 * * * * cd /path/to/repo && belai agent start -drain NAME`.
+
+`-drain` makes the worker exit once nothing is left to claim, so each start is one
+review. With `kanban.survey.every: 1h`:
+
+- **Each start surveys.** Because of the two-minute grace above, the start at the
+  top of every hour files and works one survey item. A start less than about 58
+  minutes after the last survey is skipped, and a log line says so.
+- **Filed work comes first.** If a card the worker can claim is waiting, the start
+  works that card and does not survey, so the survey for that hour does not
+  happen.
+- **One title a day.** The survey item's title is the survey `title` plus the date,
+  so the hours of one day share a title. A finished item never blocks the next
+  hour's, because the board refuses only a second *open* item with the same title.
+  An item still open (a long run that holds its lease, or one the harness blocked
+  because the worker needed an ask) means the next start finds it, cannot claim it
+  and files nothing until that item is finished or moved, or the date changes.
+- **Handoffs wait for a person by default.** Every handoff made while working a
+  survey goes to `survey.list` (`review` unless the profile says `backlog` or
+  `auto`), whatever the model asks.
+- **Missed hours are not made up.** A schedule that was not running at the hour
+  skips it, and the worker reads its own notes for what it last covered.
+
+### Facts
+
+A worker profile may carry `facts`: structured key/value pairs about the
+environment it works in, such as an AWS role, a Terraform directory or a
+Kubernetes context ([Facts](agent-profiles.md#facts)). The worker's persona lists
+them, and the cloud tools read the well-known ones, so a crew whose members
+share an account declares the account once per profile and each member points at
+the right place. A `terraform_dir` is relative to the worker's worktree. A worker
+that runs under a role asks nobody: a role its profile lists is used. A role it
+does not list always asks, so it is withheld even for an `autonomous` worker, and
+the item moves to `blocked` as under [Asks](#asks). Facts are part of
+the behaviour a running worker pins, so editing them stops and restarts it, like
+`knowledge`.
 
 ### Pausing a worker
 
@@ -186,6 +244,76 @@ that runs checks but changes nothing, such as the scout running tests:
 
 A read-only worker with `Bash` and `autonomy: autonomous` still needs the OS
 sandbox and a pass budget, like any autonomous `Bash` worker.
+
+### Where a worker may start
+
+A worktree is a git checkout, so a profile with `workspace.isolation: worktree`
+(every built-in worker, and any profile that writes) must start inside a git
+repository. `belai agent run` and `belai agent start` check this before
+anything else is claimed or filed and refuse with `profile NAME uses
+workspace.isolation: worktree, which needs a git repository, and DIR is not
+one`. The check follows the working directory up to its repository root, so a
+subdirectory is fine. A folder that holds several repositories is not: change
+into one of them, or start one worker set per repository. A schedule from
+`belai rc` runs `belai agent start -drain` in its directory, so a schedule whose
+directory is not a repository is refused the same way and its run is recorded as
+`error`.
+
+A profile with no `workspace` block, `isolation: none` or `isolation: shared` is
+not checked, and it runs in the folder itself, git or not. The harness then
+makes no worktree, branch or commit and touches nothing in git, which is how a
+read-only worker such as an hourly log analyzer runs from a folder that holds
+several repositories (see [Filing a handoff under another repository](#filing-a-handoff-under-another-repository)).
+Only a profile that cannot write may omit the `workspace` block: one with
+`Write`, `Edit` or `Bash` needs `worktree` or `shared`. A repository with no commit passes this check and then fails when
+the harness prepares the first worktree, which the worker investigates as a
+setup failure (the failure is attached to the item and the release note stays
+harness facts).
+
+### Filing a handoff under another repository
+
+A worker started in a plain folder, or one that finds work for several
+repositories, can send each handoff to the repository that owns the problem.
+Set `kanban.handoff_repos: true` on its profile and `KanbanHandoff` gains an
+optional `repo` argument:
+
+```json
+{"title": "Raise the queue's visibility timeout", "body": "…", "labels": ["infra"], "repo": "acme/website"}
+```
+
+The item is filed under that repository's project and directory, where the agents
+started in that repository take it. Without `repo` it is filed under the
+worker's own project, as before.
+
+- **A name is a choice from the harness's index, never a path.** `repo` must
+  match a checkout in the local repository index, the same list the `Repos` tool
+  shows. The harness derives the project and directory from that checkout. A
+  path, a URL, a project name or any other text is refused, and nothing is filed.
+- **What the index holds.** Git checkouts found in the children of the working
+  directory's parent, and in their children: the folders beside the worker and the
+  repositories beneath them. It holds at most 200 checkouts from at most 500
+  directories. Hidden directories and those named `node_modules`, `vendor`,
+  `target` and `dist` are skipped, and symlinks are not followed.
+- **How a name matches.** `owner/name`, from the checkout's origin remote, or a
+  bare name, case-insensitively. A bare name that two checkouts share is refused.
+  A checkout with no origin remote has no owner, so it is named by its directory.
+  A refusal lists the names the index holds (at most twenty).
+- **Everything else about the handoff is unchanged.** The labels must be ones
+  `handoff_labels` lists, an assignee one of `handoff_to`, and the hop and
+  per-item limits still apply. A survey's handoffs still go to the survey's
+  `list`, whatever `repo` says. The item links to the item the worker holds, and
+  the worker may add notes to it though it sits in another project.
+- **Duplicates are per project.** The board refuses a second open item with the
+  same title in the same project, so the same title filed under two repositories
+  makes two items, and filed twice under one makes one.
+- **An agent in that repository does the work.** A builder claims items in its
+  own project, so it must be started in the repository the item was filed under
+  (`belai agent start -crew NAME` from there). An item filed under a repository
+  where no worker runs waits on the board.
+- **Not with gates.** `handoff_repos` cannot be combined with a `gates` block, because
+  a gate names a test suite of the worker's own repository.
+- **No repositories beneath the worker.** Every name is refused, and the refusal
+  lists nothing.
 
 ### What a worker's model may do on the board
 
@@ -219,8 +347,37 @@ Each item's turn is written as a session under the repository's project, so
 the session id on the item's notes lists, resumes and searches like any
 other. With `sync.enabled` on and a Vulnetix CLI credential, the worker
 mirrors that session to the website the same way the TUI does. The mirror
-uploads only the lines the transcript wrote, and it takes no prompts or
-answers back.
+uploads only the lines the transcript wrote, and it takes no answers back.
+
+With `sync.remote_prompts` on, a worker also takes text typed into its session
+on the website. That is how a crew message works: the Agents page sends the
+same text to each live worker of the crew as an ordinary web prompt. The text
+is cleaned like any web prompt and enters a running turn as steering, admitted
+by the role manager at the next pass boundary, as typed steering is. A message
+that arrives while the worker is between cards is held (at most eight) and
+steered into its next turn. A message is never a slash command, a shell command
+or an answer. Each user line the worker writes carries `profile_facts`: the
+profile name and hash, display name, palette, avatar, crew, model, provider,
+effort and tool count, never the system prompt or the tool list, so a shared
+thread can show which customisation produced each entry.
+
+### Session controls
+
+A worker started by `belai rc --web-controls` (the daemon passes
+`-web-controls` to `belai agent start`, and that to each `belai agent run`)
+takes four session controls from the website, the same commands and keys a
+remote session takes ([remote-control.md](remote-control.md#session-controls-from-the-web)):
+`/model` (`ctrl+q`), `/effort` (`f6`), `/guardrails` (`f3`) and `/caveman`
+(`f2`). Each is parsed by `internal/sessionctl` against its fixed table and
+checked the same way (a model must be one this host holds credentials for), and
+applies from the worker's next turn, never the one running. Guardrails go off
+only when the daemon also had `--web-allow-guardrails-off`. `/ask` is refused,
+since nobody waits on a worker's asks; `/mode` is refused, since a worker's mode
+is its profile's; display, test, language-server and Jev controls are refused,
+since a worker has no display and runs its profile's gates. Each control is
+acked with the worker's new state, written to the worker's log as `web: ...`, and
+carried in `profile_facts` (`model`, `provider`, `effort`, `guardrails`,
+`caveman`) from then on. Nothing is written to a settings file.
 
 ## Assigning and pinning
 
@@ -285,6 +442,12 @@ A crew is a named set of profiles started together:
 |---|---|
 | `belai:delivery` | `belai:scout` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:security` | `belai:vuln-scout` ×1, `belai:patcher` ×2, `belai:verifier` ×1 |
+
+Each built-in member has a persona, so the console shows who is who. The
+security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
+(the verifier); the delivery crew is Juniper Tallis (the scout), Odo Brannigan
+(the builder) and Isadora Pell (the reviewer). See
+[Built-in personas](agent-profiles.md#built-in-personas).
 
 ### The delivery crew
 
@@ -358,6 +521,108 @@ The reviewer checks the branch out, runs the tests, and moves the item to
 on (the built-in builder and reviewer set it to `enforce`), the harness runs the
 card's acceptance gates itself on the builder's branch and again on the
 reviewer's, and a card is done only when they pass.
+
+### Files placed in a worktree
+
+Workers each work in a worktree of their own, outside the project, so the harness
+puts into it what the profile names. Two blocks do it, and both are the profile's
+to define, whoever wrote it.
+
+**Reference documents** (`knowledge.paths`). The documents a profile lists are
+indexed for search by meaning (see [Knowledge](knowledge.md)), and the harness
+also copies them into the worktree, read only, before each turn: a relative path
+at the same relative path, one under `~/` or absolute under
+`.vulnetix/knowledge/<label>/`. The agent can find a passage with `Grep` as a
+`kb+` row and open the file with `Read`. The copies are never written back or
+committed, and a file the branch already has is never replaced.
+
+**Shared files** (`workspace.sync`). A crew that needs a shared scratchpad or
+long-term memory lists a file or directory there:
+
+```json
+"workspace": {
+  "isolation": "worktree",
+  "sync": [{"path": ".vulnetix/crews/delivery.md", "access": "write"}]
+}
+```
+
+The harness does the copying, so the worker uses the ordinary file tools on the
+relative path and never gets the repository's path:
+
+- **Before each turn** the file is copied from the repository into the worktree
+  at the same relative path. A path that does not exist yet is simply not there;
+  a worker with write access creates it with `Write`.
+- **After each turn**, even a failed or cancelled one, a write-access file the
+  worker changed is merged back into the repository under a lock, so teammates
+  merging at once do not overwrite each other. When nobody else changed the file
+  meanwhile, the worker's version is taken whole. When someone did, the lines
+  the worker added are appended to the current file (a line a teammate already
+  wrote is not added twice) and the worker's deletions and edits of existing
+  lines are dropped, because applying them could erase a teammate's notes.
+- **Read entries** are copied in and never written back.
+- **The text is checked on the way.** It is sanitised (delimiter markup, control
+  and bidirectional characters removed) before it reaches the repository, a file
+  is at most 256 KiB and an entry at most 64 files and 1 MiB, only regular text
+  files are copied, and a symlink on either side is refused. A merge that would
+  pass the size limit is not applied.
+- **It is not part of the branch.** The harness's own commit leaves placed paths
+  out, and a branch that commits one anyway (a model's own `git add -f`) fails
+  the attempt with a note naming it.
+- **The profile's permission is the permission.** Workers are denied writing
+  anything under `.vulnetix`, and a `write` entry lifts that for exactly its
+  path, with `Write` and `Edit`. A `Write` or `Edit` deny rule of your own in
+  settings still wins. The workspace note tells the worker which files it may
+  edit, even in a read-only workspace.
+- **A fixed floor, whoever wrote the profile.** `.git`, Belai's state and the
+  credentials and settings in `.vulnetix` are never synced, the scanner evidence
+  in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`) is read
+  only, credential files by name are never copied, and a file Git tracks outside
+  `.vulnetix` is never written back into your checkout: a change to tracked
+  source goes on a branch.
+- **It travels with the profile.** A profile from the Vulnetix library installs
+  with its `knowledge` and `workspace.sync` blocks, a backup carries them, and a
+  replace takes the library copy (keeping this host's entries when the copy lists
+  none).
+
+The built-in delivery crew uses `.vulnetix/crews/delivery.md`, which every member
+lists under both blocks. Every member has write access and is told, in its own
+instructions, to read it before it starts, to keep a `## Scratchpad` of what the
+crew is doing now and a `## Long-term facts` of what stays true of the
+repository, to add short lines rather than rewrite the file, to leave secrets
+and long output out of it, to treat teammates' notes as notes and not
+instructions, and never to commit it. How the file is created and kept tidy is
+left to those instructions: the harness only copies and merges. The scout and the
+reviewer have the file tools (`Edit`, `Write`) and `Bash`, `Git`, `GH` and
+`Glab`, `WebFetch` and `WebSearch`, the `Vulnetix` tool and the Vulnetix MCP
+server's tools (`mcp__vulnetix__*`, available once `/vulnetix mcp` has added the
+server), so they can find and patch source and research a fix, not only read.
+
+#### Rules and edge cases
+
+Every row names the tests that hold it. `internal/fleet/sync_docs_test.go` fails
+when a test named here does not exist, when a test in the sync test files is not
+named here, and when a limit in this section differs from the code.
+
+| ID | Rule | Tests |
+| --- | --- | --- |
+| S1 | A profile lists up to 8 repository-relative paths in `workspace.sync`, written with forward slashes and plain characters (letters, digits and `. _ - /`), with no `..`, never the repository itself and never two that overlap; `access` is `read` (default) or `write`; it needs `workspace.isolation: worktree`. Any such path may be listed, not only `.vulnetix/crews` | `TestSyncAcceptsAnyPathTheProfileDefines`, `TestSyncRefusesWhatItCannotCopySafely` |
+| S2 | Whoever wrote the profile, `.git`, `.vulnetix/belai`, `.vulnetix/settings.json` and `.vulnetix/credentials.json` are never synced, and the scanner evidence in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`) is read only | `TestSyncRefusesProtectedPathsAndSymlinks`, `TestSyncAcceptsAnyProfileDefinedPathAndRefusesTheProtectedFloor` |
+| S3 | Each listed file is copied from the repository into the worktree before each turn; a file that does not exist yet is not an error, and a worker with write access creates it | `TestSyncCopiesInAndMergesBackAWriteEntry`, `TestSyncCreatesAFileTheWorkerWritesFirst` |
+| S4 | After the turn a write-access file the worker changed is merged back under a lock: its version when nobody else changed the file, otherwise the lines it added appended, a line a teammate already wrote not added twice, and its deletions and edits of existing lines dropped | `TestSyncMergesConcurrentEditsWithoutLosingATeammatesLines`, `TestSyncDeletionsApplyOnlyWhenNobodyElseChangedTheFile`, `TestMergeLinesCases` |
+| S5 | A `read` entry is copied in and never written back | `TestSyncAReadEntryIsNeverWrittenBack` |
+| S6 | A directory entry copies every file under it, and a file the worker adds there is merged back; a `.part` file is never synced | `TestSyncDirectoryEntriesCopyEveryFileAndTakeNewOnesBack` |
+| S7 | Text is sanitised (delimiter markup, control characters) before it reaches the repository | `TestSyncSanitisesWhatItWritesToTheRepository` |
+| S8 | A file is at most 256 KiB, an entry at most 64 files and 1 MiB, and a merge that would pass the file limit is not applied | `TestSyncBoundsFileSizeAndMergedSize` |
+| S9 | The harness's commit leaves placed files out, and a branch that commits one anyway is reported | `TestSyncedFilesAreNeverCommittedByTheHarness` |
+| S10 | A `write` entry lifts the worker's deny on `Write` and `Edit` for exactly its path, matching the subjects the real file tools give, and nothing else under `.vulnetix` | `TestSyncPermitsLiftOnlyTheWriteEntries`, `TestSyncPermitsMatchTheFileToolsSubjects`, `TestHarnessDenyBlocksUnlessPermitted` |
+| S11 | A `Deny` or `Block` rule of the user's still wins, a permit never exempts a shell line, and neither the harness rules nor the permits are read from a settings file | `TestPermitNeverOverridesAUsersDeny`, `TestPermitDoesNotExemptAShellLine`, `TestHarnessAndPermitAreNotReadFromSettingsFiles` |
+| S12 | A file Git tracks outside `.vulnetix` is never written back into the checkout | `TestSyncWriteBackNeverOverwritesATrackedFile` |
+| S13 | The documents in `knowledge.paths` are copied read only (a relative path in place, an outside path under `.vulnetix/knowledge/<label>/`), refreshed when the source changes, and never over a file the harness did not place | `TestReferenceDocumentsAreCopiedIntoTheWorktreeReadOnly`, `TestReferenceDocumentsRefreshAndNeverClobberTheBranch` |
+| S14 | The workspace note names the files the worker may edit, even in a read-only workspace, and says never to commit them | `TestWorkspaceNoteNamesTheCrewFilesAndTheCommitRule` |
+| S15 | The block survives the markdown form, rejects unknown keys, restarts a running worker when it changes, installs from the library with a profile, is carried by a backup, and a replace keeps this host's entries when the copy has none | `TestSyncSurvivesMarkdownRejectsUnknownKeysAndIsBehavioural`, `TestInstallKeepsTheFilesAProfileSyncs`, `TestBackupCarriesSyncAndAReplaceKeepsLocalSyncWhenTheCopyHasNone` |
+| S16 | Every member of the delivery crew shares `.vulnetix/crews/delivery.md` with write access and is told how to use it; the scout and reviewer can research and patch | `TestDeliveryCrewMembersShareTheCrewNotesFile`, `TestScoutAndReviewerCanResearchAndPatch` |
+| X1 | A symlink the worker plants in place of a synced file, or a symlinked directory in the repository, is refused and reported, and the repository file is left as it was | `TestSyncOutRefusesASymlinkTheWorkerPlanted` |
+| X2 | A reference document under a credential store, under `.git`, through a symlink out of the repository, or the home directory itself is never listed or copied | `TestReferenceDocumentsNeverReachAProtectedPlaceOrCrossASymlink` |
 
 ### Acceptance gates
 
@@ -588,6 +853,13 @@ work, and there is no other gate: no cache and no daily limit.
    model is asked whether a scan ran. A review that leaves no artefact for
    HEAD files nothing, so stale artefacts never become cards.
 
+The scout, the patchers and the verifier each list `.vulnetix` in their profile's
+`knowledge` block, so the review's artifacts (SARIF, CycloneDX, OpenVEX, `memory.yaml`
+and the `vex/` documents earlier verdicts left) are searchable by meaning with
+`Grep` and `Glob` as `kb+` rows, whatever worktree a member works in. The index is
+built from the repository's own `.vulnetix`, never the worktree's. See
+[Knowledge](knowledge.md).
+
 Every finding then has one card for the repository, titled
 `[sca] GHSA-… package`, labelled `vuln`, carrying the finding id and the commit
 whose scan last showed it. The body holds identifiers, versions, paths and a
@@ -652,6 +924,12 @@ The check, the worker cap and the spawns are one step under a lock, so two
 starts fired together cannot both get in. A crew without it can be started
 alongside itself.
 
+`belai agent start -crew NAME -fill` starts only the replicas the crew lacks in
+this repository: for each member, its replicas less its live workers of that crew
+here. It is how a replica that the worker cap refused, or that ended, comes back
+without starting the whole crew again, so it skips the one-per-repository refusal.
+The worker cap still applies, and a crew with every replica live starts nothing.
+
 ## Command line
 
 | Command | Effect |
@@ -662,21 +940,28 @@ alongside itself.
 | `belai agent import [-force] FILE` | validate and save a profile |
 | `belai agent draft [-json] [-o FILE] PREMISE` | draft a profile from a premise (every offer taken) as markdown for `import`; `-json` prints each offer with its reason |
 | `belai agent crews` | crews and their members |
+| `belai agent crew import [-force] FILE \| export NAME \| delete NAME` | a crew as the JSON the library keeps: `import` validates (every member must be an installed worker profile) and saves, `export` prints it with its `id`, `delete` removes a user crew. Built-in crews are never replaced or deleted |
+| `belai agent files NAME` | the files an agent carries: each path its profile lists and where it is found (readable here, in the profile's own files, or missing) |
+| `belai agent files add NAME FILE [-as PATH]` | attach a file: it is kept in the agent's own files, listed in its `knowledge.paths` as PATH (default the file's name) and goes with the profile in a backup. A file that holds a key or token is refused |
+| `belai agent files rm NAME PATH` | detach a file and stop listing it |
+| `belai agent files adopt DIR [-dry-run]` | attach each `DIR/<agent>.md` to the stored agent of that name, listed as `<DIR name>/<agent>.md`, for the markdown sources an agent was written from |
 | `belai agent memory NAME [-clear]` | a worker's lessons |
+| `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |
-| `belai agent run NAME [-once] [-item K-…]` | run a worker in the foreground |
-| `belai agent start NAME \| -crew CREW [-max-workers N] [-stay]` | start detached workers; `-max-workers` replaces `agents.max_workers` for this start |
+| `belai agent run NAME [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground. `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME and `-crew` is required |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |
 | `belai agent pause ID \| NAME` | finish the card in hand, then claim nothing until resumed |
 | `belai agent resume ID \| NAME` | take cards again |
-| `belai kanban add TITLE [-label L] [-priority N] [-assignee NAME] [-depends K-…]` | file an item |
-| `belai kanban list [-list L] [-label L] [-project all] [-json]` | list items |
+| `belai kanban add TITLE [-body TEXT \| -body-file FILE] [-list backlog\|review] [-label L] [-priority N] [-assignee NAME] [-depends K-…] [-project NAME] [-json]` | file an item. `-body-file` reads the details from a file and replaces `-body`; `-list` is `backlog` (default) or `review`, and anything else is refused; `-priority` runs -2 to 3; `-label` and `-depends` repeat. A card is not filed twice: when an unfinished card in the same project has the same title (compared ignoring case and extra spaces), the command prints that card's id marked `(already on the board)` and files nothing |
+| `belai kanban list [-list L[,L…]] [-label L] [-assignee NAME] [-project all] [-limit N] [-json]` | list items. With no `-list` it shows every list but `done`. `-project` is `current` (default), `all` or a project name. `-limit` caps the rows at N (default 50) |
 | `belai kanban show ID` | one item with its history |
 | `belai kanban move ID LIST [-note TEXT]` | move an item |
 | `belai kanban note ID TEXT` | add a note |
 | `belai kanban release ID` | clear a claim |
+| `belai kanban delete ID` | delete an item. The delete is a tombstone that syncs, so the website and other hosts drop it too. A claimed item is deleted as well, and the worker that held it finds its lease lost at the next renewal |
 | `belai kanban assign ID PROFILE \| -crew CREW [-host this\|ID\|none] [-start]` | route an item to a profile or crew, optionally pinned |
 | `belai kanban import FILE.jsonl` | file many items |
 
@@ -825,8 +1110,8 @@ The log says what the worker does, in harness words only:
 
 Anything the detached process prints to stderr before it registers (a bad
 flag, an untrusted directory, a settings error) lands in the same file. With
-remote control running, the tail of this log reaches the website's Sessions
-page ([remote control](remote-control.md#fleet-workers)).
+remote control running, the tail of this log reaches the website, where Belai → Agents
+and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
 
 ## Settings
 
@@ -852,6 +1137,11 @@ page ([remote control](remote-control.md#fleet-workers)).
   never enters the system block or a directive. Handoffs are allowlisted by
   `handoff_to`, capped per item, and carry a hop count that ends a ping-pong
   in `blocked`.
+- **Files placed in a worktree are copied, not mounted.** A worker never sees the
+  repository's path. The harness copies the files a profile lists under
+  `.vulnetix/crews` in and, for write access, merges them back under a lock,
+  sanitised and size-bounded, with no symlink on either side; see
+  [Files placed in a worktree](#files-placed-in-a-worktree).
 - **Settings come from the trusted repository.** A worker resolves settings,
   posture, credentials and trust from the repository root, never from its
   worktree, so one agent cannot plant settings for the next.

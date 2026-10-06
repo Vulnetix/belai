@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -198,19 +199,17 @@ func (a *App) kanbanPaneItems() ([]kanban.Item, bool) {
 	return items, all
 }
 
-// kanbanPaneVisible reports whether the pane shows: an idle chat with an
-// empty composer and nothing else above it, and open items to show.
+// kanbanPaneVisible reports whether the pane shows: it is the chosen idle
+// pane (ui.idle_pane, none by default), the chat is idle with an empty
+// composer and nothing else above it, and there are open items to show.
 func (a *App) kanbanPaneVisible() bool {
-	if a.kb == nil || !a.settings.KanbanEnabled() || a.view != viewChat || a.phase != phaseIdle || a.preSend || a.working() {
+	if a.kb == nil || !a.settings.KanbanEnabled() || a.settings.IdlePane() != config.IdlePaneKanban || !a.idleChatQuiet() {
 		return false
 	}
-	if !a.kb.pane.focus && (strings.TrimSpace(a.editor.Value()) != "" || a.editor.Masked) {
+	if !a.kb.pane.focus && !a.composerEmpty() {
 		return false
 	}
-	if len(a.autocomplete) > 0 || a.agentPickerVisible() || a.promptPickerVisible() || a.dirPickVisible() ||
-		a.filePickerVisible() || a.rootConfirmVisible() || len(a.attachments) > 0 || a.historyActive ||
-		a.savePromptMode || a.saveFileMode || a.promptAction || a.forgeFlowActive() || a.kanbanInputActive() || a.runsFocus || a.reviewActive() ||
-		(a.runsOpen && a.runsTab == tabKanban) {
+	if a.runsFocus || (a.runsOpen && a.runsTab == tabKanban) {
 		return false
 	}
 	if a.kb.pane.focus {

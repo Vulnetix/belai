@@ -3,9 +3,6 @@ import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
 import Shot from '../ui/Shot.astro';
-import settingsShot from '../../assets/shots/settings.svg';
-import exitCardShot from '../../assets/shots/exit-card.svg';
-import footerShot from '../../assets/shots/footer.svg';
 import roleManagerShot from '../../assets/shots/role-manager.svg';
 
 const sealText =
@@ -18,7 +15,7 @@ const groups = [
       ['first-run trust gate', 'A directory Belai has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
       ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
       ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
-      ['one line per decision', 'Each row has an icon for the activity, coloured by the kind of work, the outcome with a mark that reads without colour, and who decided: the Jev model by name, a chat model by name, or belai for plain code. The summary shortens first on a narrow terminal, and ctrl+o adds a dim line with the full model, score and cause.'],
+      ['one line per decision', 'Each row has an icon for the activity, coloured by the kind of work, the outcome with a mark that reads without colour, and who decided: a decision model by name, a chat model by name, or belai for plain code. The summary shortens first on a narrow terminal, and ctrl+o adds a dim line with the full model, score and cause.'],
       ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
       ['desktop notifications', 'Opt in with notifications.enabled and Belai tells you when a permission ask, a question or a plan is waiting, or when a goal ends. Every notification is written from a fixed template.'],
       ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
@@ -33,7 +30,7 @@ const groups = [
       ['identity block', 'Every system prompt names the harness, provider and model in use.'],
       ['images in the composer', 'Type @ and pick a PNG or JPEG, press ctrl+v to attach the image on the clipboard, or drop a file on the terminal. Belai checks the image, scales it and re-encodes it, and never sends it to the classifier. The chip shows the size, tokens and whether the model gets it, at most eight go with a prompt, and the session file keeps a marker and no pixels.'],
       ['no alt bindings', 'No shortcut uses the alt key, so terminals that capture alt do not swallow keystrokes.'],
-      ['voice input', 'Hold F11 and speak. A speech model written in pure Go is built into the release binary (every family but the plain belai build) and your words appear in the composer as you say them, then a fast model tidies them and its reply streams over the raw text. A microphone pulses and the frame ripples when it hears you, dictated prompts are lilac with the raw transcript one ctrl+o away, and typing anything cancels it all at once. Turn on the wake word to have it act only on "Hey, Belay", say stop, option 2, submit, skip, approve or deny to answer an ask, or name a skill, crew or mode and Jev runs it when the match is very close. /voice debug shows the level meter and the key events when nothing comes out. Audio stays in memory on your machine.'],
+      ['voice input', 'Hold F11 and speak. A speech model written in pure Go is built into the release binary (every family but the plain belai build) and your words appear in the composer as you say them, then a fast model tidies them and its reply streams over the raw text. A microphone pulses and the frame ripples when it hears you, dictated prompts are lilac with the raw transcript one ctrl+o away, and typing anything cancels it all at once. Turn on the wake word to have it act only on "Hey, Belay", say stop, option 2, submit, skip, approve or deny to answer an ask, or name a skill, crew or mode and a decision model runs it when the match is very close. /voice debug shows the level meter and the key events when nothing comes out. Audio stays in memory on your machine.'],
       ['read aloud', 'Run /tts on, then press ctrl+b to hear any reply, or let belai read each final report when a turn ends. A player card in the thread shows the position: click the bar to scrub, pick 0.75x to 2x, and say stop to silence it. Audio is cached on your machine, so a replay is instant and works offline. Reading uses the Microsoft read-aloud service, so the text you have read is sent there, and you agree to that once with /tts on.'],
       ['caveman mode', 'An optional voice that makes replies short and plain.'],
     ],
@@ -57,6 +54,8 @@ const groups = [
       ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
       ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed. The setting is global, so a repository cannot turn it on.'],
       ['post-end test pass', 'Turn on tests.post_end and a completed goal, plan or session runs the tests Belai detected in the repository. A pass gets a short report from the fast model, and a failure starts a bounded fix loop on the main model with the classified output attached. The pass is off until you turn it on, the exit code decides pass or fail, and a repository can only switch it off.'],
+      ['search reference documents by meaning', 'List documents in an agent profile, and Belai also indexes the scanner output in the project\'s .vulnetix directory and the files you attach with @. Grep, Glob and Read then return the passages that resemble what the agent asked for, beside their usual answer, in every mode and in fleet workers. It is pure Go with nothing to download. Each passage is checked by the security classifier once, when it is indexed, and a search calls no model. Three sizes in /settings set how much a host keeps and returns.'],
+      ['label and browse what is indexed', 'Belai tags each indexed document with its type, language and size, and with the topics it is about, from a vocabulary of about three hundred. A pattern matcher written in Go does this with no model. With a decision backend configured it also shows the backend a sample of the document and picks the topics in one request, and it asks only about documents the security classifier already admitted. /knowledge lists the documents of this project, of every project on the host or of your agents, filters by label such as topic:jwt or type:test, and searches with the same Grep, Glob and Read code a model uses, so you see what it would see. The screen only reads the indexes.'],
       ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
       ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
       ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
@@ -69,27 +68,31 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
-  <SectionHead title="Quality of life">
+  <SectionHead title="Quality of life" surfaces={['tui']}>
     Smaller features you would otherwise add yourself through a <code class="mono">skills.md</code>. Each
     one is implemented and tested in this repository.
   </SectionHead>
 
-  <div class="mt-10 grid gap-x-10 gap-y-12 lg:grid-cols-2">
+  <div class="mt-head">
     {groups.map((g) => (
-      <div class="min-w-0">
-        <div class="flex items-baseline justify-between border-b-2 border-vx-ink pb-2">
-          <h3 class="text-2xl font-bold">{g.title}</h3>
-          <span class="mono text-sm text-vx-ink/60">{g.items.length} of {total}</span>
+      <details class="deep deep--wide">
+        <summary>
+          <span class="min-w-0">
+            <span class="block font-semibold">{g.title} <span class="mono ml-2 text-xs font-normal text-vx-ink/70">{g.items.length} of {total}</span></span>
+            <span class="mt-1 line-clamp-2 block font-sans text-sm font-normal text-vx-ink/70">{g.items.map(([title]) => title).join(', ')}</span>
+          </span>
+        </summary>
+        <div class="deep__body">
+          <dl class="m-0 grid gap-x-10 @4xl:grid-cols-2">
+            {g.items.map(([title, detail]) => (
+              <div class="border-b border-vx-ink/15 py-4">
+                <dt class="mono text-sm font-semibold">{title}</dt>
+                <dd class="m-0 mt-1 text-sm text-vx-ink/80">{detail}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
-        <dl class="m-0">
-          {g.items.map(([title, detail]) => (
-            <div class="border-b border-vx-ink/15 py-3.5">
-              <dt class="mono text-sm font-semibold">{title}</dt>
-              <dd class="m-0 mt-1 text-sm text-vx-ink/80">{detail}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
+      </details>
     ))}
   </div>
 
@@ -97,16 +100,19 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
     <code class="mono">/compact</code> writes a summary that must include a goal, next steps and critical
     context, and a summary missing any of them is rejected. Sessions are named after the work done in them.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
-    <div class="min-w-0">
+  <div class="mt-head">
+    <div class="min-w-0 max-w-3xl">
       <p class="text-vx-ink/80">
         A message sent mid-turn is queued onto the running turn, and the exit card shows the command to
-        resume the session. Long sessions stay affordable: oversized tool output is replaced once, when it
-        arrives, so the cached prefix of every later request is unchanged; old tool results are cleared in
-        large steps; the conversation is compacted at 70% of the window, first by pruning the tool calls and results the work ahead no longer needs when a decision backend is configured, and by a summary otherwise; and when a provider still reports
-        an overflow, Belai compacts and retries instead of ending the turn.
+        resume the session. Long sessions stay affordable in four ways.
       </p>
-      <p class="mt-4 text-vx-ink/80">
+      <ul class="mt-4 list-none border-t border-vx-ink/60 p-0 text-vx-ink/85">
+        <li class="border-b border-vx-ink/20 py-3">Oversized tool output is replaced once, when it arrives, so the cached prefix of every later request is unchanged.</li>
+        <li class="border-b border-vx-ink/20 py-3">Old tool results are cleared in large steps.</li>
+        <li class="border-b border-vx-ink/20 py-3">The conversation is compacted at 70% of the window, first by pruning the tool calls and results the work ahead no longer needs when a decision backend is configured, and by a summary otherwise.</li>
+        <li class="border-b border-vx-ink/20 py-3">When a provider still reports an overflow, Belai compacts and retries instead of ending the turn.</li>
+      </ul>
+      <p class="mt-6 text-vx-ink/80">
         <code class="mono">/tree</code> shows a session as branches. Pick an earlier reply and the conversation
         carries on from there; pick a prompt and it returns to the composer to be reworded. The session file
         only grows, so everything written before stays in it, and <code class="mono">f</code> copies a branch
@@ -114,11 +120,18 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
         <code class="mono">/tree</code> too.
       </p>
     </div>
-    <Shot src={exitCardShot.src} alt="The branded session-end card" caption="exit card, resume command" />
   </div>
-  <div class="mt-8 grid max-w-[1000px] gap-6">
-    <Shot src={settingsShot.src} alt="The settings screen showing provenance per value" caption="/settings, provenance per value" />
-    <Shot src={roleManagerShot.src} alt="The internal-work feed: one line per decision with an activity icon, an outcome mark and the model that decided" caption="internal-work feed, Jev decisions named by model" />
-    <Shot src={footerShot.src} alt="The status footer with chips and an amber day budget" caption="status footer, guardrails on, day budget amber" />
-  </div>
+
+  <SubHead title="Every decision, as it happens">
+    The internal-work feed shows one line per decision, with the model that made it and how long it took.
+  </SubHead>
+  <Shot
+    class="mt-head"
+    shot={roleManagerShot}
+    title="internal-work feed"
+    alt="The internal-work feed: one line per decision with an activity icon, an outcome mark and the model that decided"
+    rows={[1, 6]}
+    marks={[{ row: 1, col: 88 }, { row: 5, col: 88 }]}
+    notes={['A check that passed, with the model and how long it took.', 'A check that fell back to the agent model, marked with a return arrow.']}
+  />
 </SealedSection>

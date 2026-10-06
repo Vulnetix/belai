@@ -113,8 +113,10 @@ single JSON object with a known decision counts as `deny`. For the other
 events a failure is shown as a warning and otherwise ignored. When several
 hooks answer, any `deny` wins over any `ask`, which wins over `allow`.
 
-`reason` and `additional_context` are each capped at 2 KiB, and total output
-at 64 KiB.
+`reason` and `additional_context` are each capped at 2 KiB. Belai reads at most
+64 KiB of a hook's stdout, and separately of its stderr, and discards the rest.
+On a blocking event, a decision whose JSON is cut off by that cap cannot be
+parsed and counts as `deny`.
 
 ## Where hook text goes
 

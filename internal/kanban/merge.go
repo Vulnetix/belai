@@ -1,6 +1,7 @@
 package kanban
 
 import (
+	"regexp"
 	"slices"
 	"sort"
 )
@@ -105,6 +106,9 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 				if r.ServerVersion > local.ServerVersion {
 					local.ServerVersion = r.ServerVersion
 				}
+				if fillFinding(local, r) {
+					changed++
+				}
 				continue
 			}
 			r.History = hist
@@ -127,9 +131,13 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 // pulled copy of the same claim carries an older lease: the later one stands,
 // or the claim would lapse under a working worker.
 func keepAgent(r *Item, local Item) {
-	// The finding fields are host-local: the site does not carry them, so a
-	// pulled copy never clears or replaces them.
+	// The finding fields belong to the host that set them. A pulled copy never
+	// clears or replaces one this host holds; it only fills a field this host
+	// has none for, so a card another host filed reaches this one with its
+	// finding (and a second scan here finds the card instead of filing another).
+	pulled := *r
 	r.Finding, r.SeenRef, r.Verdict, r.VEX = local.Finding, local.SeenRef, local.Verdict, local.VEX
+	fillFinding(r, pulled)
 	// The acceptance gates are host-local for the same reason.
 	r.Gates = cloneGates(local.Gates)
 	r.Clauses, r.Covers = slices.Clone(local.Clauses), slices.Clone(local.Covers)
@@ -144,6 +152,28 @@ func keepAgent(r *Item, local Item) {
 		r.LeaseUntil = local.LeaseUntil
 	}
 }
+
+// fillFinding copies each finding field of src into dst where dst has none, and
+// reports whether it changed dst. src is a pulled item already cleaned by
+// cleanRemote, so every value it offers has the shape of one the harness sets.
+func fillFinding(dst *Item, src Item) bool {
+	changed := false
+	if dst.Finding == "" && src.Finding != "" {
+		dst.Finding, changed = src.Finding, true
+	}
+	if dst.SeenRef == "" && src.SeenRef != "" {
+		dst.SeenRef, changed = src.SeenRef, true
+	}
+	if dst.Verdict == "" && src.Verdict != "" {
+		dst.Verdict, changed = src.Verdict, true
+	}
+	if dst.VEX == "" && src.VEX != "" {
+		dst.VEX, changed = src.VEX, true
+	}
+	return changed
+}
+
+var vexPathRE = regexp.MustCompile(`^\.vulnetix/vex/[A-Za-z0-9._-]{1,80}\.openvex\.json$`)
 
 // cleanRemote applies the local write rules to a pulled item.
 func cleanRemote(r Item) Item {
@@ -186,6 +216,19 @@ func cleanRemote(r Item) Item {
 		r.ClaimHost, r.ClaimFrom, r.LeaseUntil = "", "", 0
 	}
 	r.Branch, r.PR = CleanTitle(r.Branch), CleanTitle(r.PR)
+	// A security card's facts keep the shape the harness gives them, or go.
+	if id, ok := CleanFinding(r.Finding); ok {
+		r.Finding = id
+	} else {
+		r.Finding = ""
+	}
+	r.SeenRef = CleanRef(r.SeenRef)
+	if !r.Verdict.Valid() {
+		r.Verdict = ""
+	}
+	if !vexPathRE.MatchString(r.VEX) {
+		r.VEX = ""
+	}
 	hist := make([]Move, 0, len(r.History))
 	for _, m := range r.History {
 		if m.ID == "" || !m.To.Valid() {

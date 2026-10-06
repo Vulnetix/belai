@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -166,14 +167,37 @@ func TestRemotePromptForAnotherSessionIsRefused(t *testing.T) {
 	}
 }
 
-// Agent mode with no agent chosen waits on the host's picker, which the
-// website cannot answer.
-func TestRemotePromptRefusedWithoutAgentCarrier(t *testing.T) {
+// Agent mode with no agent chosen would wait on the host's picker, which the
+// website cannot answer, so the host moves to Auto and the role manager decides
+// the mode and the agent for the prompt. Nothing is saved: a website prompt
+// never changes what the host remembers.
+func TestRemotePromptMovesToAutoWithoutAgentCarrier(t *testing.T) {
 	a, rec := newSyncApp(t)
 	a.mode, a.namedAgent = "agent", ""
+	a.modeAuto, a.modeSticky, a.modeExplicit = false, true, true
 	a.handleRemotePrompt(sessionsync.RemotePrompt{ID: "p4", SessionID: a.sessionID, Content: "hi"})
-	if got := rec.ack(t, "p4"); got["status"] != sessionsync.AckRefused || !strings.Contains(got["reason"], "agent") {
+	if got := rec.ack(t, "p4"); got["status"] != sessionsync.AckAccepted {
+		t.Fatalf("ack = %v, want accepted", got)
+	}
+	if !a.modeAuto || a.modeSticky || a.mode != "agent" || a.namedAgent != "" {
+		t.Fatalf("mode=%q auto=%v sticky=%v agent=%q, want auto with no engaged agent", a.mode, a.modeAuto, a.modeSticky, a.namedAgent)
+	}
+	if prefs, _ := config.LoadProjectPrefs(a.workdir); prefs.Mode == "auto" {
+		t.Fatal("a website prompt saved the auto mode as a preference")
+	}
+}
+
+// A host already in Auto, or with an agent engaged, is left as it is.
+func TestRemotePromptLeavesAnEngagedAgentAlone(t *testing.T) {
+	a, rec := newSyncApp(t)
+	a.mode, a.namedAgent = "agent", "mine"
+	a.modeAuto = false
+	a.handleRemotePrompt(sessionsync.RemotePrompt{ID: "p4b", SessionID: a.sessionID, Content: "hi"})
+	if got := rec.ack(t, "p4b"); got["status"] != sessionsync.AckAccepted {
 		t.Fatalf("ack = %v", got)
+	}
+	if a.modeAuto || a.namedAgent != "mine" {
+		t.Fatalf("auto=%v agent=%q, want the engaged agent kept", a.modeAuto, a.namedAgent)
 	}
 }
 

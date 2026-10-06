@@ -13,7 +13,7 @@ const FirstRunTip = "new here? sign up at https://openrouter.ai/ — the signup 
 // invariant is never at risk, and each names a real binding or command.
 var tips = []string{
 	"ctrl+x copies the session id",
-	"shift+tab cycles mode: agent, plan, goal, auto",
+	"shift+tab cycles mode: agent, plan, goal, code, auto",
 	"/resume returns to an earlier session",
 	"/tree shows the session as branches; jump back to any reply and continue from there",
 	"f3 toggles guardrails",

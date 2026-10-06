@@ -96,7 +96,7 @@ function cellChar(c: Cell): string {
 function cellClass(c: Cell): string {
   if (c === 'yes') return 'text-vx-mint-strong';
   if (c === 'no') return 'text-vx-coral';
-  return 'text-vx-ink/50';
+  return 'text-vx-ink/60';
 }
 
 export default function ComparisonTable() {
@@ -160,7 +160,7 @@ export default function ComparisonTable() {
                 </tr>
                 {rows.map((r) => (
                   <tr key={r.feature} className="border-t border-vx-ink/15">
-                    <th scope="row" className="sticky left-0 min-w-[16rem] bg-vx-cream px-4 py-3 font-normal text-vx-ink">{r.feature}</th>
+                    <th scope="row" className="sticky left-0 min-w-[10rem] sm:min-w-[16rem] bg-vx-cream px-4 py-3 font-normal text-vx-ink">{r.feature}</th>
                     <td className={`mono bg-vx-mint/15 px-4 py-3 text-center text-base font-bold ${cellClass(r.belai)}`}>{cellChar(r.belai)}</td>
                     <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.claude)}`}>{cellChar(r.claude)}</td>
                     <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.codex)}`}>{cellChar(r.codex)}</td>

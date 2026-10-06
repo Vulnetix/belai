@@ -313,3 +313,41 @@ func TestTestsRowsAlwaysWriteGlobal(t *testing.T) {
 		t.Fatalf("global tests.post_end not written: %+v, %v", glob.Tests, err)
 	}
 }
+
+func TestLayoutRowCyclesAndUnsets(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+
+	row, idx := settingsRowByKey(a, "layout")
+	if idx < 0 {
+		t.Fatal("no layout row")
+	}
+	if row.value != config.LayoutClean {
+		t.Fatalf("default layout = %q, want clean", row.value)
+	}
+	a.settingsState.selected = idx
+
+	for _, want := range []string{config.LayoutChronological, config.LayoutClean} {
+		m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+		a = m.(*App)
+		got, err := config.LoadProject(workdir)
+		if err != nil {
+			t.Fatalf("LoadProject: %v", err)
+		}
+		if got.UI == nil || got.UI.Layout == nil || *got.UI.Layout != want {
+			t.Fatalf("after space: Layout = %+v, want %q", got.UI, want)
+		}
+	}
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	a = m.(*App)
+	got, err := config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if got.UI != nil && got.UI.Layout != nil {
+		t.Fatalf("x should unset layout, got %v", *got.UI.Layout)
+	}
+}

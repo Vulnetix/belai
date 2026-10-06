@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ import (
 type Spec struct {
 	// Ext is the filename extension including the leading dot, e.g. ".md".
 	Ext string
+	// AltExts are further extensions an entry may carry, such as ".json" beside
+	// ".sh". A file of an alternate extension is an entry like any other, and
+	// wins over a file of another extension holding the same slug.
+	AltExts []string
 	// TempPrefix is the prefix for temporary files created during atomic
 	// writes, e.g. ".tmp-prompt-".
 	TempPrefix string
@@ -42,6 +47,9 @@ type Entry struct {
 	Enabled bool         // false when the basename starts with "_"
 	Scope   config.Scope // global or project
 	Path    string       // absolute path; the entry's identity
+	// Ext is the extension of the entry's file, with its dot. Empty means the
+	// spec's own Ext.
+	Ext string
 }
 
 // Listing is the result of loading one scope's directory. Strays are
@@ -63,9 +71,24 @@ var ErrLibraryFull = errors.New("library is full")
 // never overflow the filesystem-friendly filename width.
 const maxSlugRunes = 64
 
-// fileNameRe returns the strict filename grammar for the spec's extension.
+// exts lists every extension the spec reads, the primary one first.
+func (s Spec) exts() []string { return append([]string{s.Ext}, s.AltExts...) }
+
+// extOf is the extension of an entry's file.
+func (s Spec) extOf(e Entry) string {
+	if e.Ext != "" {
+		return e.Ext
+	}
+	return s.Ext
+}
+
+// fileNameRe returns the strict filename grammar for the spec's extensions.
 func (s Spec) fileNameRe() *regexp.Regexp {
-	return regexp.MustCompile(`^(_?)(\d{3})-([a-z0-9]+(?:-[a-z0-9]+)*)` + regexp.QuoteMeta(s.Ext) + `$`)
+	alt := make([]string, 0, 1+len(s.AltExts))
+	for _, e := range s.exts() {
+		alt = append(alt, regexp.QuoteMeta(e))
+	}
+	return regexp.MustCompile(`^(_?)(\d{3})-([a-z0-9]+(?:-[a-z0-9]+)*)(` + strings.Join(alt, "|") + `)$`)
 }
 
 // Dir returns the library directory for a scope.
@@ -113,7 +136,7 @@ func (s Spec) Load(scope config.Scope, workdir string) (Listing, error) {
 			l.Strays = append(l.Strays, name)
 			continue
 		}
-		order, slug, enabled, ok := s.parseFileName(name, re)
+		order, slug, enabled, ext, ok := s.parseFileNameExt(name, re)
 		if !ok {
 			l.Strays = append(l.Strays, name)
 			continue
@@ -123,15 +146,18 @@ func (s Spec) Load(scope config.Scope, workdir string) (Listing, error) {
 		if err != nil {
 			return Listing{}, fmt.Errorf("read library entry %s: %w", path, err)
 		}
-		l.Entries = append(l.Entries, Entry{
+		e := Entry{
 			Name:    slug,
 			Body:    body,
 			Order:   order,
 			Enabled: enabled,
 			Scope:   scope,
 			Path:    path,
-		})
+			Ext:     ext,
+		}
+		l.Entries = append(l.Entries, e)
 	}
+	l.Entries, l.Strays = s.dedupe(l.Entries, l.Strays)
 	sortEntries(l.Entries)
 	sort.Strings(l.Strays)
 	return l, nil
@@ -166,11 +192,16 @@ func Slug(name string) (string, error) {
 // FileName renders a library filename for the given order, slug and enabled
 // state. The leading underscore is the disabled marker.
 func (s Spec) FileName(order int, slug string, enabled bool) string {
+	return s.FileNameExt(order, slug, enabled, s.Ext)
+}
+
+// FileNameExt is FileName for a file of the given extension (with its dot).
+func (s Spec) FileNameExt(order int, slug string, enabled bool, ext string) string {
 	prefix := ""
 	if !enabled {
 		prefix = "_"
 	}
-	return fmt.Sprintf("%s%03d-%s%s", prefix, order, slug, s.Ext)
+	return fmt.Sprintf("%s%03d-%s%s", prefix, order, slug, ext)
 }
 
 // ParseFileName parses a basename against the strict filename grammar. It
@@ -181,19 +212,30 @@ func (s Spec) ParseFileName(base string) (order int, slug string, enabled, ok bo
 }
 
 func (s Spec) parseFileName(base string, re *regexp.Regexp) (order int, slug string, enabled, ok bool) {
+	order, slug, enabled, _, ok = s.parseFileNameExt(base, re)
+	return order, slug, enabled, ok
+}
+
+// ParseFileNameExt is ParseFileName that also reports the extension the name
+// carries.
+func (s Spec) ParseFileNameExt(base string) (order int, slug string, enabled bool, ext string, ok bool) {
+	return s.parseFileNameExt(base, s.fileNameRe())
+}
+
+func (s Spec) parseFileNameExt(base string, re *regexp.Regexp) (order int, slug string, enabled bool, ext string, ok bool) {
 	m := re.FindStringSubmatch(base)
 	if m == nil {
-		return 0, "", false, false
+		return 0, "", false, "", false
 	}
 	order, err := strconv.Atoi(m[2])
 	if err != nil || order < 1 || order > 999 {
-		return 0, "", false, false
+		return 0, "", false, "", false
 	}
 	slug = m[3]
 	if len([]rune(slug)) > maxSlugRunes {
-		return 0, "", false, false
+		return 0, "", false, "", false
 	}
-	return order, slug, m[1] == "", true
+	return order, slug, m[1] == "", m[4], true
 }
 
 // Create writes a new entry into a scope at order last+10, clamped to 999. A
@@ -252,6 +294,87 @@ func (s Spec) Create(scope config.Scope, workdir, name, body string) (Entry, err
 	return Entry{Name: slug, Body: body, Order: order, Enabled: true, Scope: scope, Path: path}, nil
 }
 
+// Put writes an entry under name at the given order and enabled state, and
+// replaces the entry of that name in the scope wherever its file is now (at
+// another order, or disabled). The write is atomic: the new file is renamed into
+// place before the old one is removed, so a failure leaves the old entry whole.
+//
+// An order of 0 asks for no position of its own: an existing entry keeps the one
+// it has, and a new entry goes after the last one, as Create places it. The name
+// must already be a slug; Put never rewrites it.
+func (s Spec) Put(scope config.Scope, workdir, name, body string, order int, enabled bool) (Entry, error) {
+	return s.PutExt(scope, workdir, name, body, order, enabled, s.Ext)
+}
+
+// PutExt is Put for a file of the given extension, which must be one the spec
+// reads. An entry of that name under another extension is replaced.
+func (s Spec) PutExt(scope config.Scope, workdir, name, body string, order int, enabled bool, ext string) (Entry, error) {
+	if !slices.Contains(s.exts(), ext) {
+		return Entry{}, fmt.Errorf("library extension %q is not one of %v", ext, s.exts())
+	}
+	slug, err := Slug(name)
+	if err != nil {
+		return Entry{}, err
+	}
+	if slug != name {
+		return Entry{}, fmt.Errorf("library name %q is not a slug (%q)", name, slug)
+	}
+	if order < 0 || order > 999 {
+		return Entry{}, fmt.Errorf("library order %d is outside 0..999", order)
+	}
+	listing, err := s.Load(scope, workdir)
+	if err != nil {
+		return Entry{}, err
+	}
+	var existing *Entry
+	for i := range listing.Entries {
+		if listing.Entries[i].Name == slug {
+			existing = &listing.Entries[i]
+		}
+	}
+	if existing == nil && order == 0 && ext == s.Ext {
+		e, err := s.Create(scope, workdir, slug, body)
+		if err != nil {
+			return Entry{}, err
+		}
+		if !enabled {
+			return s.SetEnabled(e, false)
+		}
+		return e, nil
+	}
+	if existing == nil && order == 0 {
+		// A new entry of an alternate extension goes after the last, as Create places
+		// one.
+		order = 10
+		if n := len(listing.Entries); n > 0 {
+			order = listing.Entries[n-1].Order + 10
+		}
+		if order > 999 {
+			order = 999
+		}
+	}
+	if existing == nil && len(listing.Entries) >= 999 {
+		return Entry{}, ErrLibraryFull
+	}
+	if order == 0 {
+		order = existing.Order
+	}
+	dir, err := s.Dir(scope, workdir)
+	if err != nil {
+		return Entry{}, err
+	}
+	path := filepath.Join(dir, s.FileNameExt(order, slug, enabled, ext))
+	if err := s.writeEntry(path, body, fileMode(scope)); err != nil {
+		return Entry{}, err
+	}
+	if existing != nil && existing.Path != path {
+		if err := os.Remove(existing.Path); err != nil && !os.IsNotExist(err) {
+			return Entry{}, fmt.Errorf("remove replaced entry: %w", err)
+		}
+	}
+	return Entry{Name: slug, Body: body, Order: order, Enabled: enabled, Scope: scope, Path: path, Ext: ext}, nil
+}
+
 // Update overwrites an entry's body in place, preserving its path, order,
 // enabled state and scope.
 func (s Spec) Update(e Entry, body string) (Entry, error) {
@@ -270,7 +393,7 @@ func (s Spec) SetEnabled(e Entry, enabled bool) (Entry, error) {
 		return e, nil
 	}
 	dir := filepath.Dir(e.Path)
-	target := filepath.Join(dir, s.FileName(e.Order, e.Name, enabled))
+	target := filepath.Join(dir, s.FileNameExt(e.Order, e.Name, enabled, s.extOf(e)))
 	if _, err := os.Lstat(target); err == nil {
 		return Entry{}, fmt.Errorf("rename target %s already exists", target)
 	} else if !os.IsNotExist(err) {
@@ -317,21 +440,24 @@ func (s Spec) Reorder(scope config.Scope, workdir string, entries []Entry, from,
 		moved[i].Order = order
 	}
 
-	origs := make([]string, len(entries))
+	// origs[i] is where the entry now at position i lives, so each file moves to
+	// the name of its own entry: a file's body travels with its entry, whatever
+	// position the entry took.
+	origs := make([]string, len(moved))
 	temps := make([]string, len(moved))
 	finals := make([]string, len(moved))
-	for i := range entries {
-		origs[i] = entries[i].Path
+	for i := range moved {
+		origs[i] = moved[i].Path
 	}
 	for i := range moved {
-		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, moved[i].Name, s.Ext))
-		finals[i] = filepath.Join(dir, s.FileName(moved[i].Order, moved[i].Name, moved[i].Enabled))
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, moved[i].Name, s.extOf(moved[i])))
+		finals[i] = filepath.Join(dir, s.FileNameExt(moved[i].Order, moved[i].Name, moved[i].Enabled, s.extOf(moved[i])))
 	}
 
 	// Phase 1: every source moves to a dot-prefixed temp name so a swap never
 	// collides in a single pass. On failure, restore what already moved.
 	if err := renameAll(origs, temps); err != nil {
-		_ = renameAll(temps[:len(origs)], origs)
+		_ = renameAll(temps, origs)
 		return nil, err
 	}
 
@@ -512,8 +638,8 @@ func (s Spec) renumber(scope config.Scope, workdir string, entries []Entry, step
 	finals := make([]string, len(entries))
 	for i := range entries {
 		origs[i] = entries[i].Path
-		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, entries[i].Name, s.Ext))
-		finals[i] = filepath.Join(dir, s.FileName(entries[i].Order, entries[i].Name, entries[i].Enabled))
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, entries[i].Name, s.extOf(entries[i])))
+		finals[i] = filepath.Join(dir, s.FileNameExt(entries[i].Order, entries[i].Name, entries[i].Enabled, s.extOf(entries[i])))
 	}
 	if err := renameAll(origs, temps); err != nil {
 		_ = renameAll(temps, origs)
@@ -560,4 +686,33 @@ func sortEntries(entries []Entry) {
 		}
 		return entries[i].Name < entries[j].Name
 	})
+}
+
+// dedupe keeps one entry per slug. When two files hold the same slug under
+// different extensions (a legacy 010-web.sh beside 010-web.json), the one with
+// the later extension in the spec's list wins and the other is reported as a
+// stray: it is never read as an entry, renamed or deleted.
+func (s Spec) dedupe(entries []Entry, strays []string) ([]Entry, []string) {
+	if len(s.AltExts) == 0 {
+		return entries, strays
+	}
+	rank := map[string]int{}
+	for i, e := range s.exts() {
+		rank[e] = i
+	}
+	best := map[string]int{}
+	for i, e := range entries {
+		if j, ok := best[e.Name]; !ok || rank[s.extOf(e)] > rank[s.extOf(entries[j])] {
+			best[e.Name] = i
+		}
+	}
+	out := make([]Entry, 0, len(entries))
+	for i, e := range entries {
+		if best[e.Name] == i {
+			out = append(out, e)
+			continue
+		}
+		strays = append(strays, filepath.Base(e.Path))
+	}
+	return out, strays
 }

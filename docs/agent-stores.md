@@ -39,9 +39,9 @@ working directory.
 
 | Agent | Sessions | Prompts | Memory |
 | ----- | -------- | ------- | ------ |
-| `belai` | `~/.vulnetix/belai/sessions/*/*.jsonl` | — | `.vulnetix/goals`, `.vulnetix/prompts`, `.vulnetix/plans` |
+| `belai` | `~/.vulnetix/belai/sessions/*/*.jsonl` | — | `.vulnetix/goals`, `.vulnetix/prompts`, `.vulnetix/plans`, `~/.vulnetix/belai/agents/memory/*.md` |
 | `claude-code` | `~/.claude/projects/*/*.jsonl` | `~/.claude/history.jsonl` | `~/.claude/CLAUDE.md`, `~/.claude/projects/*/memory/*.md` |
-| `codex` | `~/.codex*/sessions/**/rollout-*.jsonl` | `~/.codex*/history.jsonl` | `~/.codex*/memories/**`, `~/.codex*/AGENTS.md` |
+| `codex` | `~/.codex/sessions/**/rollout-*.jsonl`, `~/.codex-or/sessions/**/rollout-*.jsonl` | `~/.codex/history.jsonl`, `~/.codex-or/history.jsonl` | `~/.codex/memories/**`, `~/.codex-or/memories/**`, `~/.codex/AGENTS.md`, `~/.codex-or/AGENTS.md` |
 | `pi` | `~/.pi/agent/sessions/*/*.jsonl` | — | `~/.pi/agent/plans/*/*.md` |
 | `goose` | `~/.local/share/goose/sessions/sessions.db` | — | `~/.config/goose/**/*.md` |
 | `opencode` | `~/.local/share/opencode/opencode.db`, `~/.opencode/opencode.db` | — | `~/.config/opencode/AGENTS.md` |
@@ -74,6 +74,11 @@ no new Go dependency, matching the shell-out precedent in `Grep`.
   to `session(directory)`.
 - **VS Code Copilot Chat** — `requests[]` in a single JSON object; each request
   is a user `message` and an assistant `response`.
+- **Generic** (`copilot-cli`, `antigravity`) — JSON or JSONL whose schema is not
+  guaranteed. A store of this kind that does not parse yields no sessions rather
+  than an error, so it never fails a search of the others.
+- **Markdown** (`generic`) — memory and rules files only. They are read by
+  `SearchMemory`, not by the transcript adapters, so `generic` has no sessions.
 
 ## Prompt indexes
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,11 +33,25 @@ type LookPath func(name string) (string, error)
 // process group so a timeout kills any children, and no stdin so a CLI that
 // wants to prompt fails instead of hanging.
 func ExecRunner(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+	return execRun(ctx, dir, nil, argv)
+}
+
+// NonInteractiveRunner is ExecRunner for git work nobody is watching: git may
+// not prompt for credentials or open an editor, so a call that would wait for
+// a person fails at once instead of hanging until its timeout.
+func NonInteractiveRunner(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+	return execRun(ctx, dir, []string{"GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "GCM_INTERACTIVE=never"}, argv)
+}
+
+func execRun(ctx context.Context, dir string, env []string, argv []string) ([]byte, error) {
 	if len(argv) == 0 {
 		return nil, errors.New("forge: empty command")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	proc.SetProcessGroup(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -53,6 +68,52 @@ func ExecRunner(ctx context.Context, dir string, argv ...string) ([]byte, error)
 		return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], msg)
 	}
 	return stdout.Bytes(), nil
+}
+
+// HardenedGit is every git call made for work nobody is watching (a fleet
+// worker, teleport): repository hooks and fsmonitor off (a repository's own
+// config must not run code), no file:// transport, no credential prompt, the
+// scrubbed environment, its own process group, no stdin. With gitDir set it
+// also pins --git-dir and --work-tree, so a worktree's .git file, which a
+// model can write, never decides which repository git opens.
+func HardenedGit(gitDir, workTree string, extraEnv ...string) Runner {
+	return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+		if len(argv) == 0 {
+			return nil, errors.New("forge: empty command")
+		}
+		if argv[0] == "git" {
+			pre := []string{"git",
+				"-c", "core.hooksPath=" + os.DevNull,
+				"-c", "core.fsmonitor=false",
+				"-c", "protocol.file.allow=never",
+				"-c", "credential.interactive=never",
+			}
+			if gitDir != "" {
+				pre = append(pre, "--git-dir="+gitDir, "--work-tree="+workTree)
+			}
+			argv = append(pre, argv[1:]...)
+		}
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = dir
+		cmd.Env = append(append(proc.ScrubbedEnv(), "GIT_TERMINAL_PROMPT=0"), extraEnv...)
+		proc.SetProcessGroup(cmd)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		if err := cmd.Run(); err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
+				msg = msg[i+1:]
+			}
+			if ctx.Err() != nil {
+				msg = "timed out"
+			}
+			if msg == "" {
+				msg = err.Error()
+			}
+			return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], Clean(msg))
+		}
+		return stdout.Bytes(), nil
+	}
 }
 
 // run calls r under a timeout and returns trimmed stdout.

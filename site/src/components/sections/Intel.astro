@@ -1,5 +1,7 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
 import { limitBar, sparkline, windows, listHtml, subHeader, heat, heatCells, heatShades } from '../../lib/intel';
 
 // Session intelligence: plan limits, pace, trend and runway on the footer and
@@ -108,42 +110,37 @@ const mono = 'font-mono';
 ---
 
 <SealedSection label="intel" sealText={sealText} id="intel">
-  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
-    <div class="lg:col-span-7">
-      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Session intelligence</h2>
-    </div>
-    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+  <SectionHead title="Session intelligence" surfaces={['tui', 'self-hosted']}>
       Plan limits with their reset times, pace, trend and runway, on the footer of every session. Routed or
       defined, with a budget or without one, the answer to whether the allowance lasts until the reset is
       one glance away.
-    </p>
-  </div>
+    </SectionHead>
 
   <div class="mt-10 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8" data-intel>
-    <div class="grid border-b border-[#2F4340] pb-7 md:grid-cols-4">
+    <div class="grid border-b border-vx-pane-line pb-7 @2xl:grid-cols-4">
       {stats.map((s, i) => (
-        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-[#2F4340] md:border-l md:border-t-0 md:pl-5' : 'md:pr-5'} ${i === 0 ? '' : ''}`}>
+        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-vx-pane-line md:border-l md:border-t-0 md:pl-5' : 'md:pr-5'} ${i === 0 ? '' : ''}`}>
           <div class={`${mono} font-bold leading-none tracking-tight text-tui-teal ${s.size}`}>{s.big}</div>
           <div class={`${mono} mt-3 text-sm text-tui-cream`}>{s.label}</div>
-          <div class={`${mono} mt-1 text-[13px] text-[#8FA39F]`}>{s.sub}</div>
+          <div class={`${mono} mt-1 text-[13px] text-vx-pane-mute`}>{s.sub}</div>
         </div>
       ))}
     </div>
 
-    <div class="overflow-x-auto border-b border-[#2F4340] py-6">
+    <div class="overflow-x-auto border-b border-vx-pane-line py-6">
       <div class={`${mono} min-w-[720px] whitespace-pre text-[13px] leading-[30px] md:text-sm`}>
-        <div class="flex"><span class="w-[13ch] text-[#8FA39F]">5-hour limit</span><span class="text-tui-teal">{five.fill}</span><span class="text-[#4A6560]">{five.before}</span><span class="text-[#8FA39F]">{five.mark}</span><span class="text-[#4A6560]">{five.after}</span><span class="pl-3.5 text-tui-teal">23%</span><span class="pl-7 text-[#8FA39F]">resets in 3h 40m</span></div>
-        <div class="flex"><span class="w-[13ch] text-[#8FA39F]">weekly limit</span><span class="text-tui-amber">{weekly.fill}</span><span class="text-[#4A6560]">{weekly.before}</span><span class="text-[#8FA39F]">{weekly.mark}</span><span class="text-[#4A6560]">{weekly.after}</span><span class="pl-3.5 text-tui-amber">48%</span><span class="pl-7 text-[#8FA39F]">resets in 4d 2h</span></div>
+        <div class="flex"><span class="w-[13ch] text-vx-pane-mute">5-hour limit</span><span class="text-tui-teal">{five.fill}</span><span class="text-vx-pane-dim">{five.before}</span><span class="text-vx-pane-mute">{five.mark}</span><span class="text-vx-pane-dim">{five.after}</span><span class="pl-3.5 text-tui-teal">23%</span><span class="pl-7 text-vx-pane-mute">resets in 3h 40m</span></div>
+        <div class="flex"><span class="w-[13ch] text-vx-pane-mute">weekly limit</span><span class="text-tui-amber">{weekly.fill}</span><span class="text-vx-pane-dim">{weekly.before}</span><span class="text-vx-pane-mute">{weekly.mark}</span><span class="text-vx-pane-dim">{weekly.after}</span><span class="pl-3.5 text-tui-amber">48%</span><span class="pl-7 text-vx-pane-mute">resets in 4d 2h</span></div>
       </div>
-      <p class={`${mono} mt-2 text-xs leading-5 text-[#8FA39F]`}>
+      <p class={`${mono} mt-2 text-xs leading-5 text-vx-pane-mute`}>
         The ╹ marks how much of the window has passed. While the fill is short of it the bar is teal. Once the
         fill covers it the marker disappears and the bar turns amber, because spend is ahead of the clock.
       </p>
     </div>
 
-    <div class="flex flex-col gap-8 pt-6 lg:flex-row lg:gap-10">
+    <div class="flex flex-col gap-8 pt-6 @4xl:flex-row @4xl:gap-10">
       <div class="min-w-0 flex-1">
-        <div class={`${mono} flex flex-wrap items-center gap-x-3 border-b border-[#2F4340] pb-3.5 text-[13px] text-[#8FA39F]`}>
+        <div class={`${mono} flex flex-wrap items-center gap-x-3 border-b border-vx-pane-line pb-3.5 text-[13px] text-vx-pane-mute`}>
           <span>activity  subagents  processes  kanban  crew  git</span><b class="text-tui-cream">[ intel ]</b>
           <span class="flex-1"></span>
           <span>f12 close</span>
@@ -154,29 +151,29 @@ const mono = 'font-mono';
           <button type="button" data-mode="models" aria-pressed="false" class={`${mono} min-h-11 rounded-md border border-tui-teal px-3 text-[13px] aria-pressed:bg-tui-teal aria-pressed:text-vx-ink`}><b>m</b> models</button>
           <button type="button" data-mode="roles" aria-pressed="false" class={`${mono} min-h-11 rounded-md border border-tui-teal px-3 text-[13px] aria-pressed:bg-tui-teal aria-pressed:text-vx-ink`}><b>r</b> roles</button>
           <span class="flex-1"></span>
-          <button type="button" data-step="-1" aria-label="Previous window" class={`${mono} h-11 w-11 rounded-md border border-[#4A6560] text-base`}>←</button>
+          <button type="button" data-step="-1" aria-label="Previous window" class={`${mono} h-11 w-11 rounded-md border border-vx-pane-dim text-base`}>←</button>
           <span class={`${mono} min-w-[116px] text-center text-[13px] text-tui-cream`} data-out="label">{w0.label}</span>
-          <button type="button" data-step="1" aria-label="Next window" class={`${mono} h-11 w-11 rounded-md border border-[#4A6560] text-base`}>→</button>
+          <button type="button" data-step="1" aria-label="Next window" class={`${mono} h-11 w-11 rounded-md border border-vx-pane-dim text-base`}>→</button>
         </div>
 
-        <div class={`${mono} mt-4 whitespace-pre text-[13px] leading-7 text-[#8FA39F]`} data-out="sub">{subHeader('timeline', 1)}</div>
+        <div class={`${mono} mt-4 whitespace-pre text-[13px] leading-7 text-vx-pane-mute`} data-out="sub">{subHeader('timeline', 1)}</div>
         <div class={`${mono} mt-1 overflow-x-auto`}>
           <div class="min-w-[560px]" data-list set:html={initial} />
         </div>
-        <div class={`${mono} mt-4 border-t border-[#2F4340] pt-3.5 text-xs text-[#8FA39F]`}>
+        <div class={`${mono} mt-4 border-t border-vx-pane-line pt-3.5 text-xs text-vx-pane-mute`}>
           ↑↓ select · ←→ window · m models · r roles · t timeline · b budgets · ⏎ full screen · esc unfocus
         </div>
       </div>
 
-      <div class={`${mono} shrink-0 border-t border-[#2F4340] pt-6 lg:w-[300px] lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0`}>
-        <div class="text-[13px] text-[#8FA39F]" data-out="label2">{w0.label}</div>
+      <div class={`${mono} shrink-0 border-t border-vx-pane-line pt-6 @4xl:w-[300px] lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0`}>
+        <div class="text-[13px] text-vx-pane-mute" data-out="label2">{w0.label}</div>
         <div class="mt-2 text-[56px] font-bold leading-none tracking-tight text-tui-cream md:text-[76px]" data-out="tokens">{w0.tokens}</div>
         <div class="mt-2.5 text-sm text-tui-cream">tokens</div>
         <div class="mt-7 flex gap-7">
-          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="sessions">{w0.sessions}</div><div class="mt-1 text-[13px] text-[#8FA39F]">sessions</div></div>
-          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="share">{w0.share}</div><div class="mt-1 text-[13px] text-[#8FA39F]">of 30 days</div></div>
+          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="sessions">{w0.sessions}</div><div class="mt-1 text-[13px] text-vx-pane-mute">sessions</div></div>
+          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="share">{w0.share}</div><div class="mt-1 text-[13px] text-vx-pane-mute">of 30 days</div></div>
         </div>
-        <p class="mt-7 font-sans text-xs leading-relaxed text-[#8FA39F]">
+        <p class="mt-7 font-sans text-xs leading-relaxed text-vx-pane-mute">
           Totals come from day figures in the ledger, so imported transcripts count. The sparkline and the pace
           come from hours, so they never show an invented shape.
         </p>
@@ -184,54 +181,61 @@ const mono = 'font-mono';
     </div>
   </div>
 
-  <div class="mt-6 grid gap-x-12 gap-y-3 text-[15px] leading-relaxed text-vx-ink/85 md:grid-cols-2">
+  <div class="mt-6 grid gap-x-12 gap-y-3 text-[15px] leading-relaxed text-vx-ink/85 @2xl:grid-cols-2">
     {notes.map(([term, text]) => (
       <p><b class="mono text-[13px] text-vx-ink">{term}</b> {text}</p>
     ))}
   </div>
 
-  <div class="mt-10 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-7">
-    <p class="mono text-xs text-[#8FA39F]">footer line 1, right side. Colour follows the runway.</p>
+  <SubHead title="The footer's limit strip">
+    Footer line 1 names the limit that matters most, and its colour follows the runway.
+  </SubHead>
+  <details class="deep deep--wide">
+    <summary>Every footer strip, from no limit reported to out of runway</summary>
+    <div class="deep__body">
+  <div class="mt-4 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-7">
+    <p class="mono text-xs text-vx-pane-mute">footer line 1, right side. Colour follows the runway.</p>
     <div class="mono mt-4 overflow-x-auto">
       <div class="min-w-[720px]">
         {strips.map((s) => (
           <div class="mt-4 flex items-start gap-6 first:mt-0">
-            <div class="w-56 shrink-0 text-[13px]"><b class={s.cls}>{s.key}</b><div class="mt-0.5 text-xs text-[#8FA39F]">{s.why}</div></div>
-            <div class="flex flex-1 justify-between whitespace-pre border-t border-[#2F4340] pt-3.5 text-[13px]">
-              <span><b class={s.modeCls}>{s.mode}</b><span class="text-[#4A6560]">  ·  </span><span class="text-[#8FA39F]">~/src/belai</span><span class="text-[#4A6560]">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-[#8FA39F]">{s.branch}</span></span>
-              <span><span class={s.cls}>{s.slot}</span><span class="text-[#8FA39F]">  today {s.today} · </span><span class={s.cls}>{s.label}</span>{' '}<span class={s.cls}>{s.picture.fill}</span><span class="text-[#4A6560]">{s.picture.before}</span><span class="text-[#8FA39F]">{s.picture.mark}</span><span class="text-[#4A6560]">{s.picture.after}</span></span>
+            <div class="w-56 shrink-0 text-[13px]"><b class={s.cls}>{s.key}</b><div class="mt-0.5 text-xs text-vx-pane-mute">{s.why}</div></div>
+            <div class="flex flex-1 justify-between whitespace-pre border-t border-vx-pane-line pt-3.5 text-[13px]">
+              <span><b class={s.modeCls}>{s.mode}</b><span class="text-vx-pane-dim">  ·  </span><span class="text-vx-pane-mute">~/src/belai</span><span class="text-vx-pane-dim">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-vx-pane-mute">{s.branch}</span></span>
+              <span><span class={s.cls}>{s.slot}</span><span class="text-vx-pane-mute">  today {s.today} · </span><span class={s.cls}>{s.label}</span>{' '}<span class={s.cls}>{s.picture.fill}</span><span class="text-vx-pane-dim">{s.picture.before}</span><span class="text-vx-pane-mute">{s.picture.mark}</span><span class="text-vx-pane-dim">{s.picture.after}</span></span>
             </div>
           </div>
         ))}
         <div class="mt-4 flex items-start gap-6">
-          <div class="w-56 shrink-0 text-[13px]"><b class="text-tui-teal-soft">no limit reported</b><div class="mt-0.5 text-xs text-[#8FA39F]">the last 24 hours as a sparkline</div></div>
-          <div class="flex flex-1 justify-between whitespace-pre border-t border-[#2F4340] pt-3.5 text-[13px]">
-            <span><b class="text-tui-teal-soft">plan</b><span class="text-[#4A6560]">  ·  </span><span class="text-[#8FA39F]">~/src/belai</span><span class="text-[#4A6560]">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-[#8FA39F]">main</span></span>
-            <span><span class="text-tui-teal">intel</span><span class="text-[#8FA39F]">  today 1.2M · </span><span class="text-tui-teal">idle</span>{' '}{idleSpark.map((c) => <span class={c.on ? 'text-tui-teal' : 'text-[#4A6560]'}>{c.ch}</span>)}</span>
+          <div class="w-56 shrink-0 text-[13px]"><b class="text-tui-teal-soft">no limit reported</b><div class="mt-0.5 text-xs text-vx-pane-mute">the last 24 hours as a sparkline</div></div>
+          <div class="flex flex-1 justify-between whitespace-pre border-t border-vx-pane-line pt-3.5 text-[13px]">
+            <span><b class="text-tui-teal-soft">plan</b><span class="text-vx-pane-dim">  ·  </span><span class="text-vx-pane-mute">~/src/belai</span><span class="text-vx-pane-dim">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-vx-pane-mute">main</span></span>
+            <span><span class="text-tui-teal">intel</span><span class="text-vx-pane-mute">  today 1.2M · </span><span class="text-tui-teal">idle</span>{' '}{idleSpark.map((c) => <span class={c.on ? 'text-tui-teal' : 'text-vx-pane-dim'}>{c.ch}</span>)}</span>
           </div>
         </div>
       </div>
     </div>
-  </div>
+  </div>    </div>
+  </details>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A runway, worked through</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="A runway, worked through">
       The provider reports how much of a window is used. Belai measures how many tokens it has recorded since
       the window opened, and that ratio turns the current pace into a share of the window an hour.
-    </p>
-  </div>
-  <div class="mono mt-8 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8">
-    <div class="grid md:grid-cols-4">
+    </SubHead>
+  <details class="deep deep--wide">
+    <summary>The runway, step by step</summary>
+    <div class="deep__body">
+  <div class="mono mt-4 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8">
+    <div class="grid @2xl:grid-cols-4">
       {steps.map((s, i) => (
-        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-[#2F4340] md:border-l md:border-t-0 md:px-5' : 'md:pr-5'} ${i === 3 ? 'md:pr-0' : ''}`}>
-          <div class="text-xs text-[#8FA39F]">step {i + 1}</div>
+        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-vx-pane-line md:border-l md:border-t-0 md:px-5' : 'md:pr-5'} ${i === 3 ? 'md:pr-0' : ''}`}>
+          <div class="text-xs text-vx-pane-mute">step {i + 1}</div>
           <div class={`mt-2.5 text-[40px] font-bold leading-none tracking-tight md:text-5xl ${s.cls}`}>{s.n}</div>
-          <div class="mt-2.5 text-[13px] leading-normal text-[#8FA39F]">{s.text}</div>
+          <div class="mt-2.5 text-[13px] leading-normal text-vx-pane-mute">{s.text}</div>
         </div>
       ))}
     </div>
-    <p class="mt-7 rounded-lg border border-[#2F4340] px-4 py-3.5 text-[13px] leading-relaxed">
+    <p class="mt-7 rounded-lg border border-vx-pane-line px-4 py-3.5 text-[13px] leading-relaxed">
       1,300 tok/h × 0.40 ÷ 1,600 tokens = 0.325 of the window an hour, so (1 − 0.40) ÷ 0.325 = 1.85 h
     </p>
     <div class="mt-8">
@@ -245,38 +249,39 @@ const mono = 'font-mono';
         <span class="absolute right-0">reset in 3h</span>
       </div>
     </div>
-    <div class="mt-4 flex flex-wrap items-center gap-4 border-t border-[#2F4340] pt-6">
+    <div class="mt-4 flex flex-wrap items-center gap-4 border-t border-vx-pane-line pt-6">
       <span class="rounded-full bg-tui-amber px-3 py-1 text-[13px] font-bold text-vx-ink">brisk</span>
       <span class="rounded-full bg-tui-amber px-3 py-1 text-[13px] font-bold text-vx-ink">amber slot</span>
       <span class="text-sm">runs out in 1h 50m, 1h 9m before the reset</span>
       <span class="flex-1"></span>
-      <span class="text-xs text-[#8FA39F]">brisk: it runs out at least a quarter of the way to the reset</span>
+      <span class="text-xs text-vx-pane-mute">brisk: it runs out at least a quarter of the way to the reset</span>
     </div>
-  </div>
+  </div>    </div>
+  </details>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A week in hours</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="A week in hours">
       The full screen adds a seven-day, hour-by-hour heatmap in four shades, scaled to the busiest hour of
       the week so a quiet week still shows its shape.
-    </p>
-  </div>
-  <div class="mono mt-8 flex flex-col gap-8 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8 lg:flex-row lg:gap-12">
+    </SubHead>
+  <details class="deep deep--wide">
+    <summary>The seven-day heatmap, hour by hour</summary>
+    <div class="deep__body">
+  <div class="mono mt-4 flex flex-col gap-8 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8 @4xl:flex-row @4xl:gap-12">
     <div class="shrink-0 overflow-x-auto">
-      <div class="whitespace-pre pb-2 pl-[62px] text-xs text-[#8FA39F]">00  04  08  12  16  20</div>
+      <div class="whitespace-pre pb-2 pl-[62px] text-xs text-vx-pane-mute">00  04  08  12  16  20</div>
       {heat.map((d, i) => (
         <div class="flex h-[34px] items-center text-[22px] leading-none">
-          <span class="w-[62px] text-[13px] text-[#8FA39F]">{d.day}</span>
+          <span class="w-[62px] text-[13px] text-vx-pane-mute">{d.day}</span>
           <span class="flex">{heatCells(d.hours, i === 6 ? 14 : -1).map((c) => <span class={`w-[13.2px] text-center ${c.cls}`}>{c.ch}</span>)}</span>
           <span class="w-[76px] pl-5 text-right text-[13px] text-tui-cream">{d.total}</span>
           <span class="pl-2.5 text-xs text-tui-amber">{d.note}</span>
         </div>
       ))}
     </div>
-    <div class="flex-1 border-t border-[#2F4340] pt-6 text-sm leading-relaxed lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
+    <div class="flex-1 border-t border-vx-pane-line pt-6 text-sm leading-relaxed lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
       <div class="flex items-center gap-5 text-[22px]">
         {heatShades.map((s) => <span class={s.cls}>{s.ch}</span>)}
-        <span class="text-xs text-[#8FA39F]">quiet to busiest hour</span>
+        <span class="text-xs text-vx-pane-mute">quiet to busiest hour</span>
       </div>
       <p class="mt-5 font-sans text-tui-cream/85">
         Wednesday came from an imported transcript. A transcript records days but no hours, so its row is drawn
@@ -284,39 +289,41 @@ const mono = 'font-mono';
       </p>
       <p class="mt-3.5 font-sans text-tui-cream/85">Hours later today have not happened yet and show as dots.</p>
     </div>
-  </div>
+  </div>    </div>
+  </details>
 
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Which providers report limits</h3>
-    <p class="text-vx-ink/80">
+  <SubHead title="Which providers report limits">
       Limits come from the rate limit headers of a completed call. Where a provider sends none, the footer
       draws the sparkline and the pane says so.
-    </p>
-  </div>
-  <div class="mt-8 border-t-2 border-vx-ink">
-    <div class="mono hidden gap-6 border-b border-vx-ink/25 py-3.5 text-xs text-vx-ink/70 md:grid md:grid-cols-[19rem_minmax(0,1fr)_17rem]"><span>provider</span><span>what the response headers carry</span><span>shown as</span></div>
+    </SubHead>
+  <details class="deep deep--wide">
+    <summary>Provider by provider: what each sends and what the pane shows</summary>
+    <div class="deep__body">
+  <div class="mt-4 border-t border-vx-ink/60">
+    <div class="mono hidden gap-6 border-b border-vx-ink/25 py-3.5 text-xs text-vx-ink/70 @2xl:grid @2xl:grid-cols-[19rem_minmax(0,1fr)_17rem]"><span>provider</span><span>what the response headers carry</span><span>shown as</span></div>
     {providers.map(([who, carries, shown]) => (
-      <div class="grid gap-1 border-b border-vx-ink/25 py-4 text-[15px] leading-normal md:grid-cols-[19rem_minmax(0,1fr)_17rem] md:gap-6">
+      <div class="grid gap-1 border-b border-vx-ink/25 py-4 text-[15px] leading-normal @2xl:grid-cols-[19rem_minmax(0,1fr)_17rem] @2xl:gap-6">
         <b>{who}</b>
         <span class="text-vx-ink/85">{carries}</span>
         <span class="mono text-[13px]">{shown}</span>
       </div>
     ))}
-  </div>
+  </div>    </div>
+  </details>
 
-  <div class="mt-20 grid gap-8 lg:grid-cols-12">
-    <div class="rounded-2xl bg-vx-ink p-6 text-tui-cream lg:col-span-5">
+  <div class="mt-sub grid gap-8 @4xl:grid-cols-12">
+    <div class="rounded-2xl bg-vx-ink p-6 text-tui-cream @4xl:col-span-5">
       <h3 class="text-2xl font-bold tracking-tight">Three ways in</h3>
       <div class="mono mt-5 flex flex-col gap-3.5 text-sm">
         <div class="flex items-center gap-3"><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">f12</kbd><span class="text-tui-cream/85">the intel tab of the runs panel</span></div>
         <div class="flex items-center gap-3"><code class="mono text-vx-mint">/intel</code><span class="text-tui-cream/85">the full screen with the heatmap</span></div>
         <div class="flex flex-wrap items-center gap-3"><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">f1</kbd><span class="text-tui-cream/70">then</span><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">i</kbd><span class="text-tui-cream/85">from the screen switcher</span></div>
       </div>
-      <div class="mono mt-6 grid grid-cols-2 gap-x-5 gap-y-2.5 border-t border-[#2F4340] pt-5 text-[13px] text-tui-cream/85">
+      <div class="mono mt-6 grid grid-cols-2 gap-x-5 gap-y-2.5 border-t border-vx-pane-line pt-5 text-[13px] text-tui-cream/85">
         {keys.map(([k, what]) => <span><b class="text-tui-teal-soft">{k}</b> {what}</span>)}
       </div>
     </div>
-    <div class="border-t-2 border-vx-ink lg:col-span-7">
+    <div class="border-t border-vx-ink/60 @4xl:col-span-7">
       {settings.map(([title, body]) => (
         <div class="border-b border-vx-ink/25 py-5">
           <h4 class="text-lg font-bold">{title}</h4>

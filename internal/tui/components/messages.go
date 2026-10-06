@@ -157,6 +157,10 @@ type Message struct {
 	// render-only and never persisted.
 	Player *PlayerCard
 
+	// Vuln is the vulnerability row's content, set on a VulnRole row. It is
+	// render-only and never persisted.
+	Vuln *VulnCard
+
 	// Ephemeral marks a row whose durable record is written separately (an
 	// ask or its answer, see the TUI's web_asks.go): it shows in the
 	// transcript but never produces a session entry of its own.
@@ -228,6 +232,10 @@ type renderKey struct {
 	isAttachment bool
 	attachMeta   *FileMeta
 	player       string
+	vuln         string
+	// theme is ThemeGeneration: a rendered row is ANSI text with the persona's
+	// colours baked in, so a switch of agent must miss the cache.
+	theme uint64
 }
 
 // renderCache is the memoised render of one message (or of a system group, on
@@ -275,6 +283,8 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		isAttachment: m.IsAttachment,
 		attachMeta:   m.AttachMeta,
 		player:       m.Player.Key(),
+		vuln:         m.Vuln.Key(),
+		theme:        ThemeGeneration(),
 	}
 }
 
@@ -407,6 +417,10 @@ type MessageList struct {
 	ShowTools     bool
 	ShowEdits     bool
 	InternalWork  rolemanager.Level
+	// Chronological lays the transcript out strictly in message order, which
+	// is time order: a belai notice is not hoisted below a streaming reply, and
+	// the blank line before each panel carries the time of the panel.
+	Chronological bool
 }
 
 // editToolNames are the file-mutation tools whose rows ShowEdits governs —
@@ -503,8 +517,9 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
-		case PlayerRole:
-			// The card has no text: it is drawn from Message.Player.
+		case PlayerRole, VulnRole:
+			// The card has no text: it is drawn from Message.Player or
+			// Message.Vuln.
 			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
@@ -519,7 +534,9 @@ func (m MessageList) Render() (string, LineMap) {
 	// (between the previous non-system entry and the streaming turn) into a
 	// single trailing belai panel rendered after the model panel, so the
 	// model panel can keep streaming characters without visual interruption.
-	entries = hoistStreamingPhaseSystems(entries, m.Messages)
+	if !m.Chronological {
+		entries = hoistStreamingPhaseSystems(entries, m.Messages)
+	}
 
 	var b strings.Builder
 	var lm LineMap
@@ -545,6 +562,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = reportPanel(*msg, width, m.ExpandAll)
 				case PlayerRole:
 					s, sub = playerPanel(*msg, width)
+				case VulnRole:
+					s, sub = vulnPanel(*msg, width)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}
@@ -559,11 +578,25 @@ func (m MessageList) Render() (string, LineMap) {
 		if i == len(entries)-1 {
 			break
 		}
-		// Framed panels are separated by a blank line.
-		b.WriteString("\n\n")
+		// Framed panels are separated by a blank line, which in the
+		// chronological layout holds the next panel's time.
+		b.WriteString("\n" + m.clockLabel(entries[i+1], width) + "\n")
 		lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 	}
 	return b.String(), lm
+}
+
+// clockLabel is the dim time that heads an entry in the chronological layout:
+// the time of its first row, or nothing when the row has none.
+func (m MessageList) clockLabel(e renderEntry, width int) string {
+	if !m.Chronological || len(e.idxs) == 0 || width < 12 {
+		return ""
+	}
+	at := m.Messages[e.idxs[0]].CreatedAt
+	if at.IsZero() {
+		return ""
+	}
+	return lipgloss.NewStyle().Foreground(ColorLow).Render(at.Format("15:04:05"))
 }
 
 // findStreamingAssistant returns the index of the last turn entry whose

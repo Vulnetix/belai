@@ -2,9 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 import SectionHead from '../ui/SectionHead.astro';
 import SubHead from '../ui/SubHead.astro';
-import Shot from '../ui/Shot.astro';
 import chunked from '../../assets/concepts/chunked-classification.svg?raw';
-import agentTurnShot from '../../assets/shots/agent-turn.svg';
 
 // The trust pipeline drawn as two lanes: arbitrary content is sanitised and
 // classified, shaped results are sanitised only. Dots travel the lanes; one
@@ -33,36 +31,36 @@ const shaped = [
   ['Write · Edit', 'a confirmation Belai wrote'],
   ['LS · Find · File · Cmp · Date …', 'fixed-argv metadata'],
   ['Screenshot', 'text Belai wrote, and an image it checked itself'],
+  ['Code', 'what a script printed, built only from results each call already passed the gate with'],
 ];
 
 const facts = [
   {
-    title: 'Offloaded output is checked as it is read',
-    body: 'A long result waits in memory behind a short preview. Each slice the model pulls in with `ReadResult` is classified at that moment while guardrails are on, so output saved while they were off is checked before the model sees it. A withheld result is never kept.',
+    title: "Offloaded output is checked as it is read",
+    body: "A long result waits in memory behind a short preview. Each slice the model pulls in with `ReadResult` is classified at that moment while guardrails are on, and a withheld result is never kept.",
   },
   {
-    title: 'Images are checked by Belai, not by the classifier',
-    body: 'A text classifier cannot read pixels, so an image from `Screenshot`, one you attach with `@`, paste or drop, or one an editor sends over ACP is decoded as PNG or JPEG inside a size and pixel limit, reduced to 1568 pixels on its long edge and re-encoded as a new PNG. Metadata, trailing bytes and a file that only looks like an image do not survive, and any failure refuses the image. Only a capture tool or you can supply one, an `@` path is confined to the session roots, only the newest is sent, and a model without image input is told it was not. Text inside an image is what it shows, never an instruction.',
+    title: "Images are checked by Belai",
+    body: "A text classifier cannot read pixels, so each image is decoded, shrunk and re-encoded as a fresh PNG, and anything odd is refused. Text inside an image is never an instruction.",
   },
   {
-    title: 'WebFetch answers from a model with no tools',
-    body: 'When `WebFetch` answers a prompt, the model that reads the page has no tools, and its answer is classified before the agent sees it.',
+    title: "WebFetch answers from a model with no tools",
+    body: "When `WebFetch` answers a prompt, the model that reads the page has no tools, and its answer is classified before the agent sees it.",
+  },
+];
+
+const more = [
+  {
+    title: "Tests pass or fail on the exit code",
+    body: "The post-end test pass runs your `tests.command` or a command from Belai\x27s own table, never one a model wrote, under your permission rules and the sandbox. A model sees the output only after it is classified. A repository settings file can turn the pass off and cannot turn it on.",
   },
   {
-    title: 'The test pass is decided by an exit code',
-    body: 'The post-end test pass runs a command from the fixed detection table or your own `tests.command`, never one a model wrote, without a shell, under your permission rules and the sandbox. Pass or fail is the exit code. The output is classified before a model sees it and reaches the fix loop only as an attachment. A repository settings file can turn the pass off, and cannot turn it on or pick the command.',
+    title: "A cleaner for each destination",
+    body: "Text for a model, a terminal line, a path, a URL, a header and a shell command each pass their own deterministic check, and no model is asked. A `Bash` rule is matched against every command in the line, so an allow for `git status` does not approve `git status; rm -rf x`.",
   },
   {
-    title: 'A cleaner for each destination',
-    body: 'Text for a model, a terminal line, a path, a URL, a header, a shell command and a decision request each pass their own deterministic check, and no model is asked. A `Bash` rule is matched against every command the line contains, so an allow for `git status` does not approve `git status; rm -rf x`.',
-  },
-  {
-    title: 'Every decision is written down',
-    body: 'Each role-manager decision is saved to the session record as it is made, whether or not the internal-work feed shows it. An entry holds the verdict, the model and the timing, never the prompt, the command or the content that was judged. Headless and ACP runs keep the same private record, and `-no-transcript` opts out.',
-  },
-  {
-    title: 'Requests say where they came from',
-    body: 'Provider calls, `WebFetch` and `WebSearch` send `User-Agent: belai/<version>`, the `X-Belai-Session-Id` and `X-Belai-Tool` headers, and a W3C `traceparent`, so a gateway or proxy can tie every request back to its session and tool call.',
+    title: "Every decision is written down",
+    body: "Each role-manager decision is saved to the session record with its verdict, model and timing, and never the prompt, command or content that was judged. `-no-transcript` opts out.",
   },
 ];
 
@@ -70,7 +68,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 ---
 
 <SealedSection label="trust" sealText={sealText} id="trust">
-  <SectionHead title="Trust pipeline">
+  <SectionHead title="Trust pipeline" surfaces={['tui', 'acp', 'cli', 'self-hosted', 'pix sandbox']}>
     Every untrusted tool result is sanitized, then classified, then either sent up the line to the model
     or blocked. Tools whose output has a format Belai controls are sanitized but not classified.
   </SectionHead>
@@ -123,10 +121,10 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </svg>
   </div>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
+  <div class="mt-8 grid gap-8 @4xl:grid-cols-12">
+    <div class="min-w-0 @4xl:col-span-8">
       <p class="mono text-xs tracking-wider text-vx-ink/60">ALWAYS CLASSIFIED</p>
-      <ul class="mt-3 grid list-none gap-x-6 p-0 sm:grid-cols-2">
+      <ul class="mt-3 grid list-none gap-x-6 p-0 @xl:grid-cols-2">
         {classified.map(([tool, what]) => (
           <li class="border-b border-vx-ink/15 py-2.5 text-sm">
             <code class="mono block font-semibold">{tool}</code>
@@ -135,7 +133,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
         ))}
       </ul>
     </div>
-    <div class="min-w-0 lg:col-span-4">
+    <div class="min-w-0 @4xl:col-span-4">
       <p class="mono text-xs tracking-wider text-vx-ink/60">SANITIZED ONLY</p>
       <ul class="mt-3 list-none p-0">
         {shaped.map(([tool, what]) => (
@@ -155,7 +153,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     Content is classified at the point it reaches the model. That includes slices of stored output and
     answers that another model drew from a page.
   </SubHead>
-  <div class="mt-8 grid gap-5 md:grid-cols-3">
+  <div class="mt-8 grid gap-5 @2xl:grid-cols-3">
     {facts.map((f) => (
       <article class="rounded-xl border border-vx-ink p-5">
         <h4 class="text-lg font-bold">{f.title}</h4>
@@ -165,14 +163,26 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </article>
     ))}
   </div>
+  <details class="deep deep--wide">
+    <summary>Three more checks: tests, destinations and the decision record</summary>
+    <div class="deep__body">
+      <div class="grid gap-5 @2xl:grid-cols-3">
+        {more.map((f) => (
+          <article class="rounded-xl border border-vx-ink p-5">
+            <h4 class="text-lg font-bold">{f.title}</h4>
+            <p class="mt-2 text-sm text-vx-ink/80">
+              {split(f.body).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
+            </p>
+          </article>
+        ))}
+      </div>
+    </div>
+  </details>
 
   <SubHead title="Long documents, in chunks">
     Long documents are split into overlapping chunks, and the strictest chunk verdict applies to the
     whole document. The next section, <a href="#classifier" class="text-vx-ink underline decoration-vx-mint-strong underline-offset-4">the classifier</a>,
     covers which engine does the classifying and what happens when it can't decide.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12 lg:items-center">
-    <div class="rounded-xl border border-vx-ink p-2 lg:col-span-5" aria-hidden="true"><Fragment set:html={chunked} /></div>
-    <Shot class="lg:col-span-7" src={agentTurnShot.src} alt="A streaming agent turn with a collapsed Bash preview" caption="streaming turn, collapsed Bash preview" />
-  </div>
+  <div class="mt-8 max-w-3xl rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={chunked} /></div>
 </SealedSection>

@@ -73,6 +73,10 @@ type DecisionServerOptions struct {
 	// backend fails to start.
 	NGL     int
 	CtxSize int
+	// OneBatch sizes the logical and physical batch to the whole context, for
+	// a model llama-server answers on /v1/systemone (Clef), which evaluates
+	// each decision prompt in one micro-batch.
+	OneBatch bool
 }
 
 // DecisionArgs returns the llama-server argv for a decision model. Unlike
@@ -97,7 +101,7 @@ func DecisionArgs(o DecisionServerOptions) []string {
 	if o.Alias != "" {
 		args = append(args, "--alias", o.Alias)
 	}
-	return append(args,
+	args = append(args,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(port),
 		"-np", "1",
@@ -105,6 +109,10 @@ func DecisionArgs(o DecisionServerOptions) []string {
 		"--cache-reuse", "256",
 		"--n-gpu-layers", strconv.Itoa(ngl),
 	)
+	if o.OneBatch {
+		args = append(args, "--batch-size", strconv.Itoa(ctx), "--ubatch-size", strconv.Itoa(ctx))
+	}
+	return args
 }
 
 var buildRe = regexp.MustCompile(`build[: ]+(\d+)`)

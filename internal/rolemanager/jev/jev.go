@@ -78,11 +78,12 @@ const DecisionsTimeout = 3 * time.Second
 var DefaultServerURL = decisionsServerURL
 
 // IsDecisionsModel reports whether a provider/model pair is a Jev Decisions
-// model: the openrouter provider serving a typesafe/jev* model. It is the
+// model: the openrouter provider serving a typesafe/jev* model, or Strands
+// Decider when OpenRouter's catalogue lists it. It is the
 // single predicate that routes Jev traffic to the Decisions API and keeps Jev
 // away from chat/completions.
 func IsDecisionsModel(provider, model string) bool {
-	return provider == "openrouter" && strings.HasPrefix(model, "typesafe/jev")
+	return provider == "openrouter" && (strings.HasPrefix(model, "typesafe/jev") || decisions.IsDeciderID(model))
 }
 
 // BuildPayload constructs the gate request for one tool call. Tools, Skills,
@@ -578,7 +579,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 		// like an inconclusive answer, so the content is still classified.
 		// It used to surface as a classifier error, which withheld the
 		// tool result — every read withheld while OpenRouter was slow.
-		rolemanager.RecordSecurityFallback()
+		rolemanager.RecordSecurityFallback(s.Identity())
 		return s.fallback.Classify(ctx, p)
 	}
 	verdict, decided := thresholdCategories(answers, p.Categories)
@@ -587,7 +588,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	}
 	// Inconclusive: record the handoff so the TUI shows the agent model ruled,
 	// then answer the unchanged chat payload with the fallback classifier.
-	rolemanager.RecordSecurityFallback()
+	rolemanager.RecordSecurityFallback(s.Identity())
 	return s.fallback.Classify(ctx, p)
 }
 

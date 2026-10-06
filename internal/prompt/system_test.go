@@ -231,3 +231,20 @@ func TestSystemExplorePreamble(t *testing.T) {
 		t.Fatalf("explore preamble must not render for a normal prompt:\n%s", off)
 	}
 }
+
+func TestSystemRendersTheEnvironmentOnlyWhenGiven(t *testing.T) {
+	without, err := System(Options{Provider: "openai", Model: "gpt-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	with, err := System(Options{Provider: "openai", Model: "gpt-5", Environment: "Environment (facts):\n- Pix Sandbox: Large.\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(without, "Environment (") {
+		t.Fatalf("an environment section without the option:\n%s", without)
+	}
+	if !strings.Contains(with, "- Pix Sandbox: Large.") {
+		t.Fatalf("the option did not render:\n%s", with)
+	}
+}

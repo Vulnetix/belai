@@ -65,6 +65,13 @@ Instances live in the **global** settings file under `firewall`:
 - The legacy `vulnetix.firewall_enabled` key is still read as
   `firewall.enabled`. Belai writes only the new key.
 
+A provider set (the custom `providers` and the `firewall` block) can be kept in the
+website's library and installed on another host (see
+[library-items.md](library-items.md#providers)). The document never holds a key; the
+website's `provider_keys_install` request puts a provider's own key on a host through
+the credentials resolver, never into settings, and `provider_keys_remove` clears it
+again (see [library-items.md](library-items.md#provider-keys)).
+
 A firewall's own key is never written to settings. The screen stores it with
 the credentials resolver under `firewall:<name>`: in the keychain when one is
 available, otherwise in the user credentials file. It is read from
@@ -85,8 +92,9 @@ consulted for a firewall key.
 - **Sign-in providers are never routed.** Copilot, Kiro and the Cloudflare
   AI Gateway provider are never routed through a firewall.
 - **Decision backends are never routed.** The local decision model
-  (`decision-local`), the hosted `typesafe` provider and self-hosted Jev
-  profiles (kind `jev`) answer
+  (`decision-local`), Strands Decider-2B (`strands-decider`), the hosted
+  `typesafe` provider and `systemone` profiles (kind `systemone`, once `jev`)
+  answer
   decisions, not chat, so a firewall never carries them and a firewall key
   never rides on a decision request (see docs/role-manager.md, "Decision
   backends"). This includes OpenRouter's Decisions model

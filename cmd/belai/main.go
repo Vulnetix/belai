@@ -22,7 +22,9 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -43,6 +45,7 @@ import (
 func main() {
 	// Stop any local decision server this process launched, on every exit.
 	defer decisionserver.StopAll()
+	defer deciderserver.StopAll()
 	_, _ = config.Migrate()
 	activatePlugins()
 	// Remember providers without a nonce endpoint across runs, so a session
@@ -60,6 +63,19 @@ func main() {
 	defer stop()
 	go hardExitOnSecondSignal(ctx)
 
+	// `belai help <command>` is `belai <command> -h`. Bare `belai help` needs
+	// the flags defined below, so it is answered after they are.
+	if len(os.Args) > 2 && os.Args[1] == "help" {
+		target, ok := helpTarget(os.Args[2:])
+		if !ok {
+			fmt.Fprintf(os.Stderr, "belai help: %q is not a command; run `belai -help` for the list\n", os.Args[2])
+			exitProcess(2)
+		}
+		// The command prints its usage to stderr; here it is the answer, so it
+		// goes to stdout where a pager can take it.
+		os.Stderr = os.Stdout
+		os.Args = append([]string{os.Args[0]}, target...)
+	}
 	// `belai acp` serves the Agent Client Protocol to an editor.
 	if len(os.Args) > 1 && os.Args[1] == "acp" {
 		exitProcess(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
@@ -76,6 +92,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "kanban" {
 		exitProcess(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	// `belai skill|prompt|process|repo|budget|rewrite|provider …` read and write library items, the documents the
+	// website's library keeps (docs/library-items.md).
+	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "process" || os.Args[1] == "repo" || os.Args[1] == "budget" || os.Args[1] == "rewrite" || os.Args[1] == "provider") {
+		exitProcess(runLibraryCLI(ctx, libraryCommands[os.Args[1]], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	// `belai rc` runs remote control; `belai rc-session` is one session it
 	// started (hidden: only the daemon runs it).
 	if len(os.Args) > 1 && os.Args[1] == "rc" {
@@ -91,6 +112,7 @@ func main() {
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")
+	noGitSync := flag.Bool("no-git-sync", false, "do not rebase the branch onto origin's default branch before a turn (git.sync in settings; /gitsync in the TUI)")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
 	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, or a custom name from settings.json")
@@ -115,7 +137,7 @@ func main() {
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
 	classifierModel := flag.String("classifier-model", "", "security-classifier model (default: the main model)")
 	classifierEffort := flag.String("classifier-effort", "", "security-classifier thinking effort (default: none)")
-	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm, jev or models (default: models when the binary embeds a model, else llm)")
+	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm, models, openrouter-decisions or systemone (jev is read as systemone) (default: models when the binary embeds a model, else llm)")
 	classifierPhase1Model := flag.String("classifier-phase1-model", "", "phase-1 prompt-saturation model id")
 	classifierPhase1Source := flag.String("classifier-phase1-source", "", "phase-1 source: embedded or huggingface")
 	classifierPhase1Threshold := flag.Float64("classifier-phase1-threshold", 0, "phase-1 attack threshold (default 0.75)")
@@ -127,7 +149,7 @@ func main() {
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	flag.BoolVar(&noTranscript, "no-transcript", false, "with -prompt, do not keep a session transcript of the run")
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
-	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan or goal (default: classified from the prompt)")
+	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan, goal or code (default: classified from the prompt)")
 	deferTools := flag.Bool("defer-tools", true, "advertise core tools in full and load the rest on demand with ToolSearch; -defer-tools=false sends every tool definition on every request")
 	agentName := flag.String("agent", "", "start a background agent by name in foreground mode")
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
@@ -135,20 +157,30 @@ func main() {
 	flag.StringVar(resume, "r", "", "shorthand for -resume")
 	continueLast := flag.String("continue", "", "continue the most recent session for this project")
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
+	teleportID := flag.String("teleport", "", "continue a session of your account from another host, sandbox or the web: its transcript and any agent profile it needs are fetched, and the session opens here under a new id (the original carries on)")
+	teleportPush := flag.Bool("teleport-push", false, "with -teleport, agree that the origin host may push the session's uncommitted and unpushed changes to the forge as one belai/teleport/<id> branch, which this host then fetches; without it they are sent as a patch and replayed here")
+	teleportRef := flag.String("teleport-ref", "", "with -teleport, check out this ref or commit instead of the one the session was at")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
 	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
-	flag.Parse()
+	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
+	if len(os.Args) == 2 && os.Args[1] == "help" {
+		printHelp(os.Stdout, flag.CommandLine)
+		exitProcess(0)
+	}
+	if ok, code := parseTopLevel(flag.CommandLine, os.Args[1:], os.Stdout, os.Stderr); !ok {
+		exitProcess(code)
+	}
 
 	if *showVersion {
 		fmt.Println(version.Version)
 		exitProcess(0)
 	}
 	switch modes.Mode(*modeFlag) {
-	case "", modes.ModeAgent, modes.ModeGoal:
+	case "", modes.ModeAgent, modes.ModeGoal, modes.ModeCode:
 	case modes.ModePlan:
 		*planMode = true
 	default:
-		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan or goal, not %q\n", *modeFlag)
+		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan, goal or code, not %q\n", *modeFlag)
 		exitProcess(2)
 	}
 
@@ -168,6 +200,27 @@ func main() {
 	if *continueLast != "" && *resume != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue cannot be combined with -resume")
 		exitProcess(1)
+	}
+	if *teleportRef != "" && *teleportID == "" {
+		fmt.Fprintln(os.Stderr, "belai: -teleport-ref needs -teleport")
+		exitProcess(2)
+	}
+	if *teleportPush && *teleportID == "" {
+		fmt.Fprintln(os.Stderr, "belai: -teleport-push needs -teleport")
+		exitProcess(2)
+	}
+	if *teleportID != "" {
+		switch {
+		case *resume != "" || *continueLast != "":
+			fmt.Fprintln(os.Stderr, "belai: -teleport cannot be combined with -resume or -continue")
+			exitProcess(1)
+		case *prompt != "":
+			fmt.Fprintln(os.Stderr, "belai: -teleport requires the interactive TUI (not supported with -prompt)")
+			exitProcess(1)
+		case !interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv):
+			fmt.Fprintln(os.Stderr, "belai: -teleport opens the terminal UI, so it needs a terminal")
+			exitProcess(1)
+		}
 	}
 	if *continueLast != "" && *prompt != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue requires the interactive TUI (not supported with -prompt)")
@@ -216,6 +269,10 @@ func main() {
 	if *effort != "" {
 		settings.Effort = *effort
 	}
+	if *noGitSync {
+		off := false
+		settings.Git = &config.GitSettings{Sync: &off}
+	}
 	if *classifierProvider != "" || *classifierModel != "" || *classifierEffort != "" || *classifierKind != "" ||
 		*classifierPhase1Model != "" || *classifierPhase1Source != "" || *classifierPhase1Threshold != 0 ||
 		*classifierPhase2Model != "" || *classifierPhase2Source != "" || *classifierPhase2Threshold != 0 {
@@ -225,7 +282,7 @@ func main() {
 		settings.Classifier.Provider = *classifierProvider
 		settings.Classifier.Model = *classifierModel
 		settings.Classifier.Effort = *classifierEffort
-		settings.Classifier.Kind = *classifierKind
+		settings.Classifier.Kind = config.CanonicalKind(*classifierKind)
 		settings.Classifier.Phase1 = config.ClassifierPhaseSettings{
 			Model:     *classifierPhase1Model,
 			Source:    *classifierPhase1Source,
@@ -312,7 +369,17 @@ func main() {
 	// into a TUI to discover the failure.
 	var resumeKey session.Key
 	var resumeID string
-	if *resume != "" || *continueLast != "" {
+	var teleported *tui.Teleported
+	if *teleportID != "" {
+		// After the trust gate, so the repository is one the user trusted, and
+		// before the TUI, so a refusal exits non-zero with its reason.
+		res, tp, err := runTeleport(ctx, workdir, *teleportID, *teleportRef, *teleportPush, *provider, *model, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "belai:", err)
+			exitProcess(1)
+		}
+		workdir, resumeKey, resumeID, teleported = res.Workdir, res.Key, res.SessionID, tp
+	} else if *resume != "" || *continueLast != "" {
 		store, err := session.NewStore()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
@@ -357,6 +424,7 @@ func main() {
 	// MCP servers start only here: past the trust gate, from the user's own
 	// settings, and in the background so a slow server never holds startup.
 	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
+		Builtins:   builtinMCP(settings, workdir),
 		Workdir:    workdir,
 		HTTPClient: httpclient.Default(),
 		VulnetixAuth: func() (string, error) {
@@ -389,7 +457,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			exitProcess(1)
 		}
-		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID})
+		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID, Teleported: teleported})
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
@@ -568,7 +636,13 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 }
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string, tlog *turnlog.Log) (run.Result, error) {
-	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false)
+	// A headless prompt starts from a branch that is current with origin's
+	// default branch, unless git.sync (or -no-git-sync) says not to.
+	var gs *gitsync.Hygiene
+	if settings.GitSyncEnabled() {
+		gs = gitsync.New(workdir, true, nil)
+	}
+	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, gs)
 	if err != nil {
 		return run.Result{}, err
 	}
@@ -614,12 +688,12 @@ func postEndTests(ctx context.Context, cfg run.Config, client *http.Client, pol 
 // newCLISession builds a top-level agent session outside the TUI: the
 // headless -prompt run (no asks: allowAsk false) and each ACP session (the
 // editor answers asks: allowAsk true).
-func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool) (*agent.Session, error) {
+func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool, gs *gitsync.Hygiene) (*agent.Session, error) {
 	store, src := cliKanban(workdir, sessionID, settings)
 	return headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
 		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk,
-		MCP: mcp.Active(), Kanban: store, KanbanSource: src,
+		MCP: mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
 	})
 }
 
@@ -772,5 +846,6 @@ func recordUsage(sessionID string, settings config.Settings, sum *run.UsageSumma
 // exits. A server another belai process launched is left running for it.
 func exitProcess(code int) {
 	decisionserver.StopAll()
+	deciderserver.StopAll()
 	os.Exit(code)
 }

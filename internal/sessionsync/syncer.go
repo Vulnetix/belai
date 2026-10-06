@@ -29,8 +29,23 @@ type Options struct {
 	HostID        string
 	Host          Host
 	RemotePrompts bool
-	// RemoteAnswers delivers web answers to the host's open asks.
+	// RemoteAnswers delivers web answers to the host's open asks. A session
+	// whose ask gate the web can switch changes it with SetRemoteAnswers.
 	RemoteAnswers bool
+	// RemoteCommands delivers session controls from the web (belai rc
+	// --web-controls). Off, every command is refused.
+	RemoteCommands bool
+	// RemoteShell delivers shell lines from the web (belai rc --web-shell).
+	// Off, every shell line is refused.
+	RemoteShell bool
+	// OnControls is called, on the syncer's goroutine, with the website's
+	// pending controls for the live session each time the server returns some
+	// (registration and every heartbeat). It must not block. nil ignores them.
+	OnControls func(sessionID string, c Controls)
+	// Git returns the live session's repository reading (internal/gitsync.Info
+	// as JSON), or nil when there is none. It is polled on every tick, so it
+	// must return a cached value and never block. nil sends no git state.
+	Git func() json.RawMessage
 
 	TickEvery      time.Duration // how often the file is re-read without a nudge (2s)
 	HeartbeatEvery time.Duration // liveness beat (15s; the server's window is 45s)
@@ -41,19 +56,25 @@ type Options struct {
 // it. Fields the JSONL later reveals (name, cwd, model, mode) are picked up
 // from the file as it is tailed.
 type SessionInfo struct {
-	ID              string
-	Path            string // the session's .jsonl
-	ProjectKey      string
-	ProjectName     string
-	Cwd             string
-	Name            string
-	Model           string
-	Provider        string
-	Mode            string
+	ID          string
+	Path        string // the session's .jsonl
+	ProjectKey  string
+	ProjectName string
+	Cwd         string
+	Name        string
+	Model       string
+	Provider    string
+	Mode        string
+	// ActiveProfile: the agent profile the session ran under, read from the
+	// latest session_meta line so a ctrl+p switch reaches the website.
+	ActiveProfile   string
 	ParentSessionID string
 	ResumedFromID   string
 	// DispatchID: the rc request that started this session (see Dispatch).
 	DispatchID string
+	// Git is the session's repository (internal/gitsync.Info as JSON), kept
+	// current from Options.Git. Empty outside a repository.
+	Git json.RawMessage
 }
 
 // Status is a snapshot for /sync status.
@@ -95,6 +116,7 @@ type Syncer struct {
 	prompts  chan RemotePrompt
 	answers  chan RemoteAnswer
 	drafts   chan RemoteDraft
+	commands chan RemoteCommand
 
 	cancel    context.CancelFunc
 	closeOnce sync.Once
@@ -102,6 +124,11 @@ type Syncer struct {
 	mu     sync.Mutex
 	status Status
 	live   string // the registered session id, for the inbox loop
+	// remoteAnswers, ctlState and ctlGen are the parts of the registration
+	// the host changes while the session runs; a new ctlGen re-registers.
+	remoteAnswers bool
+	ctlState      json.RawMessage
+	ctlGen        int
 }
 
 // New builds a Syncer. Call Start to run it.
@@ -126,6 +153,9 @@ func New(opts Options) *Syncer {
 		prompts:  make(chan RemotePrompt, 16),
 		answers:  make(chan RemoteAnswer, 16),
 		drafts:   make(chan RemoteDraft, 4),
+		commands: make(chan RemoteCommand, 16),
+
+		remoteAnswers: opts.RemoteAnswers,
 	}
 }
 
@@ -133,7 +163,8 @@ func New(opts Options) *Syncer {
 func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
-	if s.opts.RemotePrompts || s.opts.RemoteAnswers {
+	go s.vaultLease(ctx)
+	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands || s.opts.RemoteShell {
 		go s.inbox(ctx)
 	}
 }
@@ -165,6 +196,18 @@ func (s *Syncer) UpdateMeta(sessionID, model, provider, mode string) {
 	}
 }
 
+// pollGit takes the host's current git reading for the live session; a change
+// is sent with the next registration refresh.
+func (s *Syncer) pollGit(t *tail) {
+	if s.opts.Git == nil || t == nil {
+		return
+	}
+	if g := s.opts.Git(); len(g) > 0 && string(g) != string(t.info.Git) {
+		t.info.Git = g
+		t.dirty = true
+	}
+}
+
 // Nudge asks for an immediate re-read after the TUI appended a line.
 func (s *Syncer) Nudge() {
 	select {
@@ -183,7 +226,53 @@ func (s *Syncer) RemotePromptsEnabled() bool { return s.opts.RemotePrompts }
 func (s *Syncer) Answers() <-chan RemoteAnswer { return s.answers }
 
 // RemoteAnswersEnabled reports whether web answers are taken.
-func (s *Syncer) RemoteAnswersEnabled() bool { return s.opts.RemoteAnswers }
+func (s *Syncer) RemoteAnswersEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.remoteAnswers
+}
+
+// Commands delivers session controls claimed from the inbox.
+func (s *Syncer) Commands() <-chan RemoteCommand { return s.commands }
+
+// SetSessionControls records the session's current controls and whether it
+// takes web answers (ask on), and re-registers the session so the website
+// shows both. The inbox must already be running: a syncer that may turn
+// answers on is built with RemoteCommands.
+func (s *Syncer) SetSessionControls(state json.RawMessage, remoteAnswers bool) {
+	s.mu.Lock()
+	s.ctlState = append(json.RawMessage(nil), state...)
+	s.remoteAnswers = remoteAnswers
+	s.ctlGen++
+	s.mu.Unlock()
+	s.Nudge()
+}
+
+// AckCommand reports a session control's outcome in the background.
+func (s *Syncer) AckCommand(commandID, status, reason string, state json.RawMessage) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		if err := s.opts.Client.AckCommand(ctx, commandID, status, reason, state); err != nil {
+			s.setErr(fmt.Errorf("ack command: %w", err))
+		}
+	}()
+}
+
+// pollControls marks the session for re-registration after the controls
+// changed.
+func (s *Syncer) pollControls(t *tail) {
+	if t == nil {
+		return
+	}
+	s.mu.Lock()
+	gen := s.ctlGen
+	s.mu.Unlock()
+	if gen != t.ctlGen {
+		t.ctlGen = gen
+		t.dirty = true
+	}
+}
 
 // AckAnswer reports a web answer's outcome, like Ack: an accepted answer
 // refers to the ask_answer line just written, so it waits for that upload.
@@ -291,6 +380,7 @@ type tail struct {
 	seq        int64
 	dirty      bool
 	lastBeat   time.Time
+	ctlGen     int
 }
 
 func (s *Syncer) run(ctx context.Context) {
@@ -309,11 +399,19 @@ func (s *Syncer) run(ctx context.Context) {
 			return
 		case timeout := <-s.closing:
 			fctx, cancel := context.WithTimeout(context.Background(), timeout)
-			if cur != nil && cur.registered {
-				if s.upload(fctx, cur) == nil {
+			// Whatever was queued ahead of Close is taken first. select picks
+			// among ready cases at random, so a session that was activated and
+			// nudged just before Close could otherwise still be unregistered
+			// here, and a short session would never reach the server.
+			cur = s.takeQueued(fctx, cur, &pendingAcks)
+			if cur != nil {
+				// step registers the session if it is not yet, then uploads.
+				if s.step(fctx, cur, &hostOK, false) == nil {
 					s.sendAcks(fctx, &pendingAcks)
 				}
-				_ = s.opts.Client.End(fctx, cur.info.ID)
+				if cur.registered {
+					_ = s.opts.Client.End(fctx, cur.info.ID)
+				}
 			}
 			cancel()
 			return
@@ -352,6 +450,8 @@ func (s *Syncer) run(ctx context.Context) {
 			s.coalesce(ctx)
 		case <-tick.C:
 		}
+		s.pollGit(cur)
+		s.pollControls(cur)
 		if cur == nil {
 			s.sendAcks(ctx, &pendingAcks)
 			continue
@@ -375,6 +475,37 @@ func (s *Syncer) run(ctx context.Context) {
 		// Everything the file held is on the server now, including the user
 		// line an accepted ack points at.
 		s.sendAcks(ctx, &pendingAcks)
+	}
+}
+
+// takeQueued applies the activations, metadata updates and acks already queued
+// when Close arrives, and returns the session to flush. A session it replaces
+// is uploaded and ended on the way, as a live switch would.
+func (s *Syncer) takeQueued(ctx context.Context, cur *tail, pending *[]ack) *tail {
+	for {
+		select {
+		case info := <-s.activate:
+			if cur != nil && cur.info.ID == info.ID {
+				cur.info = mergeInfo(cur.info, info)
+				cur.dirty = true
+				continue
+			}
+			if cur != nil && cur.registered {
+				_ = s.upload(ctx, cur)
+				_ = s.opts.Client.End(ctx, cur.info.ID)
+			}
+			cur = &tail{info: info, serverLast: -1}
+		case m := <-s.meta:
+			if cur != nil && cur.info.ID == m.id {
+				cur.info.Model, cur.info.Provider, cur.info.Mode = orStr(m.model, cur.info.Model),
+					orStr(m.provider, cur.info.Provider), orStr(m.mode, cur.info.Mode)
+				cur.dirty = true
+			}
+		case a := <-s.acks:
+			*pending = append(*pending, a)
+		default:
+			return cur
+		}
 	}
 }
 
@@ -408,12 +539,15 @@ func (s *Syncer) step(ctx context.Context, t *tail, hostOK *bool, live bool) err
 		// Read the file once first so name/cwd/model are known at
 		// registration; nothing is uploaded until the server's mark is known.
 		s.scanMeta(t)
-		last, err := s.opts.Client.PutSession(ctx, t.info.ID, s.metaFor(t))
+		last, ctl, err := s.opts.Client.PutSessionControls(ctx, t.info.ID, s.metaFor(t))
 		if err != nil {
 			return err
 		}
 		t.registered, t.serverLast, t.offset, t.seq, t.dirty = true, last, 0, 0, false
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 		if live {
 			s.setLive(t.info.ID, Status{SessionID: t.info.ID, Registered: true, LastSeq: last})
 		}
@@ -422,17 +556,25 @@ func (s *Syncer) step(ctx context.Context, t *tail, hostOK *bool, live bool) err
 		return err
 	}
 	if t.dirty {
-		if _, err := s.opts.Client.PutSession(ctx, t.info.ID, s.metaFor(t)); err != nil {
+		_, ctl, err := s.opts.Client.PutSessionControls(ctx, t.info.ID, s.metaFor(t))
+		if err != nil {
 			return err
 		}
 		t.dirty = false
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 	}
 	if time.Since(t.lastBeat) >= s.opts.HeartbeatEvery {
-		if err := s.opts.Client.Heartbeat(ctx, t.info.ID); err != nil {
+		ctl, err := s.opts.Client.HeartbeatControls(ctx, t.info.ID)
+		if err != nil {
 			return err
 		}
 		t.lastBeat = time.Now()
+		if live {
+			s.applyControls(t.info.ID, ctl)
+		}
 	}
 	if live {
 		s.mu.Lock()
@@ -462,10 +604,26 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 	i := t.info
 	return SessionMeta{
 		HostID: s.opts.HostID, ProjectKey: i.ProjectKey, ProjectName: i.ProjectName, Cwd: i.Cwd,
-		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode,
+		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode, ActiveProfile: i.ActiveProfile,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
-		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
-		DispatchID: i.DispatchID,
+		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.RemoteAnswersEnabled(),
+		DispatchID: i.DispatchID, Git: i.Git,
+		Controls: s.opts.RemoteCommands, ControlState: s.controlState(),
+		Shell: s.opts.RemoteShell,
+	}
+}
+
+func (s *Syncer) controlState() json.RawMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ctlState
+}
+
+// applyControls hands the website's pending controls for the live session to
+// the host.
+func (s *Syncer) applyControls(id string, c Controls) {
+	if s.opts.OnControls != nil && c.GitSync != nil {
+		s.opts.OnControls(id, c)
 	}
 }
 
@@ -584,13 +742,15 @@ func (t *tail) observe(e Entry) {
 		t.set(&t.info.Name, strings.TrimSpace(e.Content))
 	case "session_meta":
 		var m struct {
-			Cwd         string `json:"cwd"`
-			Mode        string `json:"mode"`
-			ResumedFrom string `json:"resumedFrom"`
+			Cwd           string `json:"cwd"`
+			Mode          string `json:"mode"`
+			ResumedFrom   string `json:"resumedFrom"`
+			ActiveProfile string `json:"activeProfile"`
 		}
 		if json.Unmarshal([]byte(e.Content), &m) == nil {
 			t.set(&t.info.Cwd, m.Cwd)
 			t.set(&t.info.Mode, m.Mode)
+			t.set(&t.info.ActiveProfile, m.ActiveProfile)
 			t.set(&t.info.ResumedFromID, m.ResumedFrom)
 		}
 	case "assistant":
@@ -620,8 +780,12 @@ func mergeInfo(old, n SessionInfo) SessionInfo {
 	n.Model = orStr(n.Model, old.Model)
 	n.Provider = orStr(n.Provider, old.Provider)
 	n.Mode = orStr(n.Mode, old.Mode)
+	n.ActiveProfile = orStr(n.ActiveProfile, old.ActiveProfile)
 	n.ParentSessionID = orStr(n.ParentSessionID, old.ParentSessionID)
 	n.ResumedFromID = orStr(n.ResumedFromID, old.ResumedFromID)
+	if len(n.Git) == 0 {
+		n.Git = old.Git
+	}
 	return n
 }
 
@@ -690,7 +854,8 @@ func (s *Syncer) inbox(ctx context.Context) {
 			}
 			continue
 		}
-		prompts, answers, drafts, err := s.opts.Client.Inbox(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		batch, err := s.opts.Client.InboxBatch(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		prompts, answers, drafts := batch.Prompts, batch.Answers, batch.Drafts
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -704,12 +869,29 @@ func (s *Syncer) inbox(ctx context.Context) {
 		backoff = 0
 		// Answers first: the host is blocked on an ask until one arrives.
 		for _, a := range answers {
-			if !s.opts.RemoteAnswers {
+			if !s.RemoteAnswersEnabled() {
 				s.AckAnswer(a.ID, AckRefused, "this host does not take answers from the web", "")
 				continue
 			}
 			select {
 			case s.answers <- a:
+			case <-ctx.Done():
+				return
+			}
+		}
+		// Controls next: they apply to the turn the prompts start.
+		for _, c := range batch.Commands {
+			if c.Shell != "" {
+				if !s.opts.RemoteShell {
+					s.AckCommand(c.ID, AckRefused, "this host does not run shell lines from the web", nil)
+					continue
+				}
+			} else if !s.opts.RemoteCommands {
+				s.AckCommand(c.ID, AckRefused, "this host does not take session controls from the web", nil)
+				continue
+			}
+			select {
+			case s.commands <- c:
 			case <-ctx.Done():
 				return
 			}

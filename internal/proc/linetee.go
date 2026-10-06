@@ -33,6 +33,11 @@ type LineTee struct {
 	flushEvery time.Duration
 	flushLines int
 
+	// emitMu keeps sink calls in order between Write and the idle timer. It is
+	// taken before mu, never while holding it.
+	emitMu sync.Mutex
+	timer  *time.Timer
+
 	mu        sync.Mutex
 	buf       []byte // full output, capped at max (the head, with keepTail)
 	truncated bool
@@ -73,6 +78,10 @@ func (w *LineTee) KeepTail() *LineTee {
 
 // Write appends p to the capped buffer and reports whole lines to the sink.
 func (w *LineTee) Write(p []byte) (int, error) {
+	if w.sink != nil {
+		w.emitMu.Lock()
+		defer w.emitMu.Unlock()
+	}
 	w.mu.Lock()
 
 	if w.keepTail {
@@ -106,10 +115,36 @@ func (w *LineTee) Write(p []byte) (int, error) {
 	}
 
 	ready := w.takeLocked(false)
+	w.armIdleFlushLocked()
 	w.mu.Unlock()
 
 	w.emit(ready)
 	return len(p), nil
+}
+
+// armIdleFlushLocked schedules a flush for lines the rate limit held back. The
+// limit is only re-checked on the next Write, so a command that prints a few
+// lines and then waits (gh auth login shows its one-time code and polls for
+// minutes) would otherwise keep them until it exits. Callers hold w.mu.
+func (w *LineTee) armIdleFlushLocked() {
+	if len(w.pending) == 0 {
+		return
+	}
+	if w.timer == nil {
+		w.timer = time.AfterFunc(w.flushEvery, w.flushIdle)
+		return
+	}
+	w.timer.Reset(w.flushEvery)
+}
+
+// flushIdle reports the held-back lines once the command has gone quiet.
+func (w *LineTee) flushIdle() {
+	w.emitMu.Lock()
+	defer w.emitMu.Unlock()
+	w.mu.Lock()
+	ready := w.takeLocked(true)
+	w.mu.Unlock()
+	w.emit(ready)
 }
 
 // writeHeadTailLocked fills the head to max, then keeps the newest tailMax
@@ -141,7 +176,12 @@ func (w *LineTee) writeHeadTailLocked(p []byte) {
 // which is how a prompt or a progress line without a terminator still reaches
 // the consumer.
 func (w *LineTee) Flush() {
+	w.emitMu.Lock()
+	defer w.emitMu.Unlock()
 	w.mu.Lock()
+	if w.timer != nil {
+		w.timer.Stop()
+	}
 	if len(w.partial) > 0 {
 		w.pending = append(w.pending, string(bytes.TrimRight(w.partial, "\r")))
 		w.partial = nil

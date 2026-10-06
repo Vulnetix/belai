@@ -391,7 +391,7 @@ func TestFirewallCustomInstanceSecret(t *testing.T) {
 	}
 	// Decision providers are never routed either: a firewall key must not
 	// ride on a decision request.
-	for _, name := range []string{"typesafe", "decision-local"} {
+	for _, name := range []string{"typesafe", "decision-local", "strands-decider"} {
 		if _, ok := r.Firewall(name); ok {
 			t.Fatalf("%s routed through a firewall", name)
 		}

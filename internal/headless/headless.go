@@ -6,6 +6,7 @@ package headless
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -14,8 +15,11 @@ import (
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/knowledge/kbgate"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
@@ -32,12 +36,16 @@ import (
 
 // Params configures one headless session.
 type Params struct {
-	Cfg      run.Config
-	Client   *http.Client
-	Posture  posture.Policy
-	Workdir  string
-	Settings config.Settings
-	PlanMode bool
+	Cfg     run.Config
+	Client  *http.Client
+	Posture posture.Policy
+	Workdir string
+	// WorkspaceDirs are additional directories added to the session (the
+	// /add-dir of the TUI): they become confinement roots, and each one's
+	// repo map is sent to the model alongside Workdir's.
+	WorkspaceDirs []string
+	Settings      config.Settings
+	PlanMode      bool
 	// SessionID is stamped on outbound calls and kanban writes.
 	SessionID string
 	// AllowAsk is true when someone can answer a permission ask (an ACP
@@ -57,8 +65,14 @@ type Params struct {
 	// Narrow, when set, narrows the full registry before the kanban tools
 	// are added (a worker profile's tools allowlist).
 	Narrow func(*tools.Registry) *tools.Registry
-	// Deny adds permission Deny rules on top of the settings' own.
+	// Deny adds permission rules on top of the settings' own. They are the
+	// harness's, so a Permit rule may exempt a call from them; the user's own
+	// Deny and Block rules are never exempted.
 	Deny []string
+	// Permit exempts calls from Deny: a worker profile's own declaration, such
+	// as write access to a synced file, which a broad Deny rule would
+	// otherwise refuse.
+	Permit []string
 	// Persona is a worker profile's text; see agent.Options.Persona.
 	Persona string
 	// Extra tools join after Narrow, so an allowlist cannot drop them: a
@@ -66,9 +80,30 @@ type Params struct {
 	Extra []tools.Tool
 	// SandboxMounts: agent.Options.SandboxMounts (a worker's git paths).
 	SandboxMounts []sandbox.Mount
-	SandboxEnv    []string
+	// GitSync: agent.Options.GitSync. nil for a fleet worker, which manages
+	// its own branch.
+	GitSync    *gitsync.Hygiene
+	SandboxEnv []string
 	// MaxIterations is the per-pass round budget; zero is the default.
 	MaxIterations int
+	// KnowledgeRoot is the trusted repository root whose .vulnetix output is
+	// searchable through Grep, Glob and Read (docs/knowledge.md); empty means
+	// Workdir. A worker sets it to its repository, never its worktree.
+	KnowledgeRoot string
+	// Facts are the engaged profile's facts (agentprofile.Facts). The cloud
+	// tools read them as defaults and boundaries; nil means none.
+	Facts map[string][]string
+	// KnowledgeProfile is the agent profile whose documents are searchable, or
+	// nil.
+	KnowledgeProfile *knowledge.Profile
+	// Knowledge is an already-open store; nil has the session open its own.
+	Knowledge *knowledge.Store
+	// Diagnostics, when set, replaces the session's diagnostics gate. Only a
+	// `belai rc --web-controls` session sets it, to run live language servers
+	// in a directory the host trusts when its web user turned them on, and to
+	// close them when the session is rebuilt. Every other headless session runs
+	// the fallback syntax checks alone.
+	Diagnostics *rolemanager.DiagnosticsGate
 }
 
 // NewSession builds the session.
@@ -78,6 +113,17 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(p.Workdir, false, caps, ix)
+	reg.CloudHub().SetFacts(p.Facts)
+	for _, d := range p.WorkspaceDirs {
+		if err := reg.Cwd().AddRoot(d); err != nil {
+			return nil, fmt.Errorf("add workspace directory %s: %w", d, err)
+		}
+	}
+	// A worker whose profile files handoffs under other repositories resolves
+	// the name against this index: the checkouts beneath its directory.
+	if p.Claim != nil && p.Claim.HandoffRepos {
+		p.Claim.UseRepoIndex(ix)
+	}
 	// A headless session waits for the MCP servers to connect (or fail) so
 	// their tools are on the surface from its first turn.
 	if p.MCP != nil {
@@ -99,9 +145,14 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		reg = reg.WithKanban(p.Kanban, p.KanbanSource)
 	}
 
-	deny := append(append([]string{}, p.Settings.Permissions.Deny...), p.Deny...)
-	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, deny)
+	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, p.Settings.Permissions.Deny).WithHarness(p.Deny, p.Permit)
 	repoMap := repomap.Scan(ctx, p.Workdir)
+	var workspaceMaps []repomap.Map
+	for _, d := range p.WorkspaceDirs {
+		if m := repomap.Scan(ctx, d); m.Head != "" {
+			workspaceMaps = append(workspaceMaps, m)
+		}
+	}
 
 	var promptOpts prompt.Options
 	if p.Settings.Caveman != nil && *p.Settings.Caveman {
@@ -112,7 +163,23 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		askDisabled = *p.AskDisabled
 	}
 
+	kb := p.Knowledge
+	if kb == nil {
+		root := p.KnowledgeRoot
+		if root == "" {
+			root = p.Workdir
+		}
+		// An unattended session waits for the index, so its first search sees
+		// the same documents its last one will.
+		kb = kbgate.Open(ctx, kbgate.Setup{
+			Cfg: p.Cfg, Client: p.Client, Levels: p.Posture, Settings: p.Settings,
+			Root: root, Profile: p.KnowledgeProfile,
+		}, true)
+	}
+
 	return agent.NewSession(agent.Options{
+		Knowledge:     kb,
+		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           p.Cfg,
 		Client:        p.Client,
 		Registry:      reg,
@@ -138,16 +205,18 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		ModeDetector:  run.NewModeDetector(p.Cfg),
 		Jev:           run.NewJevJobs(p.Cfg, p.Settings.JevJobSet),
 		RepoMap:       &repoMap,
+		WorkspaceMaps: workspaceMaps,
 		// The same settings-backed fan-out ceiling the TUI uses; without it
 		// max_agents had no effect on the CLI.
 		AgentPool: agentpool.New(p.Settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
-		// Headless: live language servers are off, but fallback syntax checks
-		// still run when enabled in settings.
-		Diagnostics:   rolemanager.DiagnosticsGateFromSettings(p.Settings, reg.Cwd().Roots(), false),
+		// Headless: live language servers are off (unless the caller built
+		// its own gate), but fallback syntax checks still run when enabled.
+		Diagnostics:   diagnostics(p, reg),
 		Persona:       p.Persona,
 		SandboxMounts: p.SandboxMounts,
 		SandboxEnv:    p.SandboxEnv,
 		MaxIterations: p.MaxIterations,
+		GitSync:       p.GitSync,
 	})
 }
 
@@ -241,4 +310,13 @@ func PullKanban(ctx context.Context, store *kanban.Store, settings config.Settin
 	defer cancel()
 	s := kanban.NewSyncer(store, client, kanban.SyncOptions{})
 	s.Sync(ctx)
+}
+
+// diagnostics is the caller's gate, or the headless one: fallback syntax
+// checks only.
+func diagnostics(p Params, reg *tools.Registry) rolemanager.DiagnosticsGate {
+	if p.Diagnostics != nil {
+		return *p.Diagnostics
+	}
+	return rolemanager.DiagnosticsGateFromSettings(p.Settings, reg.Cwd().Roots(), false)
 }

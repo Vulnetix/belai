@@ -5,67 +5,42 @@ import Trust from '../components/sections/Trust.astro';
 import Classifier from '../components/sections/Classifier.astro';
 import SealedBlock from '../components/sections/SealedBlock.astro';
 import Beliefs from '../components/sections/Beliefs.astro';
-import Labs from '../components/sections/Labs.astro';
+import Compare from '../components/sections/Compare.astro';
 import Features from '../components/sections/Features.astro';
-import Kanban from '../components/sections/Kanban.astro';
-import WebSessions from '../components/sections/WebSessions.astro';
 import Extend from '../components/sections/Extend.astro';
 import CLI from '../components/sections/CLI.astro';
 import Qol from '../components/sections/Qol.astro';
 import Install from '../components/sections/Install.astro';
 import FAQ from '../components/sections/FAQ.astro';
-
-const rail = [
-  ['intro', 'intro'],
-  ['beliefs', 'beliefs'],
-  ['trust', 'trust'],
-  ['classifier', 'classifier'],
-  ['sealed', 'sealed'],
-  ['labs', 'labs'],
-  ['modes', 'modes'],
-  ['tools', 'tools & sandbox'],
-  ['diagnostics', 'diagnostics'],
-  ['permissions', 'permissions'],
-  ['agents', 'agents & crews'],
-  ['memory', 'memory'],
-  ['processes', 'processes'],
-  ['budgets', 'budgets'],
-  ['intel', 'session intelligence'],
-  ['providers', 'providers'],
-  ['routing', 'routing'],
-  ['vulnetix', 'vulnetix'],
-  ['kanban', 'kanban'],
-  ['web', 'web sessions'],
-  ['extend', 'extend & integrate'],
-  ['cli', 'cli'],
-  ['qol', 'qol'],
-  ['start', 'getting started'],
-  ['faq', 'faq'],
-] as const;
+import SurfaceLegend from '../components/ui/SurfaceLegend.astro';
+import JumpNav from '../components/ui/JumpNav.astro';
+import { sections } from '../lib/sections';
 ---
 
 <Base
   title="Belai: a safer LLM coding harness"
-  description="Belai is a safer LLM coding harness: sealed delimiters, a security classifier embedded in the default binary, fail-closed posture gates, supervised processes, a prompt library, a repo map, cross-agent session and memory search, model routing, token budgets, agent crews that take their work from a kanban board, an OS sandbox, hooks, skills, plugins, MCP servers, editor integration over ACP, OpenTelemetry export, and role/mode determinism. Free and open source."
+  description="Belai is a safer LLM coding harness: sealed delimiters, a security classifier embedded in the default binary, fail-closed posture gates, supervised processes, a prompt library, a repo map, cross-agent session and memory search, model routing, token budgets, agent crews that take their work from a kanban board and whose acceptance gates the harness runs, dependency checks as the agent edits, twenty providers, an OS sandbox, hooks, skills, plugins, MCP servers, editor integration over ACP, OpenTelemetry export, and role/mode determinism. Free and open source."
 >
   <header>
     <Intro />
   </header>
+
+  <JumpNav />
 
   <div class="flex w-full gap-8 px-4 py-8 sm:px-6 lg:gap-10 lg:px-10 lg:py-10">
     <aside class="status-rail w-52 shrink-0 flex-col justify-between xl:w-56" aria-label="Page sections">
       <div>
         <p class="mono text-sm font-bold text-vx-ink">▌ belai</p>
         <nav aria-label="On this page">
-          <ul class="mt-6 space-y-1 list-none p-0">
-            {rail.map(([id, label]) => (
+          <ul class="mt-5 space-y-0.5 list-none p-0">
+            {sections.map(([id, label], i) => (
               <li>
                 <a
                   href={`#${id}`}
                   data-rail={id}
                   class="status-rail__item mono block text-sm text-vx-ink/70 no-underline hover:text-vx-ink"
                 >
-                  {label}
+                  <span class="status-rail__num">{String(i + 1).padStart(2, '0')}</span>{label}
                 </a>
               </li>
             ))}
@@ -80,19 +55,18 @@ const rail = [
       </div>
     </aside>
 
-    <main class="min-w-0 flex-1 space-y-8">
+    <main class="min-w-0 flex-1">
+      <SurfaceLegend />
       <Beliefs />
       <Trust />
       <Classifier />
       <SealedBlock />
-      <Labs />
       <Features />
-      <Kanban />
-      <WebSessions />
       <Extend />
       <CLI />
       <Qol />
       <Install />
+      <Compare />
       <FAQ />
     </main>
   </div>

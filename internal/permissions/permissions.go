@@ -35,6 +35,34 @@ type Settings struct {
 	Deny  []string `json:"deny,omitempty"`
 	// Block is accepted as an alias for Deny.
 	Block []string `json:"block,omitempty"`
+	// Harness are deny rules the harness added for one session, such as a
+	// worker's refusal to write under .vulnetix. They behave as Deny, except
+	// that a Permit rule can exempt a call from them. Never read from a
+	// settings file.
+	Harness []string `json:"-"`
+	// Permit exempts a call from the Harness rules, and from nothing else: a
+	// user's Deny or Block rule still blocks it. The harness fills it from a
+	// profile's own declaration (a worker profile's workspace.sync paths with
+	// write access). Never read from a settings file.
+	Permit []string `json:"-"`
+}
+
+// WithHarness returns s with the harness deny rules and the permits that
+// exempt a call from them. The slices are copied.
+func (s Settings) WithHarness(deny, permit []string) Settings {
+	s.Harness = append([]string{}, deny...)
+	s.Permit = append([]string{}, permit...)
+	return s
+}
+
+// permits reports whether a Permit rule covers the call.
+func (s Settings) permits(tool, subject string) bool {
+	for _, r := range s.Permit {
+		if matchRule(r, tool, subject) {
+			return true
+		}
+	}
+	return false
 }
 
 // From builds Settings from explicit allow/ask/deny rule slices.
@@ -114,6 +142,11 @@ func (s Settings) explain(tool, subject string) (Decision, string) {
 	}
 	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
 		if matchRule(r, tool, subject) {
+			return DecisionBlock, r
+		}
+	}
+	for _, r := range s.Harness {
+		if matchRule(r, tool, subject) && !s.permits(tool, subject) {
 			return DecisionBlock, r
 		}
 	}

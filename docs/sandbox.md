@@ -20,7 +20,7 @@ the network can be switched off.
 
 It applies to:
 
-- the `Bash` tool, in agent, plan and goal mode and in explore subagents
+- the `Bash` tool, in agent, plan, goal and code mode and in explore subagents, including a `Bash` call made from a [code-mode](code-mode.md) script
 - inline `!cmd` from the prompt
 - supervised processes started from `/processes`
 
@@ -34,7 +34,8 @@ Inside the sandbox:
   `~/.pnpm-store`, `~/.yarn`, `~/.bun`, `~/.deno`, `~/.cargo`, `~/.rustup`,
   `~/.m2`, `~/.gradle`, `~/.nuget`, `~/.gem`, `~/.dotnet`, `~/.pyenv` and a
   few more, plus the directories named by `GOCACHE`, `GOMODCACHE`, `GOPATH`,
-  `XDG_CACHE_HOME`, `CARGO_HOME` and `npm_config_cache`.
+  `XDG_CACHE_HOME`, `CARGO_HOME` and `npm_config_cache` (a variable that is unset
+  or holds a relative path adds nothing).
 - Everything else is read-only.
 - `~/.vulnetix/belai` (or `$BELAI_HOME`), which holds credentials and
   sessions, is hidden: the command sees an empty directory.
@@ -98,6 +99,13 @@ asks you rather than retrying blindly.
   your browser.
 - MCP stdio servers run in the sandbox only when their settings say
   `sandbox: true` (see [MCP servers](mcp.md)).
+- The native cloud tools (`AWS`, `Terraform`, `Kubectl` and the others) run outside
+  the sandbox, as do `Vulnetix` scans. They hold only what their own sign-in
+  gives them, plus, for `AWS` and `Terraform`, the temporary credentials of a role
+  the profile declared or the user approved (see [AWS roles](agent-profiles.md#aws-roles)).
+  Those credentials live in Belai's memory and reach only those two
+  subprocesses. A command inside the sandbox cannot see them, and neither can
+  `Env` or `Bash`.
 - The microphone helper behind [voice input](voice.md) is started by Belai
   itself, outside the sandbox, and only from the voice engine. A command inside
   the sandbox sees a minimal device tree, so it cannot record audio.
@@ -109,8 +117,10 @@ asks you rather than retrying blindly.
 - A cache directory that does not exist is skipped; bubblewrap binds only
   what is there.
 - A relative path in `extra_writable` is ignored.
-- An unknown `mode` means `auto`. A `network` value other than `allow`
-  means `deny`.
+- An unknown `mode` means `auto` when no layer sets a valid one. When layers
+  are merged an unknown `mode` is skipped, so the layer below it stands: a
+  project file saying `strict` over a global `required` leaves `required`. A
+  `network` value other than `allow` means `deny`.
 - Belai's state directory stays hidden even when it sits under a writable
   path.
 - bubblewrap is probed once per run. If it is installed but cannot start

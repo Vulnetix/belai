@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,5 +102,59 @@ func TestLSPTimeoutTakesMinimum(t *testing.T) {
 	merged := global.Override(proj)
 	if merged.LSP.TimeoutMS != 500 {
 		t.Fatalf("timeout = %d, want 500", merged.LSP.TimeoutMS)
+	}
+}
+
+// TestValidateLSPRangesAreInclusive pins the ranges docs/lsp.md states: a value
+// on either edge is accepted, one past it fails the settings, and zero means
+// unset.
+func TestValidateLSPRangesAreInclusive(t *testing.T) {
+	cases := []struct {
+		key    string
+		set    func(l *LSPSettings, v int)
+		lo, hi int
+		min    string
+	}{
+		{"timeout_ms", func(l *LSPSettings, v int) { l.TimeoutMS = v }, 100, 30000, "[100,30000]"},
+		{"max_diagnostics", func(l *LSPSettings, v int) { l.MaxDiagnostics = v }, 1, 50, "[1,50]"},
+		{"max_repair_attempts", func(l *LSPSettings, v int) { l.MaxRepairAttempts = v }, 2, 20, "[2,20]"},
+	}
+	for _, c := range cases {
+		for _, v := range []int{0, c.lo, c.hi} {
+			l := &LSPSettings{}
+			c.set(l, v)
+			if err := ValidateLSP(Settings{LSP: l}); err != nil {
+				t.Errorf("%s=%d must validate: %v", c.key, v, err)
+			}
+		}
+		for _, v := range []int{c.lo - 1, c.hi + 1, -1} {
+			if v == 0 {
+				continue // zero is unset, which the loop above accepts
+			}
+			l := &LSPSettings{}
+			c.set(l, v)
+			err := ValidateLSP(Settings{LSP: l})
+			if err == nil {
+				t.Errorf("%s=%d must be rejected", c.key, v)
+				continue
+			}
+			if !strings.Contains(err.Error(), c.key) || !strings.Contains(err.Error(), c.min) {
+				t.Errorf("%s=%d error %q should name the key and the range %s", c.key, v, err, c.min)
+			}
+		}
+	}
+}
+
+// TestLSPRepairAttemptsAreClamped covers the accessor the agent reads: unset
+// takes the caller's default, and a value is held inside [2,20].
+func TestLSPRepairAttemptsAreClamped(t *testing.T) {
+	for _, c := range []struct{ set, want int }{{0, 4}, {2, 2}, {7, 7}, {20, 20}, {1, 2}, {99, 20}} {
+		s := Settings{LSP: &LSPSettings{MaxRepairAttempts: c.set}}
+		if got := s.LSPMaxRepairAttemptsOr(4); got != c.want {
+			t.Errorf("max_repair_attempts %d resolved to %d, want %d", c.set, got, c.want)
+		}
+	}
+	if got := (Settings{}).LSPMaxRepairAttemptsOr(4); got != 4 {
+		t.Errorf("no lsp block resolved to %d, want the default 4", got)
 	}
 }

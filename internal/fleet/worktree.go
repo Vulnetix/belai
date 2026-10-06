@@ -17,57 +17,17 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/kanban"
-	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // BranchPrefix starts every branch a worker creates or accepts from an item.
 const BranchPrefix = "belai/"
 
-// hardenedGit is every git call a worker makes: repository hooks and
-// fsmonitor off (a repository's own config must not run code on an
-// unattended worker's account), no file:// transport, no credential prompt,
-// the scrubbed environment, its own process group, no stdin. With gitDir set
-// it also pins --git-dir and --work-tree, so a worktree's .git file — which
-// the worker's model can write — never decides which repository git opens.
+// hardenedGit is every git call a worker makes (forge.HardenedGit): hooks and
+// fsmonitor off, no file:// transport, no credential prompt, the scrubbed
+// environment and its own process group.
 func hardenedGit(gitDir, workTree string, extraEnv ...string) forge.Runner {
-	return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
-		if len(argv) == 0 {
-			return nil, errors.New("fleet: empty command")
-		}
-		if argv[0] == "git" {
-			pre := []string{"git",
-				"-c", "core.hooksPath=" + os.DevNull,
-				"-c", "core.fsmonitor=false",
-				"-c", "protocol.file.allow=never",
-				"-c", "credential.interactive=never",
-			}
-			if gitDir != "" {
-				pre = append(pre, "--git-dir="+gitDir, "--work-tree="+workTree)
-			}
-			argv = append(pre, argv[1:]...)
-		}
-		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		cmd.Dir = dir
-		cmd.Env = append(append(proc.ScrubbedEnv(), "GIT_TERMINAL_PROMPT=0"), extraEnv...)
-		proc.SetProcessGroup(cmd)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-		if err := cmd.Run(); err != nil {
-			msg := strings.TrimSpace(stderr.String())
-			if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
-				msg = msg[i+1:]
-			}
-			if ctx.Err() != nil {
-				msg = "timed out"
-			}
-			if msg == "" {
-				msg = err.Error()
-			}
-			return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], forge.Clean(msg))
-		}
-		return stdout.Bytes(), nil
-	}
+	return forge.HardenedGit(gitDir, workTree, extraEnv...)
 }
 
 func git(ctx context.Context, r forge.Runner, dir string, args ...string) (string, error) {
@@ -84,10 +44,21 @@ type Workspace struct {
 	Branch string
 	// Worktree is true when Dir is a worktree this worker created.
 	Worktree bool
+	// Owned is the profile's owned directory (config.ProfileFilesDir), the fallback
+	// source for a workspace.sync path the repository does not hold yet: a library
+	// install writes the files a profile carries there, never into a repository.
+	Owned string
 	// Base is the commit the item's work is measured from: the base a new
 	// branch started at, or where an existing branch forked from HEAD.
-	Base      string
-	repo      string
+	Base string
+	repo string
+	// synced are the repository-relative paths a profile's workspace.sync
+	// copied in. The harness's commit never includes them (see changedPaths).
+	synced []string
+	// placed are the files the harness itself put in the worktree (reference
+	// documents and synced files), by worktree-relative path. They are never
+	// committed.
+	placed    map[string]bool
 	gitDir    string
 	commonDir string
 	dotgit    []byte
@@ -270,6 +241,10 @@ func (w *Workspace) changedPaths(ctx context.Context) ([]string, error) {
 			continue
 		}
 		status, path := f[:2], f[3:]
+		if w.isSynced(path) {
+			// A crew's shared scratchpad is never part of the branch.
+			continue
+		}
 		paths = append(paths, path)
 		if status[0] == 'R' || status[0] == 'C' {
 			if i+1 < len(fields) && fields[i+1] != "" {

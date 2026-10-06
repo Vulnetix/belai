@@ -23,16 +23,21 @@ type DirSummary struct {
 `Files` is a recursive count of the files under that directory. The walk is
 bounded and skip-dir aware:
 
-- `scanTimeout` 5 s and `maxFiles` 2000 cap the whole walk (`filepath.SkipAll`
-  stops it outright rather than stat-ing the rest of the tree);
+- `scanTimeout` 5 s caps the whole scan, shared by every walk in it. `maxFiles`
+  2000 caps each top-level directory separately, so a directory with more
+  files reports exactly 2000 and never a larger number; the count is then a
+  floor, not a total. `filepath.SkipAll` stops a walk outright rather than
+  stat-ing the rest of the tree;
 - `skipDirs` — `.git`, `node_modules`, `vendor`, `target`, `dist`, `.vulnetix`,
   `.idea`, `.vscode` — are never descended;
 - hidden directories (`.` prefix) are excluded from the listing.
 
-Results are sorted by name and capped at 24 entries, so the layout line stays a
-compact summary, never a full listing.
+Results are sorted by name and then cut to the first 24, so a repository with
+more than 24 top-level directories shows the 24 that sort first, and the layout
+line stays a compact summary, never a full listing.
 
-The companion `languages` walk in the same package counts file extensions into
+The companion `languages` walk in the same package makes one pass over the whole
+repository, stopping after 2000 files in total, and counts file extensions into
 `LangCount{Ext, Files}` (lower-cased, `(none)` when there is no extension),
 sorted by count descending and capped at the top 12 — the `languages: go(1190)
 json(45) md(41) …` line.
@@ -84,7 +89,7 @@ uploaded as `RCInfo.Dirs` (`RCDir{Path, Name, Source}`) by
 
 | Concern | Where | Limit |
 | --- | --- | --- |
-| repository map scan | `repomap.Scan` | 5 s / 200 dirs / 2000 files |
+| repository map scan | `repomap.Scan` | 5 s overall / 2000 files per top-level dir and for the language walk |
 | layout listing | `repomap.layout` | 24 top-level dirs |
 | language counts | `repomap.languages` | 12 extensions |
 | checkout discovery | `repoindex.Scan` | 3 s / 500 dirs / 200 entries |

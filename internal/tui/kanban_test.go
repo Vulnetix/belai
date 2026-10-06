@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
@@ -17,6 +18,7 @@ func kanbanApp(t *testing.T) (*App, *kanban.Store) {
 	t.Helper()
 	a := New(Options{})
 	a.width, a.height = 120, 40
+	a.settings.UI = &config.UISettings{IdlePane: ptrString(config.IdlePaneKanban)}
 	store := kanban.Open(filepath.Join(t.TempDir(), "kanban"))
 	a.kb = &kanbanUI{store: store, src: kanban.NewSource(kanban.ProvenanceFor(a.workdir, a.sessionID, ""))}
 	return a, store

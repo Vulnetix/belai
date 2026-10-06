@@ -270,8 +270,11 @@ no running guess either, because a guess is raw text.
 
 - The phrase is stripped first. "Hey, Belay, fix the failing test" goes on as
   "fix the failing test", and that is all any later step sees.
-- The name tolerates the recogniser's usual misspellings (one letter off
-  "belay" or "belai"), and only at the very start of the utterance. "They said
+- The opening word can be "hey", or what a recogniser makes of it: "hay", "hi",
+  "a", "okay" or "ok". The name tolerates the usual misspellings (one letter off
+  "belay" or "belai", with an optional trailing "s", between five and eight
+  letters, and "bellay" or "belly"), and only at the very start of the
+  utterance. "They said
   hey belay" and "hey there belay" do not match.
 - A bare "Hey, Belay" arms the next utterance for eight seconds, so you can
   pause and then say the instruction. One utterance uses it up.
@@ -292,13 +295,13 @@ speech and "stop" is not.
 
 | Say | When | Does |
 | --- | --- | --- |
-| stop | a reply is being read aloud ([read aloud](tts.md#saying-stop)) | stops the audio, and nothing else; it takes priority over the next row |
-| stop, cancel | a turn is running, no ask open | interrupts it, as Esc does |
+| stop, cancel, interrupt | a reply is being read aloud ([read aloud](tts.md#saying-stop)) | stops the audio, and nothing else; it takes priority over the next row |
+| stop, cancel, interrupt | a turn is running, no ask open | interrupts it, as Esc does |
 | approve, approved, allow, yes | a permission ask is open | allow once |
-| approve always, always allow | a permission ask is open | allow and save the rule; only these exact phrases |
+| approve always, always approve, always allow, allow always, approved always | a permission ask is open | allow and save the rule; only these exact phrases |
 | deny, denied, reject, no | a permission ask is open | deny |
-| option 1 to option 4 (also "number 2", or just "2") | a clarification is open | picks that option in the first group with no answer |
-| submit | a clarification is open | sends the answers shown, as Enter does |
+| option 1 to option 4 (the word before the number can be option, number, choice, select, choose or pick; "2" alone works too, and the recogniser's homophones won, to, too and for count as 1, 2, 2 and 4) | a clarification is open | picks that option in the first group with no answer |
+| submit, send, done | a clarification is open | sends the answers shown, as Enter does |
 | skip | a clarification is open | skips the first group with no answer |
 | approve, deny | the plan review is open | approve here, or keep the plan without executing it |
 
@@ -451,7 +454,8 @@ cleanup failure never loses what you said. Route the role like any other with
   wrapped by the OS sandbox. It is reachable only from the voice engine; no
   tool call can start it, and a sandboxed `Bash` command cannot see the audio
   devices. `voice.device` must be a plain identifier (letters, digits and
-  `. _ : , @ = -`, not starting with `-`), so it cannot add an option. It is
+  `. _ : , @ = -`, at most 128, not starting with `-` or `=`), so it cannot add an
+  option. It is
   given no file to write (`parecord` reads a lone `-` as a file name, not as
   standard output, so it gets none), and it runs in a private temporary
   directory that is removed when it ends, so a mistake could never leave a

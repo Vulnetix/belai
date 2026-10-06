@@ -43,13 +43,17 @@ up as an all-clear.
 | `c` | C | `.c .h` | `clangd` | `clang -fsyntax-only` (gated) | shares `clangd` with C++/Obj-C |
 | `cpp` | C++ | `.cc .cpp .cxx .hpp .hh .hxx` | `clangd` | `clang -fsyntax-only` (gated) | shares `clangd` with C/Obj-C |
 | `objc` | Objective-C | `.m .mm` | `clangd` | `clang -fsyntax-only` (gated) | shares `clangd` with C/C++ |
-| `csharp` | C# | `.cs` | `csharp-ls` → `omnisharp` | **none** | |
+| `csharp` | C# | `.cs` | `csharp-ls -lsp` → `omnisharp` | **none** | |
 | `java` | Java | `.java` | `jdtls` | **none** | |
 | `dart` | Dart / Flutter | `.dart` | `dart language-server --protocol=lsp` | `dart analyze` | covers Flutter |
 | `swift` | Swift | `.swift` | `sourcekit-lsp` | `swiftc -parse` | |
 | `zig` | Zig | `.zig .zon` | `zls` | `zig ast-check` | |
 | `bash` | Shell | `.sh .bash` | `bash-language-server start` | `bash -n` | |
-| `ruby` | Ruby | `.rb .rake .gemspec`, `Rakefile`, `Gemfile` | `ruby-lsp` → `solargraph` | `ruby -c` | |
+| `ruby` | Ruby | `.rb .rake .gemspec`, `Rakefile`, `Gemfile` | `ruby-lsp stdio` → `solargraph` | `ruby -c` | |
+
+The server column shows the arguments Belai starts a server with, except for
+`clangd` (`--background-index=false --log=error`) and `jdtls` (`-data` and a
+cache directory), whose arguments are housekeeping.
 
 ### Fallback gates
 
@@ -87,8 +91,9 @@ that is code execution (`tsconfig.json` plugins, `gopls` running `go list`,
 etc.). Therefore:
 
 - Live servers are enabled only in interactive TUI sessions on already-
-  trusted roots.
-- Headless, non-TTY, and `-trust-dir`-only runs use fallback checks only.
+  trusted roots, and in a `belai rc --web-controls` session whose web user
+  turned `/lsp on` (see [remote-control.md](remote-control.md#session-controls-from-the-web)).
+- Other headless, non-TTY, and `-trust-dir`-only runs use fallback checks only.
 - `workspace/applyEdit` is always answered with `{"applied": false}`.
 - `initializationOptions` is always `null`.
 - `lsp.servers` is dropped from the project layer unconditionally.
@@ -162,8 +167,29 @@ from a fixed set of checkers. The two mechanisms stay orthogonal.
 
 When no server is detected, or when the server is still warming, the harness
 runs the fixed-argv fallback if one exists. Fallback output is parsed by the
-same renderer and sealed the same way. A timeout counts as a strike and may
-reduce the per-key adaptive budget.
+same renderer and sealed the same way.
+
+**Strikes.** Each server (a language, its binary and its root) has its own
+budget, which starts at `lsp.timeout_ms`. A live diagnosis that overruns it is a
+strike, and the fallback answers in its place. A success clears the strikes and
+restores the budget. Three strikes in a row halve the budget, never below
+100 ms. Five strikes in a row stop the harness asking that server at all; the
+fallback keeps checking the language, and a language with none reports
+`unavailable`. The server is asked again only after it has sat unused for
+5 minutes and been evicted, or after Belai restarts. Every call to it counts as
+use, so a server that is being skipped but still edited is not evicted.
+
+**Crashes.** A server that fails to start, or answers a request with an error,
+has crashed. Its first crash allows one restart, and only after a 30 second
+cooldown; until then the fallback answers, or `unavailable` where the language
+has none. A second crash leaves that server down on the same terms as five
+strikes.
+
+**Timing.** A live server gets 10 seconds to initialise and is shown as warming
+until it has. A fallback checker is cut off after 2 seconds. A report for
+unchanged content is reused for 300 ms. A server unused for 5 minutes is
+evicted, and the pool holds at most 6 live connections (see
+[Limitations](#limitations)).
 
 Manifest edits (`go.mod`, `package.json`, `tsconfig.json`, `Cargo.toml`,
 `pyproject.toml`) notify the server with `workspace/didChangeWatchedFiles` and
@@ -172,8 +198,8 @@ after editing a manifest.
 
 ## Limitations
 
-- Windows is not supported in this release; the `/settings` row renders
-  `unsupported on windows`.
+- Live servers are not supported on Windows in this release; the `/settings`
+  row renders `unsupported on windows`. The fallback checkers still run there.
 - Monorepos with several confinement roots may evict servers from the warm
   pool cap (6 live connections). Thrashing degrades to "always warming" and then
   to fallback, which is the acceptable floor.

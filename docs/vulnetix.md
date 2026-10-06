@@ -17,9 +17,11 @@ for LLM traffic.
 - **Scanners are a fixed, allowlisted table.** The nine review scanners —
   `sca`, `containers`, `sast`, `secrets`, `iac`, `malscan`, `sbom`, `aibom`,
   `cbom` — and the post-scan `fix` activity are the only names in
-  `AllowedSubcommands`. `VulnetixSettings.Subcommands` is validated at save time
-  and at run time against that set. Flags come from the fixed table only; no
-  user-supplied flags reach `exec.Command`.
+  `AllowedSubcommands`. `vulnetix.subcommands` is validated against that set
+  when settings load (`config.ValidateVulnetix`, which names the key) and again
+  when a review starts, so a bad name fails at startup rather than mid-review.
+  Flags come from the fixed table only; no user-supplied flags reach
+  `exec.Command`. See [Review settings](#review-settings).
 - **Eight of the nine scanners start concurrently.** `sca` and `containers`
   share the `sbom` lane because both write `sbom.cdx.json`, so `containers`
   starts only after `sca` finishes. Every scanner except `sca` passes
@@ -38,10 +40,12 @@ for LLM traffic.
   (`scanartifacts.SARIFFacts`, `scanartifacts.CycloneDXFacts`). All outcomes
   and the closing done message travel on one channel, so the TUI sees them
   in the order they happened.
-- **Review scans have no timeout.** A scan runs until it exits; `x` in the
-  runs panel kills that row's process group, and cancelling the parent context
-  (esc/quit) cancels every derived subcontext. CLI probes (`version`, `env`,
-  `auth`) keep the 15-second default.
+- **Review scans have no timeout unless `vulnetix.timeout` is set.** A scan
+  runs until it exits; `x` in the runs panel kills that row's process group, and
+  cancelling the parent context (esc/quit) cancels every derived subcontext.
+  With `vulnetix.timeout` set, each scan gets that long and a scan that runs
+  over is reported as timed out, which does not stop the others. CLI probes
+  (`version`, `env`, `auth`) keep the 15-second default whatever the setting.
 - **A killed scanner does not stop the run.** The old loop broke on the first
   non-zero exit; the fan-out lets the remaining scanners finish, and only a
   parent-context cancellation stops all of them.
@@ -94,6 +98,56 @@ for LLM traffic.
 | `/vulnetix mcp status` | Show its state and tools |
 | `/vulnetix setup` | Open the Getting started view again (see *Getting started*) |
 | `/vulnetix help` | Show the available subcommands |
+
+The capability screen and `/vulnetix status` report the CLI's version, whether
+a newer one exists, and whether the API is reachable at `$VULNETIX_API_URL`
+(default `https://api.vdb.vulnetix.com/v1`), and whether the credential is
+accepted when the CLI is logged in. Every call to the CLI runs with a filtered
+environment. Variables starting `OPENAI_`, `ANTHROPIC_`, `CLOUDFLARE_` or
+`BELAI_`, and any ending `_API_KEY`, `_TOKEN` or `_SECRET`, are removed, except
+the Vulnetix variables (`VULNETIX_API_TOKEN`, `VULNETIX_API_KEY`,
+`VULNETIX_ORG_ID`, `VULNETIX_API_URL`, `VULNETIX_WEB_URL`, `VVD_ORG` and
+`VVD_SECRET`), which are kept. Everything else passes through, and `NO_COLOR=1`,
+`TERM=dumb` and `HOMEBREW_NO_AUTO_UPDATE=1` are set.
+
+## Review settings
+
+The review reads a `vulnetix` block in `settings.json`, and two top-level keys
+for the project sweep. Settings are validated when they load: a value outside
+the rules below shows as `settings error: …` naming the key at startup, and
+Belai runs with its default settings until the file is fixed.
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `vulnetix.subcommands` | every scanner | The scanners a review runs, from `sca`, `containers`, `sast`, `secrets`, `iac`, `malscan`, `sbom`, `aibom`, `cbom` and `fix`. They run in the fixed table order whatever order you list them, so `sca` still precedes `containers` in the `sbom` lane. `fix` is always reported: it is the post-scan activity, not a scanner. A name outside this list is refused. |
+| `vulnetix.timeout` | none | A Go duration such as `10m` or `1h30m`, longer than zero and at most `24h`. Each scan gets that long. `0s`, a negative value, a value over a day and text that is not a duration are refused. |
+| `vulnetix.autofix` | `false` | When true, the review runs `vulnetix fix --yes` after the SCA scan. When false it attaches the `--dry-run` plan to the triage turn and changes nothing. |
+| `vulnetix.gateway_url` | `https://guardrails.vulnetix.com` | The AI Firewall host for a self-hosted deployment. Your own layers only. |
+| `vulnetix.firewall_enabled` | off | The legacy firewall switch, read as `firewall.enabled` when that key is unset. Writers use `firewall.enabled`. |
+| `vulnetix.dep_watch` | `true` | The [dependency hook](#dependency-hook). |
+| `vulnetix.continue_on_error`, `vulnetix.org_id` | | Accepted when present and ignored. A failing scanner never stops the others (see *A killed scanner does not stop the run*), and the organisation is the one the Vulnetix CLI is logged in to. |
+| `vulnetix_sweep_enabled` | `true` | The background sweep for other `.vulnetix` projects, below. |
+| `vulnetix_sweep_roots` | `$HOME` and the working directory's parent | The directories the sweep walks. Each must be an absolute path. |
+
+Which layer may set what follows the rule used everywhere else: a repository
+file can tighten and never loosen.
+
+- `autofix` and `dep_watch` follow their direction. A project `settings.json`
+  may turn `autofix` off but never on, because it lets a review change the tree,
+  and may turn `dep_watch` on but never off, because it is a check.
+- `subcommands`, `timeout` and `vulnetix_sweep_roots` come from your own layers
+  only, so a repository cannot narrow the scanners that look at it or choose
+  where the sweep walks. `vulnetix_sweep_enabled` can be turned off by a project
+  file and never on.
+
+**The sweep** runs when `/vulnetix list` opens, and at most once every 24 hours
+(the project registry records the last run). It walks the roots to six levels
+for up to 20 seconds, looking for directories named `.vulnetix`, and records
+each one it finds in the project registry as a sweep discovery, up to 2000. It
+does not descend into dot-directories, `node_modules`, `vendor`, `target`,
+`dist`, `build`, `.venv`, symbolic links, or `/proc`, `/sys`, `/dev` and `/run`
+(and, under your home, `Library`, `.Trash` and `snap`). With the sweep off the
+list shows only the projects Belai has already seen.
 
 ## Getting started
 
@@ -372,6 +426,11 @@ The tool takes the arguments after `vulnetix` and builds the argv itself:
   table follows the CLI's command manifest, so no call fails on an unknown
   flag (`sbom` takes neither `--path` nor `--disable-memory`).
 - `--path` and `-o` must stay inside the working tree.
+- An engaged profile's `vulnetix_org_id`, `vulnetix_project`,
+  `vulnetix_namespace` and `vulnetix_environment` facts
+  ([Facts](agent-profiles.md#facts)) set `VULNETIX_ORG_ID`, `VULNETIX_PROJECT`,
+  `VULNETIX_NAMESPACE` and `VULNETIX_ENVIRONMENT` for the call, after the
+  environment scrub. `VULNETIX_API_URL` and the key are never set from a fact.
 - Scans run one at a time, because they write the same `.vulnetix/`
   artifacts, under a 15-minute limit.
 - Output is stripped of ANSI codes, progress bars and spinner redraws, then
@@ -501,6 +560,16 @@ processes tab lists only running supervised processes from the library and
 offers `enter`/`v` to view, `x` to stop, and `r` to restart. It is bounded: it
 consumes at most one third of the terminal height and refuses to open on
 terminals shorter than six rows so the chat input remains usable.
+
+## Searching the scan output
+
+The files a review leaves in `.vulnetix` (SARIF, CycloneDX, OpenVEX, `memory.yaml`
+and the like) are indexed so an agent can search them by meaning with `Grep`,
+`Glob` and `Read`, in every mode and in fleet workers. Each finding or component
+is one passage built from its identifiers (rule id, severity, file and line,
+package and version, advisory id), never from a message, a snippet or a matched
+secret. The index is refreshed in the background, and the text is classified
+once when it is indexed. See [Knowledge](knowledge.md).
 
 ## Severity parsing
 

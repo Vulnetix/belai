@@ -263,7 +263,9 @@ func (a *App) availabilityCmdIfStale() tea.Cmd {
 	if !a.avail.probedAt.IsZero() && time.Since(a.avail.probedAt) < availabilityTTL {
 		return nil
 	}
-	return a.probeAvailabilityCmd()
+	// Strands Decider-2B is detected alongside: it is a local decision
+	// provider with no credential, so only a probe can say it is there.
+	return tea.Batch(a.probeAvailabilityCmd(), a.deciderProbeCmd())
 }
 
 // invalidateAvailability forces the next picker entry to re-probe. Any

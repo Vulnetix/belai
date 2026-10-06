@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 func TestFromSettingsDefaults(t *testing.T) {
@@ -105,5 +107,25 @@ func TestRequiredWithoutBackendRefuses(t *testing.T) {
 	}
 	if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeRequired}); err != ErrUnavailable {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestBwrapUnsharesPIDsOnlyWhileTheVaultHoldsVariables(t *testing.T) {
+	defer vaultenv.Default.Replace(nil, time.Time{})
+	has := func() bool {
+		for _, a := range BwrapArgs(Policy{Mode: ModeAuto}, "/work", []string{"true"}) {
+			if a == "--unshare-pid" {
+				return true
+			}
+		}
+		return false
+	}
+	vaultenv.Default.Replace(nil, time.Time{})
+	if has() {
+		t.Fatal("no vault variables, no extra namespace")
+	}
+	vaultenv.Default.Replace([]vaultenv.Var{{Name: "A_TOKEN", Value: "a-token-value-1"}}, time.Now().Add(time.Hour))
+	if !has() {
+		t.Fatal("with vault variables the command gets its own pid namespace")
 	}
 }
