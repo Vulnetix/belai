@@ -22,7 +22,10 @@ import (
 // Scan bounds: never walk unboundedly.
 const (
 	scanTimeout = 5 * time.Second
-	maxFiles    = 2000
+	// maxFiles caps files counted per top-level directory in layout and
+	// across the whole tree in languages. The split is intended: layout
+	// summarises each directory independently, languages the whole tree.
+	maxFiles = 2000
 )
 
 var skipDirs = map[string]bool{
@@ -235,10 +238,10 @@ func languages(ctx context.Context, root string) []LangCount {
 			}
 			return nil
 		}
-		filesSeen++
-		if filesSeen > maxFiles {
+		if filesSeen >= maxFiles {
 			return filepath.SkipAll
 		}
+		filesSeen++
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(d.Name())), ".")
 		if ext == "" {
 			ext = "(none)"
