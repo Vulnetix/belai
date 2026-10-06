@@ -35,6 +35,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Glob{Root: workdir, MaxResults: 200, Cwd: cwd, Knowledge: hub})
 	list = append(list, &Cd{Cwd: cwd})
 	list = append(list, UpdatePlan{})
+	list = append(list, Todo{})
 	list = append(list, ExitPlanMode{})
 	list = append(list, AskUserQuestion{})
 	list = append(list, Task{})

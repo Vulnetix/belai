@@ -71,7 +71,7 @@ type pruneStats struct {
 // alwaysKeepTools are tools whose calls and results are state or instructions
 // rather than re-runnable reads.
 var alwaysKeepTools = map[string]bool{
-	"update_plan": true, "ExitPlanMode": true, "AskUserQuestion": true, "Skill": true,
+	"update_plan": true, "Todo": true, "ExitPlanMode": true, "AskUserQuestion": true, "Skill": true,
 	"SkillDraft": true, "Task": true, "ToolSearch": true, "ReadResult": true,
 }
 

@@ -254,3 +254,25 @@ func TestRender(t *testing.T) {
 		t.Fatalf("empty render = %q", New("p", nil).Render())
 	}
 }
+
+func TestOpenAndHasOpen(t *testing.T) {
+	if (List{}).HasOpen() {
+		t.Fatal("an empty list has no open items")
+	}
+	l := New("g", []string{"a", "b", "c"})
+	l.Items[0].Status = StatusDone
+	if got := l.Open(); len(got) != 2 || got[0].N != 2 {
+		t.Fatalf("Open = %+v", got)
+	}
+	l.MarkAllDone()
+	if l.HasOpen() {
+		t.Fatal("a done list has no open items")
+	}
+	l = New("g", []string{"a"})
+	if !l.HasOpen() {
+		t.Fatal("a pending item is open")
+	}
+	if l.ClearedCopy().HasOpen() {
+		t.Fatal("a cleared list is history and holds no open work")
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/vulnid"
 )
 
@@ -34,6 +35,10 @@ type Log struct {
 	// vulns notes the advisory identifiers a turn shows, so the website gets
 	// the same vulnerability row the terminal draws (docs/vuln-row.md).
 	vulns vulnid.Tracker
+
+	// lastTodos is the content of the todo_list entry last written, so an
+	// unchanged list is not written again.
+	lastTodos string
 
 	turnID    string
 	turnStart time.Time
@@ -197,7 +202,35 @@ func (l *Log) Observe(e agent.Event) {
 		if e.Warning != "" {
 			l.w.System(e.Warning)
 		}
+	case agent.EventTodosKind, agent.EventPassKind, agent.EventGoalEvalKind, agent.EventPlanEvalKind:
+		l.todoList(e.Todos)
+	case agent.EventGoalStateKind:
+		if e.GoalState != nil {
+			l.Flush()
+			l.w.Entry(e.GoalState.ToEntry(l.w.Last()))
+		}
 	}
+}
+
+// todoList writes the session's todo list as a todo_list entry, the record the
+// website's Todo panel reads. The TUI has always written it; headless, rc, fleet
+// and ACP sessions go through this log, so they write it here. An unchanged list
+// is not written again: the record is append-only and latest wins.
+func (l *Log) todoList(list *todos.List) {
+	if list == nil {
+		return
+	}
+	entry := list.ToEntry("")
+	l.mu.Lock()
+	same := entry.Content == l.lastTodos
+	l.lastTodos = entry.Content
+	l.mu.Unlock()
+	if same {
+		return
+	}
+	l.Flush()
+	entry.ParentID = l.w.Last()
+	l.w.Entry(entry)
 }
 
 // TurnStarted writes a turn_state "started" line carrying facts (mode,

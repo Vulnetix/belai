@@ -280,6 +280,43 @@ print as an agent failure. Non-TUI entry points install a
 `signal.NotifyContext` root for exactly this reason; a second signal hard-exits
 with status 130, because the next pass boundary may be seconds away.
 
+## Errors in the call itself
+
+A failed tool call is either a **verdict** or a **repairable failure**, and the
+loop treats them apart (`internal/agent/failures.go`). A verdict is a decision
+of the harness: a classifier verdict on content, a permission or hook denial, a
+mode, scope or read-only refusal. Asking again cannot change it, so a streak of
+verdicts is stopped as before (`withheldRepairDirective`, exhaustion at three,
+and the goal loop's broken-surface stop counts verdicts only). A repairable
+failure is an error in the call: `tool call rejected:` (a bad argument, a tool
+named in the wrong mode, a code script that threw), `tool result withheld:
+execution error`, `malformed arguments` and `arguments may be truncated`.
+
+Every mode (agent, goal, plan, code) answers a repairable failure the same way:
+
+- It goes back to the model as a tool result it can read, and the iteration is
+  not counted as work (`tool call rejected:` used to count as a success).
+- Two such rounds in a row inject a sealed repair directive naming no plan; the
+  failed tools and a short excerpt of each error ride its note. Three rounds
+  (four in code mode) stop the pass as exhausted with `repairFailures` set, and
+  the loop above answers that with a repair request instead of a generic
+  continuation: a goal pass loop repairs one empty pass before it stops,
+  `agentContinuations` opens its next pass with the repair directive, and the plan
+  loop spends one repair pass before it returns the plan so far.
+- A panic in a tool is caught in `executeCall` and becomes an execution error;
+  it never reaches the process, including from the concurrent read goroutines.
+- A call to a tool that was not offered no longer ends the turn under the abort
+  policy: every call of the response is answered with the closest offered name
+  and the model re-issues. A model that names unavailable tools more than
+  `maxMismatchFeedbacks` (2) times still ends the turn with the abort error, so
+  the fail-closed default holds.
+- A context overflow in agent or code mode is recovered once per turn (compaction,
+  or clearing old tool results) exactly as the goal and plan loops already did.
+
+The system prompt tells the model which is which: an error in its own call is to
+be fixed and issued again, a permission, hook, mode or scope refusal is a decision
+and is not retried.
+
 ## Semantic repair
 
 Not all provider output failures should abort the turn:

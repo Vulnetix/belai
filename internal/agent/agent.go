@@ -318,9 +318,9 @@ type Session struct {
 	// turnPrompt is the cleaned prompt of the current turn, context for the
 	// Jev jobs that rank options against what the user asked for.
 	turnPrompt string
-	// handoffUpdatePlanCalled is true once the handoff profile has called
-	// update_plan. Mutating tool calls before it are refused.
-	handoffUpdatePlanCalled bool
+	// handoffTodoCalled is true once the handoff profile has called Todo.
+	// Mutating tool calls before it are refused.
+	handoffTodoCalled bool
 	// emit is the current turn's event emitter, set at the start of run.
 	emit    func(Event)
 	hookSet *hooks.Set
@@ -391,6 +391,18 @@ type Session struct {
 	// tool calls, one of the harness facts that make a turn a work turn.
 	lastTurns    []run.Turn
 	turnToolRuns int
+	// turnTodos is the todo list the model reported this turn, held across
+	// every pass (todotrack.go); turnTodosDirty marks a change not yet
+	// emitted and todoReprompts counts the sends-back for open todos.
+	turnTodos      todos.List
+	turnHasTodos   bool
+	turnTodosDirty bool
+	todoReprompts  int
+	// overflowRecovered: an agent-mode context overflow is recovered once per turn.
+	overflowRecovered bool
+	// turnMutations counts the files this turn's tool calls changed, as the
+	// file-diff recorder saw them: the fact that a turn owes a report.
+	turnMutations int
 	// turnStop is why this turn's goal loop stopped early, set at the stop
 	// site; runTurn folds it into run.Result.StopReason. askWithheld names
 	// the tools whose calls were withheld because nobody could be asked.
@@ -502,6 +514,15 @@ func (s *Session) execTool(name string) (tools.Tool, string) {
 	}
 	if t, refusal, handled := s.kanbanExecTool(name); handled {
 		return t, refusal
+	}
+	// The checklist tool is per mode: Todo outside plan mode, update_plan in
+	// it. The other name is advertised nowhere, so a call to it is a mistake
+	// to fix, not a decision to respect.
+	if !s.planMode && strings.EqualFold(name, "update_plan") {
+		return nil, "tool call rejected: update_plan is plan mode's tool; keep the checklist with Todo (todos: [{content, status}])"
+	}
+	if s.planMode && strings.EqualFold(name, tools.TodoName) {
+		return nil, "tool call rejected: Todo is not offered in plan mode; track research steps with update_plan (plan: [{step, status}])"
 	}
 	if s.planMode && s.planFinalPass && !slices.Contains(planFinishTools, name) {
 		return nil, fmt.Sprintf("tool result withheld: %q is unavailable on the final planning pass; write the plan and call ExitPlanMode", name)
@@ -630,7 +651,7 @@ func NewSession(o Options) (*Session, error) {
 		roOpenAITools, roAnthropicTools = wireTools(roReg)
 	}
 	fanOutTask := &tools.Task{}
-	fanOutReg := reg.With(fanOutTask)
+	fanOutReg := reg.WithoutPlanOnly().With(fanOutTask)
 	fanOutOpenAITools, fanOutAnthropicTools := wireTools(fanOutReg)
 	// Code mode: the Code tool joins a registry of its own, never the shared
 	// one, and that registry drops MCP tools, so agent, plan and goal mode
@@ -964,8 +985,11 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	emit = stampEvents(emit)
 	s.emit = emit
 	s.taskCallsThisTurn = 0
-	s.handoffUpdatePlanCalled = false
+	s.handoffTodoCalled = false
 	s.turnToolRuns = 0
+	s.resetTodoTracking()
+	s.overflowRecovered = false
+	s.turnMutations = 0
 	s.turnStop, s.turnGoalContext = "", ""
 	s.askMu.Lock()
 	s.askWithheld = nil
@@ -1179,7 +1203,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// plan task before editing, and the turn stays scoped to the plan's paths.
 	if modeDec.Intent == rolemanager.IntentHandoff && modeDec.Handoff != nil {
 		in.Directive = joinDirectives(in.Directive, fmt.Sprintf(
-			"The attached plan lists %d tasks. Your first tool call is update_plan with every task, the first in_progress. Then make the edits each task describes directly.",
+			"The attached plan lists %d tasks. Your first tool call is Todo with every task as a todo, the first in_progress. Then make the edits each task describes directly.",
 			modeDec.Handoff.Tasks,
 		))
 	}
@@ -1488,7 +1512,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// and admitted as SAFE, and the evaluator call sanitizes them again.
 	planContext := joinEvidence(clarified, exploreContextDigest(exploreTurns))
 	// The loop's todo events are watched so the kanban wrap-up can say, as a
-	// harness fact, how many update_plan steps were left open.
+	// harness fact, how many todos were left open.
 	var todoMu sync.Mutex
 	var lastTodos *todos.List
 	loopEmit := func(e Event) {
@@ -1827,8 +1851,8 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	if tool == nil {
 		return refusal
 	}
-	if strings.EqualFold(call.Name, "update_plan") {
-		s.handoffUpdatePlanCalled = true
+	if isChecklistTool(call.Name) {
+		s.handoffTodoCalled = true
 	}
 	if len(s.scope) > 0 && tool.Kind().ReadOnly() {
 		if subj := tool.Subject(call.Args); subj == "" {
@@ -1838,10 +1862,10 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 		}
 	}
 
-	// Handoff gate: the profile must call update_plan before any mutating
-	// tool, so the plan tasks are recorded before edits begin.
-	if s.turnIntent == rolemanager.IntentHandoff && !s.handoffUpdatePlanCalled && tools.Mutates(tool) {
-		return fmt.Sprintf("tool result withheld: %q must wait until update_plan records the plan tasks", call.Name)
+	// Handoff gate: the profile must call Todo before any mutating tool, so
+	// the plan's tasks are recorded before edits begin.
+	if s.turnIntent == rolemanager.IntentHandoff && !s.handoffTodoCalled && tools.Mutates(tool) {
+		return fmt.Sprintf("tool result withheld: %q must wait until Todo records the plan's tasks", call.Name)
 	}
 
 	// An argument the schema does not declare would be silently ignored,
@@ -1951,7 +1975,7 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	}
 
 	if err != nil {
-		return fmt.Sprintf("tool result withheld: execution error for %q: %v", call.Name, err)
+		return executionError(call.Name, err)
 	}
 
 	// Render-only metadata (e.g. Read start_line) that does not enter the

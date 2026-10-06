@@ -383,7 +383,7 @@ func TestKindReadOnly(t *testing.T) {
 // a newly added Kind must be explicitly classified read-only or mutating.
 func TestKindReadOnlyClassification(t *testing.T) {
 	want := map[Kind]bool{
-		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true, KindRemote: true, KindUpdatePlan: true, KindProcess: true, KindAgentStore: true, KindSubagent: true,
+		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true, KindRemote: true, KindTodo: true, KindProcess: true, KindAgentStore: true, KindSubagent: true,
 		KindBash: false, KindWrite: false, KindEdit: false, KindProcessCtl: false,
 		// No tool carries KindHook; it stays off the read-only list so it
 		// could never admit a tool into the concurrent fan-out.

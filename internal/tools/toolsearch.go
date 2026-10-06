@@ -28,7 +28,7 @@ const ToolSearchName = "ToolSearch"
 // else on a surface is deferred behind ToolSearch.
 var CoreTools = []string{
 	"Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "WebSearch",
-	"update_plan", "ExitPlanMode", "AskUserQuestion", "Task", "Skill", CodeName,
+	"update_plan", TodoName, "ExitPlanMode", "AskUserQuestion", "Task", "Skill", CodeName,
 	KanbanSearchName, KanbanUpdateName, KanbanMoveName, KanbanAddName, KanbanHandoffName, KanbanVerdictName, KanbanGateName, KanbanContractName,
 	"SubAgentLog", "ProcessRestart", BashOutputName, KillShellName, ScreenshotName, ToolSearchName, ReadResultName,
 }

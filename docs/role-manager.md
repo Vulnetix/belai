@@ -1629,7 +1629,7 @@ root asks to adopt its directory). Then:
   heuristic, and `ForceMode`, the plan-mode default and the engaged agent name
   do not override it.
 - Prompt admission, attachment classification, hooks, permissions, the
-  sandbox and the `update_plan` first-call gate all still apply. The turn
+  sandbox and the `Todo` first-call gate all still apply. The turn
   stays path-scoped to the plan's named paths.
 - Run from plan mode, `/handoff` leaves plan mode (the command is the user's
   choice to edit). It does not change the sticky flag or engaged agent
@@ -1742,7 +1742,7 @@ and runs one more bounded pass with a fresh tool budget:
   `defaultAgentContinuations` = 5 in agent mode), and reaching the cap
   returns the last assistant text with a system note — still not an error;
 - each continuation directive carries the [per-pass TODO check](#per-pass-todo-check),
-  built from the list the model reported through `update_plan`.
+  built from the list the model reported through `Todo`.
 
 **Reset-on-steer** still outranks the continuation directive: an explore
 subagent that exhausts its budget does not continue if new steering arrived;
@@ -1997,7 +1997,7 @@ not sure.
 | Read streak (mid-pass) | 8 tool rounds in a row inside one pass changed no file (`readStreakNudgeAfter`) | The read-streak directive is injected at once, without waiting for the pass boundary: stop surveying and edit the first file the work needs from the bytes already read. It repeats every 8 such rounds and resets on any file change. A round whose every result was withheld does not count. Plan mode, a read-only agent turn, explore subagents and the report pass are never nudged; an agent-mode turn gets the softer agent edit nudge, because it may be a question. A pass has a 40-iteration budget and the boundary escalations only fire once it is spent, which let a goal read for over ten minutes before the harness said anything |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Repaired once: the tool-repair directive is injected and one more pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. A second consecutive empty pass stops the loop — with the work so far, `GOAL_PARTIAL` and a stop report when the goal has already changed a file, and with the error *pass N executed no tools* when it has not. Truncation repair still buys no further passes beyond that one repair |
-| Repeated pass | A pass changed no file and repeated the previous pass's work exactly — the same ordered tool calls and arguments, or the same reply when it called none — `maxRepeatPasses` (2) times in a row | Stops with `GOAL_PARTIAL`, a warning and a stop report. Call ids and wording are not part of the fingerprint. The progression reset cannot catch this: a model that re-adopts its checklist every pass (update_plan 0/2, read, update_plan 2/2) looks busy, and session `fbf5adf5` re-read the same file every pass until it was killed |
+| Repeated pass | A pass changed no file and repeated the previous pass's work exactly — the same ordered tool calls and arguments, or the same reply when it called none — `maxRepeatPasses` (2) times in a row | Stops with `GOAL_PARTIAL`, a warning and a stop report. Call ids and wording are not part of the fingerprint. The progression reset cannot catch this: a model that re-adopts its checklist every pass (Todo 0/2, read, Todo 2/2) looks busy, and session `fbf5adf5` re-read the same file every pass until it was killed |
 | Verdict stall | `writes == 0` and the classifier has withheld 3 tool results by verdict (`goalVerdictStall`) since the goal began, checked before the all-withheld guard | Stops with `GOAL_PARTIAL`, a warning and a stop report naming the block: withheld content does not come back by asking again, with the same tool or another, so a goal that needs it cannot progress |
 | All-withheld goal | `writes == 0` and every pass so far ended with every tool result withheld | Error naming the tool failure, rather than granting unbounded passes against a broken resolver |
 | Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL`, a warning and a stop report — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
@@ -2018,7 +2018,8 @@ so the end of a plan's execution reports the same way.
 | Goal met (either the exhausted-pass or the natural-exit path) | *The goal is complete and verified* — what changed, how it was verified, what is left open | `GOAL_COMPLETE` |
 | Broken evaluator | *Stopped before the goal was confirmed complete* — what changed, what was verified, what remains and why | the loop's sentinel (`GOAL_PARTIAL`) |
 | Unproductive stop with work on disk | Same stop directive | `GOAL_PARTIAL` |
-| Error, cancellation, max passes | No report — the turn ends on the error or the cancellation | — |
+| Error: max passes, every pass withheld, no tool executed | The same stop directive, then the error is returned as before (`goalErrorReport`) | `GOAL_PARTIAL` |
+| Cancellation | No report — the turn ends on the cancellation | — |
 
 Rules:
 
@@ -2034,6 +2035,7 @@ Rules:
   own result (the pass's last assistant text) is returned unchanged, with a
   warning: *final report failed: …* or *final report came back empty*.
 - A cancelled context skips the report and emits nothing.
+- **Agent and code mode report too** (`agentFinish`, `internal/agent/agentreport.go`). A turn that changed a file ends with a one-turn report when its closing reply is under 40 characters, when it was cut off at its tool budget or `max_passes`, or when todos are still open; a turn that changed nothing keeps its reply, because the reply is the answer. The directive says *Do not call any tools* and the report is the same single provider turn. A failed or empty report leaves the reply as it was, and a turn with no reply at all gets a harness-composed line of counts (tool calls, todos done). The TUI says *turn finished — writing the final report* (`EventReportKind` with no sentinel). Plan mode's deliverable is the plan, so it is not asked for one.
 - `EventReportKind` (carrying the sentinel) is emitted just before the report
   turn. The TUI renders it as *goal complete — writing the final report* or
   *goal stopped — writing the final report*. That system line also ends the
@@ -2083,7 +2085,7 @@ work-discipline section says.
 
 | Directive | Injected when |
 | --------- | ------------- |
-| Goal acknowledgement | The first goal pass — start the work now: in the same response as the first actions, one `update_plan` call with the steps (first `in_progress`); batch the reads the work needs, then change from the exact bytes read. It no longer demands a file mutation in the first pass — the no-write escalations at later boundaries catch a goal that never edits. Any restatement of the objective is a single line naming the deliverable and how completion will be verified |
+| Goal acknowledgement | The first goal pass — start the work now: in the same response as the first actions, one `Todo` call with the todos (first `in_progress`); batch the reads the work needs, then change from the exact bytes read. It no longer demands a file mutation in the first pass — the no-write escalations at later boundaries catch a goal that never edits. Any restatement of the objective is a single line naming the deliverable and how completion will be verified |
 | Action | `GOAL_NOT_STARTED` — name the file to change and make the smallest correct edit that advances the goal, in this pass |
 | Read streak | Inside a pass, every 8 tool rounds in a row that changed no file (goal and agent mode only) — stop surveying, edit the first file the work needs from the bytes already read, read more only for the lines that edit needs |
 | No-write | `passesSinceWrite` reaches `goalNoWritePasses`, and at the verification gate when nothing has been written — stop investigating, make the smallest correct edit that advances the named next step, or state the blocker in one line |
@@ -2102,21 +2104,42 @@ place it is attached, so no boundary can forget it:
 | ---- | --------------------- |
 | Goal | Every directive injected inside the loop (`passLedger.directive`): action, no-write, verification, gate, continuation, tool repair, progression, partial. The first-pass goal acknowledgement is exempt — it already asks for the first `update_plan` — and the final report is exempt because it forbids tools |
 | Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final pass limited to `update_plan`, `ExitPlanMode` and `AskUserQuestion` |
-| Agent | Every budget-exhaustion continuation. Agent mode keeps no ledger, so the continuation loop adopts the list from the model's own `update_plan` calls |
+| Agent and code | Every budget-exhaustion continuation, and every send-back for open todos (below). Agent mode keeps no ledger, so the session's turn tracker (`internal/agent/todotrack.go`) holds the list the model reported with `Todo`, across every pass of the turn |
 
 The check's wording depends on the list state:
 
 | List state | Check asks the model to |
 | ---------- | ----------------------- |
-| None tracked (or an empty list) | Call `update_plan` with the steps it will execute, first `in_progress`, in the same response as its next tool calls |
-| Open steps | Bring the list up to date with `update_plan` (finished → `completed`, current → `in_progress`; a `[DONE:n]` marker also counts) in the same response as the tool calls that complete the next unfinished step — never a list-only reply. It states *N of M done, K in progress* |
-| Every step done | Correct the list only if a step is wrong or missing, and spend the pass confirming or finishing the work |
+| None tracked (or an empty list) | Call `Todo` with the todos it will do, first `in_progress`, in the same response as its next tool calls (plan mode: `update_plan` with its research steps) |
+| Open todos | Bring the list up to date with `Todo` (finished → `completed`, current → `in_progress`; a `[DONE:n]` marker also counts) in the same response as the tool calls that complete the next unfinished step — never a list-only reply. It states *N of M done, K in progress* |
+| Every todo done | Correct the list only if a todo is wrong or missing, and spend the pass confirming or finishing the work, then give the final report |
 
 Trust split: the check's wording and its counts are harness-computed and
 travel in the **sealed** directive body. The rendered list is model-authored
 step text, so it rides the directive turn's plain, sanitised note
 ("Current TODO list:"), alongside any other note such as the plan loop's
 files-already-read line — it never enters the sealed block.
+
+#### Open todos at the end of a turn
+
+A reply is not a finish while the todo list has open items. The turn's list is
+held by the session (`turnTodos`, fed by the model's own `Todo` calls and by
+`[DONE:n]` markers in its own assistant text, never by a tool result), and:
+
+- **Every mode but plan.** A text-only reply with open todos is kept, a sealed
+  directive says *N of M todos are still open* (the counts are the harness's, the
+  todo text rides the note), and the model gets another round in the same pass
+  (`refuseOpenTodos`, beside the remediation guard in `pass`). It happens at most
+  `maxTodoReprompts` (2) times a turn. It does not apply to plan mode, an explore
+  subagent, a report-only turn, the kanban wrap-up, a read-only agent turn or a
+  session that cannot loop.
+- **Goal mode.** Accepting `GOAL_COMPLETE` no longer marks the whole list done:
+  open items send the loop back first (`passLedger.refuseOpenTodos`, same bound),
+  and a list the model still will not finish is published as it stands with a
+  warning (*goal accepted with N todo(s) still open*). The final report then says
+  what was left open.
+- **Reports.** After the bound is spent the turn ends on a final report that
+  names the open todos (above).
 
 ### Forced survey
 

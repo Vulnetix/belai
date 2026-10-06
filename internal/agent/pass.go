@@ -87,6 +87,11 @@ type passOutcome struct {
 	// explaining that the plan must be produced as reply text; three breaks
 	// the pass to stop the spin.
 	withheld int
+	// repairFailures counts consecutive iterations in which every tool result
+	// was an error in the call itself (failures.go) and none succeeded. An
+	// exhausted pass with a non-zero count was stopped by repairCap, so the
+	// loop above answers it with a repair request, not a generic continuation.
+	repairFailures int
 	// planExit is set when the model called ExitPlanMode. The caller treats
 	// planExit is true when the pass called ExitPlanMode with a valid plan.
 	// The pass loop treats this as a clean completion signal rather than a
@@ -199,12 +204,18 @@ func (o *passOutcome) noteMutation(eff callEffect) {
 	}
 }
 
-// updatePlanFromArgs reconstructs the shared todo list from an update_plan
-// call's arguments. It delegates to tools.ParsePlanArg, the single definition
-// of the accepted shape, so the tool and the pass loop can never disagree
-// about whether a call was usable.
-func updatePlanFromArgs(args map[string]any) (todos.List, bool) {
-	list, err := tools.ParsePlanArg(args)
+// isChecklistTool reports whether name is a tool that reports the checklist:
+// Todo in goal, agent and code mode, update_plan in plan mode.
+func isChecklistTool(name string) bool {
+	return strings.EqualFold(name, tools.TodoName) || strings.EqualFold(name, "update_plan")
+}
+
+// checklistFromArgs reconstructs the shared todo list from a Todo or
+// update_plan call's arguments. It delegates to tools.ParseTodoArg, the single
+// definition of the accepted shape (ParsePlanArg accepts the same), so the
+// tool and the pass loop can never disagree about whether a call was usable.
+func checklistFromArgs(args map[string]any) (todos.List, bool) {
+	list, err := tools.ParseTodoArg(args)
 	if err != nil {
 		return todos.List{}, false
 	}
@@ -302,6 +313,10 @@ func (u callUnit) execCtx(ctx context.Context) context.Context {
 func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), mode modes.Mode) (passOutcome, []run.Turn, error) {
 	var productive int
 	var withheld int
+	// repair counts consecutive iterations that failed only on errors in the
+	// call itself and succeeded at nothing; mismatchFeedbacks counts responses
+	// that named a tool that was not offered.
+	var repair, mismatchFeedbacks int
 	// readStreak counts tool rounds in a row that changed no file;
 	// mutationsSeen is the pass's mutation count when it last reset.
 	var readStreak, mutationsSeen int
@@ -315,6 +330,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	defer func() { s.lastTurns = turns }()
 	finish := func(o passOutcome) passOutcome {
 		o.mutations = acc.mutations
+		s.turnMutations += acc.mutations
 		o.mutatedPaths = acc.mutatedPaths
 		o.selfVerified = acc.mutations > 0 && acc.lastCheckSeq > acc.lastMutSeq
 		if o.usage == nil {
@@ -336,6 +352,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			acc.spent += assistant.Usage.Total()
 		}
 
+		s.noteAssistantText(assistant.Text)
 		if assistant.Text != "" {
 			lastText = assistant.Text
 			if text != "" {
@@ -351,13 +368,39 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				turns = append(turns, directiveTurns(remediationFinishGuard)...)
 				continue
 			}
+			if open, total, ok := s.refuseOpenTodos(mode); ok {
+				// A text-only reply with todos open is not a finish: the reply is
+				// kept and the model is sent back for the open items.
+				turns = append(turns, run.Turn{Role: "assistant", Content: assistant.Text})
+				turns = append(turns, s.openTodoTurns(open, total)...)
+				continue
+			}
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive}), turns, nil
 		}
 
 		mismatchPol := s.mismatchPolicy()
 		filtered, err := rolemanager.CheckToolCalls(assistant.ToolCalls, s.callableNames(), mismatchPol)
 		if err != nil {
-			return finish(passOutcome{text: text, lastText: lastText}), turns, err
+			// The abort policy is fail-closed, but a call to a tool that was
+			// not offered is the model's slip, and the closest offered name is
+			// already known: answer every call with a result it can read and
+			// let it re-issue. Only a model that keeps naming unavailable
+			// tools ends the turn.
+			mismatchFeedbacks++
+			if mismatchFeedbacks > maxMismatchFeedbacks {
+				return finish(passOutcome{text: text, lastText: lastText}), turns, err
+			}
+			turns = append(turns, run.Turn{Role: "assistant", Content: assistant.Text, ToolCalls: assistant.ToolCalls, Thinking: assistant.Thinking, ThinkingModel: run.ThinkingSource(s.cfg)})
+			answers := mismatchResults(assistant.ToolCalls, s.callableNames())
+			for _, call := range assistant.ToolCalls {
+				result := answers[call.ID]
+				callCopy := call
+				callCopy.Args, _ = parseToolArgs(call)
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
+				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolCallID: call.ID, ToolResult: result})
+				turns = append(turns, run.Turn{Role: "tool", Content: result, ToolCallID: call.ID, ToolName: call.Name})
+			}
+			continue
 		}
 
 		// Append assistant turn containing its tool_calls. Use the filtered
@@ -380,7 +423,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				callCopy := call
 				callCopy.Args, _ = parseToolArgs(call)
 				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
-				result := "tool result withheld: arguments may be truncated; re-issue the tool call with complete arguments"
+				result := truncatedArgsPrefix + "; re-issue the tool call with complete arguments"
 				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: result})
 				turns = append(turns, run.Turn{
 					Role:       "tool",
@@ -388,6 +431,12 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					ToolCallID: call.ID,
 					ToolName:   call.Name,
 				})
+			}
+			// A response cut off mid-call is an error in the call like any
+			// other: bounded, so a model that cannot fit the call in its
+			// output does not burn the whole budget.
+			if repair++; repair >= s.repairCap() {
+				return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, repairFailures: repair, updatePlan: updatePlan}), turns, nil
 			}
 			continue
 		}
@@ -471,6 +520,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 
 		productiveIter := false
 		allWithheld := len(units) > 0
+		// failed collects this iteration's repairable failures for the repair
+		// directive's note.
+		var failed []string
 		planExited := false
 		planText := ""
 		var askUser *clarify.Questionnaire
@@ -487,7 +539,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				}
 				switch {
 				case u.parseErr != nil:
-					results[i] = fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", u.call.Name, u.parseErr)
+					results[i] = fmt.Sprintf("%s %q: %v.%s", malformedArgsPrefix, u.call.Name, u.parseErr, repairHint)
 				case u.repeat != "":
 					results[i] = u.repeat
 				default:
@@ -539,15 +591,22 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				if p, ok := u.args["plan"].(string); ok {
 					planText = p
 				}
-			case !strings.HasPrefix(toolResult, "tool result withheld:"):
-				// A call that ran counts as work, update_plan included. The
+			case repairable(toolResult):
+				// An error in the call itself: neither work nor a verdict. It
+				// is not counted as an executed tool, so an iteration of
+				// rejected calls stays an unproductive one.
+				allWithheld = false
+				failed = append(failed, failedNote(u.call.Name, toolResult))
+			case !strings.HasPrefix(toolResult, withheldPrefix):
+				// A call that ran counts as work, Todo and update_plan included. The
 				// checklist is bookkeeping, but an iteration that adopted one
 				// is not an empty iteration: counting it as empty used to fail
 				// the whole goal loop with "pass N executed no tools" even
 				// though the call succeeded.
-				if u.call.Name == "update_plan" {
-					if l, ok := updatePlanFromArgs(u.args); ok {
+				if isChecklistTool(u.call.Name) {
+					if l, ok := checklistFromArgs(u.args); ok {
 						updatePlan = &l
+						s.adoptTodos(l)
 					}
 				} else if !s.kanbanWrapUpPass && !strings.HasPrefix(u.call.Name, "Kanban") {
 					s.turnToolRuns++
@@ -569,11 +628,23 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		} else {
 			withheld = 0
 		}
+		if len(failed) > 0 && !productiveIter {
+			repair++
+		} else {
+			repair = 0
+		}
 		if askUser != nil && !planExited {
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan, askUser: askUser}), turns, nil
 		}
 		if planExited {
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}), turns, nil
+		}
+		if repair >= s.repairCap() {
+			return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, repairFailures: repair, updatePlan: updatePlan}), turns, nil
+		}
+		if repair == 2 {
+			turns = append(turns, repairDirective(failed)...)
+			continue
 		}
 		if withheld == 2 {
 			if mode == modes.ModePlan {
@@ -588,5 +659,5 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 	}
 
-	return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}), turns, nil
+	return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, repairFailures: repair, updatePlan: updatePlan}), turns, nil
 }

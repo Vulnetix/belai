@@ -138,11 +138,14 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				switch opts.main {
 				case "tool-nocontent":
 					writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
-				case "update_plan":
-					// A pass whose only successful call is update_plan. It
+				case "Todo":
+					// A pass whose only successful call is Todo. It
 					// changes no file, but it did execute a tool, so it must
 					// not read as "executed no tools".
-					writeToolCallJSON(w, "update_plan", `{"plan":[{"step":"ship it","status":"in_progress"}]}`)
+					writeToolCallJSON(w, "Todo", `{"todos":[{"content":"ship it","status":"in_progress"}]}`)
+				case "bad-todo":
+					// A Todo call whose entries have no text: an error in the call.
+					writeToolCallJSON(w, "Todo", `{"todos":[{"status":"pending"}]}`)
 				case "read":
 					// A pass that only reads: the loop observes no file
 					// change, which is what drives the no-write escalation.
@@ -208,7 +211,7 @@ func newGoalPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, 
 		Cfg:      cfg,
 		Client:   srv.Client(),
 		Workdir:  root,
-		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, &tools.Write{Root: root, MaxBytes: tools.MaxWriteBytes, Cwd: tools.NewCwd(root)}, tools.UpdatePlan{}),
+		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, &tools.Write{Root: root, MaxBytes: tools.MaxWriteBytes, Cwd: tools.NewCwd(root)}, tools.Todo{}),
 		Posture:  posture.Defaults(),
 		// The scripted passes write, and a write without a TTY would
 		// otherwise be withheld by the permission-ask gate.
@@ -422,11 +425,11 @@ func TestGoalPassLoopKeepsWorkWhenUnproductiveAfterWriting(t *testing.T) {
 	}
 }
 
-// update_plan is bookkeeping, but a pass that called it did execute a tool.
+// Todo is bookkeeping, but a pass that called it did execute a tool.
 // Counting it as an empty pass used to fail the whole goal with "executed no
 // tools" even though the call succeeded.
 func TestGoalPassLoopCountsUpdatePlanAsExecutedWork(t *testing.T) {
-	srv, _, _ := goalPassServer(t, goalPassOpts{main: "update_plan", eval: []string{"GOAL_PARTIAL", "GOAL_PARTIAL"}})
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "Todo", eval: []string{"GOAL_PARTIAL", "GOAL_PARTIAL"}})
 	defer srv.Close()
 	sess := newGoalPassSession(t, srv, true, 2)
 	sess.settings = config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 2}}
@@ -436,7 +439,7 @@ func TestGoalPassLoopCountsUpdatePlanAsExecutedWork(t *testing.T) {
 		t.Fatal("the ceiling must stop this loop")
 	}
 	if strings.Contains(err.Error(), "no tools") {
-		t.Fatalf("a successful update_plan must count as executed work, got %v", err)
+		t.Fatalf("a successful Todo must count as executed work, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "max passes") {
 		t.Fatalf("expected the configured ceiling to stop the loop, got %v", err)
@@ -661,7 +664,7 @@ func TestPassPrintIgnoresCallIDsAndWording(t *testing.T) {
 func TestPassLedgerProgressionDirective(t *testing.T) {
 	l := passLedger{goalText: "ship the thing"}
 	got := l.progressionDirective()
-	if !strings.Contains(got, "no step list is tracked yet") {
+	if !strings.Contains(got, "no todo list is tracked yet") {
 		t.Fatalf("progression directive without a list should ask for one, got:\n%s", got)
 	}
 	if !strings.Contains(got, "Progress has stalled") {
@@ -1066,7 +1069,7 @@ func TestPassLedgerEveryPassWithheld(t *testing.T) {
 // must lead with the work, not with a plan document — but it must not demand
 // an edit before the model has read what it is changing.
 func TestGoalAckDirectiveLeadsWithTheWork(t *testing.T) {
-	for _, want := range []string{"Start the work in this pass", "update_plan", "same response as your first actions", "exact bytes you read"} {
+	for _, want := range []string{"Start the work in this pass", "call Todo once", "same response as your first actions", "exact bytes you read"} {
 		if !strings.Contains(goalAckDirective, want) {
 			t.Fatalf("goal acknowledgement directive missing %q:\n%s", want, goalAckDirective)
 		}
@@ -1188,8 +1191,8 @@ func TestPassLedgerPartialDirectiveNamesTheNextStep(t *testing.T) {
 	}
 
 	none := passLedger{goalText: "g"}
-	if got := none.partialDirective(); !strings.Contains(got, "update_plan") {
-		t.Fatalf("with no list the directive should ask for update_plan, got:\n%s", got)
+	if got := none.partialDirective(); !strings.Contains(got, "Todo") {
+		t.Fatalf("with no list the directive should ask for Todo, got:\n%s", got)
 	}
 }
 
@@ -1535,5 +1538,35 @@ func TestRecoverOverflowForcesAndFallsBack(t *testing.T) {
 	}
 	if _, ok := s.recoverOverflow(context.Background(), failing, got[:1]); ok {
 		t.Fatal("nothing to clear must report no progress")
+	}
+}
+
+// A goal whose tool calls keep failing on their own arguments is repaired, not
+// killed as a broken tool surface: the failures are repairable, so they reach the
+// model as a repair request, and the stop that follows still asks for a report.
+func TestGoalPassLoopRepairableFailuresAreNotABrokenSurface(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "bad-todo", eval: []string{"GOAL_PARTIAL", "GOAL_PARTIAL"}})
+	defer srv.Close()
+	sess := newGoalPassSession(t, srv, true, 6)
+
+	var warnings []string
+	_, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+		if e.Kind == EventWarningKind {
+			warnings = append(warnings, e.Warning)
+		}
+	})
+	if err == nil {
+		t.Fatal("a goal that never executes a tool must stop")
+	}
+	if strings.Contains(err.Error(), "withheld") {
+		t.Fatalf("repairable failures are not a withheld surface: %v", err)
+	}
+	var repaired, reported bool
+	for _, w := range warnings {
+		repaired = repaired || strings.Contains(w, "asking for corrected tool calls")
+		reported = reported || strings.Contains(w, "final report")
+	}
+	if !repaired || !reported {
+		t.Fatalf("repaired=%v reported=%v warnings=%v", repaired, reported, warnings)
 	}
 }

@@ -120,10 +120,10 @@ func TestParsePlanArgAcceptsModelParaphrases(t *testing.T) {
 }
 
 func TestUpdatePlanIsReadOnlyAndSanitiseOnly(t *testing.T) {
-	if !KindUpdatePlan.ReadOnly() {
+	if !KindTodo.ReadOnly() {
 		t.Fatal("update_plan must be read-only")
 	}
-	if KindUpdatePlan.NeedsClassifier() {
+	if KindTodo.NeedsClassifier() {
 		t.Fatal("update_plan result must skip the classifier")
 	}
 }

@@ -4,7 +4,7 @@
     {
       "name": "belai:builder",
       "path": "internal/agentprofile/builtin/builder.json",
-      "sha256": "922d713d1a437593fa8703f3cf215f1444cd17bc65ee33fc48e73f1896f71fbc"
+      "sha256": "4a17962d379ada40e91e7cd047cf8f06ee2b67e399e0f9ca4ad82c81d6ab09d5"
     },
     {
       "name": "belai:debug",
@@ -79,12 +79,12 @@
     {
       "name": "belai:patcher",
       "path": "internal/agentprofile/builtin/patcher.json",
-      "sha256": "c3cbc4e8c114281eca46ac5ca884f04336987a56e75ea69ff858cbaaf71bcddc"
+      "sha256": "294d19bf52c9a98a5fb2ca327f76ace4fdedcc8dd4f2690528677936ca2132f0"
     },
     {
       "name": "belai:plan-handoff",
       "path": "internal/agentprofile/builtin/plan-handoff.json",
-      "sha256": "6adb8726ce5ae2d2f59e273e28d1a3d444d3c13bb882ce42988328f2575dd020"
+      "sha256": "dd697fa2f89cfc988c6c77aefe73c29124c14e0d2d7fdb4503d2a44f9943ca47"
     },
     {
       "name": "belai:reviewer",
@@ -138,12 +138,12 @@
     {
       "name": "belai-builder",
       "path": "internal/skills/builtin/belai-builder/SKILL.md",
-      "sha256": "eefafd25a577300fb05fb15a456b45a3caf6684964d9d52d0dae80c32b1b8441"
+      "sha256": "fe2b9c2403883cc39ddb326cc173189f6e576e527bc29a910bf824a95a68e399"
     },
     {
       "name": "belai-patcher",
       "path": "internal/skills/builtin/belai-patcher/SKILL.md",
-      "sha256": "1df9b156a1c8d4d75d3afdb4cedffaec6da7bb0f039c9d0112d108ef56d1cfa4"
+      "sha256": "104c4e4d524752a848a694e11bf0252745ed82be35f559fcc14461eb918ace3d"
     },
     {
       "name": "belai-reviewer",

@@ -68,7 +68,7 @@ func TestSimpleTurnDropsTheVerificationCeremony(t *testing.T) {
 	}
 	s.turnSimple = true
 	got := s.goalAckDirective()
-	if got != goalSimpleDirective || strings.Contains(got, "just check") || strings.Contains(got, "update_plan") {
+	if got != goalSimpleDirective || strings.Contains(got, "just check") || strings.Contains(got, "Todo") {
 		t.Fatalf("a simple turn gets the lean directive alone:\n%s", got)
 	}
 	s.turnExecutePlan = true

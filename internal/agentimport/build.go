@@ -105,7 +105,7 @@ var toolTable = map[string]string{
 	"bash": "Bash", "shell": "Bash", "exec": "Bash", "run": "Bash", "runcommand": "Bash", "terminal": "Bash", "execute": "Bash", "command": "Bash", "sh": "Bash",
 	"webfetch": "WebFetch", "fetch": "WebFetch", "httpget": "WebFetch", "openurl": "WebFetch",
 	"websearch": "WebSearch",
-	"todo":      "update_plan", "todowrite": "update_plan", "updateplan": "update_plan", "plan": "update_plan",
+	"todo":      "Todo", "todowrite": "Todo", "updateplan": "Todo", "plan": "Todo",
 	"task": "Task", "subagent": "Task",
 }
 

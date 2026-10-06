@@ -56,6 +56,11 @@ func (Code) Mutates() bool { return false }
 // Subject has no permission subject, so a rule is written as "Code".
 func (Code) Subject(map[string]any) string { return "" }
 
+// RejectedPrefix opens the result of a call that failed on an error in the call
+// itself. The agent loop treats such a result as repairable: it goes back to the
+// model to fix, and the iteration is not counted as work.
+const RejectedPrefix = "tool call rejected:"
+
 // Execute runs the script.
 func (c Code) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	script, _ := args["code"].(string)
@@ -67,10 +72,15 @@ func (c Code) Execute(ctx context.Context, args map[string]any) (Result, error) 
 	}
 	out, err := c.Run(ctx, script)
 	switch {
-	case err != nil && out != "":
-		out += "\n\n[" + err.Error() + "]"
 	case err != nil:
-		out = "[" + err.Error() + "]"
+		// A script that threw, timed out or ran out of calls is an error in
+		// the script, so it answers as a rejected call the model can fix, and
+		// whatever it printed before failing is kept for it to read.
+		msg := RejectedPrefix + " the script failed: " + err.Error() + ". Fix the script and run it again."
+		if out != "" {
+			msg += "\n\nOutput before the failure:\n" + out
+		}
+		out = msg
 	case out == "":
 		out = "(the script printed nothing; use print(...) or return a value)"
 	}
@@ -92,7 +102,7 @@ var nestedKinds = map[Kind]bool{
 // instructions, none of which is a script's to drive.
 var nestedExcluded = map[string]bool{
 	CodeName: true, "Task": true, "AskUserQuestion": true, "ExitPlanMode": true,
-	"update_plan": true, ToolSearchName: true, "Skill": true, "SkillDraft": true,
+	"update_plan": true, TodoName: true, ToolSearchName: true, "Skill": true, "SkillDraft": true,
 }
 
 // NestedAllowed reports whether a script may call t as tools.<Name>: a kind

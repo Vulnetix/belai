@@ -301,7 +301,7 @@ func kanbanWrapUpDirective(kt kanbanTurn) string {
 			}
 		}
 		if len(open) > 0 {
-			facts = append(facts, fmt.Sprintf("%d of %d update_plan steps are not done (steps %s)", len(open), len(kt.todos.Items), strings.Join(open, ", ")))
+			facts = append(facts, fmt.Sprintf("%d of %d todos are not done (todos %s)", len(open), len(kt.todos.Items), strings.Join(open, ", ")))
 		}
 	}
 	if kt.reviews > 0 {

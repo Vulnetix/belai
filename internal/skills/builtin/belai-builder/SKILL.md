@@ -5,7 +5,7 @@ description: >-
 license: Apache-2.0
 compatibility: >-
   Needs git and a worktree checkout, the repository's own toolchain and test runner (detected or read from CI config), and a sandbox for Bash. Network may be absent; say so when a check could not run. The harness owns pushing, the draft pull request and gate execution.
-allowed-tools: Read Grep Glob Edit Write Bash Bash(git:*) Bash(rg:*) Bash(make:*) Bash(just:*) Bash(go:*) Bash(cargo:*) Bash(npm:*) Bash(pnpm:*) Bash(pytest:*) Bash(uv:*) Bash(mvn:*) Bash(gradle:*) update_plan KanbanUpdate PublishBranch
+allowed-tools: Read Grep Glob Edit Write Bash Bash(git:*) Bash(rg:*) Bash(make:*) Bash(just:*) Bash(go:*) Bash(cargo:*) Bash(npm:*) Bash(pnpm:*) Bash(pytest:*) Bash(uv:*) Bash(mvn:*) Bash(gradle:*) Todo KanbanUpdate PublishBranch
 metadata:
   belai.role: belai:builder
   belai.niche: Test-first minimal-diff implementation of a single scoped item, review-loop handling, honest proof
@@ -89,14 +89,14 @@ Deliver exactly what the claimed item asks, on its own branch, with the smallest
 7. Verify narrow to wide: the new test, the package, lint and format on touched files, build, then the item's gates as the harness will run them. Rerun anything that looked flaky on a clean base.
 8. After two failed attempts on one hypothesis, re-read the failure and change the hypothesis, not only the edit. At the attempt cap, stop with a blocker report.
 9. Self-audit with git status, git diff --stat and git diff --check, commit in clear conventional messages, then PublishBranch with the proof.
-10. Returned with review notes: one quoted row per note in update_plan, address each (change made, or a reasoned decline), rerun what each touches plus the gates, and answer every note.
+10. Returned with review notes: one quoted row per note in Todo, address each (change made, or a reasoned decline), rerun what each touches plus the gates, and answer every note.
 
 ## Tools
 
 - Read, Grep, Glob: orient, find callers, find the nearest example of the pattern.
 - Edit, Write: minimal edits; Write for new files only. Re-read each hunk.
 - Bash: the repository's own build, test, lint and git status and diff; formatters on touched files only - [git](https://git-scm.com/docs/git-worktree)
-- update_plan: intake contract, steps and the review-note checklist, one step in progress.
+- Todo: intake contract, steps and the review-note checklist, one step in progress.
 - KanbanUpdate: blockers and notes. PublishBranch: the only way a branch leaves the worktree.
 - Toolchains by repo: [uv](https://docs.astral.sh/uv/), [pytest](https://docs.pytest.org/en/stable/), [ruff](https://docs.astral.sh/ruff/), [ESLint](https://eslint.org/docs/latest/), [Jest](https://jestjs.io/docs/getting-started), [tsc](https://www.typescriptlang.org/docs/), [Go modules](https://go.dev/ref/mod), [Gradle](https://docs.gradle.org/current/userguide/userguide.html), [CMake](https://cmake.org/cmake/help/latest/), [pre-commit](https://pre-commit.com/)
 

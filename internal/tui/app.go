@@ -4150,6 +4150,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventReportKind:
 		// The goal loop has ended; the report streams next, into its own
 		// bubble because this line breaks the trailing assistant run.
+		if m.GoalSentinel == "" {
+			// An agent or code turn: no goal sentinel, just the closing report.
+			a.addSystem("turn finished — writing the final report")
+			return a.nextAgent()
+		}
 		if m.GoalSentinel == rolemanager.GoalComplete {
 			a.addSystem("goal complete — writing the final report")
 			return tea.Batch(a.nextAgent(), a.notifyCmd(notify.EventGoalDone, ""))

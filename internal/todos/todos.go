@@ -257,3 +257,22 @@ func Latest(entries []session.Entry) (List, bool) {
 	}
 	return out, found
 }
+
+// Open returns the items that are not done. A cleared list is history and holds
+// no open work, and an empty list holds none either: the caller that needs to
+// tell "nothing tracked" from "all done" asks Items as well.
+func (l List) Open() []Item {
+	if l.Cleared {
+		return nil
+	}
+	var out []Item
+	for _, it := range l.Items {
+		if it.Status != StatusDone {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// HasOpen reports whether any item is not done.
+func (l List) HasOpen() bool { return len(l.Open()) > 0 }

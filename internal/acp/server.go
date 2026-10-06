@@ -702,7 +702,7 @@ func toolKind(name string) string {
 		return "execute"
 	case "WebFetch", "WebSearch":
 		return "fetch"
-	case "update_plan", "Task":
+	case "update_plan", "Todo", "Task":
 		return "think"
 	}
 	return "other"

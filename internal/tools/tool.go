@@ -170,9 +170,24 @@ func (r *Registry) ReadOnlySurface() *Registry {
 	return base.withCwd(NewRegistry(append(base.tools, &ro)...))
 }
 
+// WithoutNonPlan returns a registry that drops the tools marked NonPlan (Todo),
+// which every mode but plan mode advertises. Plan mode tracks its research
+// steps with update_plan instead.
+func (r *Registry) WithoutNonPlan() *Registry {
+	var list []Tool
+	for _, t := range r.tools {
+		if np, ok := t.(NonPlan); ok && np.NonPlan() {
+			continue
+		}
+		list = append(list, t)
+	}
+	return r.withCwd(NewRegistry(list...))
+}
+
 // WithoutPlanOnly returns a registry that drops tools marked as plan-only so
 // they are not advertised to agent-mode or goal-mode turns. Plan mode keeps
-// them because they are the model's way of declaring the plan complete.
+// them because they are the model's way of declaring the plan complete
+// (ExitPlanMode) or of tracking its research (update_plan).
 func (r *Registry) WithoutPlanOnly() *Registry {
 	var list []Tool
 	for _, t := range r.tools {
@@ -190,9 +205,23 @@ func (r *Registry) WithoutPlanOnly() *Registry {
 // narrows, it does not fail.
 func (r *Registry) Only(names ...string) *Registry {
 	var list []Tool
-	for _, name := range names {
-		if t, ok := r.Find(name); ok {
+	seen := map[string]bool{}
+	add := func(name string) {
+		if t, ok := r.Find(name); ok && !seen[t.Definition().Name] {
+			seen[t.Definition().Name] = true
 			list = append(list, t)
+		}
+	}
+	for _, name := range names {
+		add(name)
+		// A list naming the checklist tool of one mode keeps the other's
+		// name working: update_plan is plan mode's checklist and Todo the
+		// rest's, and each mode's surface drops the one it does not offer.
+		switch {
+		case strings.EqualFold(name, "update_plan"):
+			add(TodoName)
+		case strings.EqualFold(name, TodoName):
+			add("update_plan")
 		}
 	}
 	return r.withCwd(NewRegistry(list...))
@@ -223,6 +252,7 @@ func (r *Registry) Plan() *Registry { return r.PlanWith(PlanSurface{}) }
 // When the user has written a Bash allow rule, a read-only Bash is offered;
 // otherwise Bash is dropped entirely.
 func (r *Registry) PlanWith(surface PlanSurface) *Registry {
+	r = r.WithoutNonPlan()
 	if surface.GuardrailsOff {
 		return r
 	}
