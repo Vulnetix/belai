@@ -170,6 +170,67 @@ func Backend() (name, path string) {
 	return probeName, probePath
 }
 
+// ErrPIDIsolation is returned when a command would hold vault variables and the sandbox
+// can neither give it its own pid namespace nor show that it cannot read another
+// process's /proc/PID/environ. The command is not run.
+var ErrPIDIsolation = errors.New("a command holding vault variables needs its own pid namespace, bubblewrap cannot mount /proc in one here, and the sandbox does not keep a command from reading other processes' environments, so the command was not run")
+
+// pidMode is how a command that holds vault variables is kept from reading another
+// process's /proc/PID/environ.
+type pidMode int
+
+const (
+	// pidNone: neither works. Such a command must not run.
+	pidNone pidMode = iota
+	// pidNamespace: bwrap mounts a fresh /proc in its own pid namespace.
+	pidNamespace
+	// pidUserNS: no fresh /proc, but the user namespace bwrap always creates already
+	// makes another process's environ unreadable, which the probe checked.
+	pidUserNS
+)
+
+var (
+	pidOnce  sync.Once
+	pidState pidMode
+	// pidModeFn is swapped by tests.
+	pidModeFn = pidIsolation
+)
+
+// pidIsolation probes once. A container that masks paths under /proc (Cloudflare
+// containers do: acpi, kcore, keys) refuses a fresh /proc mount in a new pid namespace
+// ("Can't mount proc on /proc: Operation not permitted"); the namespace is then
+// replaced only when a command inside the sandbox demonstrably cannot read the
+// environment of a process outside it, never on an assumption.
+func pidIsolation() pidMode {
+	pidOnce.Do(func() {
+		name, path := Backend()
+		if name != "bwrap" {
+			return
+		}
+		base := []string{"--ro-bind", "/", "/", "--dev", "/dev"}
+		if exec.Command(path, append(append([]string{}, base...), "--proc", "/proc", "--unshare-pid", "--", "true")...).Run() == nil {
+			pidState = pidNamespace
+			return
+		}
+		holder := exec.Command("sleep", "30")
+		holder.Env = append(os.Environ(), "BELAI_PIDPROBE=1")
+		if holder.Start() != nil {
+			return
+		}
+		defer func() { _ = holder.Process.Kill(); _ = holder.Wait() }()
+		// Exit 3: the probe cannot read its own environ, so it proves nothing. Exit 0:
+		// it read the other process's. Exit 4: it could not.
+		script := fmt.Sprintf("( : < /proc/self/environ ) || exit 3; ( : < /proc/%d/environ ) 2>/dev/null && exit 0; exit 4", holder.Process.Pid)
+		args := append(append([]string{}, base...), "--proc", "/proc", "--tmpfs", "/tmp", "--", "sh", "-c", script)
+		if err := exec.Command(path, args...).Run(); err != nil {
+			if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 4 {
+				pidState = pidUserNS
+			}
+		}
+	})
+	return pidState
+}
+
 // Wrap rewrites cmd to run under p. It returns true when the command is now
 // sandboxed. In auto mode with no backend it leaves cmd alone; in required
 // mode it returns ErrUnavailable and cmd must not run.
@@ -183,6 +244,9 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 			return false, ErrUnavailable
 		}
 		return false, nil
+	}
+	if name == "bwrap" && vaultenv.Default.HasActive(time.Now()) && pidModeFn() == pidNone {
+		return false, ErrPIDIsolation
 	}
 	// Mark the command as sandboxed, so a test that would nest a second
 	// sandbox inside this one (bubblewrap cannot reliably see the outer
@@ -250,7 +314,10 @@ func BwrapArgs(p Policy, dir string, argv []string) []string {
 	// With vault variables in the command's environment, give it its own pid
 	// namespace: it cannot see another process (a background command, an earlier
 	// call's leftovers) to read its /proc/PID/environ.
-	if vaultenv.Default.HasActive(time.Now()) {
+	// Where a fresh /proc cannot be mounted in one, pidIsolation has checked that the
+	// user namespace bwrap always makes keeps another process's environ unreadable
+	// anyway, and the flag is left off; Wrap refuses when neither holds.
+	if vaultenv.Default.HasActive(time.Now()) && pidModeFn() != pidUserNS {
 		args = append(args, "--unshare-pid")
 	}
 	if dir != "" {

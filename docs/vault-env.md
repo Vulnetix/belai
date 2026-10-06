@@ -1,6 +1,6 @@
 # Vault environment variables (Pix sandboxes)
 
-Last updated: 2026-10-05
+Last updated: 2026-10-07
 
 A Pix sandbox can have environment variables from the organisation's secrets vault
 (the website's `/resolve/vault`). They are for the commands the agent runs, and
@@ -33,6 +33,14 @@ flowchart LR
   command gets them like Bash.
 - **Pid namespace.** While any variable is held, bubblewrap is started with
   `--unshare-pid`, so a command cannot read another process's `/proc/PID/environ`.
+  Some containers mask paths under `/proc` (Cloudflare containers, so a Pix sandbox), and
+  there bubblewrap cannot mount a fresh `/proc` in a new pid namespace ("Can't mount proc
+  on /proc: Operation not permitted"). Belai probes this once. If the namespace cannot be
+  had, it checks that a command inside the sandbox really cannot read the environment of a
+  process outside it (the user namespace bubblewrap always creates normally already
+  prevents that) and leaves the flag off only when the check shows it. When neither holds,
+  the command is not run and the error says why; vault variables are never handed to a
+  command that could read another process's environment.
 - **Process hardening.** On the first lease with values the process is marked
   non-dumpable (`PR_SET_DUMPABLE 0`), so a same-user command cannot read its memory.
 - **Names to the model.** The Bash tool description lists the variable names, never a

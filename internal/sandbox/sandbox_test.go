@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,6 +113,8 @@ func TestRequiredWithoutBackendRefuses(t *testing.T) {
 
 func TestBwrapUnsharesPIDsOnlyWhileTheVaultHoldsVariables(t *testing.T) {
 	defer vaultenv.Default.Replace(nil, time.Time{})
+	defer func(f func() pidMode) { pidModeFn = f }(pidModeFn)
+	pidModeFn = func() pidMode { return pidNamespace }
 	has := func() bool {
 		for _, a := range BwrapArgs(Policy{Mode: ModeAuto}, "/work", []string{"true"}) {
 			if a == "--unshare-pid" {
@@ -127,5 +130,81 @@ func TestBwrapUnsharesPIDsOnlyWhileTheVaultHoldsVariables(t *testing.T) {
 	vaultenv.Default.Replace([]vaultenv.Var{{Name: "A_TOKEN", Value: "a-token-value-1"}}, time.Now().Add(time.Hour))
 	if !has() {
 		t.Fatal("with vault variables the command gets its own pid namespace")
+	}
+}
+
+// A container that masks paths under /proc refuses a fresh /proc in a new pid
+// namespace; the flag is then left off, because the probe showed the user namespace
+// already hides other processes' environments.
+func TestBwrapLeavesOutThePIDNamespaceWhereTheUserNamespaceAlreadyHidesEnvirons(t *testing.T) {
+	defer vaultenv.Default.Replace(nil, time.Time{})
+	defer func(f func() pidMode) { pidModeFn = f }(pidModeFn)
+	vaultenv.Default.Replace([]vaultenv.Var{{Name: "A_TOKEN", Value: "a-token-value-1"}}, time.Now().Add(time.Hour))
+	has := func() bool {
+		for _, a := range BwrapArgs(Policy{Mode: ModeAuto}, "/work", []string{"true"}) {
+			if a == "--unshare-pid" {
+				return true
+			}
+		}
+		return false
+	}
+	pidModeFn = func() pidMode { return pidNamespace }
+	if !has() {
+		t.Fatal("a mountable pid namespace is used")
+	}
+	pidModeFn = func() pidMode { return pidUserNS }
+	if has() {
+		t.Fatal("the flag stays off where a fresh /proc cannot be mounted and environs are already hidden")
+	}
+}
+
+func TestWrapRefusesAVaultCommandWhenNothingKeepsEnvironsPrivate(t *testing.T) {
+	if name, _ := Backend(); name != "bwrap" {
+		t.Skip("needs bubblewrap")
+	}
+	defer vaultenv.Default.Replace(nil, time.Time{})
+	defer func(f func() pidMode) { pidModeFn = f }(pidModeFn)
+	pidModeFn = func() pidMode { return pidNone }
+	vaultenv.Default.Replace(nil, time.Time{})
+	if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeAuto}); err != nil {
+		t.Fatalf("without vault variables the command runs: %v", err)
+	}
+	vaultenv.Default.Replace([]vaultenv.Var{{Name: "A_TOKEN", Value: "a-token-value-1"}}, time.Now().Add(time.Hour))
+	if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeAuto}); err != ErrPIDIsolation {
+		t.Fatalf("err = %v, want ErrPIDIsolation", err)
+	}
+	for _, m := range []pidMode{pidNamespace, pidUserNS} {
+		pidModeFn = func() pidMode { return m }
+		if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeAuto}); err != nil {
+			t.Fatalf("mode %d refused: %v", m, err)
+		}
+	}
+}
+
+// On a host with a working bubblewrap the probe must find some isolation, and a
+// command run the way the probe decides must not read another process's environ.
+func TestPIDIsolationProbeMatchesWhatACommandCanRead(t *testing.T) {
+	if name, _ := Backend(); name != "bwrap" {
+		t.Skip("needs bubblewrap")
+	}
+	mode := pidIsolation()
+	if mode == pidNone {
+		t.Skip("this host offers neither a pid namespace nor hidden environs; Wrap refuses vault commands here")
+	}
+	holder := exec.Command("sleep", "30")
+	holder.Env = append(os.Environ(), "BELAI_PIDTEST_SECRET=hunter2")
+	if err := holder.Start(); err != nil {
+		t.Skip("no sleep")
+	}
+	defer func() { _ = holder.Process.Kill(); _ = holder.Wait() }()
+	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"}
+	if mode == pidNamespace {
+		args = append(args, "--unshare-pid")
+	}
+	args = append(args, "--", "sh", "-c", fmt.Sprintf("( : < /proc/%d/environ ) 2>/dev/null && exit 0; exit 4", holder.Process.Pid))
+	_, path := Backend()
+	err := exec.Command(path, args...).Run()
+	if err == nil {
+		t.Fatalf("mode %d: the sandboxed command read another process's environ", mode)
 	}
 }
