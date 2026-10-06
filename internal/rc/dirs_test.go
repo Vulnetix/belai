@@ -82,3 +82,45 @@ func TestHereFirst(t *testing.T) {
 		t.Fatalf("order without here = %+v", got)
 	}
 }
+
+func TestAllowedExtra(t *testing.T) {
+	a, b, c := t.TempDir(), t.TempDir(), t.TempDir()
+	var offered []Dir
+	for _, p := range []string{a, b} {
+		n, err := Normalize(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		offered = append(offered, Dir{Path: n})
+	}
+	pa, _ := Normalize(a)
+	pb, _ := Normalize(b)
+
+	got, ok := AllowedExtra(offered, pa, []string{a, b, b})
+	if !ok || len(got) != 1 || got[0] != pb {
+		t.Fatalf("primary and repeats should drop: got %v ok=%v", got, ok)
+	}
+	if _, ok := AllowedExtra(offered, pa, []string{b, c}); ok {
+		t.Fatal("a directory the host does not offer was allowed")
+	}
+	if got, ok := AllowedExtra(offered, pa, nil); !ok || len(got) != 0 {
+		t.Fatalf("no extras: got %v ok=%v", got, ok)
+	}
+	many := make([]string, MaxExtraDirs+1)
+	if _, ok := AllowedExtra(offered, pa, many); ok {
+		t.Fatal("too many directories allowed")
+	}
+}
+
+func TestChildArgsAddDir(t *testing.T) {
+	args := childArgs(Child{Dispatch: "d", SessionID: "s", Dirs: []string{"/x", "/y"}})
+	var got []string
+	for i, a := range args {
+		if a == "-add-dir" && i+1 < len(args) {
+			got = append(got, args[i+1])
+		}
+	}
+	if len(got) != 2 || got[0] != "/x" || got[1] != "/y" {
+		t.Fatalf("args = %v", args)
+	}
+}
