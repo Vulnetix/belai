@@ -16,6 +16,8 @@ func TestSyncItemEnabled(t *testing.T) {
 		"rewrite":  func(s *SyncSettings, v *bool) { s.Rewrites = v },
 		"provider": func(s *SyncSettings, v *bool) { s.Providers = v },
 		"command":  func(s *SyncSettings, v *bool) { s.Commands = v },
+		"mcp":      func(s *SyncSettings, v *bool) { s.MCPs = v },
+		"hook":     func(s *SyncSettings, v *bool) { s.Hooks = v },
 	}
 	for kind, set := range kinds {
 		if !(Settings{}).SyncItemEnabled(kind) {

@@ -147,7 +147,7 @@ func localInventoryItems() []sessionsync.RCItem {
 		if len(out) >= sessionsync.MaxRCItems {
 			break
 		}
-		out = append(out, sessionsync.RCItem{Kind: it.kind, Name: it.name, SHA256: hashOf(it.data)})
+		out = append(out, sessionsync.RCItem{Kind: it.kind, Name: it.name, SHA256: it.hash()})
 	}
 	return out
 }

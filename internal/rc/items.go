@@ -60,6 +60,9 @@ func (d *Daemon) backupItem(ctx context.Context, r sessionsync.Dispatch) (string
 	if why != "" {
 		return "", why
 	}
+	if kind.InstallOnly() {
+		return "", fmt.Sprintf("a %s is installed from the library and never backed up from a host", kind)
+	}
 	name := strings.TrimSpace(r.Name)
 	if !libitem.ValidName(kind, name) {
 		return "", "that is not a " + string(kind) + " name"
@@ -87,6 +90,25 @@ func (d *Daemon) backupItem(ctx context.Context, r sessionsync.Dispatch) (string
 
 // installItem reads the library version the request names and writes it on this
 // host, or says why it did not.
+// fetchBundleFiles reads the files of a hook bundle the library listed, each by
+// its hash and only through the install request that names them. The bounds are
+// checked before anything is fetched, and the install checks each file against the
+// hash listed.
+func (d *Daemon) fetchBundleFiles(ctx context.Context, r sessionsync.Dispatch, refs []sessionsync.FileRef) ([]libstore.BundleFile, string) {
+	if len(refs) > libstore.MaxBundleFiles {
+		return nil, fmt.Sprintf("refused: the bundle lists %d files; the most is %d", len(refs), libstore.MaxBundleFiles)
+	}
+	var out []libstore.BundleFile
+	for _, f := range refs {
+		data, err := d.o.Client.LibraryFetchFile(ctx, d.o.HostID, f.SHA256, r.ID)
+		if err != nil {
+			return nil, "could not read a file of the hook from the library: " + reason(err.Error())
+		}
+		out = append(out, libstore.BundleFile{Path: f.Path, Data: data, SHA256: f.SHA256})
+	}
+	return out, ""
+}
+
 func (d *Daemon) installItem(ctx context.Context, r sessionsync.Dispatch) (string, string) {
 	kind, why := d.itemKind(r)
 	if why != "" {
@@ -103,7 +125,18 @@ func (d *Daemon) installItem(ctx context.Context, r sessionsync.Dispatch) (strin
 	if name == "" {
 		name = strings.TrimSpace(r.Name)
 	}
-	res, err := libstore.Install(kind, got.Body, libstore.InstallOptions{Overwrite: r.Overwrite, Name: name})
+	opts := libstore.InstallOptions{Overwrite: r.Overwrite, Name: name}
+	var res libstore.Result
+	if kind == libitem.Hook {
+		// A hook bundle: its files are read one by one through the same request.
+		files, why := d.fetchBundleFiles(ctx, r, got.Files)
+		if why != "" {
+			return "", why
+		}
+		res, err = libstore.InstallBundle(kind, got.Body, files, opts)
+	} else {
+		res, err = libstore.Install(kind, got.Body, opts)
+	}
 	switch {
 	case errors.Is(err, libstore.ErrExists):
 		if kind.Singleton() {
@@ -116,8 +149,9 @@ func (d *Daemon) installItem(ctx context.Context, r sessionsync.Dispatch) (strin
 		return "", "could not write the " + string(kind) + ": " + reason(err.Error())
 	}
 	// What the host now exports is what the library holds, so the next check does
-	// not take the install for an edit.
-	if it, err := libstore.Get(kind, name); err == nil {
+	// not take the install for an edit. A hook is never synced, so there is no
+	// check to settle.
+	if it, err := libstore.Get(kind, name); err == nil && !kind.InstallOnly() {
 		d.markSynced(string(kind), it.Name, it.Doc)
 	}
 	verb := "installed"

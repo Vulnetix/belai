@@ -1505,6 +1505,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   resolver under the provider's own name (`credentials.NewGlobalResolver`), never in
   settings, a log, an acknowledgement, an audit event, a session record or an error,
   and `sessionsync.ProviderKey` redacts itself through every `fmt` verb and JSON.
+  A hook item is a bundle (a definition and script files, `libitem.HashBundle` over both) that
+  reaches a host **only** by an `item_install` request: the automatic sync never pushes or
+  pulls one, `item_backup` and a scan never read one, and `sync.hooks` closes the kind. The
+  install builds the bundle in a dot-prefixed directory, checks it exactly as the loader will
+  (`hooks.ParseDefinition` with the user's `hooks.allowed_programs`), refuses a symlink, a file
+  that does not match its listed hash, text with a control, bidirectional or invisible rune,
+  and a bundle that could not run here, and only then swaps it in, so a hook is never present
+  and dead. Scripts are `0700` and nothing else is executable.
 - **A web avatar is a tool-less main-model turn, and `internal/svgguard` admits
   what comes back.** An `avatar` request names an agent creator by id and is
   accepted only while `sync.remote_prompts` is on, one drawing at a time. The

@@ -1,4 +1,4 @@
-// Package libitem is the host's half of the library-item contract: the eight
+// Package libitem is the host's half of the library-item contract: the nine
 // kinds of item the Vulnetix website's library keeps for a tenant (skills,
 // prompts, slash commands, processes, repositories, token budgets, provider sets and the Bash
 // rewrite table), the canonical bytes whose SHA-256 the sync compares, and a
@@ -35,6 +35,10 @@ const (
 	Rewrite  Kind = "rewrite"
 	// MCP is one MCP server of the user's own mcp.servers (docs/mcp.md).
 	MCP Kind = "mcp"
+	// Hook is a coding agent's lifecycle hooks as a bundle: a definition and the
+	// scripts it runs (hook.go). It installs only on request, never by the
+	// automatic sync.
+	Hook Kind = "hook"
 )
 
 // KindInfo describes one kind.
@@ -77,6 +81,7 @@ var kinds = []KindInfo{
 	{Provider, "providers", false, 32 << 10},
 	{Rewrite, "rewrites", false, 16 << 10},
 	{MCP, "mcps", false, 16 << 10},
+	{Hook, "hooks", false, 16 << 10},
 }
 
 // Kinds lists every kind, in the contract's order.
@@ -135,6 +140,11 @@ func (k Kind) IsMarkdown() bool { return k.Info().Markdown }
 // under a name the user picks: the budget and provider sets replace the
 // host's whole configuration, and the rewrite table is one table.
 func (k Kind) Singleton() bool { return k == Budget || k == Provider || k == Rewrite }
+
+// InstallOnly reports whether the kind reaches a host only by an install request
+// the user makes: the automatic sync never pushes it to the library or pulls it,
+// and the host never backs it up. A hook runs code, so a person chooses each one.
+func (k Kind) InstallOnly() bool { return k == Hook }
 
 // nameRE is the name every item carries.
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)

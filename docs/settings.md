@@ -174,7 +174,7 @@ movement, edit and back always stay.
   editor below the list, and the body shrinks by its height. `enter` saves,
   `esc` cancels; a refused value stays open with the reason.
 - **Settings with no row.** Some keys are edited in `settings.json` only: the
-  library sync switches (`sync.skills`, `sync.prompts`, `sync.commands`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`, `sync.providers`, `sync.mcps`; see
+  library sync switches (`sync.skills`, `sync.prompts`, `sync.commands`, `sync.processes`, `sync.repos`, `sync.budgets`, `sync.rewrites`, `sync.providers`, `sync.mcps`, `sync.hooks`; see
   [session-sync.md](session-sync.md#settings) and [library-items.md](library-items.md))
   and the `repos` list have no row here. A project layer may switch a sync switch off
   and never on, and its `repos` is dropped.

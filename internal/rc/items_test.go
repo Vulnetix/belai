@@ -3,6 +3,7 @@ package rc
 import (
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -42,8 +43,11 @@ type itemSite struct {
 	gzipped int
 	// served is what a fetch of itemID returns: the name and the body (a string
 	// for Markdown, an object for JSON).
-	name      string
-	body      any
+	name string
+	body any
+	// files is what a fetch lists beside the body, and blobs the content served by hash.
+	files     []map[string]any
+	blobs     map[string]string
 	overwrite bool
 	fetches   int
 	fail      bool
@@ -97,7 +101,14 @@ func (s *itemSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(s.keysBody))
 	case r.Method == http.MethodGet && strings.HasPrefix(p, h+"/library/items/"):
 		s.fetches++
-		json.NewEncoder(w).Encode(map[string]any{"version": itemVer, "name": s.name, "body": s.body, "overwrite": s.overwrite})
+		json.NewEncoder(w).Encode(map[string]any{"version": itemVer, "name": s.name, "body": s.body, "overwrite": s.overwrite, "files": s.files})
+	case r.Method == http.MethodGet && strings.HasPrefix(p, h+"/library/files/"):
+		blob, ok := s.blobs[strings.TrimPrefix(p, h+"/library/files/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"contentBase64": base64.StdEncoding.EncodeToString([]byte(blob))})
 	case strings.HasPrefix(p, "/dispatches/") && strings.HasSuffix(p, "/ack"):
 		id := strings.TrimSuffix(strings.TrimPrefix(p, "/dispatches/"), "/ack")
 		var in map[string]string

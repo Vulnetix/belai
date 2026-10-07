@@ -100,6 +100,17 @@ func (d *Daemon) markSynced(kind, id string, data []byte) {
 type localItem struct {
 	kind, id, name string
 	data           []byte
+	// sha is the hash the library compares when it is not the hash of data: a hook
+	// bundle's, which covers its files.
+	sha string
+}
+
+// hash is the item's SHA-256 as the library compares it.
+func (it localItem) hash() string {
+	if it.sha != "" {
+		return it.sha
+	}
+	return hashOf(it.data)
 }
 
 // isLibraryItem reports whether the item is one of the item kinds rather than an
@@ -111,7 +122,8 @@ func (it localItem) isLibraryItem() bool { return it.kind != "agent" && it.kind 
 func (d *Daemon) itemKindsOn() []libitem.Kind {
 	var out []libitem.Kind
 	for _, k := range libstore.Kinds() {
-		if d.o.SyncItem(k) {
+		// An install-only kind (a hook) is never pushed or pulled by the sync.
+		if !k.InstallOnly() && d.o.SyncItem(k) {
 			out = append(out, k)
 		}
 	}
@@ -132,7 +144,7 @@ func localLibraryItems(kinds []libitem.Kind) []localItem {
 			items = items[:libitem.MaxItemsPerKind]
 		}
 		for _, it := range items {
-			out = append(out, localItem{kind: string(k), id: it.Name, name: it.Name, data: it.Doc})
+			out = append(out, localItem{kind: string(k), id: it.Name, name: it.Name, data: it.Doc, sha: it.SHA256})
 		}
 	}
 	return out
