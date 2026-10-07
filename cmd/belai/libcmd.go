@@ -26,6 +26,7 @@ import (
 var libraryCommands = map[string]libitem.Kind{
 	"skill":    libitem.Skill,
 	"prompt":   libitem.Prompt,
+	"command":  libitem.Command,
 	"process":  libitem.Process,
 	"repo":     libitem.Repo,
 	"budget":   libitem.Budget,
@@ -37,6 +38,7 @@ var libraryCommands = map[string]libitem.Kind{
 var libraryNoun = map[libitem.Kind]string{
 	libitem.Skill:    "skills",
 	libitem.Prompt:   "prompts",
+	libitem.Command:  "slash commands",
 	libitem.Process:  "processes",
 	libitem.Repo:     "repositories",
 	libitem.Budget:   "budget sets",

@@ -174,6 +174,22 @@ func GlobalSkillsDir() (string, error) {
 	return filepath.Join(dir, "skills"), nil
 }
 
+// GlobalCommandsDir returns <GlobalDir>/commands, the directory of custom slash
+// command files (one <name>.md each).
+func GlobalCommandsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "commands"), nil
+}
+
+// ProjectCommandsDir returns <workdir>/.vulnetix/belai/commands, the read-only
+// project layer of custom slash commands.
+func ProjectCommandsDir(workdir string) string {
+	return filepath.Join(ProjectBelaiDir(workdir), "commands")
+}
+
 // GlobalHooksDir returns <GlobalDir>/hooks.
 func GlobalHooksDir() (string, error) {
 	dir, err := GlobalDir()

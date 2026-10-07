@@ -4,7 +4,7 @@ The Vulnetix website keeps a library for each account: the things worth keeping
 when a machine is wiped or a second one is set up. Agent profiles and crews were
 the first ([remote-control.md](remote-control.md#agent-library)). A **library
 item** is the same idea for the rest of what a host holds: skills, prompts,
-supervised processes, repositories, token budgets, provider sets and the Bash
+custom slash commands, supervised processes, repositories, token budgets, provider sets and the Bash
 rewrite table.
 
 Every item is one small document. The website stores each version of it (a
@@ -16,6 +16,7 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Documents](#documents)
 - [Skills](#skills)
 - [Prompts](#prompts)
+- [Slash commands](#slash-commands)
 - [Processes](#processes)
 - [Repositories](#repositories)
 - [Budgets](#budgets)
@@ -35,6 +36,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | --- | --- | --- | --- | --- |
 | `skill` | `belai skill` | Markdown with front matter | `~/.vulnetix/belai/skills/<name>/SKILL.md` | `sync.skills` |
 | `prompt` | `belai prompt` | Markdown with front matter | `~/.vulnetix/belai/prompts/<NNN>-<name>.md` | `sync.prompts` |
+| `command` | `belai command` | Markdown with front matter | `~/.vulnetix/belai/commands/<name>.md` | `sync.commands` |
 | `process` | `belai process` | JSON object | `~/.vulnetix/belai/processes/<NNN>-<name>.json` (or a legacy `.sh`) | `sync.processes` |
 | `repo` | `belai repo` | JSON object | the `repos` list of `~/.vulnetix/belai/settings.json`; clones under `~/.vulnetix/belai/repos/<dir>` | `sync.repos` |
 | `budget` | `belai budget` | JSON object | `token_budgets` and the footer settings in `~/.vulnetix/belai/settings.json` | `sync.budgets` |
@@ -54,7 +56,7 @@ the rest.
 
 Two formats, one per kind.
 
-- **Markdown** (skills, prompts): a front-matter block, then the body.
+- **Markdown** (skills, prompts, slash commands): a front-matter block, then the body.
 - **JSON** (the other kinds): one object.
 
 The library stores **canonical bytes**, and the SHA-256 of those bytes is what a
@@ -79,7 +81,7 @@ below applies to the canonical bytes, and a document more than twice the limit
 `-`, starting with a letter or digit (`^[a-z0-9][a-z0-9._-]{0,63}$`). The Bash
 rewrite table is the one exception and is always named `bash_rewrite`.
 
-**Limits.** A skill or a prompt document is at most 32 KiB. A process, repository,
+**Limits.** A skill or a prompt document is at most 32 KiB. A slash command document is also at most 32 KiB. A process, repository,
 budget or rewrite document is at most 16 KiB; a provider document is at most
 32 KiB. A document over its limit is refused before it is parsed further.
 
@@ -154,6 +156,63 @@ from looking like an edit on the next sync.
 
 An exported prompt writes `name`, then `description` when it has one, `order` when
 it is above 0, and `enabled: false` only when disabled.
+
+## Slash commands
+
+A custom slash command is one Markdown file whose body is a prompt template. Typing
+`/name args` in the TUI (or choosing the command on the website's session page)
+expands the template into an ordinary model turn. The kind is `command` and its URL
+segment is `commands`. The front matter is the one a skill has (`name` and
+`description` required; `license`, `compatibility`, `metadata`, `allowed-tools` and
+`disable-model-invocation` optional, each with the skill's limits above) plus an
+optional `argument-hint` of at most 256 bytes, and nothing else. Two skill rules do
+not apply: a command has no reserved name, and its `belai.` metadata keys are not
+checked. The body is the template and must not be empty. These are the rules of
+`vdb-site` `belaiValidateCommand`, and `internal/libitem` mirrors them
+(`ParseCommand`, `ComposeCommand`).
+
+On the host a command is `~/.vulnetix/belai/commands/<name>.md` holding the canonical
+bytes exactly, so an installed command hashes to what the library holds and no side
+file is needed. The file name must be `<name>.md`; a file whose name and `name` key
+disagree, that does not validate, that is a symbolic link or that is over 64 KiB is
+left alone and reported as skipped by `belai command list`. Only the global
+directory is listed, synced or written.
+
+**Layers.** `internal/commandlib` loads two directories and merges them by name:
+
+1. `~/.vulnetix/belai/commands` (global; a library install writes here).
+2. `<project>/.vulnetix/belai/commands` (project; read only, never written or synced).
+
+A project command wins over a global one of the same name. **A built-in slash
+command always wins over both**, so a file can never replace `/clear` or `/model`;
+`/commands` marks a name a built-in shadows. A command directory that is a symbolic
+link is not read.
+
+**Expansion.** `$ARGUMENTS` is replaced by the argument text as typed, and `$1`,
+`$2`, ... by the whitespace-separated arguments (a quoted run is one argument; a
+missing one is empty). Substitution is one pass, so an argument that reads `$1` is
+not expanded again. A template with no placeholder gets the arguments appended after
+`ARGUMENTS:`. Arguments are at most 4 KiB. `@path` text in a template is plain text:
+an expansion attaches no file.
+
+**What runs.** The expansion is sent as a typed prompt would be: echoed, then
+admitted by the turn like any text the user submits (sanitiser, then the
+classifier), with the normal mode selection, permission rules and sandbox. A command
+refuses to start while a turn runs. `allowed-tools` is parsed, validated and kept in
+the document, and it is never applied: a command cannot grant a tool, and the host
+does not narrow one from it either. `/commands` lists both layers and the files that
+were left out, and the `/` popup completes command names.
+
+**From the web.** A host advertises its global commands in its rc registration as
+`commands: [{name, description, argumentHint}]` (names, descriptions and hints only,
+never a template, and only while `sync.commands` is on). The website sends a command
+to a running web session as a remote command `{command, args}`, where `command` is the
+name without the slash. The host expands its own installed file (the project layer
+of the session's directory included), runs a normal model turn on the result and
+acknowledges it; a name it does not hold, a malformed name, arguments over 4 KiB,
+`sync.commands` off or a session started without web controls
+(`belai rc --web-controls`) is refused with a reason. The page never sends a
+template. A web prompt that starts with `/` is still plain text.
 
 ## Processes
 
@@ -560,13 +619,13 @@ An install is a person's action on the website, made with their own login, so li
 a profile install it does not need `sync.remote_prompts`. It is still held to these
 rules, and a refusal writes nothing:
 
-- The kind's setting (`sync.skills`, `sync.prompts`) is on. Otherwise the request is
+- The kind's setting (`sync.skills`, `sync.prompts`, `sync.commands`) is on. Otherwise the request is
   refused with that reason, before the library is asked for anything.
 - The document passes the kind's validator whole, and its name is the one the
   library item has.
 - An item of the same name is replaced only when the request says so. Without it
   the install is refused with "install it again with replace turned on".
-- A skill or a prompt is untrusted text, so before it is written it passes the
+- A skill, a prompt or a command is untrusted text, so before it is written it passes the
   sanitisation gate (see [sanitization.md](sanitization.md#library-items)): it is
   refused if it holds harness delimiter markup, a terminal escape or other control
   character, a bidirectional override, or an invisible character that hides text.
@@ -582,6 +641,8 @@ is off. A project settings file may turn one off, never on.
 - **`sync.skills`**: keep the skill library current by itself, advertise the host's
   skills, and take `item_backup` and `item_install` requests for skills.
 - **`sync.prompts`**: the same for the global prompt library.
+- **`sync.commands`**: the same for the global slash commands directory. With it off
+  the host also advertises no commands and refuses a web command invocation.
 - **`sync.repos`**: the same for the `repos` list.
 - **`sync.budgets`**: the same for the token-budget configuration (`token_budgets`,
   `ui.budget_cycle_seconds`, `ui.budget_warn`).
@@ -603,7 +664,7 @@ advertised.
 
 ## Commands
 
-`belai skill`, `belai prompt`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` read and write items by hand, with the same
+`belai skill`, `belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -613,7 +674,7 @@ belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
 
-`belai prompt`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` take the same four commands. `belai repo`
+`belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` take the same four commands. `belai repo`
 also has `sync` and `status` (see [Repositories](#repositories)), and its `list` shows
 each repository's url, first ref and dir. For a budget or a
 rewrite there is one local item (the host's whole configuration of that kind), so
@@ -638,11 +699,14 @@ item of that name.
 - **A document is data until it validates.** It is canonicalised, size-checked and
   parsed against a closed schema before anything is written. An unknown key, a
   type that does not fit, or a limit exceeded refuses the whole document.
-- **Untrusted text is gated.** A skill or a prompt body is text another party may
+- **Untrusted text is gated.** A skill, a prompt or a command body is text another party may
   have written, so it never reaches the host's files with delimiter markup or
   invisible characters in it (see [sanitization.md](sanitization.md#library-items)).
   Reading one later is unchanged: a skill result is still classified, and a prompt
-  is still admitted like any text the user submits.
+  is still admitted like any text the user submits. A command is expanded into
+  a typed prompt, so it is admitted the same way, and a project command is read
+  only through the same gate and validator (nothing from the project layer is
+  written or synced).
 - **The website cannot widen what a host does without the user's setting.** Every
   kind has its own switch; off means no hash, no advertisement and no install.
 - **Only the user's layers.** The project layer is never read or written.

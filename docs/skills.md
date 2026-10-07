@@ -169,6 +169,10 @@ project layer may set it to `false`, never to `true`.
 hidden from the model as `(user only)`. To remove a skill, delete its
 directory.
 
+A skill is not a slash command. A skill is loaded by the model by name; a [custom slash
+command](library-items.md#slash-commands) is a prompt template you run as `/name args`. Both are
+library items, and a command's `allowed-tools` is never applied.
+
 ## Edge cases
 
 - Plugin skills are named `plugin:name`, so they never clash with yours or

@@ -17,6 +17,7 @@ func TestKindTable(t *testing.T) {
 	}{
 		{Skill, "skills", "md", 32 << 10, true},
 		{Prompt, "prompts", "md", 32 << 10, true},
+		{Command, "commands", "md", 32 << 10, true},
 		{Process, "processes", "json", 16 << 10, false},
 		{Repo, "repos", "json", 16 << 10, false},
 		{Budget, "budgets", "json", 16 << 10, false},
@@ -56,7 +57,7 @@ func TestKindTable(t *testing.T) {
 func TestValidName(t *testing.T) {
 	ok := []string{"a", "0", "release", "my.skill", "my_skill", "a-b", "a1.b_c-d", strings.Repeat("a", 64)}
 	bad := []string{"", "-a", ".a", "_a", "A", "aB", "a b", "a/b", "a\n", "café", strings.Repeat("a", 65), "a:b"}
-	for _, k := range []Kind{Skill, Prompt, Process, Repo, Budget, Provider} {
+	for _, k := range []Kind{Skill, Prompt, Command, Process, Repo, Budget, Provider} {
 		for _, n := range ok {
 			if !ValidName(k, n) {
 				t.Errorf("ValidName(%s, %q) = false", k, n)

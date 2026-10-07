@@ -1,6 +1,6 @@
-// Package libitem is the host's half of the library-item contract: the seven
+// Package libitem is the host's half of the library-item contract: the eight
 // kinds of item the Vulnetix website's library keeps for a tenant (skills,
-// prompts, processes, repositories, token budgets, provider sets and the Bash
+// prompts, slash commands, processes, repositories, token budgets, provider sets and the Bash
 // rewrite table), the canonical bytes whose SHA-256 the sync compares, and a
 // validator per kind.
 //
@@ -27,6 +27,7 @@ type Kind string
 const (
 	Skill    Kind = "skill"
 	Prompt   Kind = "prompt"
+	Command  Kind = "command"
 	Process  Kind = "process"
 	Repo     Kind = "repo"
 	Budget   Kind = "budget"
@@ -67,6 +68,7 @@ const RewriteName = "bash_rewrite"
 var kinds = []KindInfo{
 	{Skill, "skills", true, 32 << 10},
 	{Prompt, "prompts", true, 32 << 10},
+	{Command, "commands", true, 32 << 10},
 	{Process, "processes", false, 16 << 10},
 	{Repo, "repos", false, 16 << 10},
 	{Budget, "budgets", false, 16 << 10},

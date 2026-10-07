@@ -256,6 +256,9 @@ type SyncSettings struct {
 	// Providers is the same switch for the provider set (`providers` and
 	// `firewall`) and for the website's provider key requests.
 	Providers *bool `json:"providers,omitempty"`
+	// Commands is the same switch for the custom slash commands in
+	// ~/.vulnetix/belai/commands.
+	Commands *bool `json:"commands,omitempty"`
 }
 
 // GitSettings configures the repository hygiene a session does before a turn.
@@ -329,6 +332,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Providers != nil && !*proj.Providers {
 		out.Providers = &f
 	}
+	if proj.Commands != nil && !*proj.Commands {
+		out.Commands = &f
+	}
 	return out
 }
 
@@ -369,6 +375,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "provider":
 		if s.Sync != nil {
 			v = s.Sync.Providers
+		}
+	case "command":
+		if s.Sync != nil {
+			v = s.Sync.Commands
 		}
 	default:
 		return false

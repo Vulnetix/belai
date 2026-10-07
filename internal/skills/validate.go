@@ -34,6 +34,8 @@ type Manifest struct {
 	Metadata               map[string]string
 	AllowedTools           []string
 	DisableModelInvocation bool
+	// ArgumentHint is a custom slash command's usage hint; only ValidateCommand reads it.
+	ArgumentHint string
 }
 
 // MetadataNote is the key a legacy scalar `metadata: text` is kept under.
@@ -49,6 +51,40 @@ var allowedFields = map[string]bool{
 	"disable-model-invocation": true,
 }
 
+// commandFields is a custom slash command's front matter: a skill's fields and
+// argument-hint, which only a command carries.
+var commandFields = func() map[string]bool {
+	out := map[string]bool{"argument-hint": true}
+	for f := range allowedFields {
+		out[f] = true
+	}
+	return out
+}()
+
+// ValidateCommand parses and strictly validates a custom slash command's
+// front matter. It is ValidateSkill's reader with argument-hint added and
+// without the belai.* metadata rules, which belong to skills.
+func ValidateCommand(doc string) (*Manifest, error) {
+	fm, err := extractFrontMatter(doc)
+	if err != nil {
+		return nil, err
+	}
+	m, err := parseFrontMatter(fm, commandFields)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.clean(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(m.Name) == "" {
+		return nil, fmt.Errorf("required front-matter field %q missing or empty", "name")
+	}
+	if strings.TrimSpace(m.Description) == "" {
+		return nil, fmt.Errorf("required front-matter field %q missing or empty", "description")
+	}
+	return m, nil
+}
+
 // ValidateSkill parses and strictly validates a SKILL.md document's
 // front-matter. It returns a Manifest on success.
 func ValidateSkill(doc string) (*Manifest, error) {
@@ -56,7 +92,7 @@ func ValidateSkill(doc string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := parseFrontMatter(fm)
+	m, err := parseFrontMatter(fm, allowedFields)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +149,14 @@ func splitDoc(doc string) (string, string, error) {
 // parseFrontMatter reads the front matter as YAML when it is YAML, and line by
 // line when it is not. The decision is syntax only: every semantic rule (known
 // fields, duplicate keys, value types) is applied by both readers.
-func parseFrontMatter(fm string) (*Manifest, error) {
+func parseFrontMatter(fm string, fields map[string]bool) (*Manifest, error) {
 	dec := yaml.NewDecoder(strings.NewReader(fm))
 	var root yaml.Node
 	if err := dec.Decode(&root); err != nil {
 		if errors.Is(err, io.EOF) {
 			return &Manifest{}, nil
 		}
-		return parseLegacy(fm)
+		return parseLegacy(fm, fields)
 	}
 	// A second document (after a "..." or "---" line) would hide fields from every
 	// check below, so it is refused.
@@ -132,12 +168,12 @@ func parseFrontMatter(fm string) (*Manifest, error) {
 		return &Manifest{}, nil
 	}
 	if root.Kind != yaml.DocumentNode || len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
-		return parseLegacy(fm)
+		return parseLegacy(fm, fields)
 	}
-	return parseMapping(root.Content[0], strings.Split(fm, "\n"))
+	return parseMapping(root.Content[0], strings.Split(fm, "\n"), fields)
 }
 
-func parseMapping(n *yaml.Node, lines []string) (*Manifest, error) {
+func parseMapping(n *yaml.Node, lines []string, fields map[string]bool) (*Manifest, error) {
 	m := &Manifest{}
 	seen := map[string]bool{}
 	for i := 0; i+1 < len(n.Content); i += 2 {
@@ -146,7 +182,7 @@ func parseMapping(n *yaml.Node, lines []string) (*Manifest, error) {
 			return nil, fmt.Errorf("front-matter keys must be plain words")
 		}
 		key := kn.Value
-		if !allowedFields[key] {
+		if !fields[key] {
 			return nil, fmt.Errorf("unknown front-matter field %q", key)
 		}
 		if seen[key] {
@@ -163,6 +199,8 @@ func parseMapping(n *yaml.Node, lines []string) (*Manifest, error) {
 			m.License, err = textField(kn, vn, lines)
 		case "compatibility":
 			m.Compatibility, err = textField(kn, vn, lines)
+		case "argument-hint":
+			m.ArgumentHint, err = textField(kn, vn, lines)
 		case "metadata":
 			m.Metadata, err = nodeMetadata(vn)
 		case "allowed-tools":
@@ -294,7 +332,7 @@ func splitTools(s string) []string {
 
 // parseLegacy reads the front matter line by line, the way the earlier loader
 // did: `key: value`, the value taken verbatim after the first colon.
-func parseLegacy(fm string) (*Manifest, error) {
+func parseLegacy(fm string, fields map[string]bool) (*Manifest, error) {
 	m := &Manifest{}
 	seen := map[string]bool{}
 	lines := strings.Split(fm, "\n")
@@ -310,7 +348,7 @@ func parseLegacy(fm string) (*Manifest, error) {
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
-		if !allowedFields[key] {
+		if !fields[key] {
 			return nil, fmt.Errorf("unknown front-matter field %q", key)
 		}
 		if seen[key] {
@@ -327,6 +365,8 @@ func parseLegacy(fm string) (*Manifest, error) {
 			m.License = parseString(val)
 		case "compatibility":
 			m.Compatibility = parseString(val)
+		case "argument-hint":
+			m.ArgumentHint = parseString(val)
 		case "metadata":
 			if s := parseString(val); s != "" {
 				m.Metadata = map[string]string{MetadataNote: s}
@@ -418,7 +458,7 @@ func (m *Manifest) clean() error {
 		*s = flat
 		return nil
 	}
-	for field, s := range map[string]*string{"name": &m.Name, "description": &m.Description, "license": &m.License, "compatibility": &m.Compatibility} {
+	for field, s := range map[string]*string{"name": &m.Name, "description": &m.Description, "license": &m.License, "compatibility": &m.Compatibility, "argument-hint": &m.ArgumentHint} {
 		if err := one(field, s); err != nil {
 			return err
 		}
