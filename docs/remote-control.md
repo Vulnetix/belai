@@ -634,7 +634,7 @@ refuses both with "update Belai on the host".
 
 - **`library_scan`** may name one kind in `itemKind` (empty is every kind: `command`,
   `skill`, `prompt`, `agent`, `crew`, `process`, `budget`, `rewrite`, `provider`,
-  `repo`, `document`). The daemon answers in the background, one scan at a time (a
+  `repo`, `hook`, `document`). The daemon answers in the background, one scan at a time (a
   second is refused with the reason), searches the installed harnesses, Belai's own
   directories and the trusted repositories for at most 25 seconds, uploads the report
   with `POST /hosts/{id}/library/scans` as `{"dispatch": id, "report": {...}}`
@@ -644,7 +644,8 @@ refuses both with "update Belai on the host".
   at most 2000 items and 1 MiB, notes of at most 160 bytes. If the upload fails the
   request is refused with the reason.
 - **`library_import`** names one item a scan reported: `itemKind`, `path` (a file, with
-  `#name` after a settings file), `sha256` (of the canonical document the scan saw)
+  `#name` after a settings file, and `#hooks` after the Claude Code settings file a hook
+  lives in), `sha256` (of the canonical document the scan saw)
   and `scanDispatch`, and for a document `target`, the agent that receives it. The
   host does not trust the path. It re-derives its own scan roots, refuses a path
   that is not exactly a file a scan would list or is reached through a symbolic
@@ -653,8 +654,16 @@ refuses both with "update Belai on the host".
   uploads with `POST /hosts/{id}/library/imports` as `{"dispatch", "kind", "name",
   "body", "skills": [{"name", "body"}], "target"}`: `body` is a string for a skill,
   prompt, command, agent (the profile Markdown) and document, and an object for the
-  JSON kinds and a crew. `skills` are an agent's bundled skills; the library installs
-  one only when it holds none of that name. Imports run in the background, one at a
+  JSON kinds, a crew and a hook. `skills` are an agent's bundled skills; the library installs
+  one only when it holds none of that name. A hook's scripts go in `files`, a list of
+  `{"path": "guard.sh", "content": "<base64>"}` (at most 32 files of 256 KiB and 2 MiB
+  in all), and its `body` is the hooks document `{"name", "description", "hooks"}` with
+  each command's first word rewritten to the bundle name of a script that is carried.
+  The host re-reads the hooks file and the scripts and recomputes the bundle hash
+  (`libitem.HashBundle`); a difference from `sha256` is the same "changed since the
+  scan" refusal. An import of a hook uploads and nothing more: it never writes a bundle,
+  touches `sync.hooks` or answers `item_install`, so the hook still reaches a host only on
+  request. The library accepts an import body of up to 4 MiB inflated for this. Imports run in the background, one at a
   time, because a selection sends one request per item.
 
 Both are `host.dispatch` audit events like the rest, and both routes accept an upload

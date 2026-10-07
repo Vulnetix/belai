@@ -110,6 +110,18 @@ func TestPostLibraryImportBodyShapes(t *testing.T) {
 	if !strings.HasPrefix(string(s.body["body"]), "{") || string(s.body["target"]) != `"reviewer"` || !strings.Contains(string(s.body["skills"]), `"lint"`) {
 		t.Errorf("body = %v", s.body)
 	}
+	// A hook carries its scripts: path and base64 content, no other field.
+	hook, err := ImportBody(false, []byte(`{"name":"claude-code-user","hooks":{}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []ImportFile{{Path: "guard.sh", Content: "ZXhpdCAwCg=="}}
+	if _, err := c.PostLibraryImport(context.Background(), testHost, LibraryImport{Dispatch: "d3", Kind: "hook", Name: "claude-code-user", Body: hook, Files: files}); err != nil {
+		t.Fatal(err)
+	}
+	if string(s.body["files"]) != `[{"path":"guard.sh","content":"ZXhpdCAwCg=="}]` || string(s.body["kind"]) != `"hook"` {
+		t.Errorf("hook upload = %v", s.body)
+	}
 	for _, bad := range []struct {
 		text bool
 		doc  string

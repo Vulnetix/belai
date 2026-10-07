@@ -13,6 +13,8 @@ import (
 	"github.com/vulnetix/belai/internal/agentimport"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/harness"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/projectregistry"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
@@ -74,6 +76,10 @@ const (
 	shapeProfile  = "profile"  // <name>.json or <name>.md
 	shapeCrew     = "crew"     // <name>.json
 	shapeSettings = "settings" // settings.json: budgets, rewrites, providers, repositories
+
+	shapeJSONKey    = "jsonkey"    // a JSON file whose hooks key is one item (Claude Code settings.json)
+	shapeJSONFile   = "jsonfile"   // a JSON file that is one item (Codex hooks.json)
+	shapeHookBundle = "hookbundle" // <name>/hooks.json and the scripts beside it (Belai's own)
 )
 
 // Root is one place a scan looks for one kind: a directory, or for the
@@ -95,12 +101,23 @@ type Root struct {
 	Installed bool
 	// Unsupported is set for a kind the harness keeps in a format Belai does not read.
 	Unsupported bool
+
+	// The rest are for the hook kind. Key is the JSON key of a shapeJSONKey file.
+	// RepoName names a project root's repository. Home resolves ~ in a command.
+	// ScriptRoots are the directories a script may be carried from: the harness's
+	// own directory for a user file, the trusted repository for a project file.
+	Key         string
+	RepoName    string
+	Home        string
+	ScriptRoots []string
 }
 
 var shapeOf = map[string]string{
 	harness.MDFile:   shapeMD,
 	harness.SkillDir: shapeSkill,
 	harness.DocFile:  shapeDoc,
+	harness.JSONKey:  shapeJSONKey,
+	harness.JSONFile: shapeJSONFile,
 }
 
 // Roots returns every place a scan looks, for the kinds given (nil is every
@@ -128,13 +145,22 @@ func Roots(home string, repos []Repo, kinds map[agentimport.Kind]bool) []Root {
 			}
 			shape, known := shapeOf[dirs.Shape]
 			unsupported := dirs.Shape == harness.Unsupported || !known
+			var userScripts []string
+			if kind == agentimport.KindHook {
+				for _, d := range h.Detect {
+					if strings.HasPrefix(d, "~/") {
+						userScripts = append(userScripts, filepath.Clean(harness.Expand(home, d)))
+					}
+				}
+			}
 			if installed {
 				for _, d := range dirs.User {
 					if !strings.HasPrefix(d, "~/") {
 						continue
 					}
 					add(Root{Kind: kind, Path: filepath.Clean(harness.Expand(home, d)), Shape: shape, Files: dirs.Files, Harness: h.ID, Name: h.Name,
-						Format: format, Scope: ScopeUser, Installed: true, Unsupported: unsupported})
+						Format: format, Scope: ScopeUser, Installed: true, Unsupported: unsupported,
+						Key: dirs.Key, Home: home, ScriptRoots: userScripts})
 				}
 			}
 			for _, repo := range repos {
@@ -143,8 +169,13 @@ func Roots(home string, repos []Repo, kinds map[agentimport.Kind]bool) []Root {
 					if !filepath.IsLocal(d) {
 						continue
 					}
-					add(Root{Kind: kind, Path: filepath.Join(repo.Path, d), Shape: shape, Files: dirs.Files, Harness: h.ID, Name: h.Name,
-						Format: format, Scope: ScopeProject, Repo: repo.Path, Rel: d, Installed: installed, Unsupported: unsupported})
+					r := Root{Kind: kind, Path: filepath.Join(repo.Path, d), Shape: shape, Files: dirs.Files, Harness: h.ID, Name: h.Name,
+						Format: format, Scope: ScopeProject, Repo: repo.Path, Rel: d, Installed: installed, Unsupported: unsupported,
+						Key: dirs.Key, RepoName: repo.Name, Home: home}
+					if kind == agentimport.KindHook {
+						r.ScriptRoots = []string{repo.Path}
+					}
+					add(r)
 				}
 			}
 		}
@@ -163,6 +194,9 @@ func Roots(home string, repos []Repo, kinds map[agentimport.Kind]bool) []Root {
 		for _, k := range settingsKinds {
 			own(k, shapeSettings, ScopeUser, "", filepath.Join(gd, "settings.json"), "")
 		}
+	}
+	if hd, err := config.GlobalHooksDir(); err == nil {
+		own(agentimport.KindHook, shapeHookBundle, ScopeUser, "", hd, "")
 	}
 	for _, repo := range repos {
 		pd := config.ProjectDir(repo.Path)
@@ -229,12 +263,27 @@ func Resolve(roots []Root, kind agentimport.Kind, p string) (Resolved, error) {
 		if r.Kind != kind || r.Unsupported || r.Shape == "" {
 			continue
 		}
-		if r.Shape == shapeSettings {
+		switch r.Shape {
+		case shapeSettings:
 			if file == r.Path && name != "" {
 				if err := noLink(r.Path, r.Path); err != nil {
 					return Resolved{}, err
 				}
 				return Resolved{Root: r, File: file, Name: name, Hint: name}, nil
+			}
+			continue
+		case shapeJSONKey, shapeJSONFile:
+			// The file is the root. A settings file names its key ("#hooks"); a
+			// hooks file names nothing.
+			want := ""
+			if r.Shape == shapeJSONKey {
+				want = r.Key
+			}
+			if file == r.Path && name == want {
+				if err := noLink(r.Path, r.Path); err != nil {
+					return Resolved{}, err
+				}
+				return Resolved{Root: r, File: file, Name: name, Hint: HookName(r)}, nil
 			}
 			continue
 		}
@@ -255,6 +304,9 @@ func Resolve(roots []Root, kind agentimport.Kind, p string) (Resolved, error) {
 		hint := ""
 		if r.Shape == shapeMD && len(parts) == 2 {
 			hint = parts[0] + "-" + strings.TrimSuffix(parts[1], ".md")
+		}
+		if r.Shape == shapeHookBundle {
+			hint = parts[0]
 		}
 		return Resolved{Root: r, File: file, Hint: hint}, nil
 	}
@@ -289,8 +341,80 @@ func shapeAccepts(r Root, parts []string) bool {
 		return len(parts) == 1 && (strings.HasSuffix(last, ".json") || strings.HasSuffix(last, ".md"))
 	case shapeCrew:
 		return len(parts) == 1 && strings.HasSuffix(last, ".json")
+	case shapeHookBundle:
+		return len(parts) == 2 && last == libitem.HookDefinitionFile && hooks.ValidBundleName(parts[0])
 	}
 	return false
+}
+
+// HookName is the library name a hooks file is offered under, made from the
+// harness and the scope: claude-code-user, codex-user, claude-code-<repo> for a
+// project file, with -local for a settings.local.json. It keeps to the library's
+// name rule. A Belai bundle keeps the name of its directory (not made here).
+func HookName(r Root) string {
+	name := r.Harness
+	if r.Scope == ScopeUser {
+		name += "-user"
+	} else {
+		repo := r.RepoName
+		if repo == "" {
+			repo = filepath.Base(r.Repo)
+		}
+		suffix := ""
+		if strings.Contains(filepath.Base(r.Path), ".local.") {
+			suffix = "-local"
+		}
+		room := libitem.MaxNameBytes - len(name) - 1 - len(suffix)
+		if room < 1 {
+			room = 1
+		}
+		slug := nameSlug(repo)
+		if len(slug) > room {
+			slug = strings.TrimRight(slug[:room], "-._")
+			if slug == "" {
+				slug = "repo"
+			}
+		}
+		name += "-" + slug + suffix
+	}
+	if len(name) > libitem.MaxNameBytes {
+		name = strings.TrimRight(name[:libitem.MaxNameBytes], "-._")
+	}
+	return name
+}
+
+// nameSlug folds text to the characters a library name takes: lower-case
+// letters and digits, with . _ - inside, starting with a letter or digit.
+func nameSlug(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.' || r == '_' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.TrimLeft(b.String(), "-._")
+	out = strings.TrimRight(out, "-")
+	if out == "" {
+		return "repo"
+	}
+	return out
+}
+
+// ImportOptions are the options the importer reads a resolved item with: the name
+// to give it and, for a hook, where its scripts may be read from.
+func ImportOptions(res Resolved) agentimport.Options { return importOptions(res.Root, res.Hint) }
+
+func importOptions(r Root, hint string) agentimport.Options {
+	o := agentimport.Options{Name: hint}
+	if r.Kind == agentimport.KindHook {
+		o.Hook = agentimport.HookContext{Home: r.Home, RepoRoot: r.Repo, Roots: r.ScriptRoots, Settings: r.Shape == shapeJSONKey}
+	}
+	return o
 }
 
 // noLink checks that root and every part of file below it is not a symbolic link.

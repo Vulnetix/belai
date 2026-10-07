@@ -10,6 +10,10 @@
 // written. Only names, paths, hashes, verdicts and short notes leave in the
 // report; a document leaves only when the user imports that item.
 //
+// A hook is read like the rest, with one difference: its item carries the scripts
+// its commands name (report field files), and its hash covers them. A settings file
+// is read for its hooks key alone.
+//
 // The reader is bounded: it never follows a symbolic link, reads no credential
 // file, caps the entries it looks at and stops at the context's deadline, in
 // which case the report says it is partial.
@@ -30,6 +34,9 @@ import (
 
 	"github.com/vulnetix/belai/internal/agentimport"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/harness"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
@@ -87,6 +94,17 @@ type Item struct {
 	Reason      string `json:"reason,omitempty"`
 	Converted   bool   `json:"converted"`
 	Notes       []Note `json:"notes"`
+	// Files are the scripts a hook would carry, by bundle-relative path, at most
+	// 32. Only a hook has them. Sha256 above covers the document and these.
+	Files []ItemFile `json:"files,omitempty"`
+}
+
+// ItemFile is one script of a hook bundle: its path in the bundle, its size and
+// the SHA-256 of its bytes. The bytes leave only in an import.
+type ItemFile struct {
+	Path   string `json:"path"`
+	Bytes  int    `json:"bytes"`
+	SHA256 string `json:"sha256"`
 }
 
 // HarnessReport is an installed harness and what was found in it.
@@ -195,16 +213,28 @@ func Scan(ctx context.Context, o Options) Report {
 		looked[r.Path] = map[string]bool{}
 	}
 
+	// A kind a harness keeps in a format Belai does not read is named once on the
+	// harness, whatever scope it lives in (a project-only kind has no user root).
+	for _, h := range known {
+		hr := installedAny[h.ID]
+		if hr == nil {
+			continue
+		}
+		for _, k := range sortedKinds(h.Dirs) {
+			if h.Dirs[k].Shape != harness.Unsupported {
+				continue
+			}
+			if kind := agentimport.Kind(k); len(o.Kinds) == 0 || o.Kinds[kind] {
+				hr.Notes = appendOnce(hr.Notes, k+": unsupported format, not read")
+			}
+		}
+	}
+
 	best := map[string]*scored{}
 	var order []string
 	examined := 0
 	for _, root := range roots {
 		if root.Unsupported {
-			if root.Installed && root.Scope == ScopeUser {
-				if hr := installedAny[root.Harness]; hr != nil {
-					hr.Notes = appendOnce(hr.Notes, string(root.Kind)+": unsupported format, not read")
-				}
-			}
 			continue
 		}
 		rep.Locations++
@@ -382,6 +412,57 @@ func candidatesOf(ctx context.Context, r Root, examined *int) ([]candidate, int)
 		return nil, 1
 	}
 	switch r.Shape {
+	case shapeJSONKey, shapeJSONFile:
+		if !fi.Mode().IsRegular() {
+			return nil, 0
+		}
+		has, err := agentimport.ListHooks(r.Path, r.Shape == shapeJSONKey)
+		if err != nil {
+			if errors.Is(err, agentimport.ErrSkipped) {
+				return nil, 1
+			}
+			return nil, 0
+		}
+		if !has {
+			return nil, 0
+		}
+		name := HookName(r)
+		c := mk(r.Kind, r.Path, name)
+		if r.Shape == shapeJSONKey {
+			c.path = r.Path + "#" + r.Key
+		}
+		c.stem = name
+		out = append(out, c)
+	case shapeHookBundle:
+		des, ok := readDir(r.Path, fi)
+		if !ok {
+			return nil, 0
+		}
+		for _, de := range des {
+			if ctx.Err() != nil || *examined >= maxExamined {
+				break
+			}
+			if strings.HasPrefix(de.Name(), ".") || !hooks.ValidBundleName(de.Name()) {
+				continue
+			}
+			if de.Type()&fs.ModeSymlink != 0 {
+				skipped++
+				continue
+			}
+			if !de.IsDir() {
+				continue
+			}
+			*examined++
+			p := filepath.Join(r.Path, de.Name(), libitem.HookDefinitionFile)
+			switch ok, link := regularFile(p); {
+			case link:
+				skipped++
+			case ok:
+				c := mk(r.Kind, p, de.Name())
+				c.stem = de.Name()
+				out = append(out, c)
+			}
+		}
 	case shapeSettings:
 		if !fi.Mode().IsRegular() {
 			return nil, 0
@@ -556,7 +637,7 @@ func evaluate(c candidate) (item Item, skipped bool) {
 	if c.root.Scope == ScopeProject {
 		item.Repo = c.root.Repo
 	}
-	res, err := agentimport.ImportItem(c.file, c.kind, c.root.Format, agentimport.Options{Name: c.hint})
+	res, err := agentimport.ImportItem(c.file, c.kind, c.root.Format, importOptions(c.root, c.hint))
 	if err != nil {
 		if errors.Is(err, agentimport.ErrSkipped) {
 			return Item{}, true
@@ -582,7 +663,19 @@ func evaluate(c candidate) (item Item, skipped bool) {
 		}
 	}
 	item.Notes = capNotes(res.Notes, MaxNotes)
+	for _, f := range res.Files {
+		item.Files = append(item.Files, ItemFile{Path: f.Path, Bytes: len(f.Data), SHA256: f.SHA256})
+	}
 	return item, false
+}
+
+func sortedKinds(m map[string]harness.KindDirs) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // capNotes keeps at most n notes, the ones a person must read first, each cut to

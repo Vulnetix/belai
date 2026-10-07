@@ -92,6 +92,9 @@ type Result struct {
 	// Description is the item's own description (a command, prompt, skill, agent
 	// or crew), one clean line.
 	Description string
+	// Files are the scripts a hook carries beside its document, in path order.
+	// SHA256 of a hook is libitem.HashBundle over Doc and these files.
+	Files []File
 	// Profile and Skills are set for an agent.
 	Profile agentprofile.AgentProfile
 	Skills  []Skill
@@ -105,6 +108,8 @@ type Result struct {
 type Options struct {
 	// Name overrides the profile name derived from the source.
 	Name string
+	// Hook says where a hooks file lives and where its scripts may be read from.
+	Hook HookContext
 }
 
 const (

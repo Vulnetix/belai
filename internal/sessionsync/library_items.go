@@ -171,6 +171,13 @@ type LibraryImportSkill struct {
 	Body string `json:"body"`
 }
 
+// ImportFile is a script an imported hook carries: a path relative to the bundle
+// and its bytes as standard base64.
+type ImportFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 // LibraryImport is what a library_import request uploads: the canonical item the
 // host read from the file the scan reported.
 type LibraryImport struct {
@@ -182,6 +189,8 @@ type LibraryImport struct {
 	Body any `json:"body"`
 	// Skills are an agent's bundled skills.
 	Skills []LibraryImportSkill `json:"skills,omitempty"`
+	// Files are a hook's scripts, beside its document.
+	Files []ImportFile `json:"files,omitempty"`
 	// Target is the profile that receives a document.
 	Target string `json:"target,omitempty"`
 }

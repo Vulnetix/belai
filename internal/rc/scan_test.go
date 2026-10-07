@@ -2,6 +2,7 @@ package rc
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -458,5 +459,104 @@ func TestLibraryRequestsAreDocumented(t *testing.T) {
 		if !strings.Contains(audit, want) {
 			t.Errorf("docs/audit.md lacks %q", want)
 		}
+	}
+}
+
+// withHookHarness adds Claude Code's hooks (a key of settings.json) to the fixture.
+func (s *scanHost) withHookHarness() {
+	base := libscan.Harnesses
+	libscan.Harnesses = func() []harness.Harness {
+		hs := base()
+		for i := range hs {
+			if hs[i].ID == "claude-code" {
+				hs[i].Dirs["hook"] = harness.KindDirs{User: []string{"~/.claude/settings.json"}, Project: []string{".claude/settings.json"}, Shape: harness.JSONKey, Key: "hooks"}
+			}
+		}
+		return hs
+	}
+}
+
+func TestLibraryImportOfAHookUploadsTheDocumentAndItsScripts(t *testing.T) {
+	s := newScanHost(t)
+	s.withHookHarness()
+	for k := range s.on {
+		s.on[k] = false // sync.hooks and the rest stay off: an import is not a sync
+	}
+	script := "#!/bin/sh\nexit 0\n"
+	s.put(".claude/hooks/guard.sh", script)
+	s.put(".claude/settings.json", `{"env":{"K":"settings-secret-value"},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[`+
+		`{"type":"command","command":"~/.claude/hooks/guard.sh --mode strict","timeout":30},{"type":"command","command":"curl -s https://x.test"}]}]}}`)
+
+	status, why := s.importOf("hook", "claude-code-user", nil)
+	if status != sessionsync.DispatchStarted || !strings.Contains(why, "imported hook claude-code-user from claude-code as version "+itemVer) {
+		t.Fatalf("%s %q", status, why)
+	}
+	raw := s.lastImport()
+	var kind, name, dispatch string
+	_ = json.Unmarshal(raw["kind"], &kind)
+	_ = json.Unmarshal(raw["name"], &name)
+	_ = json.Unmarshal(raw["dispatch"], &dispatch)
+	if kind != "hook" || name != "claude-code-user" || dispatch != "d-library_import" {
+		t.Fatalf("upload = %v", raw)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw["body"], &body); err != nil {
+		t.Fatalf("the body is not a JSON object: %s", raw["body"])
+	}
+	if body["name"] != "claude-code-user" || body["hooks"] == nil {
+		t.Errorf("body = %v", body)
+	}
+	if !strings.Contains(string(raw["body"]), `"guard.sh --mode strict"`) || strings.Contains(string(raw["body"]), "settings-secret-value") {
+		t.Errorf("body = %s", raw["body"])
+	}
+	var files []struct{ Path, Content string }
+	if err := json.Unmarshal(raw["files"], &files); err != nil || len(files) != 1 || files[0].Path != "guard.sh" {
+		t.Fatalf("files = %s", raw["files"])
+	}
+	if got, err := base64.StdEncoding.DecodeString(files[0].Content); err != nil || string(got) != script {
+		t.Errorf("content = %q %v", got, err)
+	}
+	if _, has := raw["target"]; has {
+		t.Error("a hook carries no target")
+	}
+	// The upload only carries the item. Nothing is installed or enabled here.
+	if _, err := os.Stat(filepath.Join(s.home, "hooks")); !os.IsNotExist(err) {
+		t.Errorf("an import wrote a hook on the host: %v", err)
+	}
+}
+
+func TestLibraryImportOfAHookRefusesAChangedScriptOrFile(t *testing.T) {
+	s := newScanHost(t)
+	s.withHookHarness()
+	s.put(".claude/hooks/guard.sh", "exit 0\n")
+	settings := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"~/.claude/hooks/guard.sh"}]}]}}`
+	s.put(".claude/settings.json", settings)
+
+	before := s.imports()
+	status, why := s.importOf("hook", "claude-code-user", func(*sessionsync.Dispatch) {
+		s.put(".claude/hooks/guard.sh", "exit 1\n") // edited after the scan
+	})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "changed since the scan") {
+		t.Fatalf("script: %s %q", status, why)
+	}
+	s.put(".claude/hooks/guard.sh", "exit 0\n")
+	status, why = s.importOf("hook", "claude-code-user", func(*sessionsync.Dispatch) {
+		s.put(".claude/settings.json", strings.Replace(settings, "Stop", "SessionEnd", 1))
+	})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "changed since the scan") {
+		t.Fatalf("settings: %s %q", status, why)
+	}
+	// Asked for under the wrong key or another kind: not a place this host scans.
+	for _, mutate := range []func(*sessionsync.Dispatch){
+		func(r *sessionsync.Dispatch) { r.Path = strings.TrimSuffix(r.Path, "#hooks") + "#env" },
+		func(r *sessionsync.Dispatch) { r.ItemKind = "command" },
+	} {
+		s.put(".claude/settings.json", settings)
+		if status, why = s.importOf("hook", "claude-code-user", mutate); status != sessionsync.DispatchRefused || !strings.Contains(why, "not in a place this host scans") {
+			t.Errorf("%s %q", status, why)
+		}
+	}
+	if s.imports() != before {
+		t.Error("something was uploaded")
 	}
 }

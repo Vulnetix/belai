@@ -627,6 +627,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   add a harness path to a scanner or a format name to a kind outside
   `internal/harness`, and do not read a file in `libscan` except through
   `agentimport.ImportItem`. Docs: [docs/agent-import.md](docs/agent-import.md).
+  **Hooks are scanned and imported, never installed by either.** The `hook` kind has one
+  item per hooks file or settings block (`claude-code-user`, `codex-user`,
+  `claude-code-<repo-name>`), read only for the verified dialects (`json-key` for Claude
+  Code's `hooks` key, `json-file` for Codex's `hooks.json`; every other harness's hooks
+  are `unsupported` and never opened) and for Belai's own bundles. The reader
+  (`agentimport/hooks.go`) decodes a settings file into raw values and reads the `hooks`
+  key alone, because that file holds credentials; a report names a command by its first
+  word only; scripts are carried only from the harness's own directory or the trusted
+  repository, never through a link, never run, and the document and every script pass
+  `agentfiles.HoldsSecret` and `libstore.UntrustedText`. The report item gains `files`;
+  an import uploads `files` as base64 beside the document and must reproduce the
+  `libitem.HashBundle` the scan saw. A scan or import never touches `sync.hooks`,
+  `item_install` or a host's hooks directory. Do not add a hook dialect to the registry
+  as readable before its layout is verified and `agentimport` reads it.
 - **Plugins are installed by the user, validated whole, and namespaced.**
   `internal/plugins` installs only after the user confirms a full listing
   (every hook's event and command included), or `-yes` on the CLI; the TUI
@@ -1507,7 +1521,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and `sessionsync.ProviderKey` redacts itself through every `fmt` verb and JSON.
   A hook item is a bundle (a definition and script files, `libitem.HashBundle` over both) that
   reaches a host **only** by an `item_install` request: the automatic sync never pushes or
-  pulls one, `item_backup` and a scan never read one, and `sync.hooks` closes the kind. The
+  pulls one, `item_backup` never reads one, and `sync.hooks` closes the kind. A scan reads hook
+  definitions and an import uploads them with their scripts into the library (see the scan
+  entry above), which installs nothing. The
   install builds the bundle in a dot-prefixed directory, checks it exactly as the loader will
   (`hooks.ParseDefinition` with the user's `hooks.allowed_programs`), refuses a symlink, a file
   that does not match its listed hash, text with a control, bidirectional or invisible rune,
