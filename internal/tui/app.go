@@ -5488,7 +5488,10 @@ func (a *App) refreshFooter() {
 		// choose one lives exactly where its name would appear.
 		a.footer.Agent = "ctrl+p to pick"
 	}
-	if a.footerAgentOverride != "" {
+	// The override is the classifier's label for a turn. An engaged profile
+	// outranks it outside Auto, or the intent word ("agent") would hide the
+	// profile name the user just picked with ctrl+p.
+	if a.footerAgentOverride != "" && (a.modeAuto || a.namedAgent == "") {
 		a.footer.Agent = a.footerAgentOverride
 	}
 	if a.planExecuting && a.mode == "agent" {
@@ -5666,6 +5669,7 @@ func (a *App) setNamedAgent(name string) {
 	if loaded == a.namedAgent && (loaded != "" || a.namedAgentTools == nil) {
 		return
 	}
+	a.footerAgentOverride = ""
 	a.namedAgent = loaded
 	a.namedAgentTools = tools
 	a.namedAgentSkills = skillNames
