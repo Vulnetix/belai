@@ -1,0 +1,184 @@
+{
+  "idMap": {
+    "forge": "forgecode",
+    "ibm-bob": "bob",
+    "iflow": "iflow-cli",
+    "kilo-code": "kilo",
+    "kimi-cli": "kimi-code-cli",
+    "kiro": "kiro-cli",
+    "openai-codex": "codex",
+    "roo-code": "roo",
+    "tongyi-lingma": "lingma",
+    "cortex-code": "cortex"
+  },
+  "exclude": {
+    "conductor": "its only recorded file, .worktreeinclude, is a worktree copy list and not an instruction document"
+  },
+  "harnesses": {
+    "adal": {"name": "AdaL"},
+    "aider-desk": {"name": "AiderDesk"},
+    "amazon-q": {
+      "detect": ["~/.aws/amazonq"],
+      "dirs": {
+        "prompt": {"user": ["~/.aws/amazonq/prompts"], "project": [".amazonq/prompts"]}
+      }
+    },
+    "amp": {
+      "dirs": {
+        "command": {"user": ["~/.config/amp/commands"], "project": [".agents/commands"]},
+        "document": {"user": ["~/.config/amp", "~/.config"], "files": ["AGENTS.md"]}
+      }
+    },
+    "antigravity": {
+      "name": "Google Antigravity",
+      "dirs": {
+        "command": {"user": ["~/.gemini/antigravity/global_workflows"]},
+        "document": {"user": ["~/.gemini"], "project": ["."], "files": ["AGENTS.md", "GEMINI.md"]}
+      }
+    },
+    "antigravity-cli": {"name": "Antigravity CLI"},
+    "astrbot": {"name": "AstrBot"},
+    "augment": {
+      "dirs": {
+        "command": {"user": ["~/.augment/commands"], "project": [".augment/commands"]}
+      }
+    },
+    "bob": {"name": "IBM Bob"},
+    "claude-code": {
+      "format": "claude-code",
+      "dirs": {
+        "agent": {"user": ["~/.claude/agents"]},
+        "command": {"user": ["~/.claude/commands"]},
+        "document": {"user": ["~/.claude"], "files": ["CLAUDE.md", "CLAUDE.local.md"]}
+      }
+    },
+    "cline": {
+      "format": "cline",
+      "detect": ["~/.cline", "~/Documents/Cline"],
+      "dirs": {
+        "command": {"user": ["~/Documents/Cline/Workflows"], "project": [".clinerules/workflows"]},
+        "skill": {"user": ["~/.cline/skills"]}
+      }
+    },
+    "codearts-agent": {"name": "CodeArts Agent"},
+    "codemaker": {"name": "CodeMaker"},
+    "codestudio": {"name": "CodeStudio"},
+    "codex": {
+      "format": "codex",
+      "dirs": {
+        "document": {"user": ["~/.codex"], "files": ["AGENTS.md", "AGENTS.override.md"]},
+        "prompt": {"user": ["~/.codex/prompts"]}
+      }
+    },
+    "continue": {
+      "dirs": {
+        "prompt": {"user": ["~/.continue/prompts"], "project": [".continue/prompts"], "shape": "unsupported"}
+      }
+    },
+    "cortex": {"name": "Snowflake Cortex Code"},
+    "cursor": {
+      "format": "cursor",
+      "dirs": {
+        "command": {"user": ["~/.cursor/commands"]}
+      }
+    },
+    "deepagents": {"name": "Deep Agents"},
+    "dexto": {"detect": ["~/.dexto"]},
+    "droid": {
+      "name": "Factory Droid",
+      "dirs": {
+        "agent": {"user": ["~/.factory/droids"], "project": [".factory/droids"]},
+        "command": {"user": ["~/.factory/commands"], "project": [".factory/commands"]}
+      }
+    },
+    "forgecode": {
+      "name": "ForgeCode",
+      "dirs": {
+        "agent": {"user": ["~/.forge/agents"]},
+        "command": {"user": ["~/.forge/commands"]}
+      }
+    },
+    "gemini-cli": {
+      "format": "gemini-cli",
+      "dirs": {
+        "command": {"user": ["~/.gemini/commands"], "project": [".gemini/commands"], "shape": "unsupported"},
+        "document": {"user": ["~/.gemini"], "files": ["GEMINI.md"]}
+      }
+    },
+    "github-copilot": {
+      "format": "copilot",
+      "dirs": {
+        "agent": {"user": ["~/.copilot/agents"], "project": [".github/agents"]},
+        "document": {"user": ["~/.copilot"], "files": ["copilot-instructions.md"]}
+      }
+    },
+    "goose": {
+      "dirs": {
+        "document": {"user": ["~/.config/goose"], "files": [".goosehints"]}
+      }
+    },
+    "gptme": {"detect": ["~/.config/gptme"]},
+    "iflow-cli": {
+      "name": "iFlow CLI",
+      "dirs": {
+        "command": {"user": ["~/.iflow/commands"], "project": [".iflow/commands"], "shape": "unsupported"},
+        "document": {"user": ["~/.iflow"], "files": ["IFLOW.md"]}
+      }
+    },
+    "inference-sh": {"name": "inference.sh"},
+    "kilo": {
+      "name": "Kilo Code",
+      "dirs": {
+        "command": {"user": ["~/.kilocode/workflows"], "project": [".kilocode/workflows"]}
+      }
+    },
+    "kimi-code-cli": {"name": "Kimi Code CLI", "detect": ["~/.kimi"]},
+    "kiro-cli": {"name": "Kiro"},
+    "letta-code": {"detect": ["~/.letta"]},
+    "mcpjam": {"name": "MCPJam"},
+    "opencode": {
+      "format": "opencode",
+      "dirs": {
+        "agent": {"user": ["~/.config/opencode/agent", "~/.config/opencode/agents"], "project": [".opencode/agents"]},
+        "command": {"user": ["~/.config/opencode/command", "~/.config/opencode/commands"], "project": [".opencode/commands"]},
+        "document": {"user": ["~/.config/opencode"], "files": ["AGENTS.md"]}
+      }
+    },
+    "pi": {
+      "dirs": {
+        "document": {"user": ["~/.pi/agent"], "files": ["AGENTS.md"]},
+        "prompt": {"user": ["~/.pi/agent/prompts"], "project": [".pi/prompts"]}
+      }
+    },
+    "promptscript": {"name": "PromptScript"},
+    "qoder-cn": {"name": "Qoder CN"},
+    "qwen-code": {
+      "dirs": {
+        "command": {"user": ["~/.qwen/commands"], "project": [".qwen/commands"], "shape": "unsupported"},
+        "document": {"user": ["~/.qwen"], "files": ["QWEN.md"]}
+      }
+    },
+    "roo": {
+      "name": "Roo Code",
+      "dirs": {
+        "command": {"user": ["~/.roo/commands"], "project": [".roo/commands"]}
+      }
+    },
+    "rovodev": {"name": "Rovo Dev"},
+    "tabnine-cli": {"name": "Tabnine CLI"},
+    "terramind": {"name": "TerraMind"},
+    "tinycloud": {"name": "TinyCloud"},
+    "universal": {"name": "Universal agents directory"},
+    "vtcode": {"detect": ["~/.vtcode"]},
+    "warp": {"detect": ["~/.warp"]},
+    "windsurf": {
+      "format": "windsurf",
+      "dirs": {
+        "command": {"user": ["~/.codeium/windsurf/global_workflows"]},
+        "document": {"user": ["~/.codeium/windsurf/memories"], "files": ["global_rules.md"]}
+      }
+    },
+    "zencoder": {"detect": ["~/.zencoder"]},
+    "zenflow": {"name": "Zencoder Zenflow"}
+  }
+}

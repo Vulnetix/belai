@@ -30,8 +30,13 @@ behaviour, and implementation details.
   definitions, schema, lifecycle, autonomy, the profile builder, and
   [facts](agent-profiles.md#facts) that point the cloud tools at an account, a
   cluster or a Terraform directory.
-- [Agent import](agent-import.md): convert an agent definition written for
-  another harness into a profile, with a report of what was mapped and kept.
+- [Importing from other harnesses](agent-import.md): `belai library scan` searches a
+  host for commands, skills, prompts, agents, crews, documents and Belai's own
+  settings kept by other agent harnesses and says what an import would make of
+  each; `belai agent import` converts one agent definition into a profile.
+- [Harness registry](harnesses.md): where Claude Code, Cursor, Codex and about 80
+  other harnesses keep commands, skills, prompts, agents and instruction
+  documents, and how the registry is generated.
 - [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.
@@ -92,6 +97,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Desktop notifications | [Notifications](notifications.md) | alpha-20260926 |
 | Skill loading and self-authored skills | [Skills](skills.md) | alpha-20260926 |
 | Importing agent definitions | [Agent import](agent-import.md) | alpha-20261006 |
+| Harness registry (where other harnesses keep their files) | [Harness registry](harnesses.md) | alpha-20261007 |
 | Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
