@@ -220,3 +220,28 @@ func TestVerifierCannotWriteAVEXForACardWithNoFindingID(t *testing.T) {
 		t.Fatalf("card %+v (%q)", got, got.LastNote())
 	}
 }
+
+// The worktree is dropped before a card reaches Review so the next worker can
+// check the branch out; only a card that goes to Done is published from it.
+func TestRoutesToDone(t *testing.T) {
+	w := &Worker{Profile: agentprofile.AgentProfile{Kanban: &agentprofile.KanbanSpec{OnSuccess: agentprofile.Route{List: "done"}}}}
+	if !w.routesToDone(outcome{}) {
+		t.Error("a success routed to done must publish from the worktree")
+	}
+	for name, o := range map[string]outcome{
+		"failed":  {failed: true},
+		"blocked": {blocked: true},
+		"review":  {to: kanban.Review},
+	} {
+		if w.routesToDone(o) {
+			t.Errorf("%s outcome reported as routed to done", name)
+		}
+	}
+	w.Profile.Kanban.OnSuccess.List = "review"
+	if w.routesToDone(outcome{}) {
+		t.Error("a success routed to review must free the worktree first")
+	}
+	if (&Worker{}).routesToDone(outcome{}) {
+		t.Error("no kanban spec reported as routed to done")
+	}
+}

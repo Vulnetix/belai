@@ -728,8 +728,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	w.Record.Branch = ws.Branch
 	w.save()
 	keep := p.Workspace != nil && p.Workspace.Keep
+	discarded := false
 	defer func() {
-		if !keep {
+		if !keep && !discarded {
 			_ = ws.Discard(context.WithoutCancel(ctx))
 		}
 	}()
@@ -787,6 +788,13 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	o = w.reconcileCoverage(ctx, o, it)
 	stopRenew()
+	// A branch can be checked out in one worktree only. Once the card is in
+	// Review another worker (a verifier) claims it within seconds and adds its own
+	// worktree on this branch, so ours goes first unless we still publish from it.
+	if !keep && !(!o.failed && o.files > 0 && w.publishes() && ws.Worktree && w.routesToDone(o)) {
+		_ = ws.Discard(context.WithoutCancel(ctx))
+		discarded = true
+	}
 	released := w.release(ctx, it, o)
 	// An empty branch has nothing to push; PublishBranch would only refuse
 	// and leave a "not opened" note beside the release note above.
@@ -930,6 +938,22 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 	}
 	o.note = fmt.Sprintf("agent %s did not complete it: %s after %d passes", w.Profile.Name, why, res.Passes)
 	return o
+}
+
+// routesToDone reports whether release would send a successful outcome to the
+// Done list, the one route after which the harness publishes the branch itself.
+func (w *Worker) routesToDone(o outcome) bool {
+	if o.failed || o.blocked {
+		return false
+	}
+	if o.to != "" {
+		return o.to == kanban.Done
+	}
+	if w.Profile.Kanban == nil {
+		return false
+	}
+	l, _ := kanban.ParseList(w.Profile.Kanban.OnSuccess.List)
+	return l == kanban.Done
 }
 
 // release hands the item back per the profile's routes.
