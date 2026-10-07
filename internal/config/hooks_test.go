@@ -322,6 +322,11 @@ func TestResolveAllowedProgramsAreUserOnly(t *testing.T) {
 	if eff.Origin["hooks_allowed_programs"] != SourceGlobal {
 		t.Errorf("origin = %v", eff.Origin["hooks_allowed_programs"])
 	}
+	// A project file that turns hooks off keeps the user's allowed programs through Override.
+	kept := Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"vulnetix"}}}.Override(Settings{Hooks: &HooksSettings{Enabled: boolPtr(false)}})
+	if kept.Hooks.HooksEnabled() || len(kept.Hooks.AllowedProgramList()) != 1 {
+		t.Errorf("Override dropped the list when it turned hooks off: %+v", kept.Hooks)
+	}
 	// Override (the project-over-user merge used elsewhere) never adds a program either.
 	merged := Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"vulnetix"}}}.Override(Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"sh"}}})
 	if got := strings.Join(merged.Hooks.AllowedProgramList(), ","); got != "vulnetix" {

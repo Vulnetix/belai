@@ -24,10 +24,14 @@ import (
 
 // Local is one item this host holds: its canonical document and the hash of it.
 type Local struct {
-	Kind   libitem.Kind
-	Name   string
-	Doc    []byte
+	Kind libitem.Kind
+	Name string
+	Doc  []byte
+	// SHA256 is the hash the library compares: of Doc alone, or for a hook of Doc
+	// and its Files (libitem.HashBundle).
 	SHA256 string
+	// Files are the script files of a hook bundle, in path order.
+	Files []LocalFile
 }
 
 // Skipped is a local item that cannot travel to the library, and why.
@@ -82,6 +86,11 @@ type adapter interface {
 	list() ([]Local, []Skipped, error)
 	// install writes a validated item.
 	install(it libitem.Item, o InstallOptions) (Result, error)
+}
+
+// bundleInstaller is an adapter whose item carries files (a hook).
+type bundleInstaller interface {
+	installBundle(it libitem.Item, files []BundleFile, o InstallOptions) (Result, error)
 }
 
 var adapters = map[libitem.Kind]adapter{}

@@ -262,6 +262,12 @@ type SyncSettings struct {
 	// MCPs is the same switch for the MCP servers in mcp.servers and for the
 	// website's requests to push or remove a server's secrets.
 	MCPs *bool `json:"mcps,omitempty"`
+	// Hooks is the same switch for hook bundles (hooks.md): on, the website may
+	// install one on this host by request. A hook is never pushed to the library or
+	// pulled by the automatic sync, whatever this says, and a bundle runs only what
+	// hooks.allowed_programs lets it. Not hooks.enabled, which runs or silences
+	// every hook.
+	Hooks *bool `json:"hooks,omitempty"`
 }
 
 // GitSettings configures the repository hygiene a session does before a turn.
@@ -341,6 +347,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.MCPs != nil && !*proj.MCPs {
 		out.MCPs = &f
 	}
+	if proj.Hooks != nil && !*proj.Hooks {
+		out.Hooks = &f
+	}
 	return out
 }
 
@@ -389,6 +398,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "mcp":
 		if s.Sync != nil {
 			v = s.Sync.MCPs
+		}
+	case "hook":
+		if s.Sync != nil {
+			v = s.Sync.Hooks
 		}
 	default:
 		return false
@@ -1895,7 +1908,12 @@ func (s Settings) Override(proj Settings) Settings {
 	// never on.
 	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
 		f := false
-		out.Hooks = &HooksSettings{Enabled: &f}
+		h := HooksSettings{}
+		if out.Hooks != nil {
+			h = *out.Hooks
+		}
+		h.Enabled = &f
+		out.Hooks = &h
 	}
 	if proj.Sandbox != nil {
 		merged := &SandboxSettings{}

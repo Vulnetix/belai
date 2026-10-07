@@ -43,6 +43,10 @@ type ItemFetched struct {
 	Body []byte
 	// Overwrite is the request's replace flag as the server recorded it.
 	Overwrite bool
+	// Files are the files a hook bundle carries beside its document, as the
+	// library lists them; each is read by hash through LibraryFetchFile. A server
+	// that predates bundles lists none.
+	Files []FileRef
 }
 
 // docField carries a document in a JSON body: a Markdown document is a string,
@@ -133,6 +137,7 @@ func (c *Client) ItemFetch(ctx context.Context, hostID string, kind libitem.Kind
 		Body      json.RawMessage `json:"body"`
 		Overwrite bool            `json:"overwrite"`
 		Name      string          `json:"name"`
+		Files     []FileRef       `json:"files"`
 	}
 	path := fmt.Sprintf("/hosts/%s/library/items/%s/%s/versions/%s?dispatch=%s",
 		url.PathEscape(hostID), url.PathEscape(kind.Segment()), url.PathEscape(itemID), url.PathEscape(version), url.QueryEscape(dispatchID))
@@ -143,7 +148,7 @@ func (c *Client) ItemFetch(ctx context.Context, hostID string, kind libitem.Kind
 	if err != nil {
 		return ItemFetched{}, err
 	}
-	return ItemFetched{Version: versionOf(out.Version), Name: out.Name, Body: body, Overwrite: out.Overwrite}, nil
+	return ItemFetched{Version: versionOf(out.Version), Name: out.Name, Body: body, Overwrite: out.Overwrite, Files: out.Files}, nil
 }
 
 // ── Library scan and import ──────────────────────────────────────────────

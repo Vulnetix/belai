@@ -1,11 +1,11 @@
-| `order` | optional whole number from 0 to 999, one to three digits (leading zeros allowed); 0 or absent means "after the last" |# Library items
+# Library items
 
 The Vulnetix website keeps a library for each account: the things worth keeping
 when a machine is wiped or a second one is set up. Agent profiles and crews were
 the first ([remote-control.md](remote-control.md#agent-library)). A **library
 item** is the same idea for the rest of what a host holds: skills, prompts,
-custom slash commands, supervised processes, repositories, token budgets, provider sets and the Bash
-rewrite table.
+custom slash commands, supervised processes, repositories, token budgets, provider sets, the Bash
+rewrite table and hook bundles.
 
 Every item is one small document. The website stores each version of it (a
 version is write-once), lists the hosts that hold it, and can install it on
@@ -23,6 +23,7 @@ offline; the library is a copy, never the thing that is read at run time.
 - [Rewrites](#rewrites)
 - [Providers](#providers)
 - [Provider keys](#provider-keys)
+- [Hooks](#hooks)
 - [How a document travels](#how-a-document-travels)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -44,6 +45,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | `launch` | none | JSON object | never on a host: a launch configuration the website keeps and applies, refused in every host path | none |
 | `provider` | `belai provider` | JSON object | `providers` and `firewall` in `~/.vulnetix/belai/settings.json`; keys in the credentials resolver | `sync.providers` |
 | `mcp` | `belai mcp` | JSON object | one entry of `mcp.servers` in `~/.vulnetix/belai/settings.json`; secrets in the credentials resolver | `sync.mcps` |
+| `hook` | none | JSON object plus script files | a bundle directory, `~/.vulnetix/belai/hooks/<name>/`, install on request only | `sync.hooks` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -655,6 +657,52 @@ by slug as not cleared. When nothing is cleared the request is refused with the 
 `sync.providers` off refuses it, as it does an install. The next heartbeat's model report
 no longer lists a provider that has no credentials left.
 
+## Hooks
+
+A hook item is a coding agent's lifecycle hooks as a **bundle**: a definition, and
+the script files its commands run. The definition is the `hooks` block of Claude
+Code's and Codex's settings with a name and a description in front, the same
+dialect [hooks.md](hooks.md#hook-bundles) describes and Belai runs:
+
+```json
+{"name": "pix", "description": "Dependency and change guards",
+ "hooks": {"PreToolUse": [{"matcher": "Bash|Edit", "hooks": [{"type": "command", "command": "vulnetix agent hook", "timeout": 30}]}]}}
+```
+
+| Key | Rule |
+| --- | --- |
+| `name` | the name rule |
+| `description` | optional, at most 300 bytes |
+| `hooks` | required, at least one of `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `Notification`, `PreCompact`; each a list of at most 8 groups `{matcher?, hooks}` (at most 8 handlers) of `{type: "command", command, timeout?}`; a command is one line of at most 512 bytes, a timeout 1 to 600 seconds, and `UserPromptSubmit`, `Stop` and `SubagentStop` take no matcher |
+
+The document is at most 16 KiB. The script files travel beside it, in the library's
+file store like an agent's attached files: at most 32 files of 256 KiB each and
+2 MiB in all, text only, at plain relative paths (letters, digits and `. _ -`, no
+leading dot, never `hooks.json`). A file is read by its SHA-256, only through the
+install request that lists it.
+
+**The hash.** A hook's hash is the SHA-256 of the canonical document alone when it
+has no files, and otherwise of the document, a `--files--` line, and one `path sha256`
+line per file in path order (`libitem.HashBundle`, vdb-site `belaiBundleHash`; both
+pin the same golden value). The library's version hash and the host's advertised hash
+are this, so an edited script shows as drift.
+
+**On the host.** An install builds `~/.vulnetix/belai/hooks/<name>/` (the document as
+`hooks.json` plus the files) in a dot-prefixed directory beside it and swaps it in. Before
+it does, the bundle is checked the way the loader will check it: every command's
+first word must be a file the bundle carries or a program listed in
+[`hooks.allowed_programs`](hooks.md#settings), and every other word must be plain
+text that names nothing outside the bundle. A bundle that could not run on this host
+is refused, with the reason, and nothing is written. A script a command runs is
+`0700`, every other file `0600`, and the directory `0700`. A symbolic link at the
+target is refused.
+
+**Install only.** A hook runs code, so a person chooses each one: it reaches a host
+only by an `item_install` request (a launch configuration, or the library page), never
+by the automatic sync in either direction, and the host never backs one up or scans
+for one. `sync.hooks` closes the kind (the request is refused first); `hooks.enabled`
+decides whether any hook runs.
+
 ## How a document travels
 
 These move a document between a host and the library. All of them need
@@ -743,6 +791,9 @@ is off. A project settings file may turn one off, never on.
   for the website's provider key requests.
 - **`sync.mcps`**: the same for the MCP servers in `mcp.servers`, and for the
   website's MCP secret requests.
+- **`sync.hooks`**: whether the website may install a hook bundle on this host and
+  the host advertises the bundles it holds. A hook is never synced either way, so
+  this switch only opens or closes installs and the inventory.
 - **`sync.processes`**: the same for the global process library. A synced process
   is a command Belai runs, so this is the switch that keeps the website out of
   what runs on the host: with it off nothing is advertised, pushed or installed.
