@@ -449,6 +449,11 @@ type HooksSettings struct {
 	// Enabled runs hooks. Default true; a repo-visible project layer may
 	// turn it off, never on.
 	Enabled *bool `json:"enabled,omitempty"`
+	// AllowedPrograms are the bare names of programs (for example "vulnetix") a
+	// hook bundle's commands may run from PATH. A bundle's commands otherwise run
+	// only files the bundle carries. User layers only: a repository can never
+	// name one.
+	AllowedPrograms []string `json:"allowed_programs,omitempty"`
 }
 
 // TeleportSettings configures a host's part in moving a session's code.

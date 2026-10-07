@@ -23,6 +23,8 @@ type Input struct {
 	Notification string `json:"notification,omitempty"`
 	// Subagent is the finished subagent's id for subagent_stop.
 	Subagent string `json:"subagent_id,omitempty"`
+	// ToolUseID is the call's id, for the tool events.
+	ToolUseID string `json:"tool_use_id,omitempty"`
 }
 
 // Output is the JSON object a hook may print on stdout.
@@ -133,17 +135,45 @@ func (s *Set) Dispatch(ctx context.Context, in Input) Outcome {
 		return o
 	}
 	blocking := Blocking(in.Event)
+	// A hook read from a bundle gets the dialect's payload, and answers in the
+	// dialect's protocol; both are mapped onto the same three decisions.
+	runHook := func(h *Hook) (Output, error) {
+		if h.Dialect != DialectClaude {
+			stdout, _, err := s.Runner.runStdin(ctx, *h, payload)
+			out, perr := parseOutput(stdout)
+			if err == nil && perr != nil {
+				err = fmt.Errorf("hook %q: %w", h.Name, perr)
+			}
+			return out, err
+		}
+		cp, err := claudePayload(h, in)
+		if err != nil {
+			return Output{}, err
+		}
+		run := *h
+		run.Env = append(append([]string(nil), h.Env...), "CLAUDE_PROJECT_DIR="+in.Cwd, "CLAUDE_PLUGIN_ROOT="+h.Dir)
+		stdout, stderr, err := s.Runner.runStdin(ctx, run, cp)
+		if err != nil {
+			// Exit 2 is the dialect's block. Any other failure is a failure, and a
+			// blocking hook that fails denies.
+			if blocking && exitCode(err) == 2 {
+				return Output{Decision: DecisionDeny, Reason: firstNonEmpty(strings.TrimSpace(stderr), "the hook blocked it")}, nil
+			}
+			return Output{}, err
+		}
+		out, perr := parseClaudeOutput(in.Event, stdout)
+		if perr != nil {
+			return Output{}, fmt.Errorf("hook %q: %w", h.Name, perr)
+		}
+		return out, nil
+	}
 	var asked, allowed bool
 	for _, h := range s.Hooks {
 		if h.Event != in.Event || !h.Matches(in.ToolName) {
 			continue
 		}
 		o.Ran++
-		stdout, _, err := s.Runner.runStdin(ctx, *h, payload)
-		out, perr := parseOutput(stdout)
-		if err == nil && perr != nil {
-			err = fmt.Errorf("hook %q: %w", h.Name, perr)
-		}
+		out, err := runHook(h)
 		if err != nil {
 			o.Failures = append(o.Failures, err)
 			if blocking {

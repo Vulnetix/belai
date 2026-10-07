@@ -10,6 +10,7 @@ hand the model a short note.
 
 - [Events](#events)
 - [Hook files](#hook-files)
+- [Hook bundles](#hook-bundles)
 - [The stdin and stdout contract](#the-stdin-and-stdout-contract)
 - [Where hook text goes](#where-hook-text-goes)
 - [Security model](#security-model)
@@ -66,6 +67,83 @@ Any other key fails validation, so a typo such as `matchr` cannot silently
 widen a hook to every tool. An invalid file is skipped under the
 `hook_invalid` posture gate. Hooks run in name order.
 
+## Hook bundles
+
+A bundle is the form the Claude Code hooks dialect arrives in, the one Codex and
+the Vulnetix CLI's `agent install` also write: a definition and the script
+files its commands run, in one directory,
+`~/.vulnetix/belai/hooks/<name>/`. The library's `hook` items install as
+bundles ([library items](library-items.md)), and you can write one by hand.
+
+```json
+{
+  "name": "pix",
+  "description": "Dependency and change guards",
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash|Edit|Write", "hooks": [{"type": "command", "command": "vulnetix agent hook", "timeout": 30}]}
+    ]
+  }
+}
+```
+
+That is `hooks.json` in the bundle's directory. Keys starting with `_` (a
+comment block) are ignored, any other unknown key rejects the file. Belai's own
+flat hook files keep working beside it.
+
+| Dialect | Belai |
+| --- | --- |
+| `PreToolUse`, `PostToolUse` | `pre_tool`, `post_tool` (a matcher of `Edit\|Write` narrows them to edits) |
+| `UserPromptSubmit`, `Stop`, `SubagentStop` | `user_prompt_submit`, `stop`, `subagent_stop` |
+| `SessionStart`, `SessionEnd`, `PreCompact`, `Notification` | `session_start`, `session_end`, `pre_compact`, `notification` |
+| any other event, or a handler whose `type` is not `command` | skipped, with a note |
+
+A matcher is read as Belai's glob list: `*` or nothing matches every tool, and
+`A|B`, `^A$` and `mcp__server__.*` translate exactly. A matcher that uses any
+other regular expression syntax rejects the bundle, so a hook never fires on
+fewer calls than it was written for. `timeout` is in seconds (default 30, at most
+60). Hooks are named `bundle:<name>:<Event>:<group>-<handler>` and run in that
+order.
+
+**What a command may run.** The command is split once into words, with no shell:
+a word is plain text (letters, digits and `_ . / : = @ % + , -`, or a quoted
+phrase of them), and `$VAR`, a redirect, a pipe, a glob or a `~` rejects the
+bundle. `${CLAUDE_PLUGIN_ROOT}` is the bundle's own directory. The first word is
+either
+
+- a file the bundle carries (a regular file inside the bundle, resolved after
+  symlinks, never an absolute path or `..`), or
+- a bare program name you listed in [`hooks.allowed_programs`](#settings), found on
+  `PATH` each time it runs and never inside the bundle.
+
+Every other word is refused if it is absolute, starts with `~`, has a `..`
+segment or resolves outside the bundle; an allowed program is also refused an
+argument that hands it code to run (`-c`, `-e`, `--eval`). One command that fails
+rejects the whole bundle (a warning names the reason, such as a program that is
+not in `allowed_programs`).
+
+**The protocol.** The hook gets the dialect's payload on stdin: `session_id`,
+`transcript_path` (empty), `cwd`, `hook_event_name` (`PreToolUse`),
+`permission_mode` (`default`), `tool_name`, `tool_input`, `tool_use_id`,
+`tool_response` (`{"summary": …}`, the first 2 KiB, not the whole output),
+`prompt`. `CLAUDE_PROJECT_DIR` (the session's directory) and
+`CLAUDE_PLUGIN_ROOT` (the bundle) are added to the scrubbed environment. Its
+answer maps onto the same three decisions:
+
+| The hook | Belai |
+| --- | --- |
+| exits 2 (stderr is the reason) | deny, on a blocking event |
+| `hookSpecificOutput.permissionDecision` `allow`, `deny` or `ask`, with `permissionDecisionReason` | that decision |
+| `decision` `block` or `approve`; `continue: false` | deny; no objection; deny |
+| `additionalContext`, or plain text on `UserPromptSubmit` and `SessionStart` | a note for the model |
+| `updatedInput`, `systemMessage` | ignored: a hook can narrow a call, never rewrite it |
+| exits 1 or any other non-zero, a timeout, a non-JSON answer to a tool event | deny on a blocking event, a warning otherwise |
+
+Bundle hooks are held to the same rules as any hook: they run after the
+permission rules and only narrow, their text is classified as hook text, and a
+blocking hook that fails denies (stricter than the dialect, where exit 1 does not
+block).
+
 ## The stdin and stdout contract
 
 The hook receives one JSON object on stdin. Fields that do not apply to the
@@ -81,6 +159,7 @@ event are omitted.
   "tool_result_summary": "",
   "prompt": "",
   "subagent_id": "",
+  "tool_use_id": "",
   "notification": ""
 }
 ```
@@ -94,6 +173,7 @@ event are omitted.
 | `tool_result_summary` | `post_tool`, `post_edit`: the first 2 KiB of the tool's output |
 | `prompt` | `user_prompt_submit`: the prompt as typed |
 | `subagent_id` | `subagent_stop`: the finished subagent |
+| `tool_use_id` | the tool events: the call's id |
 | `notification` | `notification`: the event name, such as `permission` |
 
 It may print one JSON object on stdout, or nothing:
@@ -164,6 +244,11 @@ parsed and counts as `deny`.
 
 `enabled` defaults to `true`. The project layer may set `hooks.enabled` to `false`, never to `true`.
 
+`allowed_programs` lists the bare names of programs (for example `["vulnetix"]`)
+a [bundle](#hook-bundles)'s commands may run from `PATH`; the default is none, so a
+bundle runs only the files it carries. It is read from your own settings only: a
+project layer's value is ignored with a note.
+
 Each run is recorded in the `BELAI_TRACE` file under the `hook` phase with
 its decision, the number of hooks that ran, and how many failed.
 
@@ -172,8 +257,8 @@ its decision, the number of hooks that ran, and how many failed.
 - Hooks are read when a session is built. A new file is picked up the next
   time the session is rebuilt (a new session, `/clear`, or a mode or model
   change).
-- `session_start`, `session_end` and `pre_compact` from `/compact` fire from
-  the TUI only; headless `-prompt` runs fire the tool, prompt, `stop` and
+- `session_start`, `session_end`, `notification` and `pre_compact` from `/compact` fire from
+  the TUI only, so a bundle's `SessionStart` hook does nothing under `belai rc`, headless runs or a Pix Sandbox; headless `-prompt` runs fire the tool, prompt, `stop` and
   automatic compaction events.
 - `post_tool` does not fire for a call that failed to execute.
 
@@ -191,6 +276,7 @@ its decision, the number of hooks that ran, and how many failed.
   decides, as it does for rules.
 - `post_tool` and `post_edit` are not fired for a call that failed to run,
   was denied, or was withheld before it ran.
+- A bundle's hooks run after the flat files and before a plugin's.
 - A plugin's hooks run after yours, named `plugin:name`, and each resolves
   its command inside its own directory.
 - `hooks.enabled: false` turns off every hook, the user's and every plugin's.

@@ -562,6 +562,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the tool result it rides on; a prompt-hook note joins the prompt before
   admission. A prompt-hook denial reason is shown to the user only. The
   project layer may turn `hooks.enabled` off, never on.
+  A hook **bundle** (`<hooks dir>/<name>/hooks.json` plus its scripts, the Claude
+  Code and Codex dialect, `internal/hooks/dialect.go`) is the same: it loads only
+  from the global directory (never a symlinked directory or definition), its
+  command is tokenised once into a fixed argv with no shell and plain-text words
+  only, and the first word is a regular file inside the bundle or a bare program
+  name in `hooks.allowed_programs`, which is read from the user's layers only (the
+  project layer's is dropped with a note) and is never inside the bundle. One
+  command that fails validation rejects the whole bundle. The dialect's protocol is
+  mapped onto deny/ask/allow: `updatedInput` and `systemMessage` are never read, an
+  exit of 2 denies, and every other failure on a blocking event denies. A hook
+  bundle's arguments never name a path outside the bundle.
 - **Skills load by name and are drafted only with approval.** `Skill` takes a
   name, never a path, and reads only a registered, re-validated `SKILL.md`;
   its result is `KindSkill`, in `tools.classifierKinds` unconditionally. Only
