@@ -44,7 +44,7 @@ Each component list names directories relative to the plugin root:
 | Key | Directory holds |
 | --- | --- |
 | `skills` | `<name>/SKILL.md` [skills](skills.md) |
-| `hooks` | `*.json` [hook files](hooks.md), with the commands they run |
+| `hooks` | `*.json` [hook files](hooks.md), with the commands they run (a plugin's hooks stay flat files; [bundles](hooks.md#hook-bundles) are not read from a plugin) |
 | `prompts` | `*.md` prompts; the file name is the prompt name: lowercase letters, digits and hyphens, at most 64, not starting with a hyphen |
 | `agents` | `*.json` [agent profiles](agent-profiles.md) |
 

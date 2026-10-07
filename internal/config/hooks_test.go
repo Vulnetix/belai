@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -275,5 +276,74 @@ func TestUnknownSandboxModeDoesNotLowerAValidOne(t *testing.T) {
 	}
 	if got := (&SandboxSettings{Mode: "strict"}).ModeOr(); got != "auto" {
 		t.Fatalf("an unknown mode alone reads as %q, want auto", got)
+	}
+}
+
+// hooks.allowed_programs is a user setting: the project layer is dropped with a
+// note, a later user layer replaces an earlier one, and enabling hooks in the
+// project layer does not carry a list.
+func TestResolveAllowedProgramsAreUserOnly(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := SaveProject(workdir, Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"curl", "sh"}}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := eff.Settings.Hooks.AllowedProgramList(); len(got) != 0 {
+		t.Fatalf("a project layer named programs: %v", got)
+	}
+	noted := false
+	for _, n := range eff.Notes {
+		noted = noted || strings.Contains(n, "hooks.allowed_programs")
+	}
+	if !noted {
+		t.Errorf("no note about the ignored project list: %v", eff.Notes)
+	}
+	if err := SaveGlobal(Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"vulnetix", "vulnetix", "jq"}}}); err != nil {
+		t.Fatal(err)
+	}
+	// A project layer that turns hooks off keeps the user's list.
+	if err := SaveProject(workdir, Settings{Hooks: &HooksSettings{Enabled: boolPtr(false)}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err = Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Settings.Hooks.HooksEnabled() {
+		t.Error("the project layer could not turn hooks off")
+	}
+	if got := strings.Join(eff.Settings.Hooks.AllowedProgramList(), ","); got != "jq,vulnetix" {
+		t.Errorf("list = %q", got)
+	}
+	if eff.Origin["hooks_allowed_programs"] != SourceGlobal {
+		t.Errorf("origin = %v", eff.Origin["hooks_allowed_programs"])
+	}
+	// Override (the project-over-user merge used elsewhere) never adds a program either.
+	merged := Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"vulnetix"}}}.Override(Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"sh"}}})
+	if got := strings.Join(merged.Hooks.AllowedProgramList(), ","); got != "vulnetix" {
+		t.Errorf("Override list = %q", got)
+	}
+}
+
+func TestValidateHooksAllowedPrograms(t *testing.T) {
+	ok := Settings{Hooks: &HooksSettings{AllowedPrograms: []string{"vulnetix", "python3.12", "node-v2", "g++"}}}
+	if err := ValidateHooks(ok); err != nil {
+		t.Fatalf("good names refused: %v", err)
+	}
+	for _, bad := range []string{"", "/bin/sh", "a b", "-x", "../x", "a;b", "$HOME", strings.Repeat("a", 65), "~root"} {
+		if err := ValidateHooks(Settings{Hooks: &HooksSettings{AllowedPrograms: []string{bad}}}); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	many := make([]string, MaxAllowedPrograms+1)
+	for i := range many {
+		many[i] = "p" + strings.Repeat("x", i%5)
+	}
+	if err := ValidateHooks(Settings{Hooks: &HooksSettings{AllowedPrograms: many}}); err == nil {
+		t.Error("too many programs accepted")
 	}
 }

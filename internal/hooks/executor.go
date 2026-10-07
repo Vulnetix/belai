@@ -39,7 +39,12 @@ func (r *Runner) runStdin(ctx context.Context, h Hook, stdin []byte) (stdout, st
 }
 
 func (r *Runner) exec(ctx context.Context, h Hook, stdin []byte) (string, string, error) {
-	fields := strings.Fields(h.Command)
+	// A bundle hook's argv was fixed at load; a flat hook's is its command split
+	// on spaces. Either way there is no shell.
+	fields := h.Argv
+	if fields == nil {
+		fields = strings.Fields(h.Command)
+	}
 	if len(fields) == 0 {
 		return "", "", fmt.Errorf("hook %q has an empty command", h.Name)
 	}
@@ -47,7 +52,14 @@ func (r *Runner) exec(ctx context.Context, h Hook, stdin []byte) (string, string
 	if dir == "" {
 		dir = r.Root
 	}
-	resolved, err := resolveIn(dir, fields[0])
+	var resolved string
+	var err error
+	if h.AllowedProgram {
+		// A program the user allowed by name: found on PATH now, never inside the bundle.
+		resolved, err = lookAllowed(dir, fields[0])
+	} else {
+		resolved, err = resolveIn(dir, fields[0])
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -62,7 +74,7 @@ func (r *Runner) exec(ctx context.Context, h Hook, stdin []byte) (string, string
 	}
 	ec := exec.CommandContext(ctx, resolved, fields[1:]...)
 	ec.Dir = dir
-	ec.Env = append(proc.ScrubbedEnv(), calltrace.Env(ctx)...)
+	ec.Env = append(append(proc.ScrubbedEnv(), calltrace.Env(ctx)...), h.Env...)
 	proc.SetProcessGroup(ec)
 	ec.WaitDelay = time.Second
 	if stdin != nil {

@@ -37,6 +37,14 @@ func LoadHooks(settings config.Settings, pol posture.Policy) *hooks.Set {
 			loaded = hs
 		}
 	}
+	// Hook bundles (a definition and its scripts, in the dialect Claude Code and
+	// Codex share) follow the flat files; a bundle may call only the programs the
+	// user allowed by name.
+	if dir, err := config.GlobalHooksDir(); err == nil {
+		if bs, err := hooks.LoadBundles(dir, pol, settings.Hooks.AllowedProgramList()); err == nil {
+			loaded = append(loaded, bs...)
+		}
+	}
 	// Enabled plugins' hooks follow the user's own; each keeps the directory
 	// it was loaded from, so its command resolves inside its plugin.
 	if hooks.Extra != nil {
@@ -115,6 +123,7 @@ func (s *Session) toolHooks(ctx context.Context, event string, call rolemanager.
 		ToolName:          call.Name,
 		ToolInput:         call.Args,
 		ToolResultSummary: summary,
+		ToolUseID:         call.ID,
 	})
 	s.traceHook(event, o, time.Since(start))
 	reportHookFailures(o, emit)

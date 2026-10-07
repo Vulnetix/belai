@@ -174,7 +174,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP,
+		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 	} {
 		if err := v(s); err != nil {
 			return err
@@ -404,13 +404,30 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["skills_self_authoring"] = src
 		}
 	}
-	if s.Hooks != nil && s.Hooks.Enabled != nil {
-		// Hooks run the user's own commands; a repo-visible project layer may
-		// turn them off, never on.
-		if !*s.Hooks.Enabled || src != SourceProject {
-			e.Settings.Hooks = &HooksSettings{Enabled: s.Hooks.Enabled}
-			e.Origin["hooks_enabled"] = src
+	if s.Hooks != nil {
+		hooks := HooksSettings{}
+		if e.Settings.Hooks != nil {
+			hooks = *e.Settings.Hooks
 		}
+		if s.Hooks.Enabled != nil {
+			// Hooks run the user's own commands; a repo-visible project layer may
+			// turn them off, never on.
+			if !*s.Hooks.Enabled || src != SourceProject {
+				hooks.Enabled = s.Hooks.Enabled
+				e.Origin["hooks_enabled"] = src
+			}
+		}
+		if len(s.Hooks.AllowedPrograms) > 0 {
+			// The programs a hook bundle may run from PATH are the user's own
+			// decision: a repository cannot widen what a bundle may call.
+			if src == SourceProject {
+				e.Notes = append(e.Notes, "project hooks.allowed_programs ignored (it is a user setting)")
+			} else {
+				hooks.AllowedPrograms = append([]string(nil), s.Hooks.AllowedPrograms...)
+				e.Origin["hooks_allowed_programs"] = src
+			}
+		}
+		e.Settings.Hooks = &hooks
 	}
 	if s.Vulnetix != nil && s.Vulnetix.DepWatch != nil {
 		// The dependency hook is a check, like the guardrails: a repo-visible

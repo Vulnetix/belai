@@ -29,9 +29,26 @@ type Hook struct {
 	TimeoutMS int `json:"timeout_ms,omitempty"`
 
 	// Dir is the directory the command resolves against and runs in. It is
-	// set by the loader (the hooks directory, or a plugin's root), never read
-	// from the hook file.
+	// set by the loader (the hooks directory, a plugin's root or a bundle's
+	// directory), never read from the hook file.
 	Dir string `json:"-"`
+
+	// The fields below are set only for a hook read from a bundle's definition
+	// (dialect.go) and never read from a hook file.
+	//
+	// Bundle is the bundle's name, EventName the dialect's name for Event, and
+	// Dialect says which protocol the hook speaks (DialectClaude).
+	Bundle    string `json:"-"`
+	EventName string `json:"-"`
+	Dialect   string `json:"-"`
+	// Argv is the command, tokenised once at load: never a shell, never split
+	// again. Argv[0] is a file inside Dir, or (AllowedProgram) a bare program name
+	// the user listed in hooks.allowed_programs.
+	Argv           []string `json:"-"`
+	AllowedProgram bool     `json:"-"`
+	// Env is appended to the scrubbed environment: harness-composed, never
+	// secret.
+	Env []string `json:"-"`
 }
 
 // Event names.
