@@ -282,6 +282,33 @@ func (c *Cwd) Change(raw string) (string, error) {
 	return rel, nil
 }
 
+// Restore puts the working directory back at rel, a root-relative location
+// from an earlier [Cwd.Rel], and reports whether it moved. It is how a turn
+// ends: the directory a turn started in is where the next one starts. A
+// directory that no longer exists falls back to the session root rather than
+// leaving the tracker pointing at nothing.
+func (c *Cwd) Restore(rel string) bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.rel == rel {
+		return false
+	}
+	if rel != "" {
+		info, err := os.Stat(filepath.Join(c.primary, filepath.FromSlash(rel)))
+		if err != nil || !info.IsDir() {
+			rel = ""
+		}
+	}
+	if c.rel == rel {
+		return false
+	}
+	c.rel = rel
+	return true
+}
+
 // resolveDir applies the resolution rule to a directory argument and confines
 // the result to the primary root.
 func (c *Cwd) resolveDir(raw string) (string, error) {
@@ -455,7 +482,8 @@ func (c *Cd) Definition() Definition {
 			"It does not read or change any file; it only moves where \"here\" is, so a subtree can be worked in with short paths. " +
 			"The target must be an existing directory inside the session root: the set of reachable files is the same before and after, so this cannot reach anything a path argument could not already reach. " +
 			"A path beginning with `/` is interpreted relative to the session root, not the filesystem root; any other path is relative to the current working directory, and `..` moves up. " +
-			"Passing `/` returns to the session root. The result names the new working directory.",
+			"Passing `/` returns to the session root. The result names the new working directory. " +
+			"The directory is put back where the turn started when the turn ends, so the next turn begins there.",
 		Properties: map[string]Property{
 			"path": {Type: "string", Format: FormatPath, Description: `The directory to move to: relative to the current working directory ("internal/tools", ""), or relative to the session root when it starts with "/" ("/internal")`},
 		},

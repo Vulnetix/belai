@@ -466,3 +466,57 @@ func TestCwdOutsideRootPathNamesTheRule(t *testing.T) {
 		t.Fatalf("relative miss err = %v, want the bare not-exist error", err)
 	}
 }
+
+func TestCwdRestorePutsTheStartingDirectoryBack(t *testing.T) {
+	c := NewCwd(cwdTree(t))
+	start := c.Rel()
+	if _, err := c.Change("internal/tools"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Restore(start) {
+		t.Fatal("Restore reported no move after a Change")
+	}
+	if c.Rel() != "" {
+		t.Fatalf("Rel = %q, want the root", c.Rel())
+	}
+	if c.Restore(start) {
+		t.Fatal("a second Restore to the same place must report no move")
+	}
+	if _, err := c.Change("internal"); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Restore("internal/tools") || c.Rel() != "internal/tools" {
+		t.Fatalf("restoring a subdirectory: Rel = %q", c.Rel())
+	}
+}
+
+func TestCwdRestoreFallsBackToTheRootWhenTheDirectoryIsGone(t *testing.T) {
+	root := cwdTree(t)
+	c := NewCwd(root)
+	if _, err := c.Change("internal/tools"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Change("/"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "internal", "tools")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Change("internal"); err != nil {
+		t.Fatal(err)
+	}
+	// The turn started in internal/tools, which has since been deleted.
+	if !c.Restore("internal/tools") {
+		t.Fatal("Restore must still move off internal")
+	}
+	if c.Rel() != "" {
+		t.Fatalf("Rel = %q, want the root as the fallback", c.Rel())
+	}
+}
+
+func TestNilCwdRestoreIsANoop(t *testing.T) {
+	var c *Cwd
+	if c.Restore("x") {
+		t.Fatal("a nil tracker cannot move")
+	}
+}

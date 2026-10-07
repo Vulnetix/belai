@@ -169,3 +169,103 @@ func TestBuildAgentSessionAddsWorkspaceRoots(t *testing.T) {
 		t.Fatalf("roots = %v, want to include %s", roots, extra)
 	}
 }
+
+// The end-of-turn reset is its own event and its own line: the move and the
+// return are two things that happened.
+func TestCwdResetEventSaysItWasReset(t *testing.T) {
+	root := t.TempDir()
+	a := New(Options{Workdir: root})
+	sub := filepath.Join(root, "internal")
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "internal", CwdDir: sub})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "", CwdDir: root, CwdReset: true})
+
+	if a.cwd != root {
+		t.Errorf("app cwd = %q, want %q", a.cwd, root)
+	}
+	if a.footer.Cwd == sub {
+		t.Errorf("footer still shows the moved directory %q", a.footer.Cwd)
+	}
+	if got := lastSystemMessage(a); got != "working directory reset to / (session root)" {
+		t.Errorf("thread line = %q", got)
+	}
+	// A reset to a subdirectory (a turn that started in one) names it.
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "internal", CwdDir: sub, CwdReset: true})
+	if got := lastSystemMessage(a); got != "working directory reset to /internal" {
+		t.Errorf("thread line = %q", got)
+	}
+}
+
+func TestCwdResetOfAnUnmovedSessionSaysNothing(t *testing.T) {
+	root := t.TempDir()
+	a := New(Options{Workdir: root})
+	before := len(a.messages)
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "", CwdDir: root, CwdReset: true})
+	if len(a.messages) != before {
+		t.Fatalf("a no-op reset added %d messages", len(a.messages)-before)
+	}
+}
+
+// Both lines are written to the session record, so a resumed or synced session
+// shows where the model went and that it came back.
+func TestCwdMoveAndResetAreSavedToTheSession(t *testing.T) {
+	a := newPersistApp(t)
+	root := a.workdir
+	sub := filepath.Join(root, "internal")
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "internal", CwdDir: sub})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "", CwdDir: root, CwdReset: true})
+	a.persistTail()
+
+	var saved []string
+	for _, e := range persistedEntries(t, a) {
+		if e.Type == "system" && strings.HasPrefix(e.Content, "working directory") {
+			saved = append(saved, e.Content)
+		}
+	}
+	want := []string{"working directory: /internal", "working directory reset to / (session root)"}
+	if len(saved) != 2 || saved[0] != want[0] || saved[1] != want[1] {
+		t.Fatalf("saved = %q, want %q", saved, want)
+	}
+}
+
+// A cancelled turn drops the agent's own reset event, so the TUI puts the
+// directory back itself and says so.
+func TestInterruptedTurnResetsTheDirectoryAndSaysSo(t *testing.T) {
+	root := t.TempDir()
+	a := New(Options{Workdir: root})
+	sub := filepath.Join(root, "internal")
+	a.turnCwdDir, a.turnCwdRel, a.turnCwdSet = root, "", true
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "internal", CwdDir: sub})
+	a.cancel = func() {}
+
+	if !a.cancelTurn() {
+		t.Fatal("cancelTurn found no turn")
+	}
+	if a.cwd != root {
+		t.Fatalf("app cwd = %q after an interrupt, want %q", a.cwd, root)
+	}
+	found := false
+	for _, m := range a.messages {
+		if m.Role == "system" && m.Text() == "working directory reset to / (session root)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the interrupt did not say the directory was reset")
+	}
+	if a.turnCwdSet {
+		t.Fatal("the turn's starting directory should be forgotten once used")
+	}
+}
+
+func TestInterruptOfATurnThatNeverMovedSaysNothingAboutTheDirectory(t *testing.T) {
+	root := t.TempDir()
+	a := New(Options{Workdir: root})
+	a.turnCwdDir, a.turnCwdRel, a.turnCwdSet = root, "", true
+	a.cancel = func() {}
+	a.cancelTurn()
+	for _, m := range a.messages {
+		if m.Role == "system" && strings.HasPrefix(m.Text(), "working directory") {
+			t.Fatalf("unexpected line %q", m.Text())
+		}
+	}
+}

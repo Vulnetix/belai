@@ -447,6 +447,10 @@ type App struct {
 	knowledgeState      knowledgeViewState
 	diffState           diffViewState
 	helpState           helpViewState
+	// turnCwdDir and turnCwdRel are the working directory the running turn
+	// started in, so an interrupt can say it went back (resetCwdAfterInterrupt).
+	turnCwdDir, turnCwdRel string
+	turnCwdSet             bool
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -1627,6 +1631,9 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 
 // startAgent begins the streaming turn on an already-built session.
 func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnInput) tea.Cmd {
+	if cwd := sess.Cwd(); cwd != nil {
+		a.turnCwdDir, a.turnCwdRel, a.turnCwdSet = cwd.Dir(), cwd.Rel(), true
+	}
 	a.events = sess.RunStream(calltrace.WithSession(a.ctx, a.sessionID), history, in)
 	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
@@ -3950,6 +3957,10 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.noteTaskEdit(m.Diff)
 		return a.nextAgent()
 	case agent.EventCwdKind:
+		if m.CwdReset {
+			a.applyCwdReset(m.CwdDir, m.Cwd)
+			return a.nextAgent()
+		}
 		a.setPhaseWorking()
 		a.applyCwd(m.CwdDir, m.Cwd)
 		return a.nextAgent()
@@ -5119,6 +5130,20 @@ func (a *App) maybeNoticeLegacyPrompts() {
 // session root ("" for the root itself). A move to where we already are is
 // ignored rather than announced twice.
 func (a *App) applyCwd(dir, rel string) {
+	a.moveCwd(dir, rel, "working directory: ")
+}
+
+// applyCwdReset is applyCwd for the end of a turn, when the directory goes
+// back to where the turn started. It writes its own line, so the thread and the
+// session record show the move and the return as two events.
+func (a *App) applyCwdReset(dir, rel string) {
+	a.moveCwd(dir, rel, "working directory reset to ")
+}
+
+// moveCwd records the move in the footer and the transcript. The line is a
+// plain system message, not Ephemeral, so it is written to the session record
+// and restored on resume. A move to where we already are is ignored.
+func (a *App) moveCwd(dir, rel, prefix string) {
 	if dir == "" || dir == a.cwd {
 		return
 	}
@@ -5130,8 +5155,19 @@ func (a *App) applyCwd(dir, rel string) {
 	if rel == "" {
 		label = "/ (session root)"
 	}
-	a.addSystem("working directory: " + label)
+	a.addSystem(prefix + label)
 	a.refreshFooter()
+}
+
+// resetCwdAfterInterrupt covers a turn that was cancelled: the agent puts its
+// tracker back when the turn unwinds, but the event is dropped once the turn's
+// context is done, so the footer and the thread would still show the moved
+// directory. The turn started where turnCwdDir says, so go back there.
+func (a *App) resetCwdAfterInterrupt() {
+	if a.turnCwdSet && a.turnCwdDir != "" && a.turnCwdDir != a.cwd {
+		a.applyCwdReset(a.turnCwdDir, a.turnCwdRel)
+	}
+	a.turnCwdSet = false
 }
 
 // classifyMode runs the operating-mode classifier on a user prompt that did
@@ -6845,6 +6881,7 @@ func (a *App) cancelTurn() bool {
 	a.cancel = nil
 	a.closeTurn("interrupted")
 	a.endPhase()
+	a.resetCwdAfterInterrupt()
 	// Flush whatever streamed before the cancel (reasoning, partial
 	// text, completed tools, notices) so the transcript survives.
 	if last := a.trailingAssistant(); last >= 0 {

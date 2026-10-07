@@ -378,7 +378,8 @@ Business rules and edge cases:
   confinement boundary; the working directory moves inside it. A path
   starting with `/` is root-relative, anything else is relative to the
   working directory, and a refused move leaves the working directory exactly
-  where it was. See
+  where it was. A turn puts the directory back where it started when it ends,
+  and the reset is a recorded line of its own. See
   [architecture.md](architecture.md#working-directory-cd).
 - **Every outbound call identifies itself.** `WebFetch`, `WebSearch` and
   provider requests carry `User-Agent: belai/<version>` plus the
@@ -645,7 +646,10 @@ confirm the answer is identical — the two enumerators must not disagree.
 **Working directory.** Ask the agent to move into a subdirectory and read a
 file by its short name. Confirm one `working directory: /…` line appears in
 the thread, the footer's first line follows it, and that asking it to leave
-the repository (`cd ..` past the root) is refused without moving. Change the
+the repository (`cd ..` past the root) is refused without moving. When the
+turn ends, confirm a second line, `working directory reset to …`, appears and
+the footer is back where the turn started; press `esc` mid-turn after a move and
+confirm the same line. Both lines should be there after `/resume`. Change the
 model or toggle a mode to force a session rebuild and confirm the footer
 returns to the session root.
 
