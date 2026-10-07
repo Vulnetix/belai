@@ -21,7 +21,7 @@ import (
 var (
 	idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-	validKinds = map[string]bool{Command: true, Skill: true, Prompt: true, Agent: true, Document: true}
+	validKinds = map[string]bool{Command: true, Skill: true, Prompt: true, Agent: true, Document: true, Hook: true}
 
 	validFormats = map[string]bool{
 		"claude-code": true, "cursor": true, "codex": true, "gemini-cli": true,
@@ -129,10 +129,30 @@ func containsDotDot(p string) bool {
 func checkShape(t *testing.T, where, kind string, kd KindDirs) {
 	t.Helper()
 	want := map[string]string{Skill: SkillDir, Document: DocFile, Command: MDFile, Agent: MDFile, Prompt: MDFile}[kind]
-	switch kd.Shape {
-	case want, Unsupported:
-	default:
-		t.Errorf("%s: shape %q, want %q or %q", where, kd.Shape, want, Unsupported)
+	if kind == Hook {
+		// A hook is a JSON file (or a key in one) or it is not read.
+		if kd.Shape != JSONKey && kd.Shape != JSONFile && kd.Shape != Unsupported {
+			t.Errorf("%s: shape %q, want %q, %q or %q", where, kd.Shape, JSONKey, JSONFile, Unsupported)
+		}
+		if kd.Shape == JSONKey && kd.Key == "" {
+			t.Errorf("%s: json-key shape names no key", where)
+		}
+		if kd.Shape == JSONKey || kd.Shape == JSONFile {
+			for _, d := range append(append([]string{}, kd.User...), kd.Project...) {
+				if !strings.HasSuffix(d, ".json") {
+					t.Errorf("%s: %q is not a JSON file", where, d)
+				}
+			}
+		}
+	} else {
+		switch kd.Shape {
+		case want, Unsupported:
+		default:
+			t.Errorf("%s: shape %q, want %q or %q", where, kd.Shape, want, Unsupported)
+		}
+	}
+	if kd.Key != "" && kd.Shape != JSONKey {
+		t.Errorf("%s: a key only belongs to the json-key shape", where)
 	}
 	if kd.Shape == DocFile && len(kd.Files) == 0 {
 		t.Errorf("%s: doc-file shape names no files", where)
@@ -183,6 +203,15 @@ func TestKnownConventions(t *testing.T) {
 		{"claude-code", Agent, MDFile, "~/.claude/agents"},
 		{"claude-code", Skill, SkillDir, "~/.claude/skills"},
 		{"claude-code", Document, DocFile, "~/.claude"},
+		{"claude-code", Hook, JSONKey, "~/.claude/settings.json"},
+		{"claude-code", Hook, JSONKey, ".claude/settings.json"},
+		{"claude-code", Hook, JSONKey, ".claude/settings.local.json"},
+		{"codex", Hook, JSONFile, "~/.codex/hooks.json"},
+		{"codex", Hook, JSONFile, ".codex/hooks.json"},
+		{"cursor", Hook, Unsupported, ".cursor/hooks.json"},
+		{"windsurf", Hook, Unsupported, ".windsurf/hooks.json"},
+		{"cline", Hook, Unsupported, ".clinerules/hooks"},
+		{"kiro-cli", Hook, Unsupported, ".kiro/hooks"},
 		{"cursor", Command, MDFile, "~/.cursor/commands"},
 		{"cursor", Command, MDFile, ".cursor/commands"},
 		{"codex", Prompt, MDFile, "~/.codex/prompts"},
@@ -213,6 +242,30 @@ func TestKnownConventions(t *testing.T) {
 	}
 	if h, _ := ByID("claude-code"); h.Format != "claude-code" {
 		t.Errorf("claude-code format = %q", h.Format)
+	}
+}
+
+// Only the two dialects whose layout is verified are read; every other
+// harness's hooks are reported and never opened.
+func TestOnlyVerifiedHookDialectsAreRead(t *testing.T) {
+	read := map[string]string{"claude-code": JSONKey, "codex": JSONFile}
+	for _, h := range All() {
+		kd, ok := h.Dirs[Hook]
+		if !ok {
+			continue
+		}
+		if want, ok := read[h.ID]; ok {
+			if kd.Shape != want {
+				t.Errorf("%s hook shape %q, want %q", h.ID, kd.Shape, want)
+			}
+			if kd.Shape == JSONKey && kd.Key != "hooks" {
+				t.Errorf("%s hook key %q, want hooks", h.ID, kd.Key)
+			}
+			continue
+		}
+		if kd.Shape != Unsupported {
+			t.Errorf("%s: hooks are read as %q, but only claude-code and codex are verified", h.ID, kd.Shape)
+		}
 	}
 }
 

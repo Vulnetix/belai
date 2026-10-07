@@ -11,7 +11,8 @@
 //   - cmd/skills.go, the unexported agentDirs map: about 65 ids and their user
 //     skill directories. It is read as Go source, not imported.
 //   - internal/aibom/catalog/tools.json: project-scope globs per tool for
-//     skills, commands, agents and prompts, plus fixed instruction files.
+//     skills, commands, agents, prompts and hooks, plus fixed instruction files.
+//     A hooks entry is "unsupported" unless the overlay names a dialect Belai reads.
 //
 // overlay.json adds what no source records: user-scope commands, agents,
 // prompts and instruction directories, file shapes, the agentimport format and
@@ -65,6 +66,7 @@ type OverlayKindDir struct {
 	Project []string `json:"project,omitempty"`
 	Shape   string   `json:"shape,omitempty"`
 	Files   []string `json:"files,omitempty"`
+	Key     string   `json:"key,omitempty"`
 	Replace bool     `json:"replace,omitempty"`
 }
 
@@ -87,6 +89,7 @@ var kindOfCategory = map[string]string{
 	"commands": harness.Command,
 	"agents":   harness.Agent,
 	"prompts":  harness.Prompt,
+	"hooks":    harness.Hook,
 }
 
 var defaultShape = map[string]string{
@@ -95,6 +98,10 @@ var defaultShape = map[string]string{
 	harness.Agent:    harness.MDFile,
 	harness.Prompt:   harness.MDFile,
 	harness.Document: harness.DocFile,
+	// A hooks entry in tools.json says only that a harness has hooks. Only the
+	// overlay names a dialect Belai reads (json-key, json-file); the rest are
+	// reported and never read.
+	harness.Hook: harness.Unsupported,
 }
 
 // harnessTypes are the tools.json types that are a harness a user runs.
@@ -220,11 +227,14 @@ func Build(cli, overlayPath string) ([]harness.Harness, Overlay, error) {
 		if _, ok := names[h.ID]; !ok {
 			names[h.ID] = t.Name
 		}
-		for _, cat := range []string{"skills", "commands", "agents", "prompts"} {
+		for _, cat := range []string{"skills", "commands", "agents", "prompts", "hooks"} {
 			var proj []string
 			for _, g := range t.Paths[cat] {
 				if d, ok := globDir(g); ok {
 					proj = append(proj, d)
+				} else if cat == "hooks" && plainFile(g) {
+					// A hooks file (.cursor/hooks.json) is an entry of its own.
+					proj = append(proj, g)
 				}
 			}
 			addDirs(h, kindOfCategory[cat], nil, proj)
@@ -296,6 +306,9 @@ func Build(cli, overlayPath string) ([]harness.Harness, Overlay, error) {
 			if k.Shape != "" {
 				kd.Shape = k.Shape
 			}
+			if k.Key != "" {
+				kd.Key = k.Key
+			}
 			h.Dirs[kind] = kd
 		}
 		for kind, kd := range h.Dirs {
@@ -304,6 +317,9 @@ func Build(cli, overlayPath string) ([]harness.Harness, Overlay, error) {
 			}
 			if kd.Shape != harness.DocFile {
 				kd.Files = nil
+			}
+			if kd.Shape != harness.JSONKey {
+				kd.Key = ""
 			}
 			h.Dirs[kind] = kd
 		}
@@ -356,6 +372,12 @@ func globDir(g string) (string, bool) {
 		return "", false
 	}
 	return d, true
+}
+
+// plainFile reports whether a tools.json entry names one file: no wildcard and
+// a file extension.
+func plainFile(g string) bool {
+	return g != "" && !strings.ContainsAny(g, "*?[") && path.Ext(g) != "" && !strings.HasPrefix(g, "/") && cleanRel(g) == g
 }
 
 func appendUniq(dst []string, add ...string) []string {
@@ -531,16 +553,16 @@ func parseAgentDirs(file string) (map[string][]string, error) {
 // Table renders the supported harnesses for docs/harnesses.md.
 func Table(hs []harness.Harness, ov Overlay) string {
 	var b strings.Builder
-	b.WriteString("| ID | Name | Format | Source | Commands | Agents | Prompts | Skills | Documents |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("| ID | Name | Format | Source | Commands | Agents | Prompts | Skills | Documents | Hooks |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, h := range hs {
 		src := "generated"
 		if o, ok := ov.Harnesses[h.ID]; ok && len(o.Dirs) > 0 {
 			src = "hand-written"
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | `%s` | %s | %s | %s | %s | %s | %s |\n", h.ID, h.Name, h.Format, src,
+		fmt.Fprintf(&b, "| `%s` | %s | `%s` | %s | %s | %s | %s | %s | %s | %s |\n", h.ID, h.Name, h.Format, src,
 			cell(h.Dirs[harness.Command]), cell(h.Dirs[harness.Agent]), cell(h.Dirs[harness.Prompt]),
-			cell(h.Dirs[harness.Skill]), cell(h.Dirs[harness.Document]))
+			cell(h.Dirs[harness.Skill]), cell(h.Dirs[harness.Document]), cell(h.Dirs[harness.Hook]))
 	}
 	return b.String()
 }
