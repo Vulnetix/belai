@@ -324,6 +324,13 @@ func keySections() []keySection {
 			{"r", "reload from the repository"},
 			{"q, esc", "back"},
 		}},
+		{"help screen (/help)", []keyBinding{
+			{"up, down, k, j", "scroll a line (the mouse wheel does too)"},
+			{"pgup, pgdn, ctrl+u, ctrl+d, space", "scroll a page"},
+			{"home, end, g, G", "top and bottom"},
+			{"tab, shift+tab, n, p", "next or previous section"},
+			{"q, esc", "back"},
+		}},
 		{"trusted directories (/trusted)", []keyBinding{
 			{"up, down", "move (also k, j)"},
 			{"pgup, pgdn, ctrl+u, ctrl+d, space", "page up and down"},

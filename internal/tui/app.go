@@ -446,6 +446,7 @@ type App struct {
 	trustedState        trustedViewState
 	knowledgeState      knowledgeViewState
 	diffState           diffViewState
+	helpState           helpViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool
@@ -2671,6 +2672,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else if a.view == viewPlanReview && tea.MouseEvent(m).IsWheel() {
 			a.planReview.vp, vpCmd = a.planReview.vp.Update(m)
+		} else if a.view == viewHelp && tea.MouseEvent(m).IsWheel() {
+			a.scrollHelp(tea.MouseEvent(m))
 		}
 		cmd := a.editor.Update(m)
 		a.refreshAutocomplete()

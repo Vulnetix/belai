@@ -2917,7 +2917,12 @@ persisted.
 
 The user-facing inventory of every binding, including the per-view keys the
 `HelpBar` footers advertise, lives in `keySections()` in
-`internal/tui/help.go`; `/help` renders it under the command list.
+`internal/tui/help.go`; `/help` renders it under the command list. `/help` opens a
+full-screen, read-only view (`internal/tui/help_view.go`, `viewHelp`) rather than
+writing into the transcript, so nothing from it reaches the session record or a
+model. The body is wrapped to the width with a hanging indent under each
+description; `up`/`down`, `k`/`j`, the page keys, `g`/`G` and the mouse wheel
+scroll it, `tab` and `shift+tab` jump between sections, and `esc` or `q` closes it.
 `TestHelpTextCoversEveryHandledKey` scans the `case "<key>":` literals across
 the package and fails when a handled key is missing from that table, so a new
 binding needs a line there as well as in this document.
@@ -3509,7 +3514,7 @@ Business rules:
 | `/vulnetix` | Vulnetix code review and firewall (`review`, `configure`, `list`, `status`, `firewall`, `help`) |
 | `/settings` | View and edit settings |
 | `/permissions` | Edit tool permissions |
-| `/help` | Show the commands and every keyboard shortcut |
+| `/help` | Open a scrollable screen of the commands and every keyboard shortcut |
 | `/clear` | Start a new session |
 | `/compact` | Summarise the session into a new one |
 | `/resume` | Resume a session by id, or browse every session on disk |
