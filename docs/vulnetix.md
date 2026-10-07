@@ -152,21 +152,34 @@ list shows only the projects Belai has already seen.
 ## Getting started
 
 The first interactive launch opens a **Getting started** view (never a
-headless run, a seeded prompt, `--resume` or ACP). `esc` on the first page
-skips it; either way it is recorded in `state.json` (`onboarded_at`) and
-does not open again. `/vulnetix setup` reopens it.
+headless run, a seeded prompt, `--resume` or ACP). It has four pages, and the
+page count is in the title (`Getting started · Welcome 1/4`). The right-hand
+side of the title line always says what `esc` does: *Press esc to start using
+Belai (bell-lay) now* on the welcome, CLI, account and enable pages, and *Press
+esc to go back* on the sign-up and login pages. On a narrow terminal the
+pronunciation drops first. `esc` on a page that is only telling or asking
+starts Belai; an install or the enabling in progress is never abandoned, and a
+field edit is cancelled first. Either way the view is recorded in `state.json`
+(`onboarded_at`) and does not open again. `/vulnetix setup` and `/welcome`
+reopen it.
 
-1. **Keys** — `tab`, `shift+tab`, `F3`, `F4`, `F9`, described from the
-   `/help` table.
-2. **Commands** — `/permissions`, `/model`, `/settings`, `/help`.
-3. **Vulnetix CLI** — when `vulnetix` is not on `PATH`, Belai shows the exact
+1. **Welcome** — three ideas, each a few lines naming the commands and keys
+   that open it: *Stay in control* (modes, guardrails, asking, permissions and
+   the sandbox: `shift+tab`, `f3`, `f4`, `/permissions`), *Choose the
+   models and agents* (`/model`, `/providers`, `/agent`, `/budgets`,
+   `/intel`) and *Keep work going* (`/resume`, `/compact`, `/kanban`,
+   `/fleet`, `/firewall`, `/mcp`, `/skills`, `/plugin`, `/rc`, `/sync`,
+   `/help`). Where the Mac form of an F key is on (see [macOS keyboard
+   hints](settings.md#macos-keyboard-hints)), `f3` reads `f3 (Fn+Mission
+   Control)`.
+2. **Vulnetix CLI** — when `vulnetix` is not on `PATH`, Belai shows the exact
    command it would run: `brew install vulnetix/tap/vulnetix` on macOS and
    Linux, or `scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket`
    then `scoop install vulnetix` on Windows. The default choice is *Skip*;
    the fixed command runs only when you pick *Install*, with the scrubbed
    environment and its own process group. With neither package manager the
    manual install command is shown instead.
-4. **Account** — skipped when a CLI credential already loads. Otherwise you
+3. **Account** — skipped when a CLI credential already loads. Otherwise you
    can create an account, log in to an existing one, or skip.
    - *Create* posts email, optional company and password to the enrollment
      flow at `https://auth.vulnetix.com/if/flow/vulnetix-enrollment/`
@@ -183,12 +196,20 @@ does not open again. `/vulnetix setup` reopens it.
      `vulnetix auth login --noninteractive --store home` through that child's
      environment only (never its argv), so the CLI stays the only writer of
      `~/.vulnetix/credentials.json`.
-5. **AI Firewall and MCP** — once a credential loads, Belai sets
+4. **AI Firewall and MCP** — once a credential loads, Belai sets
    `vulnetix.firewall_enabled: true` in the **global** settings, adds the
    Vulnetix MCP server, and pushes the configured provider keys to the
    firewall. A login here also starts [session sync](session-sync.md), which
    mirrors sessions to the website's Belai History and Hosts pages
    (`/sync off` turns it off).
+
+The **Next** on the CLI and account pages leads to the enable page, which
+reaches the AI Firewall and the Vulnetix MCP server over the network, so those
+pages say so (*Next checks the AI Firewall and the Vulnetix MCP server over the
+network*, and *next (network check)* on the key bar). An MCP error that comes
+back as a web page, such as a 403 from a gateway, is shown as its plain text:
+tags, comments and script and style content are removed before the line is
+drawn (`sanitize.PlainText`).
 
 ## Vulnetix MCP server (`/vulnetix mcp`)
 

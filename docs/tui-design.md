@@ -270,7 +270,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
   two columns before the edge.
 - **Header.** One line: `belai`, version, working directory, branch, and on
   the right the session id and age. The owl banner appears only on
-  `/welcome` and a first run.
+  a first run.
 - **Hint line.** One `Low` line directly above the composer, only while a
   turn is in flight.
 - **Footer.** Three lines under the composer, with no rule: the composer's

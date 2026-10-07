@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
@@ -56,37 +58,145 @@ func TestGettingStartedOnlyOnFirstInteractiveLaunch(t *testing.T) {
 	}
 }
 
-func TestGettingStartedTeachesConceptsKeysAndCommands(t *testing.T) {
+// gsPlain strips the styling from a rendered page.
+func gsPlain(s string) string { return ansi.Strip(s) }
+
+func openWelcome(t *testing.T, width int) *App {
+	t.Helper()
 	_, wd := isolate(t)
 	a := New(Options{Workdir: wd})
+	a.Update(tea.WindowSizeMsg{Width: width, Height: 50})
 	a.openGettingStarted()
-	page := a.gettingStartedView()
-	for _, c := range gsConceptList {
-		if !strings.Contains(page, c.term) {
-			t.Errorf("concepts page lacks %q: %q", c.term, page)
+	return a
+}
+
+func TestGettingStartedWelcomeTeachesThreeIdeas(t *testing.T) {
+	a := openWelcome(t, 110)
+	page := gsPlain(a.gettingStartedView())
+	for i, sec := range gsSections {
+		if !strings.Contains(page, fmt.Sprintf("%d  %s", i+1, sec.title)) {
+			t.Errorf("welcome lacks section %d %q", i+1, sec.title)
 		}
 	}
-	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	page = a.gettingStartedView()
-	for _, k := range gsKeyList {
-		d := keyDescription(k)
-		if d == "" {
-			t.Fatalf("no /help description for %s", k)
-		}
-		if !strings.Contains(page, d) {
-			t.Errorf("keys page lacks %s: %q", k, d)
+	if len(gsSections) != 3 {
+		t.Fatalf("%d sections, want 3", len(gsSections))
+	}
+	for _, want := range []string{"shift+tab", "f3", "f4", "/permissions", "/model", "/providers", "/agent", "/kanban", "/fleet", "/firewall", "/mcp", "/resume", "/help"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("welcome never names %s", want)
 		}
 	}
+	for _, r := range page {
+		if r == '—' || r == '–' {
+			t.Fatalf("welcome prose carries a dash glyph: %q", page)
+		}
+	}
+	if gsPage(gsWelcome) != 1 || gsPage(gsEnable) != gsPageCount {
+		t.Fatalf("page numbering: welcome %d, enable %d of %d", gsPage(gsWelcome), gsPage(gsEnable), gsPageCount)
+	}
+	// There is no second screen of shortcut keys any more: enter goes to the CLI step.
 	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	page = a.gettingStartedView()
-	for _, name := range gsCommandList {
-		c, ok := a.registry.Command(name)
-		if !ok {
-			t.Fatalf("/%s is not registered", name)
+	if a.gsState.step != gsCLI {
+		t.Fatalf("enter on welcome went to step %v, want the CLI step", a.gsState.step)
+	}
+}
+
+func TestGettingStartedHeaderShowsEscHintAndCount(t *testing.T) {
+	a := openWelcome(t, 110)
+	head := strings.SplitN(gsPlain(a.gettingStartedView()), "\n", 3)
+	var line string
+	for _, h := range head {
+		if strings.Contains(h, "Getting started") {
+			line = h
 		}
-		if !strings.Contains(page, "/"+name) || !strings.Contains(page, c.Description) {
-			t.Errorf("commands page lacks /%s", name)
+	}
+	for _, want := range []string{"Getting started · Welcome 1/4", "Press esc to start using Belai (bell-lay) now"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("header %q lacks %q", line, want)
 		}
+	}
+	if strings.Index(line, "Press esc") < strings.Index(line, "Welcome") {
+		t.Errorf("the hint should sit to the right of the title: %q", line)
+	}
+}
+
+func TestGettingStartedHeaderHintShrinksOnANarrowTerminal(t *testing.T) {
+	a := openWelcome(t, 56)
+	page := gsPlain(a.gettingStartedView())
+	if strings.Contains(page, "(bell-lay)") {
+		t.Fatalf("the pronunciation should drop first on a narrow terminal: %q", page)
+	}
+	if !strings.Contains(page, "esc") {
+		t.Fatalf("some esc hint must remain: %q", page)
+	}
+}
+
+func TestGettingStartedEscHintMatchesWhatEscDoes(t *testing.T) {
+	a := openWelcome(t, 110)
+	a.gsGo(gsSignup)
+	if page := gsPlain(a.gettingStartedView()); !strings.Contains(page, "esc to go back") || strings.Contains(page, "start using Belai") {
+		t.Fatalf("sign-up must not promise to start Belai: %q", page)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.view != viewGettingStarted || a.gsState.step != gsAccount {
+		t.Fatalf("esc on sign-up should go back to the account step, got view %v step %v", a.view, a.gsState.step)
+	}
+	// An info page finishes.
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.view != viewChat {
+		t.Fatalf("esc on the account step should start Belai, view = %v", a.view)
+	}
+}
+
+func TestGettingStartedEscOnCLIStartsBelaiUnlessInstalling(t *testing.T) {
+	a := openWelcome(t, 110)
+	a.gsGo(gsCLI)
+	a.gsState.installing = true
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.view != viewGettingStarted {
+		t.Fatal("esc must not walk away from an install in progress")
+	}
+	a.gsState.installing = false
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.view != viewChat {
+		t.Fatalf("esc on the CLI step should start Belai, view = %v", a.view)
+	}
+	st, err := config.LoadState()
+	if err != nil || st.OnboardedAt == "" {
+		t.Fatalf("finishing from the CLI step must be remembered: %+v %v", st, err)
+	}
+}
+
+func TestGettingStartedNextOnTheCLIStepSaysItChecksTheNetwork(t *testing.T) {
+	a := openWelcome(t, 140)
+	a.gsGo(gsCLI)
+	a.Update(gsCLIProbeMsg{path: "/usr/local/bin/vulnetix"})
+	page := gsPlain(a.gettingStartedView())
+	for _, want := range []string{"AI Firewall", "Vulnetix MCP server", "over the network", "next (network check)"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("CLI step lacks %q: %q", want, page)
+		}
+	}
+	// With the install choice on offer the hint is still there.
+	b := openWelcome(t, 140)
+	b.gsGo(gsCLI)
+	plan, _ := vulnetixcli.PlanInstall("linux", func(string) (string, error) { return "/bin/brew", nil })
+	b.Update(gsCLIProbeMsg{plan: plan, planOK: true})
+	if page := gsPlain(b.gettingStartedView()); !strings.Contains(page, "network check") {
+		t.Errorf("install choice lacks the network note: %q", page)
+	}
+}
+
+func TestGettingStartedWelcomeShowsMacHintsWhenOn(t *testing.T) {
+	macHints(t, true)
+	a := openWelcome(t, 140)
+	macHints(t, true) // New resets the switch from the platform
+	if page := gsPlain(a.gettingStartedView()); !strings.Contains(page, "f3 (Fn+Mission Control)") || !strings.Contains(page, "f4 (Fn+Launchpad)") {
+		t.Fatalf("welcome lacks the Mac form: %q", page)
+	}
+	macHints(t, false)
+	if page := gsPlain(a.gettingStartedView()); strings.Contains(page, "Fn+") {
+		t.Fatalf("Mac form shown with the setting off: %q", page)
 	}
 }
 

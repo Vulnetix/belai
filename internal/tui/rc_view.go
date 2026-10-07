@@ -365,7 +365,7 @@ func (a *App) rcView() string {
 	case rcIntro:
 		line(muted.Render("Remote control makes this machine a Belai host you can drive from the Vulnetix website."))
 		line("")
-		for _, c := range []gsConcept{
+		for _, c := range []struct{ term, desc string }{
 			{"host", "`belai rc` runs in the background and shows this machine under Belai → Sessions"},
 			{"sessions", "the website starts a Belai session here, then follows and prompts it live"},
 			{"where", "only in projects you already trust on this machine (/trusted manages them), and directories you pass with --dir"},
