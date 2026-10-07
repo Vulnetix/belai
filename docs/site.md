@@ -112,8 +112,8 @@ claim is backed by something Belai does with its inputs or by the image and
 launcher in the website repository: Belai is not told it is hosted, every
 repository is a trusted root and nothing else is, Jev answers every call with
 the key swapped in at the network edge, and a relaunch is a new machine. The
-decider sub-section is the one block with code behind it: the `clef` MCP is
-compiled only into the Pix Sandbox build. Its two cards link to the feature page and to
+decider sub-section is the one block with code behind it: the `clef` MCP
+(in every build, always offered in the Pix Sandbox one). Its two cards link to the feature page and to
 the console's sandbox tab on vulnetix.com. The classifier section's Jev article
 carries `id="jev"` so the "How Belai uses Jev" link and the feature page can
 deep-link to it.

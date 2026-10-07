@@ -1,5 +1,3 @@
-//go:build belai_sandbox
-
 package clefmcp
 
 // Schema helpers: the small subset of JSON Schema the harness keeps from an

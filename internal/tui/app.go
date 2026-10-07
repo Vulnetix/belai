@@ -2113,6 +2113,9 @@ type sessionBuildParams struct {
 	knowledge *knowledge.Store
 	// gitSync is the App's git sync; nil runs no sync before turns.
 	gitSync *gitsync.Hygiene
+	// askDecider answers asks in the user's place above the user's threshold;
+	// nil asks the user every time.
+	askDecider agent.AskDecider
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2151,6 +2154,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		kanbanSrc:     kanbanSourceOf(a),
 		knowledge:     a.knowledgeStoreForBuild(),
 		gitSync:       a.gitSync,
+		askDecider:    askDeciderFor(a.settings, credentialSourceOf(a.resolver)),
 	}
 }
 
@@ -2224,6 +2228,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		return nil, err
 	}
 	return agent.NewSession(agent.Options{
+		AskDecider:    p.askDecider,
 		Knowledge:     p.knowledge,
 		GitSync:       p.gitSync,
 		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
@@ -4070,6 +4075,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.permAskState = newPermissionAskState(m.Ask, m.AskReply)
 		a.permAskState.askID = a.recordPermissionAsk(m.Ask)
 		return tea.Batch(a.push(viewPermissionAsk), a.notifyCmd(notify.EventPermission, m.Ask.Name))
+	case agent.EventAskDecidedKind:
+		a.handleAskDecided(m.Decided)
+		return a.nextAgent()
 	case agent.EventPlanFileKind:
 		a.planReview = newPlanReviewState(m.PlanName, m.PlanPath)
 		a.planReview.askID = a.recordPlanReviewAsk(m.PlanName, m.PlanPath)

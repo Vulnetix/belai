@@ -12,8 +12,9 @@ selected, and Strands Decider-2B can be that backend on your own machine
 detection, routing and every relevance job are answered by a process on
 loopback: no API key, no network, and no state leaves the host. Clef-flash or
 Clef on llama-server (`classifier.provider: decision-local`) does the same. The
-Pix Sandbox build's [`clef` MCP](pix-sandbox.md#the-decider-mcp) does not use that
-backend; it needs one that speaks the SystemOne API.
+built-in [`clef` MCP](mcp.md#built-in-servers) and the asks it answers are not Jev
+jobs and do not use that backend; they use a SystemOne classifier or Clef on
+Cloudflare Workers AI.
 When speed matters more, Clef on Cloudflare Workers AI answers each job in tens
 of milliseconds of model time with the Cloudflare credentials already set up,
 and Tev1 answers on Together with a Together key, on Ollama, or on llama-server

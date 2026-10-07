@@ -123,6 +123,11 @@ const (
 	// Phase KanbanPhaseStart as it begins, KanbanPhaseDone with Kanban (what
 	// it added, moved and updated) when it ends. Render-only.
 	EventKanbanKind
+	// EventAskDecidedKind reports an ask the decision model answered in the
+	// user's place because it was confident enough (AskDecider). It carries
+	// Decided: harness facts only. The TUI records it as an ask answered by
+	// the decision model and shows a line saying so.
+	EventAskDecidedKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -210,6 +215,9 @@ type Event struct {
 	// AskReply is the channel the UI must answer on.
 	Ask      *AskRequest
 	AskReply chan PermissionAskReply
+
+	// Decided carries EventAskDecidedKind.
+	Decided *AskDecided
 
 	// Clarify carries the questionnaire on EventClarifyAskKind; Reply is the
 	// channel the UI must send the user's Answers on.

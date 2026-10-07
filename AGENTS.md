@@ -410,7 +410,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   classifier, never after — a verdict that cannot change the outcome is a
   request nobody asked for and sends the content anyway. Sanitising is not
   part of the switch and always runs.
-- **Jev relevance jobs narrow or reorder and never approve.** The jobs in
+- **Jev relevance jobs narrow or reorder and never approve.** (This governs Jev
+  jobs; an ask answered by the built-in decision server is the separate
+  **Ask decisions** rule below.) The jobs in
   [docs/jev-jobs.md](docs/jev-jobs.md) work inside the surface the mode already
   allows; permissions, hooks, the ask gate, the classifier and the sandbox still
   apply to what they produce. Their input is harness facts and `DecisionText`
@@ -660,14 +662,45 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   The `vulnetix:cli` header reference (written by `/vulnetix mcp`) resolves
   to the Vulnetix CLI's credential at dial time, only in the `Authorization`
   header and only for `https://*.vulnetix.com`; it is never written out
-  resolved. The one exception to "servers come from settings" is `clef`,
-  compiled only into the Pix Sandbox build (`-tags belai_sandbox`,
-  `internal/clefmcp`, registered through `mcp.Options.Builtins`): an in-process
-  decider whose tools stay `mcp__clef__<tool>` with `tools.KindMCP`, so they are
-  still mutating and classified, and whose results are harness-built numbers
-  and the caller's own options, never model text or backend error text. A
-  settings entry cannot shadow it. Do not give another build a built-in server
-  and do not exempt its tools from the classifier.
+  resolved. The one exception to "servers come from settings" is `clef`
+  (`internal/clefmcp`, registered through `mcp.Options.Builtins`), an in-process
+  decider compiled into every build: see **Decision tools** below. A settings
+  entry cannot shadow it, and no other server may be built in or take
+  `tools.KindDecision`. The one place the Pix Sandbox build tag is read is
+  `clefmcp.SandboxBuild`.
+- **Decision tools are read-only, sanitise-only, and never carry backend text.**
+  The built-in `clef` server's tools (`mcp__clef__<tool>`) have
+  `tools.KindDecision`, in `readOnlyKinds` and absent from
+  `classifierKinds`: no ask, offered in plan mode and on `read_only` turns,
+  concurrent, and advertised directly in code mode (`CodeSurface` drops only
+  `KindMCP`; `nestedKinds` has `KindDecision`). That is safe only because a
+  result is JSON the harness builds from probabilities and the caller's own option
+  text; a decision backend's error or answer text never reaches it. Never add
+  text from a backend to that kind, and never give another server's tool the
+  kind (`mcp.Options.DecisionBuiltins` names the only one). A Deny or Block rule
+  still withholds a decision tool. The server is offered only while the user's
+  `mcp.builtin.clef.enabled` is not false and a backend can serve it (the Pix
+  Sandbox build always, any other build with the user's own Cloudflare Workers AI
+  credentials, `run.ClefCredsOK`); the backend is the user's SystemOne
+  classifier or Clef-flash on Workers AI (`run.ClefDecider`), never firewall
+  routed, and its key goes only to `api.cloudflare.com`.
+- **Ask decisions answer only above the user's bar, only where someone could be
+  asked, and are not a Jev job.** With `mcp.builtin.clef.skip_ask` on (the
+  default) and the server offered, the decision engine (`agent.AskDecider`,
+  implemented by `clefmcp.Engine`) is put every ask before the user is:
+  a tool-permission ask (`gateMutation`: a yes at or above `skip_ask_at`
+  runs the call, a no withholds it), and a questionnaire group
+  (`askUserWithModeChoice`: single-select groups only, the rest go to the user).
+  It never runs where no one can be asked (`allowAsk` / `allowClarify` false),
+  and an unavailable backend, a timeout, an error or a confidence below the bar
+  asks the user as before. It sees `sanitize.DecisionText` only: the tool name,
+  the call's subject, the cleaned user prompt and the option text, never call
+  arguments, a diff, a file or a tool result. It never writes an allow rule,
+  Deny and Block rules, hooks, the sandbox and the classifier apply to what it
+  lets through, and each answer is recorded (source `clef`, confidence, no
+  question text) and told to the model as not the user's. `mcp.builtin.*` is
+  read from the user's layers only (`resolve.go` drops the project layer's `mcp`
+  key), and the bar is above 0.5 and at most 1 (default 0.90).
 - **Onboarding sends secrets only where they belong.** The Getting started
   sign-up posts to `auth.vulnetix.com` alone (redirects off it are refused);
   its password fields are cleared once the post returns or the form is left,

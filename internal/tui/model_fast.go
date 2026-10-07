@@ -151,6 +151,8 @@ func (a *App) modelRoleBlurb(role modelRole) string {
 		return "defined: the agent model serves every role; the pool below is unused until kind is routed"
 	case rolePosture:
 		return "session safety switches; not model settings, so they keep their own save target"
+	case roleMCP:
+		return "the decision server and the hosted Vulnetix server; saved to the mcp.builtin key of your global settings"
 	}
 	return ""
 }

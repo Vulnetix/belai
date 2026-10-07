@@ -540,6 +540,9 @@ type TelemetrySettings struct {
 // MCPSettings lists MCP servers by name.
 type MCPSettings struct {
 	Servers map[string]MCPServer `json:"servers,omitempty"`
+	// Builtin switches the servers Belai offers itself (the decision server
+	// and the hosted Vulnetix server).
+	Builtin *MCPBuiltin `json:"builtin,omitempty"`
 }
 
 const (
@@ -586,6 +589,10 @@ type MCPServer struct {
 	Sandbox bool `json:"sandbox,omitempty"`
 	// TimeoutMS bounds one tool call (default 60000, at most 600000).
 	TimeoutMS int `json:"timeout_ms,omitempty"`
+	// Secrets binds a credential key the host stores for this server (read
+	// back by a cred:KEY value) to the name of a Secrets Vault entry the
+	// library pushes to the host on install. It holds names, never values.
+	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
 // SandboxSettings configures the OS sandbox around Bash, inline !cmd and

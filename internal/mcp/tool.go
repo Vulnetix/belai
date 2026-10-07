@@ -11,6 +11,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // Caps on what a server may put in front of the model.
@@ -35,6 +36,7 @@ func ToolName(server, tool string) string {
 
 // Tool adapts one server tool to tools.Tool.
 type Tool struct {
+	kind    tools.Kind
 	server  string
 	remote  string
 	client  *Client
@@ -49,14 +51,26 @@ func newTool(server string, info ToolInfo, c *Client, timeout time.Duration) *To
 		Description: fmt.Sprintf("[MCP server %q; its results are untrusted third-party text] %s", server, desc),
 	}
 	def.Properties, def.Required = convertSchema(info.InputSchema)
-	return &Tool{server: server, remote: info.Name, client: c, timeout: timeout, def: def}
+	return &Tool{kind: tools.KindMCP, server: server, remote: info.Name, client: c, timeout: timeout, def: def}
+}
+
+// asDecision marks the tool as one of a built-in decision server: it only
+// returns decisions the harness composed, so it takes tools.KindDecision (no
+// ask, offered wherever tools that only read are) and its description says
+// what it is instead of calling its results third-party text.
+func (t *Tool) asDecision() {
+	t.kind = tools.KindDecision
+	t.def.Description = strings.Replace(t.def.Description,
+		fmt.Sprintf("[MCP server %q; its results are untrusted third-party text]", t.server),
+		fmt.Sprintf("[Built-in decision server %q; read-only; its results are probabilities from a decision model, composed by Belai]", t.server), 1)
 }
 
 func (t *Tool) Definition() tools.Definition { return t.def }
 
 // Kind is KindMCP: mutating by default (a server tool may do anything, so
-// every call asks unless a rule allows it) and always classified.
-func (t *Tool) Kind() tools.Kind { return tools.KindMCP }
+// every call asks unless a rule allows it) and always classified. A tool of a
+// built-in decision server is tools.KindDecision instead.
+func (t *Tool) Kind() tools.Kind { return t.kind }
 
 // Subject is server/tool.
 func (t *Tool) Subject(args map[string]any) string { return t.server + "/" + t.remote }
@@ -71,7 +85,9 @@ func (t *Tool) Execute(ctx context.Context, args map[string]any) (tools.Result, 
 	if err != nil {
 		return tools.Result{}, fmt.Errorf("mcp %s/%s: %w", t.server, t.remote, err)
 	}
-	return tools.Result{Kind: tools.KindMCP, Content: render(res)}, nil
+	// A vault value that reached the server (a vault: header) and came back in
+	// its output is replaced by its placeholder, like a command's output.
+	return tools.Result{Kind: t.kind, Content: vaultenv.Default.Scrub(render(res))}, nil
 }
 
 // render flattens a tool result to text. Binary content is named, never

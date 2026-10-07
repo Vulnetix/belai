@@ -44,6 +44,12 @@ type Status struct {
 }
 
 type server struct {
+	// off is the reason a built-in server is compiled in but not offered
+	// ("" when it is on); decision marks a built-in whose tools only return
+	// decisions (tools.KindDecision).
+	off      string
+	decision bool
+
 	name   string
 	cfg    config.MCPServer
 	client *Client
@@ -64,10 +70,24 @@ type Options struct {
 	// login takes effect on restart. nil leaves the reference unresolved.
 	VulnetixAuth func() (string, error)
 	// Builtins are servers compiled into this binary, by name. Each runs
-	// in-process and is offered whatever the user's settings say: a settings
-	// entry of the same name is ignored, and Upsert and Remove refuse the
-	// name. It is nil in every build that has none (docs/mcp.md).
+	// in-process unless BuiltinOff names it: a settings entry of the same name
+	// is ignored, and Upsert and Remove refuse the name (docs/mcp.md).
 	Builtins map[string]jsonrpc.Handler
+	// BuiltinOff names the built-in servers that are compiled in but not
+	// offered now (switched off, or no backend to serve them), with the reason
+	// /mcp shows. SetBuiltinOff changes it while Belai runs.
+	BuiltinOff map[string]string
+	// DecisionBuiltins names the built-in servers whose tools only return
+	// decisions: they take tools.KindDecision (read-only, no ask).
+	DecisionBuiltins map[string]bool
+	// Secret returns the credential a server's cred:KEY value stands for (the
+	// keychain or the global credentials file, read for this server only). nil
+	// leaves such a reference unresolved and fails the server with the reason.
+	Secret func(server, key string) (string, error)
+	// Vault returns the Secrets Vault entry a vault:NAME header value stands
+	// for: the host's vault lease, which only a Pix Sandbox holds. nil or a
+	// miss fails the server with the reason.
+	Vault func(name string) (string, bool)
 }
 
 // VulnetixCLIRef is the header value that stands for the Vulnetix CLI's
@@ -78,11 +98,15 @@ const VulnetixCLIRef = config.VulnetixCLIRef
 // The credential is sent only as an Authorization header, only over https,
 // and only to vulnetix.com or one of its subdomains, so a hand-edited entry
 // cannot hand it to another host.
-func (m *Manager) resolveHeaders(rawURL string, headers map[string]string) (map[string]string, error) {
+func (m *Manager) resolveHeaders(server, rawURL string, headers map[string]string) (map[string]string, error) {
 	out := make(map[string]string, len(headers))
 	for k, v := range headers {
 		if v != VulnetixCLIRef {
-			out[k] = v
+			rv, err := m.resolveRef(server, k, v, true)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = rv
 			continue
 		}
 		if !strings.EqualFold(k, "Authorization") {
@@ -99,6 +123,63 @@ func (m *Manager) resolveHeaders(rawURL string, headers map[string]string) (map[
 			return nil, fmt.Errorf("vulnetix credential: %w (run /vulnetix setup or `vulnetix auth login`)", err)
 		}
 		out[k] = h
+	}
+	return out, nil
+}
+
+// resolveRef resolves a cred: or vault: reference in an env or header value. A
+// literal and an env: reference come back unchanged (the transport reads the
+// environment); the resolved value is never written anywhere. vault: is for http
+// headers only (header true). A secret that itself starts with "env:" is refused,
+// so a resolved value is never read again as a reference.
+func (m *Manager) resolveRef(server, name, v string, header bool) (string, error) {
+	kind, ref, ok := config.ParseMCPRef(v)
+	if !ok {
+		return "", fmt.Errorf("%s: %q is not a legal reference", name, v)
+	}
+	var val string
+	switch kind {
+	case config.MCPRefCred:
+		if m.opts.Secret == nil {
+			return "", fmt.Errorf("%s: credentials are not available in this session", name)
+		}
+		got, err := m.opts.Secret(server, ref)
+		if err != nil || got == "" {
+			return "", fmt.Errorf("%s: no credential %q stored for server %q (add it in /mcp)", name, ref, server)
+		}
+		val = got
+	case config.MCPRefVault:
+		if !header {
+			return "", fmt.Errorf("%s: vault: references are for http headers only", name)
+		}
+		got, found := "", false
+		if m.opts.Vault != nil {
+			got, found = m.opts.Vault(ref)
+		}
+		if !found || got == "" {
+			return "", fmt.Errorf("%s: vault entry %q is not available on this machine", name, ref)
+		}
+		val = got
+	case config.MCPRefVulnetix:
+		return "", fmt.Errorf("%s: %s is only accepted in the Authorization header", name, VulnetixCLIRef)
+	default:
+		return v, nil
+	}
+	if strings.HasPrefix(val, config.MCPEnvPrefix) {
+		return "", fmt.Errorf("%s: the stored secret cannot start with %q", name, config.MCPEnvPrefix)
+	}
+	return val, nil
+}
+
+// resolveEnv resolves the cred: references of a stdio server's env.
+func (m *Manager) resolveEnv(server string, env map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		rv, err := m.resolveRef(server, k, v, false)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = rv
 	}
 	return out, nil
 }
@@ -156,8 +237,12 @@ func StartAsync(ctx context.Context, cfg *config.MCPSettings, opts Options) *Man
 	m := &Manager{opts: opts, servers: map[string]*server{}}
 	wg := &m.ready
 	for name, h := range opts.Builtins {
-		s := &server{name: name, cfg: config.MCPServer{Transport: BuiltinTransport}}
+		s := &server{name: name, cfg: config.MCPServer{Transport: BuiltinTransport}, decision: opts.DecisionBuiltins[name]}
 		m.servers[name] = s
+		if reason, off := opts.BuiltinOff[name]; off {
+			s.off, s.cfg.Disabled = reason, true
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -194,13 +279,13 @@ func (m *Manager) Wait() {
 
 // connect dials s; a non-nil h runs the server in-process instead.
 func (m *Manager) connect(ctx context.Context, s *server, h jsonrpc.Handler) {
-	c, ts, err := m.dial(ctx, s.name, s.cfg, h)
+	c, ts, err := m.dial(ctx, s.name, s.cfg, h, s.decision)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s.client, s.tools, s.err = c, ts, err
 }
 
-func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer, h jsonrpc.Handler) (*Client, []tools.Tool, error) {
+func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer, h jsonrpc.Handler, decision bool) (*Client, []tools.Tool, error) {
 	if !serverNameRE.MatchString(name) {
 		return nil, nil, fmt.Errorf("server name %q must be letters, digits, _ or - (at most 32)", name)
 	}
@@ -210,15 +295,15 @@ func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer, h 
 		t = newInproc(h)
 	default:
 		var err error
-		if t, err = m.dialRemote(sc); err != nil {
+		if t, err = m.dialRemote(name, sc); err != nil {
 			return nil, nil, err
 		}
 	}
-	return m.finishDial(ctx, name, sc, t)
+	return m.finishDial(ctx, name, sc, t, decision)
 }
 
 // dialRemote opens the stdio or http transport a settings entry names.
-func (m *Manager) dialRemote(sc config.MCPServer) (transport, error) {
+func (m *Manager) dialRemote(server string, sc config.MCPServer) (transport, error) {
 	var t transport
 	switch sc.Transport {
 	case "", "stdio":
@@ -230,7 +315,11 @@ func (m *Manager) dialRemote(sc config.MCPServer) (transport, error) {
 			p := m.opts.Sandbox()
 			pol = &p
 		}
-		st, err := startStdio(sc.Command, sc.Args, sc.Env, m.opts.Workdir, pol)
+		env, err := m.resolveEnv(server, sc.Env)
+		if err != nil {
+			return nil, err
+		}
+		st, err := startStdio(sc.Command, sc.Args, env, m.opts.Workdir, pol)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +332,7 @@ func (m *Manager) dialRemote(sc config.MCPServer) (transport, error) {
 		if hc == nil {
 			hc = http.DefaultClient
 		}
-		headers, err := m.resolveHeaders(sc.URL, sc.Headers)
+		headers, err := m.resolveHeaders(server, sc.URL, sc.Headers)
 		if err != nil {
 			return nil, err
 		}
@@ -255,7 +344,7 @@ func (m *Manager) dialRemote(sc config.MCPServer) (transport, error) {
 }
 
 // finishDial handshakes over t and builds the server's tools.
-func (m *Manager) finishDial(ctx context.Context, name string, sc config.MCPServer, t transport) (*Client, []tools.Tool, error) {
+func (m *Manager) finishDial(ctx context.Context, name string, sc config.MCPServer, t transport, decision bool) (*Client, []tools.Tool, error) {
 	c := &Client{name: name, t: t}
 	cctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
@@ -279,6 +368,9 @@ func (m *Manager) finishDial(ctx context.Context, name string, sc config.MCPServ
 			continue
 		}
 		tl := newTool(name, info, c, timeout)
+		if decision {
+			tl.asDecision()
+		}
 		if seen[tl.def.Name] {
 			continue
 		}
@@ -332,6 +424,7 @@ func (m *Manager) Status() []Status {
 		switch {
 		case s.cfg.Disabled:
 			st.State = StateDisabled
+			st.Diag = s.off
 		case s.err != nil:
 			st.State, st.Err = StateFailed, s.err.Error()
 		default:
@@ -365,6 +458,40 @@ func (m *Manager) Restart(ctx context.Context, name string) error {
 		return fmt.Errorf("MCP server %q is disabled in settings", name)
 	}
 	m.connect(ctx, s, m.opts.Builtins[name])
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return s.err
+}
+
+// SetBuiltinOff switches a built-in server off (reason is why, shown by /mcp)
+// or, with an empty reason, back on. It is how a /model or /mcp change, or a
+// login that makes a backend available, takes effect without a restart; the next
+// session built sees the tools.
+func (m *Manager) SetBuiltinOff(ctx context.Context, name, reason string) error {
+	if m == nil {
+		return fmt.Errorf("MCP is not running in this session")
+	}
+	h, ok := m.opts.Builtins[name]
+	if !ok {
+		return fmt.Errorf("no built-in MCP server named %q", name)
+	}
+	m.mu.Lock()
+	s, ok := m.servers[name]
+	if !ok {
+		s = &server{name: name, cfg: config.MCPServer{Transport: BuiltinTransport}, decision: m.opts.DecisionBuiltins[name]}
+		m.servers[name] = s
+	}
+	if s.client != nil {
+		_ = s.client.Close()
+		s.client = nil
+	}
+	s.tools, s.err = nil, nil
+	s.off, s.cfg.Disabled = reason, reason != ""
+	m.mu.Unlock()
+	if reason != "" {
+		return nil
+	}
+	m.connect(ctx, s, h)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return s.err

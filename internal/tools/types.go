@@ -105,6 +105,13 @@ const (
 	// the result of any tool, so it is not read-only and never joins the
 	// concurrent fan-out.
 	KindTeleport Kind = "teleport"
+	// KindDecision is a result of the built-in decision server (the clef MCP):
+	// harness-built JSON of probabilities, confidences and the caller's own
+	// options. It only reads, so it is offered in plan mode and on read_only
+	// turns, runs without an ask and may run concurrently. It is sanitise-only
+	// because the harness composes every character that is not the caller's
+	// own: the decision backend's text never reaches it (docs/mcp.md).
+	KindDecision Kind = "decision"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -115,7 +122,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindTodo,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport,
+	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport, KindDecision,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -141,6 +148,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindToolSearch:  true,
 	KindOffload:     true,
 	KindFetched:     true,
+	KindDecision:    true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

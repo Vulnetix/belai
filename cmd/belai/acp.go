@@ -61,8 +61,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	}
 	// The mcp key is read from the user's own settings only, so one set of
 	// servers serves every session on this connection.
-	mcpMgr := mcp.StartAsync(ctx, global.MCP, mcp.Options{
-		Builtins:   builtinMCP(global, wd),
+	mcpMgr := mcp.StartAsync(ctx, effectiveMCP(global, wd), withBuiltinMCP(mcp.Options{
 		Workdir:    wd,
 		HTTPClient: httpclient.Default(),
 		VulnetixAuth: func() (string, error) {
@@ -71,7 +70,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 		Sandbox: func() sandbox.Policy {
 			return sandbox.FromSettings(global.Sandbox, []string{wd}, posture.Defaults())
 		},
-	})
+	}, global, wd))
 	mcp.SetActive(mcpMgr)
 	defer mcpMgr.Close()
 	defer startTelemetry(global, wd)()

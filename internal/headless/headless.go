@@ -53,6 +53,9 @@ type Params struct {
 	AllowAsk bool
 	// AskDisabled resolves asks to allow. nil takes the settings' value.
 	AskDisabled *bool
+	// AskDecider answers an ask in the user's place above the user's threshold.
+	// Set only where someone can be asked (AllowAsk); nil asks every time.
+	AskDecider agent.AskDecider
 	// MCP is the connected MCP manager whose tools join the surface; nil for
 	// none. The builder waits for its servers.
 	MCP *mcp.Manager
@@ -178,6 +181,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	}
 
 	return agent.NewSession(agent.Options{
+		AskDecider:    p.AskDecider,
 		Knowledge:     kb,
 		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
 		Cfg:           p.Cfg,

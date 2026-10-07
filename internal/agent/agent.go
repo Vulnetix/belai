@@ -162,6 +162,10 @@ type Options struct {
 	// Jev runs the relevance jobs that use a decision backend (docs/jev-jobs.md).
 	// nil, or a Jobs with no client, runs none of them.
 	Jev *jev.Jobs
+	// AskDecider, when set and on, answers an ask in the user's place when it is
+	// confident enough (the clef decision server's engine). nil asks the user
+	// every time. It applies only where someone could be asked.
+	AskDecider AskDecider
 	// Persona is a fleet worker's profile system prompt (and identity). It is
 	// user-authored text from the global profile directory or a built-in —
 	// never repository, board or model text — and rides in the system block
@@ -299,8 +303,10 @@ type Session struct {
 	modeDetector       rolemanager.IntentDetector
 	// jev runs the relevance jobs; swapped remembers the Bash commands already
 	// run as a builtin once, so a repeated command runs as Bash.
-	jev     *jev.Jobs
-	swapped map[string]bool
+	jev *jev.Jobs
+	// askDecider answers asks in the user's place above the user's threshold.
+	askDecider AskDecider
+	swapped    map[string]bool
 	// loc caches the working directory's inventory for explore locate.
 	loc locateState
 	// lastCompactionPruned says the latest compaction kept the conversation
@@ -736,6 +742,7 @@ func NewSession(o Options) (*Session, error) {
 		codeAnthropicTools:   codeAnthropicTools,
 		modeDetector:         o.ModeDetector,
 		jev:                  o.Jev,
+		askDecider:           o.AskDecider,
 		swapped:              map[string]bool{},
 		hookSet:              hookSet,
 		toolMethod:           method,
@@ -1906,8 +1913,8 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 			s.noteAskWithheld(call.Name)
 			return fmt.Sprintf("tool result withheld: %q needs the user's approval, and no one can be asked in this session", call.Name)
 		}
-		if !s.gateMutation(ctx, call, tool, emit) {
-			return fmt.Sprintf("tool result withheld: permission denied by user for %q", call.Name)
+		if ok, by := s.gateMutation(ctx, call, tool, emit); !ok {
+			return fmt.Sprintf("tool result withheld: permission denied by %s for %q", by, call.Name)
 		}
 	} else if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched) || hookAsk) {
 		if !s.allowAsk {
@@ -1918,8 +1925,8 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 				s.noteAskWithheld(call.Name)
 				return fmt.Sprintf("tool result withheld: permission ask required for %q (pass -allow-ask-without-tty to allow without a TTY)", call.Name)
 			}
-		} else if !s.gateMutation(ctx, call, tool, emit) {
-			return fmt.Sprintf("tool result withheld: permission denied by user for %q", call.Name)
+		} else if ok, by := s.gateMutation(ctx, call, tool, emit); !ok {
+			return fmt.Sprintf("tool result withheld: permission denied by %s for %q", by, call.Name)
 		}
 	}
 
@@ -2172,7 +2179,13 @@ func (s *Session) offloadAdmitted(ctx context.Context, call rolemanager.ToolCall
 
 // gateMutation asks the user before a mutating tool touches disk. It blocks on
 // the reply channel; a denied answer or a cancelled context returns false.
-func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, tool tools.Tool, emit func(Event)) bool {
+func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, tool tools.Tool, emit func(Event)) (allow bool, by string) {
+	// The decision model answers first when it is on and confident: a confident
+	// yes lets the call run and a confident no withholds it, neither asking the
+	// user and neither writing a rule. Otherwise the user is asked below.
+	if allow, decided := s.decidePermissionAsk(ctx, call.Name, tool.Subject(call.Args), emit); decided {
+		return allow, "the decision model"
+	}
 	var preview *filediff.Change
 	if p, ok := tool.(interface {
 		Preview(args map[string]any) (path, old, new string, ok bool)
@@ -2193,9 +2206,9 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 
 	select {
 	case r := <-reply:
-		return r.Allow
+		return r.Allow, "user"
 	case <-ctx.Done():
-		return false
+		return false, "user"
 	}
 }
 
