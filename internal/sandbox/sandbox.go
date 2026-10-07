@@ -109,6 +109,26 @@ var cacheDirs = []string{
 	".local/share/virtualenvs", ".pyenv", ".cache/pip", ".dotnet",
 }
 
+// customTempDir returns TMPDIR when it names a directory the private /tmp does
+// not already cover. A host that points TMPDIR elsewhere (the Pix sandbox image
+// uses /workspace/tmp) would otherwise get a read-only temp directory, and
+// every tool that makes a work dir there (go build, pip, npm) fails. A TMPDIR at
+// or under /tmp is left alone: binding the host's /tmp would defeat the private
+// one. Where TMPDIR is a macOS per-user folder the seatbelt profile already
+// allows it.
+func customTempDir(v string) string {
+	if v == "" || !filepath.IsAbs(v) {
+		return ""
+	}
+	v = filepath.Clean(v)
+	for _, covered := range []string{"/", "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"} {
+		if v == covered || (covered != "/" && strings.HasPrefix(v, covered+"/")) {
+			return ""
+		}
+	}
+	return v
+}
+
 // FromSettings builds the policy for a command. roots are the workspace
 // roots. pol is the effective posture: guardrails off turns the sandbox off.
 func FromSettings(s *config.SandboxSettings, roots []string, pol posture.Policy) Policy {
@@ -128,6 +148,9 @@ func FromSettings(s *config.SandboxSettings, roots []string, pol posture.Policy)
 			if v := os.Getenv(env); v != "" && filepath.IsAbs(v) {
 				p.Writable = append(p.Writable, v)
 			}
+		}
+		if t := customTempDir(os.Getenv("TMPDIR")); t != "" {
+			p.Writable = append(p.Writable, t)
 		}
 	}
 	if s != nil {
