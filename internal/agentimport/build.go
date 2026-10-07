@@ -25,6 +25,21 @@ const (
 	MiniSWE  Format = "mini-swe"
 )
 
+// The formats of other harnesses' own files (see harness.go) and Belai's own
+// file layouts. ImportItem reads them; Import and `belai agent import` do not.
+const (
+	Belai      Format = "belai"
+	ClaudeCode Format = "claude-code"
+	Cursor     Format = "cursor"
+	Codex      Format = "codex"
+	GeminiCLI  Format = "gemini-cli"
+	OpenCode   Format = "opencode"
+	Windsurf   Format = "windsurf"
+	Copilot    Format = "copilot"
+	Cline      Format = "cline"
+	GenericMD  Format = "generic-md"
+)
+
 // Formats lists the formats in the order the help names them.
 func Formats() []Format { return []Format{Claws, Nemoclaw, Hermes, MiniSWE} }
 
@@ -61,7 +76,23 @@ type Skill struct {
 // Result is a converted definition: the profile (validated), the skills that
 // came with it, and the report.
 type Result struct {
-	Format  Format
+	Format Format
+	// Kind, Name, Doc and SHA256 describe the converted item whatever its kind
+	// (ImportItem fills them). Doc is the canonical bytes the library stores: the
+	// document of a skill, prompt, command or JSON kind, the profile Markdown of
+	// an agent, the crew JSON of a crew, the text of a document. SHA256 is the
+	// hash of Doc.
+	Kind   Kind
+	Name   string
+	Doc    []byte
+	SHA256 string
+	// Converted is true when the source was not already a Belai document and had
+	// to be rewritten (front matter added, a key mapped or left out).
+	Converted bool
+	// Description is the item's own description (a command, prompt, skill, agent
+	// or crew), one clean line.
+	Description string
+	// Profile and Skills are set for an agent.
 	Profile agentprofile.AgentProfile
 	Skills  []Skill
 	Notes   []Note
