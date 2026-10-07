@@ -690,7 +690,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   implemented by `clefmcp.Engine`) is put every ask before the user is:
   a tool-permission ask (`gateMutation`: a yes at or above `skip_ask_at`
   runs the call, a no withholds it), and a questionnaire group
-  (`askUserWithModeChoice`: single-select groups only, the rest go to the user).
+  (`askUserWithModeChoice`: single-select groups only, the rest go to the user),
+  and the plan review (`tui.decidePlanReviewCmd`: approve here, approve in a new
+  session or keep planning, from the request, the plan's title and step count; never
+  refine, which needs the user's notes; applied only while that review is open and
+  unanswered and no turn runs).
   It never runs where no one can be asked (`allowAsk` / `allowClarify` false),
   and an unavailable backend, a timeout, an error or a confidence below the bar
   asks the user as before. It sees `sanitize.DecisionText` only: the tool name,

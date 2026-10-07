@@ -314,7 +314,7 @@ and the inbox run on the syncer's own goroutines.
   [Automatic sync](remote-control.md#automatic-sync-of-profiles-and-crews)).
   Default on; `false` leaves backups to requests from the website. File
   contents never travel this way.
-- **`sync.skills`**, **`sync.prompts`**, **`sync.commands`**, **`sync.processes`**, **`sync.repos`**, **`sync.budgets`**, **`sync.rewrites`**, **`sync.providers`** - the same switch for one kind of
+- **`sync.skills`**, **`sync.prompts`**, **`sync.commands`**, **`sync.processes`**, **`sync.repos`**, **`sync.budgets`**, **`sync.rewrites`**, **`sync.providers`**, **`sync.mcps`** - the same switch for one kind of
   [library item](library-items.md): keep that library current by itself,
   advertise the host's items of the kind (name and hash only) and take the
   website's backup and install requests for it. Default on; `false` removes the

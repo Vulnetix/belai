@@ -463,7 +463,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "library_sync", "project_prefs", "teleport_backup", "teleport_code":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "mcp_secrets_install", "mcp_secrets_remove", "library_sync", "project_prefs", "teleport_backup", "teleport_code":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -595,6 +595,26 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 			return
 		}
 		d.logf("provider_keys_remove: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "mcp_secrets_install":
+		// Key names go in the log and the acknowledgement; a secret never does.
+		report, why := d.installMCPSecrets(ctx, r)
+		if why != "" {
+			d.logf("refused mcp_secrets_install: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("mcp_secrets_install: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "mcp_secrets_remove":
+		// Names only; nothing is fetched.
+		report, why := d.removeMCPSecrets(r)
+		if why != "" {
+			d.logf("refused mcp_secrets_remove: %s", why)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", why)
+			return
+		}
+		d.logf("mcp_secrets_remove: %s", report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	case "project_prefs":
 		// Key names and counts go in the log and the acknowledgement; values

@@ -144,7 +144,7 @@ func mergeMCPBuiltin(cur, in *MCPBuiltin) *MCPBuiltin {
 var (
 	mcpNameRE       = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 	mcpRefNameRE    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
-	mcpSecretNameRE = regexp.MustCompile(`(?i)(secret|token|password|passwd|api[_-]?key|credential|private|authorization|cookie|auth)`)
+	mcpSecretNameRE = regexp.MustCompile(`(?i)(secret|token|password|passwd|credential|private|key|auth|cookie)`)
 )
 
 // ValidMCPName reports whether name may name a server: letters, digits, `_` and
@@ -306,6 +306,16 @@ func checkMCPURL(raw string, strict bool) error {
 	}
 	if u.User != nil {
 		return fmt.Errorf("the url must not hold credentials")
+	}
+	if strict {
+		if u.Fragment != "" || strings.ContainsAny(raw, "\\ #") {
+			return fmt.Errorf("the url must not hold a fragment, a backslash or a space")
+		}
+		for name := range u.Query() {
+			if MCPLooksSecret(name) {
+				return fmt.Errorf("the url's query parameter %q looks like a secret: send it in a header as a reference", name)
+			}
+		}
 	}
 	switch u.Scheme {
 	case "https":

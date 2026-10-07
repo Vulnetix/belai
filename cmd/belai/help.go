@@ -32,6 +32,7 @@ var topCommands = []topCommand{
 	{"budget", "list, import and export the token budgets (library item)"},
 	{"rewrite", "list, import and export the Bash rewrite table (library item)"},
 	{"provider", "list, import and export provider sets (library item)"},
+	{"mcp", "list, import and export MCP servers (library items)"},
 	{"rc", "remote control: let the Vulnetix website start sessions here"},
 	{"plugin", "install and manage plugins"},
 	{"acp", "serve the Agent Client Protocol to an editor"},

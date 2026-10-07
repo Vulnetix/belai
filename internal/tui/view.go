@@ -42,6 +42,7 @@ const (
 	viewKnowledge
 	viewDiff
 	viewHelp
+	viewMCP
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -89,6 +90,7 @@ func init() {
 	viewHandlers[viewKnowledge] = viewHandler{name: "knowledge", enter: (*App).enterKnowledge, key: (*App).handleKnowledgeKey, render: (*App).knowledgeView}
 	viewHandlers[viewDiff] = viewHandler{name: "diff", enter: (*App).enterDiff, key: (*App).handleDiffKey, render: (*App).diffView}
 	viewHandlers[viewHelp] = viewHandler{name: "help", enter: (*App).enterHelp, key: (*App).handleHelpKey, render: (*App).helpView}
+	viewHandlers[viewMCP] = viewHandler{name: "mcp", enter: (*App).enterMCP, key: (*App).handleMCPKey, render: (*App).mcpView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

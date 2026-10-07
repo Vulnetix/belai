@@ -23,6 +23,7 @@ func TestKindTable(t *testing.T) {
 		{Budget, "budgets", "json", 16 << 10, false},
 		{Provider, "providers", "json", 32 << 10, false},
 		{Rewrite, "rewrites", "json", 16 << 10, false},
+		{MCP, "mcps", "json", 16 << 10, false},
 	}
 	if len(Kinds()) != len(want) {
 		t.Fatalf("%d kinds, want %d", len(Kinds()), len(want))

@@ -369,8 +369,11 @@ type App struct {
 	intelSyncSig string
 	// firewallState is the /firewall screen.
 	firewallState firewallViewState
-	pending       string  // pending prompt to send once configured
-	initCmd       tea.Cmd // resume command batched into Init(), set by New
+	// mcpState is the /mcp screen.
+	mcpState mcpViewState
+
+	pending string  // pending prompt to send once configured
+	initCmd tea.Cmd // resume command batched into Init(), set by New
 	// requestedProvider is the provider name from settings/state/env/flags
 	// before any sole-configured-provider fallback. Empty means none was
 	// configured; the async credential resolution may then pick a sole provider.
@@ -2454,6 +2457,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case firewallSyncMsg:
 		a.handleFirewallSync(m)
 		return a, nil
+	case planDecidedMsg:
+		return a, a.handlePlanDecided(m)
 	case mcpDoneMsg:
 		if m.err != nil {
 			a.addSystem("mcp: restart " + m.name + " failed: " + mcpClean(m.err.Error(), 200))
@@ -4276,7 +4281,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.observeVulnText(m.Result.Reply)
 		a.flushVulnRows()
-		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply))
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply), a.decidePlanReviewCmd())
 	}
 	return nil
 }

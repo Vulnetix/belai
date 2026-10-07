@@ -48,6 +48,7 @@ var screenEntries = []screenEntry{
 	{key: "d", name: "trusted", desc: "trusted directories, the ones remote control offers", view: viewTrusted, open: viaCommand("/trusted"), status: (*App).trustedStatus},
 	{key: "h", name: "sessions", desc: "resume an earlier session", view: viewResume, open: viaCommand("/resume")},
 	{key: "t", name: "kanban", desc: "the global kanban board", view: viewKanban, open: viaCommand("/kanban"), status: (*App).kanbanStatus},
+	{key: "c", name: "mcp", desc: "MCP servers: built-in switches, local and remote servers, secrets", view: viewMCP, open: viaCommand("/mcp"), status: (*App).mcpStatus},
 	{key: "n", name: "knowledge", desc: "indexed documents, labels and topics, by scope", view: viewKnowledge, open: viaCommand("/knowledge"), status: (*App).knowledgeStatus},
 }
 
