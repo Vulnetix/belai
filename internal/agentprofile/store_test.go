@@ -243,8 +243,12 @@ func TestKnownToolNamesMatchesDefaultRegistry(t *testing.T) {
 			t.Fatalf("default registry tool %q missing from knownToolNames", name)
 		}
 	}
+	// WebSearch is registered only while its search backend answers a probe, so
+	// a machine with no route to it (a CI runner on a bad minute) has no such
+	// tool. The allowlist still names it: a profile may ask for it.
+	conditional := map[string]bool{"WebSearch": true}
 	for name := range knownToolNames {
-		if _, ok := reg.Find(name); !ok {
+		if _, ok := reg.Find(name); !ok && !conditional[name] {
 			t.Fatalf("knownToolNames contains %q not in the default registry", name)
 		}
 	}
