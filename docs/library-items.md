@@ -699,9 +699,19 @@ target is refused.
 
 **Install only.** A hook runs code, so a person chooses each one: it reaches a host
 only by an `item_install` request (a launch configuration, or the library page), never
-by the automatic sync in either direction, and the host never backs one up or scans
-for one. `sync.hooks` closes the kind (the request is refused first); `hooks.enabled`
-decides whether any hook runs.
+by the automatic sync in either direction, and the host never backs one up. `sync.hooks`
+closes the kind (the request is refused first); `hooks.enabled` decides whether any hook
+runs.
+
+**Scanned and imported, still not installed.** A scan reads hooks the way it reads any
+other item, and an import uploads one into the library. That changes nothing on any
+host. The scan reports one hook per hooks file or settings block
+(`claude-code-user`, `codex-user`, `claude-code-<repo-name>`) with the scripts it would
+carry, and an import uploads the document and those scripts only for the hook a person
+picks. What is read, carried and refused is in [agent-import.md](agent-import.md#hooks).
+The scan and the import are always on and are not gated by `sync.hooks`, because they
+never install or enable anything: the imported hook is a new library version like any
+other, and it runs on a host only after someone installs it there.
 
 ## How a document travels
 
@@ -725,7 +735,8 @@ checks every candidate with the converter described in [agent-import.md](agent-i
 and uploads a report. The page lists what was found by host, and Import moves the items
 the person picks into the library as new versions. Both requests are always on (no
 `sync.*` switch), carry identifiers only, and the host reads a file only when it is
-exactly one a scan would list. See
+exactly one a scan would list. Hooks are among the kinds a scan finds and an import takes
+(scripts included); they are still installed only on request. See
 [remote-control.md](remote-control.md#scanning-and-importing-from-other-harnesses).
 
 **Install (`item_install`).** The website names a library item, one of its

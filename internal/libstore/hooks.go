@@ -96,7 +96,23 @@ func checkBundlePath(p string) string {
 // path order. It refuses a symbolic link or special file, and any file outside the
 // bounds, with the reason.
 func readBundleFiles(dir string) ([]LocalFile, string) {
-	var out []LocalFile
+	files, why := ReadBundleDir(dir)
+	if why != "" {
+		return nil, why
+	}
+	out := make([]LocalFile, len(files))
+	for i, f := range files {
+		out[i] = LocalFile{Path: f.Path, SHA256: f.SHA256, Size: len(f.Data)}
+	}
+	return out, ""
+}
+
+// ReadBundleDir reads every file of a bundle directory beside the definition, with
+// its bytes and hash, in path order, under the bounds an install holds a bundle to.
+// It refuses a symbolic link or special file, and any file outside the bounds, with
+// the reason ("" when it read them all).
+func ReadBundleDir(dir string) ([]BundleFile, string) {
+	var out []BundleFile
 	total := 0
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -132,7 +148,7 @@ func readBundleFiles(dir string) ([]LocalFile, string) {
 		if total += len(data); total > MaxBundleBytes {
 			return fmt.Errorf("the files are over %d bytes", MaxBundleBytes)
 		}
-		out = append(out, LocalFile{Path: rel, SHA256: fileSum(data), Size: len(data)})
+		out = append(out, BundleFile{Path: rel, Data: data, SHA256: fileSum(data)})
 		if len(out) > MaxBundleFiles {
 			return fmt.Errorf("more than %d files", MaxBundleFiles)
 		}

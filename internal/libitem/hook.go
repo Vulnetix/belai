@@ -168,3 +168,10 @@ func HashBundle(canonical []byte, files []BundleFile) string {
 	h := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(h[:])
 }
+
+// HookEvent reports whether name is an event a hook document can name.
+func HookEvent(name string) bool { return hookEvents[name] }
+
+// HookTakesMatcher reports whether the event has a tool or source a matcher can
+// narrow. UserPromptSubmit, Stop and SubagentStop have none.
+func HookTakesMatcher(event string) bool { return !hookNoMatcher[event] }

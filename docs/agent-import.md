@@ -2,9 +2,9 @@
 
 **Status:** alpha-20261007. Shipped in an early form; the mapping may still change.
 
-Last Updated: 2026-10-07
+Last Updated: 2026-10-08
 
-Other agent harnesses keep commands, skills, prompts, agents and instruction
+Other agent harnesses keep commands, skills, prompts, agents, hooks and instruction
 documents as files. None of their layouts is a standard, so Belai keeps its own
 schemas and has one adapter per layout that converts a file into the document the
 [library](library-items.md) stores. The same converter does three jobs:
@@ -36,16 +36,16 @@ at the bottom are the agent formats of `belai agent import`.
 
 | Format | Files it reads | What is particular |
 | --- | --- | --- |
-| `claude-code` | commands and subagents as Markdown, skills as `<name>/SKILL.md`, `CLAUDE.md` | front matter with `description`, `argument-hint`, `allowed-tools`, `model`, `hooks`; `` !`command` `` lines in a body; `$ARGUMENTS` and `$1` |
+| `claude-code` | commands and subagents as Markdown, skills as `<name>/SKILL.md`, `CLAUDE.md`, and the `hooks` key of `settings.json` ([hooks](#hooks)) | front matter with `description`, `argument-hint`, `allowed-tools`, `model`, `hooks`; `` !`command` `` lines in a body; `$ARGUMENTS` and `$1` |
 | `cursor` | commands as plain Markdown with no front matter, `.cursorrules`, `AGENTS.md` | the first line of the body becomes the description |
-| `codex` | custom prompts as Markdown, `AGENTS.md` | `description` and `argument-hint` in front matter, `$1` placeholders |
+| `codex` | custom prompts as Markdown, `AGENTS.md`, and `hooks.json` ([hooks](#hooks)) | `description` and `argument-hint` in front matter, `$1` placeholders |
 | `gemini-cli` | `GEMINI.md`, Markdown files | commands are TOML and are listed as unsupported; `{{args}}` is Gemini's placeholder and stays as written |
 | `opencode` | commands and agents as Markdown | `agent`, `model`, `subtask`, a `tools` map of tool name to on or off, a `permission` block |
 | `windsurf` | workflows as Markdown | `auto_execution_mode` is not imported |
 | `copilot` | `.prompt.md`, `.agent.md`, `copilot-instructions.md` | `mode`, `tools` and `model` keys; the `.prompt` and `.agent` suffixes are not part of the name |
 | `cline` | workflows as plain Markdown | no front matter |
 | `generic-md` | Markdown with optional front matter | what the registry points every other harness at |
-| `belai` | Belai's own files | commands, skills, prompts, agents, crews, processes and the settings file |
+| `belai` | Belai's own files | commands, skills, prompts, agents, crews, processes, hook bundles and the settings file |
 | `claws`, `nemoclaw`, `hermes`, `mini-swe` | the agent formats of [`belai agent import`](#importing-an-agent-definition) | agents only |
 
 ## Scanning a host
@@ -57,7 +57,7 @@ belai library scan -json               # the report as it is uploaded
 ```
 
 `-kind` is one of `command`, `skill`, `prompt`, `agent`, `crew`, `process`, `budget`,
-`rewrite`, `provider`, `repo` or `document`. The scan prints each item with its
+`rewrite`, `provider`, `repo`, `hook` or `document`. The scan prints each item with its
 verdict, then what it searched. It writes nothing and sends nothing.
 
 A scan looks in three places.
@@ -65,8 +65,9 @@ A scan looks in three places.
 1. **The user directories of every installed harness.** A harness is installed when
    one of its `detect` paths exists under your home directory. A harness that is not
    installed is counted, not searched.
-2. **Belai's own directories**: commands, skills, prompts, processes, agent profiles
-   and crews under `~/.vulnetix/belai`, and its `settings.json` for budgets, the
+2. **Belai's own directories**: commands, skills, prompts, processes, agent profiles,
+   crews and hook bundles (`hooks/<name>/hooks.json` and the scripts beside it) under
+   `~/.vulnetix/belai`, and its `settings.json` for budgets, the
    rewrite table, provider sets and repositories. Belai is listed as the harness
    `belai`.
 3. **Each repository you trust** (`belai` asks the first time you open a directory;
@@ -74,7 +75,8 @@ A scan looks in three places.
    each one the scan looks at the project directories of every harness, installed
    or not, plus `.vulnetix/belai/commands`, `skills`, `profiles/agents` and
    `profiles/crews`, `.vulnetix/prompts`, `.vulnetix/processes` and
-   `.vulnetix/settings.json`. A repository with nothing is still listed, with the
+   `.vulnetix/settings.json`. For hooks that means the project files of Claude Code
+   (`.claude/settings.json`, `.claude/settings.local.json`) and Codex (`.codex/hooks.json`). A repository with nothing is still listed, with the
    folders it was searched in.
 
 The reader is bounded. It never follows a symbolic link, reads no file whose name
@@ -111,7 +113,19 @@ MiB and 2000 items; past that notes are trimmed first, then the least useful ite
 are dropped (invalid first) and the report is marked partial.
 
 An item in a settings file has `#name` after the file in its `path`
-(`~/.vulnetix/belai/settings.json#my-repo`), because one file holds several.
+(`~/.vulnetix/belai/settings.json#my-repo`), because one file holds several. The hooks
+of a Claude Code settings file have `#hooks` after the file
+(`~/.claude/settings.json#hooks`); the website passes the path back unchanged.
+
+A hook item also has `files`, the scripts the import would carry, at most 32:
+
+```json
+"files": [{"path": "guard.sh", "bytes": 123, "sha256": "<hex>"}]
+```
+
+The `sha256` of a hook is `libitem.HashBundle` of its document and these files, so a
+script edited after the scan changes it. The bytes of a script leave the host only in
+an import.
 
 ## Mapping by kind
 
@@ -130,7 +144,7 @@ description comes from the front matter, else from the first line of the body.
 | `allowed-tools`, `tools` | **text only**: kept in metadata as `source.allowed-tools`, never as a Belai `allowed-tools`, so an imported file never grants a tool. Not imported for a prompt |
 | `license`, `compatibility`, `metadata`, `disable-model-invocation` | kept by a skill or command; keys starting `belai.` are dropped |
 | `order`, `enabled` | kept by a prompt |
-| `model`, `hooks`, `agent`, `mode`, `subtask`, `context`, any other key | named in the report as not imported |
+| `model`, `hooks`, `agent`, `mode`, `subtask`, `context`, any other key | named in the report as not imported (a `hooks` key in an item's front matter is never read; hook files are the [hook](#hooks) kind) |
 | no front matter | added; `converted` is true |
 
 `$ARGUMENTS`, `$1`, `$2` work as they do in Claude Code. `` !`command` `` lines
@@ -170,6 +184,67 @@ budget set, one rewrite table and one provider set, and one item per repository.
 other harness stores these, so Belai is their only source. A provider document never
 holds a key: `api_key_env` names a variable, and a key is never read from settings.
 
+### Hooks
+
+A hook item is one hooks file or one `hooks` block of a settings file, never a single
+event. Two dialects are read, because their layouts are verified: `claude-code` (the
+`hooks` key of `~/.claude/settings.json`, `.claude/settings.json` and
+`.claude/settings.local.json`) and `codex` (`~/.codex/hooks.json`, `.codex/hooks.json`).
+Cursor, Windsurf, Cline and Kiro keep hooks in other layouts; a scan names them under
+the harness as `hook: unsupported format, not read` and opens nothing. Belai's own
+bundles (`~/.vulnetix/belai/hooks/<name>/hooks.json` and the files beside it) are read
+as the harness `belai` and kept as they are.
+
+The name is made from the harness and where the file is: `claude-code-user`,
+`codex-user`, `claude-code-<repo-name>` for a project file, with `-local` added for
+`settings.local.json`, folded to the library name rule. The document is
+`{"name", "description", "hooks"}`.
+
+**A settings file is read for one key.** The file is decoded into raw values and only
+`hooks` is looked at. Nothing else in it (`env`, `apiKeyHelper`, MCP headers, permission
+rules) is parsed, kept, logged or named in a report, because `settings.json` holds
+credentials. In a hooks file of its own, a key starting `_` is a comment and is dropped
+with a note, Codex's `description` becomes the description, and any other key is counted
+and dropped.
+
+**What is refused as invalid**, each with its reason: an event the library does not name,
+a handler whose `type` is not `command`, a command over 512 bytes or over more than one
+line, a matcher on `UserPromptSubmit`, `Stop` or `SubagentStop`, more than 8 groups in an
+event or 8 handlers in a group, more than 64 commands, and a timeout outside 1 to 600.
+A handler key Belai has no field for (`statusMessage`, `async`) is dropped with a note,
+once per key name.
+
+**What is carried.** The first word of each command decides. It may be written with
+quotes, `~/`, `$HOME`, `${HOME}`, `$CLAUDE_PROJECT_DIR` or `${CLAUDE_PROJECT_DIR}`
+(against the trusted repository), `${CLAUDE_PLUGIN_ROOT}`, or as a path relative to the
+hooks file or the repository.
+
+| First word | Result |
+| --- | --- |
+| a file under the harness's own directory (`~/.claude`, `~/.codex`) or, for a project file, under the trusted repository | the file is carried into the bundle and the first word becomes its bundle name (`guard.sh`); the same file named twice is carried once and two files with one name get `-2`, `-3` |
+| a bare name (`curl`, `python3`, `vulnetix`) | kept, with a warning to add it to `hooks.allowed_programs` on the host |
+| an absolute path, `~` path or variable outside those directories, or a file that does not exist | kept, with a warning that it is not carried |
+| a file that exists but cannot be carried (a symbolic link, a link in the path, not a regular file, empty, over 256 KiB, not UTF-8 text, a control or invisible character, or a known token) | the item is `invalid` |
+
+Arguments are kept exactly as written. An argument a bundle cannot run (`$`, `~`, a
+quote, a glob or a redirect) earns one warning naming the first word. A bundle holds at
+most 32 files of 256 KiB and 2 MiB in all, and more makes the item `invalid`. A command
+starting with an assignment (`KEY=value cmd`) or using `&&`, `|` or `;` is kept with a
+warning, because the host runs a command as a fixed argument list and never through a
+shell. The install check on the host (`hooks.ParseDefinition`, the same one a bundle
+will pass when it is installed) is the authority; the scan warns about what it can see.
+
+**A report names a command by its first word only.** Each note says what happened to it
+(`mapped command: ~/.claude/hooks/guard.sh carried as guard.sh`, `warning command: curl
+is not a bundle file; add it to hooks.allowed_programs on the host`, `dropped _comment:
+comment key dropped`). A full command line can hold a secret, so it never appears in a
+report. The hooks document and every carried script also go through the secret check
+(`agentfiles.HoldsSecret`, a private key block or a known token) and through
+`libstore.UntrustedText`; a hit makes the item `invalid` ("looks like it holds a
+secret"). A script is read and never run.
+
+The converted document goes through `libitem.Validate` for a hook before it is reported.
+
 ### Documents
 
 `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and the like, as the registry
@@ -200,7 +275,12 @@ An import does not trust the request. The host:
 4. refuses the item when the SHA-256 of the canonical document is not the one the scan
    reported (`that item changed since the scan; scan again`);
 5. uploads the canonical document, a string for Markdown kinds and documents, an
-   object for JSON kinds, with an agent's bundled skills and a document's target agent.
+   object for JSON kinds, with an agent's bundled skills, a document's target agent and,
+   for a hook, its scripts as `files` (`{"path", "content"}` with the content in base64).
+
+For a hook the host re-reads the hooks file, converts it again, reads the scripts again
+under the same rules, and recomputes the bundle hash. A change to the file or to any
+script makes it differ from the scan's `sha256`, and the import is refused as changed.
 
 ## What a scan and an import never do
 
@@ -208,8 +288,12 @@ An import does not trust the request. The host:
 - Write to disk. The only writes are by the library after an upload.
 - Grant a tool. `allowed-tools` from a source is text in metadata. An agent with no
   mappable tool gets the read-only set.
-- Carry a hook, an MCP server entry, a permission rule, an endpoint, a credential or an
-  environment variable name from a source.
+- Carry an MCP server entry, a permission rule, an endpoint, a credential or an
+  environment variable name from a source. A hook is carried only by the hook reader
+  ([Hooks](#hooks)), which takes the `hooks` key and the scripts it names and nothing else.
+- Install, enable or run a hook. A scanned or imported hook is a library item and nothing
+  more: it reaches a host only through `item_install`, on request, as before, and
+  `sync.hooks` still closes that. A script is never executed by a scan or an import.
 - Turn on a schedule, a worker block or an autonomy level.
 - Repair text. A file with delimiter markup, a control or escape character, a
   bidirectional override or an invisible rune is `invalid`, not cleaned.

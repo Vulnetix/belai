@@ -11,7 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/libitem"
 )
 
-// Kind is what an item is. It is the eight library kinds (libitem.Kind) plus the
+// Kind is what an item is. It is the nine library kinds (libitem.Kind) plus the
 // three the library keeps in other ways: an agent profile, a crew and a
 // document (an instruction file such as AGENTS.md).
 type Kind string
@@ -28,12 +28,13 @@ const (
 	KindRewrite  Kind = "rewrite"
 	KindProvider Kind = "provider"
 	KindRepo     Kind = "repo"
+	KindHook     Kind = "hook"
 	KindDocument Kind = "document"
 )
 
 // ItemKinds lists every kind, in the order a scan reports them.
 func ItemKinds() []Kind {
-	return []Kind{KindCommand, KindSkill, KindPrompt, KindAgent, KindCrew, KindProcess, KindBudget, KindRewrite, KindProvider, KindRepo, KindDocument}
+	return []Kind{KindCommand, KindSkill, KindPrompt, KindAgent, KindCrew, KindProcess, KindBudget, KindRewrite, KindProvider, KindRepo, KindHook, KindDocument}
 }
 
 // ParseKind reads a kind word.
@@ -57,10 +58,10 @@ func (k Kind) Markdown() bool {
 	return false
 }
 
-// Library returns the library item kind for the eight kinds that are one.
+// Library returns the library item kind for the nine kinds that are one.
 func (k Kind) Library() (libitem.Kind, bool) {
 	switch k {
-	case KindCommand, KindSkill, KindPrompt, KindProcess, KindBudget, KindRewrite, KindProvider, KindRepo:
+	case KindCommand, KindSkill, KindPrompt, KindProcess, KindBudget, KindRewrite, KindProvider, KindRepo, KindHook:
 		return libitem.Kind(k), true
 	}
 	return "", false
@@ -99,6 +100,8 @@ func ImportItem(path string, kind Kind, f Format, o Options) (Result, error) {
 		res, err = importProcess(t, o)
 	case KindBudget, KindRewrite, KindProvider, KindRepo:
 		res, err = importSettings(t, kind, o)
+	case KindHook:
+		res, err = importHook(path, t, f, o)
 	case KindDocument:
 		res, err = importDocument(t, f, o)
 	}
@@ -127,6 +130,11 @@ func checkFormat(kind Kind, f Format) error {
 			return nil
 		}
 		return fmt.Errorf("unknown format %q", string(f))
+	case KindHook:
+		// Only the two dialects whose files are verified are read.
+		if f != "" && f != ClaudeCode && f != Codex && f != Belai {
+			return fmt.Errorf("hooks are not read as %s (only claude-code, codex and belai)", f)
+		}
 	default:
 		if f != "" && !isHarness(f) && f != Belai {
 			return fmt.Errorf("%s is not a format a %s is read in", f, kind)

@@ -2,6 +2,7 @@ package rc
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"regexp"
@@ -28,6 +29,10 @@ import (
 // where it may read from its own harness list and trusted repositories, refuses a
 // path outside them or reached through a link, reads the file itself, and refuses
 // an item whose canonical bytes no longer hash to what the scan saw.
+//
+// A hook is one of the kinds. Its import uploads the hooks document and its scripts
+// (files, base64) and nothing else: it never writes a bundle, never reads sync.hooks
+// and never answers item_install, so a hook still reaches a host only on request.
 
 // scanBudget is how long a scan may search; what it has found by then is
 // reported, flagged partial. The website gives a host 30 seconds from delivery.
@@ -129,7 +134,7 @@ func (d *Daemon) libraryImport(ctx context.Context, r sessionsync.Dispatch) (str
 	if err != nil {
 		return "", reason(err.Error())
 	}
-	item, err := agentimport.ImportItem(res.File, kind, res.Root.Format, agentimport.Options{Name: res.Hint})
+	item, err := agentimport.ImportItem(res.File, kind, res.Root.Format, libscan.ImportOptions(res))
 	switch {
 	case errors.Is(err, agentimport.ErrSkipped):
 		return "", "that file is a link, a credential file or too large, so it is not read"
@@ -145,6 +150,11 @@ func (d *Daemon) libraryImport(ctx context.Context, r sessionsync.Dispatch) (str
 	up := sessionsync.LibraryImport{Dispatch: r.ID, Kind: string(kind), Name: item.Name, Body: body, Target: target}
 	for _, sk := range item.Skills {
 		up.Skills = append(up.Skills, sessionsync.LibraryImportSkill{Name: sk.Name, Body: string(sk.Doc)})
+	}
+	// A hook's scripts travel with it. Nothing here installs or enables a hook:
+	// that is item_install, and only on request.
+	for _, f := range item.Files {
+		up.Files = append(up.Files, sessionsync.ImportFile{Path: f.Path, Content: base64.StdEncoding.EncodeToString(f.Data)})
 	}
 	saved, err := d.o.Client.PostLibraryImport(ctx, d.o.HostID, up)
 	if err != nil {

@@ -362,7 +362,7 @@ so no path or command comes from its text.
 
 ## Items from other harnesses
 
-A scan or an import of a command, prompt, skill or agent that another harness wrote
+A scan or an import of a command, prompt, skill, agent or hook that another harness wrote
 ([agent-import.md](agent-import.md)) reads a file nobody at Belai has seen, so
 `agentimport.ImportItem` treats it as untrusted in the order below, and a failure at
 any step makes the item `invalid` (it is never repaired, so what is hashed is what
@@ -384,6 +384,16 @@ the library would store):
    bidirectional override or an invisible rune refuses the item.
 5. An instruction document must also pass the profile-file gates (at most 256 KiB, no
    private key block or known token) and must not carry the name of a credential store.
+6. A hook is read from a file that holds credentials (a Claude Code `settings.json`), so
+   the reader decodes the file into raw values and looks at the `hooks` key alone: no other
+   key is parsed, kept, logged or named in a report. A report names a command by its first
+   word only, since a full command line can hold a secret. The hooks document and every
+   script a command names (read only from the harness's own directory or the trusted
+   repository, never through a symbolic link, never run) go through
+   `agentfiles.HoldsSecret` and `libstore.UntrustedText`, and a hit makes the item
+   `invalid`. An import re-reads the file and the scripts and must reproduce the scan's
+   bundle hash, so a script edited in between is refused. See
+   [agent-import.md](agent-import.md#hooks).
 
 Notes in a report are composed by Belai. Any source value in one is passed through
 `sanitize.Text`, folded to one line and cut to 160 bytes before it leaves the host.
