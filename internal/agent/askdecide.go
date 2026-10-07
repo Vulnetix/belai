@@ -37,6 +37,7 @@ const (
 	AskKindPermission = "permission"
 	AskKindClarify    = "clarify"
 	AskKindModeChoice = "mode_choice"
+	AskKindPlanReview = "plan_review"
 )
 
 // AskDecided reports an ask the decision model answered instead of the user. It
@@ -217,6 +218,8 @@ func (d *AskDecided) Line() string {
 		what = fmt.Sprintf("%s the %s tool", verb, sanitize.Line(d.Name, 64))
 	case AskKindModeChoice:
 		what = "chose the mode"
+	case AskKindPlanReview:
+		what = "decided the plan review: " + sanitize.Line(d.Outcome, 40)
 	default:
 		if d.Groups > 1 {
 			what = fmt.Sprintf("answered %d of %d questions", d.Decided, d.Groups)

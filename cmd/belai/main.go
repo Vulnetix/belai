@@ -94,7 +94,7 @@ func main() {
 	}
 	// `belai skill|prompt|command|process|repo|budget|rewrite|provider …` read and write library items, the documents the
 	// website's library keeps (docs/library-items.md).
-	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "command" || os.Args[1] == "process" || os.Args[1] == "repo" || os.Args[1] == "budget" || os.Args[1] == "rewrite" || os.Args[1] == "provider") {
+	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "command" || os.Args[1] == "process" || os.Args[1] == "repo" || os.Args[1] == "budget" || os.Args[1] == "rewrite" || os.Args[1] == "provider" || os.Args[1] == "mcp") {
 		exitProcess(runLibraryCLI(ctx, libraryCommands[os.Args[1]], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	// `belai rc` runs remote control; `belai rc-session` is one session it

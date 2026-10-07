@@ -197,6 +197,7 @@ asked exactly as before.
 | A tool permission ask | one proposition: whether to let this tool call run, given the tool, its target (a command line, a path, a URL) and your request. It never sees the call's arguments or a diff | confidence at or above `skip_ask_at`: a yes runs the call, a no withholds it |
 | `AskUserQuestion` and clarifying questions | one choice per single-select group | the top option's weight is at or above `skip_ask_at`; groups below it still go to you and the answers merge |
 | The mode choice | the same choice over its options | as above |
+| The plan review | one choice over approve here, approve in a new session and keep planning, given your request, the plan's title and its step count (never its text). Refine needs your notes, so it is never chosen | as above, once the plan turn has finished and only while the review is still open and unanswered |
 
 - It runs only where someone could be asked. A headless run, a background agent and
   a subagent never ask, so it never runs there.
@@ -217,11 +218,43 @@ credential by reference (see the `vulnetix:cli` rule under Security model).
 Nothing is written to your settings; an `mcp.servers.vulnetix` entry of your own
 takes its place. `/vulnetix mcp remove` and the switch turn it off.
 
+## Secrets
+
+A server's env and headers hold references, never secret values. A value is one of:
+
+| Value | Meaning |
+| --- | --- |
+| `env:NAME` | copy `NAME` from Belai's environment |
+| `cred:KEY` | the secret stored for this server under `KEY`, in the keychain or, when there is none, your global credentials file. Only your own user credentials are read, never the environment, a repository file or netrc |
+| `vault:NAME` | an entry of the Secrets Vault lease of a Pix Sandbox, in the headers of an http server only |
+| `vulnetix:cli` | the Vulnetix CLI's credential, as described under Security model |
+| plain text | allowed only for a name that does not read as a secret (a name containing key, token, secret, password, credential, private, auth or cookie needs a reference) |
+
+References resolve when the server is dialled and are never written back to the
+settings. A reference that cannot resolve fails the server with the reason; it is
+never sent as text. A result that echoes a vault value is scrubbed like a command's
+output.
+
+A server the library installs may bind a `cred:KEY` to a vault entry
+(`secrets`): installing it on a self-hosted host asks the library to send that
+entry's value once over TLS, and Belai stores it where `cred:KEY` reads it.
+
 ## Commands
 
-`/mcp` lists every configured server with its transport, state (running,
-failed with the reason, or disabled) and tools. `/mcp restart <name>`
-reconnects one; the next turn uses its current tools.
+`/mcp` opens the MCP screen (also `f1`, then `c`). **Built-in** has the same
+switches as the MCP group of `/model`. **Servers** lists each server of your
+global settings as local (a command run on this machine) or remote (a URL) with its
+state and tool count, and a form to add or edit one: transport, command and
+arguments or URL, env or headers as `NAME=value` pairs, a tool allowlist, a
+timeout, the OS sandbox for a local server, and one secret to store under a key you
+name (kept in the keychain, referenced by `cred:KEY`). Space switches a server off or
+on, `r` restarts it, `x` (twice) deletes it and the secrets it referenced. The form
+refuses what the library would: a literal secret, a plain http URL that is not
+loopback, a duplicate name and the name `clef`.
+
+`/mcp list` prints every server with its transport, state (running, failed with
+the reason, or disabled) and tools. `/mcp restart <name>` reconnects one; the next
+turn uses its current tools.
 
 ## Limitations
 

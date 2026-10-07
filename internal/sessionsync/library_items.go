@@ -312,3 +312,85 @@ func (c *Client) ProviderKeys(ctx context.Context, hostID, dispatchID string) (k
 	}
 	return keys, out.Missing, nil
 }
+
+// ── MCP secrets ──────────────────────────────────────────────────────────
+
+// MCP secret bounds, equal to the server's (belaiMCPSecretsMax).
+const (
+	// MaxMCPSecrets is how many credential keys one mcp_secrets_install request names.
+	MaxMCPSecrets = 16
+	// MaxMCPSecretBytes is the longest secret.
+	MaxMCPSecretBytes = 4096
+)
+
+// MCPSecret is one secret the library released for an MCP server of a host. Like a
+// ProviderKey it prints as <redacted> through every fmt verb, marshals as
+// <redacted>, and its value is read only with Reveal, at the one place that
+// stores it.
+type MCPSecret struct {
+	// Key is the credential key a cred:KEY value of the server reads.
+	Key   string
+	value string
+}
+
+// Reveal returns the secret itself.
+func (s MCPSecret) Reveal() string { return s.value }
+
+func (s MCPSecret) String() string   { return s.Key + ":<redacted>" }
+func (s MCPSecret) GoString() string { return "sessionsync.MCPSecret{" + s.Key + ":<redacted>}" }
+
+// Format makes every verb print the redacted form.
+func (s MCPSecret) Format(f fmt.State, _ rune) { _, _ = f.Write([]byte(s.String())) }
+
+// MarshalJSON never writes the value.
+func (s MCPSecret) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]string{"key": s.Key, "value": "<redacted>"})
+}
+
+// MCPSecrets reads the secrets the mcp_secrets_install request dispatchID names.
+// The server answers only while that request is delivered to this host, once, over
+// TLS, and only for the keys the request names (the ones the server's library item
+// binds to a vault entry); missing lists the ones it holds no usable value for. The
+// response is read into memory and nowhere else.
+func (c *Client) MCPSecrets(ctx context.Context, hostID, dispatchID string) (secrets []MCPSecret, missing []string, err error) {
+	var out struct {
+		Secrets []struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		} `json:"secrets"`
+		Missing []string `json:"missing"`
+	}
+	path := fmt.Sprintf("/hosts/%s/library/mcp-secrets?dispatch=%s", url.PathEscape(hostID), url.QueryEscape(dispatchID))
+	status, data, err := c.roundTrip(ctx, http.MethodGet, path, nil, requestTimeout, false, defaultMaxBody)
+	if err != nil {
+		return nil, nil, err
+	}
+	switch {
+	case status == http.StatusNotFound:
+		return nil, nil, ErrNotFound
+	case status == http.StatusUnauthorized:
+		return nil, nil, ErrUnauthorized
+	case status == http.StatusConflict:
+		return nil, nil, ErrConflict
+	case status == http.StatusForbidden && keysRefusedForTLS(data):
+		return nil, nil, ErrKeysNotOverTLS
+	case status == http.StatusBadGateway, status == http.StatusServiceUnavailable:
+		return nil, nil, ErrKeysUnavailable
+	case status < 200 || status > 299:
+		// The text names a route and a status, never the body, which could hold a value.
+		return nil, nil, fmt.Errorf("sessionsync: GET %s: HTTP %d", path, status)
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, nil, err
+	}
+	if len(out.Secrets) > MaxMCPSecrets || len(out.Missing) > MaxMCPSecrets {
+		return nil, nil, fmt.Errorf("sessionsync: the library sent more than %d MCP secrets", MaxMCPSecrets)
+	}
+	for _, s := range out.Secrets {
+		if len(s.Value) > MaxMCPSecretBytes {
+			return nil, nil, fmt.Errorf("sessionsync: the library sent a secret longer than %d bytes", MaxMCPSecretBytes)
+		}
+		secrets = append(secrets, MCPSecret{Key: s.Key, value: s.Value})
+	}
+	return secrets, out.Missing, nil
+}

@@ -29,7 +29,10 @@ func (a *App) mcpCommand(arg string) tea.Cmd {
 		a.addSystem("mcp: restarting " + name + "…")
 		return func() tea.Msg { return mcpDoneMsg{name: name, err: m.Restart(ctx, name)} }
 	}
-	if len(fields) > 0 && fields[0] != "list" {
+	if len(fields) == 0 {
+		return a.push(viewMCP)
+	}
+	if fields[0] != "list" {
 		a.addSystem("usage: /mcp [list | restart <name>]")
 		return nil
 	}

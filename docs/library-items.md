@@ -43,6 +43,7 @@ offline; the library is a copy, never the thing that is read at run time.
 | `rewrite` | `belai rewrite` | JSON object | `bash_rewrite` in `~/.vulnetix/belai/settings.json` | `sync.rewrites` |
 | `launch` | none | JSON object | never on a host: a launch configuration the website keeps and applies, refused in every host path | none |
 | `provider` | `belai provider` | JSON object | `providers` and `firewall` in `~/.vulnetix/belai/settings.json`; keys in the credentials resolver | `sync.providers` |
+| `mcp` | `belai mcp` | JSON object | one entry of `mcp.servers` in `~/.vulnetix/belai/settings.json`; secrets in the credentials resolver | `sync.mcps` |
 
 An item is identified by its kind and its name. On the website each item also
 has a uuid; across hosts the kind and name are what match, so the same skill on
@@ -519,6 +520,86 @@ the request says replace whenever either exists, and Belai's own validators
 the file about to be written) run first. Display labels (`provider_labels`) are not part
 of the document and are left alone. Only the user's own settings are read or written.
 
+## MCP servers
+
+An MCP server is one item: a JSON object with the fields of an `mcp.servers` entry
+([mcp.md](mcp.md)) and a `name`, which is the key it has in the settings. The URL
+segment is `mcps`. The name is letters, digits, `_` and `-` (at most 32), the library
+folds case (`Acme` and `acme` are one item), and `clef` is refused because it is the
+built-in decision server.
+
+```json
+{
+  "name": "github",
+  "transport": "stdio",
+  "command": "github-mcp-server",
+  "args": ["stdio"],
+  "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "cred:token", "LOG_LEVEL": "info"},
+  "tools": ["get_issue", "list_issues"],
+  "sandbox": true,
+  "secrets": {"token": "GITHUB_VAULT_TOKEN"}
+}
+```
+
+| Key | Rule |
+| --- | --- |
+| `transport` | `stdio` (default) or `http` |
+| `command`, `args` | a stdio server only; `command` is required |
+| `url`, `headers` | an http server only; `url` is required, https or loopback, with no credentials, fragment, backslash or space in it |
+| `env` | a stdio server only |
+| `tools`, `disabled`, `sandbox`, `timeout_ms` | as in [mcp.md](mcp.md); `sandbox` is stdio only, `timeout_ms` is 1 to 600000 |
+| `secrets` | up to 16 pairs of a credential key to the name of a Secrets Vault entry: names, never values |
+
+A document holds no secret value. An `env` or `headers` value is a reference
+(`env:NAME`, `cred:KEY`, `vault:NAME` in the headers of an http server, `vulnetix:cli`
+for `Authorization` on an https vulnetix.com URL) or plain text under a name that does
+not read as a secret. A name containing secret, token, password, passwd, credential,
+private, key, auth or cookie needs a reference, and so does a URL query parameter with
+such a name (a URL cannot hold a reference, so it is refused). Header names are unique
+without regard to case, and every key in `secrets` must be used by a `cred:` value.
+
+Installing writes the entry into `mcp.servers` of the user's own settings (a project
+file's servers are never read or written), validated by the same
+`config.ValidateMCPServer` the `/mcp` form uses, so a document the library accepts is
+never written as a setting Belai refuses to load. It starts the server in a running
+Belai and never touches a stored secret. A hand-written entry with a literal secret, or
+a plain http URL, is a stray to the library: `belai mcp list` reports it as `skipped`
+with the reason.
+
+## MCP secrets
+
+A `cred:KEY` value reads a secret Belai stored for that server. To put one on a
+self-hosted host from the Secrets Vault, bind the key to a vault entry in the item's
+`secrets` and grant the entry to the host's surface (`belai_host`). After the item is
+installed the website sends an `mcp_secrets_install` request that names the server and
+its keys (none means every bound key) and nothing else. The daemon calls
+`GET /hosts/{id}/library/mcp-secrets?dispatch=` and gets
+`{"secrets": [{"key": KEY, "value": value}], "missing": [KEY]}`, once, over TLS, with the
+same rules as [provider keys](#provider-keys):
+
+- **A secret goes to the credentials resolver and nowhere else.** It is stored under
+  `mcp:<server>`, field `KEY`, in the keychain when there is one and otherwise the
+  user's credentials file (`0600`). It is never written to `settings.json`, a log, an
+  acknowledgement, an audit event, the session record or an error, and the client type
+  prints and marshals as `<redacted>`.
+- **Only a key the installed server binds is stored.** The host checks the request
+  against the server's own entry before it asks the library for anything: the server
+  must already be installed (the name matches without regard to case), and every key
+  must be in its `secrets`. A request cannot write an arbitrary credential.
+- **A value is checked** (trimmed, not empty, at most 4096 bytes, no control character),
+  a response over those limits or holding more than 16 secrets is refused whole, and
+  the acknowledgement names keys and reasons only.
+- **The switch is `sync.mcps`.** With it off the request is refused first.
+- **A stored secret restarts the server**, so one that failed for want of a credential
+  starts.
+- **`mcp_secrets_remove`** names the same server and keys, asks the library nothing and
+  clears them from the credentials file and the keychain.
+
+A Pix Sandbox takes no push: the library refuses it, and a `vault:NAME` header value
+reads the sandbox's vault lease instead (the entry must be granted to the sandbox).
+`vault:` is for the headers of an http server only, never a stdio server's `env`, and a
+result that echoes a vault value is scrubbed.
+
 ## Provider keys
 
 A website user stores a key per provider with the AI Firewall (bring your own key). The
@@ -649,6 +730,8 @@ is off. A project settings file may turn one off, never on.
 - **`sync.rewrites`**: the same for the Bash rewrite table (`bash_rewrite`).
 - **`sync.providers`**: the same for the provider set (`providers`, `firewall`), and
   for the website's provider key requests.
+- **`sync.mcps`**: the same for the MCP servers in `mcp.servers`, and for the
+  website's MCP secret requests.
 - **`sync.processes`**: the same for the global process library. A synced process
   is a command Belai runs, so this is the switch that keeps the website out of
   what runs on the host: with it off nothing is advertised, pushed or installed.
@@ -664,7 +747,7 @@ advertised.
 
 ## Commands
 
-`belai skill`, `belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` read and write items by hand, with the same
+`belai skill`, `belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite`, `belai provider` and `belai mcp` read and write items by hand, with the same
 validator and the same install rules as the daemon:
 
 ```sh
@@ -674,7 +757,7 @@ belai skill import [-force] FILE
 belai skill export [-force] NAME [FILE]
 ```
 
-`belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite` and `belai provider` take the same four commands. `belai repo`
+`belai prompt`, `belai command`, `belai process`, `belai repo`, `belai budget`, `belai rewrite`, `belai provider` and `belai mcp` take the same four commands. `belai repo`
 also has `sync` and `status` (see [Repositories](#repositories)), and its `list` shows
 each repository's url, first ref and dir. For a budget or a
 rewrite there is one local item (the host's whole configuration of that kind), so

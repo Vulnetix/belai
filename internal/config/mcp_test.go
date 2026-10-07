@@ -120,6 +120,9 @@ func TestValidateMCPServerStrict(t *testing.T) {
 		"dead binding":   {"x", MCPServer{Command: "c", Secrets: map[string]string{"k": "V"}}, "no cred:k value"},
 		"timeout":        {"x", MCPServer{Command: "c", TimeoutMS: 700000}, "timeout_ms"},
 		"bad ref":        {"x", MCPServer{Command: "c", Env: map[string]string{"A": "cred:"}}, "legal reference"},
+		"bare key":       {"x", MCPServer{Command: "c", Env: map[string]string{"SSH_KEY": "abc"}}, "looks like a secret"},
+		"url secret":     {"x", MCPServer{Transport: "http", URL: "https://e.com/m?api_key=1"}, "query parameter"},
+		"url fragment":   {"x", MCPServer{Transport: "http", URL: "https://e.com/m#frag"}, "fragment"},
 	}
 	for name, tc := range bad {
 		err := ValidateMCPServer(tc.name, tc.s, true)

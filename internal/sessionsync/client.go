@@ -461,6 +461,12 @@ type Dispatch struct {
 	// whose stored keys the host is to take. Slugs only: a key is fetched over TLS,
 	// once, never carried.
 	Providers []string `json:"providers,omitempty"`
+	// An "mcp_secrets_install" or "mcp_secrets_remove" request names an MCP server
+	// of this host in Server and the credential keys in Keys. Names only: a
+	// secret is fetched over TLS, once, never carried, and a key must be one the
+	// installed server's entry binds (its `secrets`).
+	Server string   `json:"server,omitempty"`
+	Keys   []string `json:"keys,omitempty"`
 	// A "start" request may name the provider, model and effort the session
 	// runs on. Empty means the host's own default (or its routing table).
 	Provider string `json:"provider,omitempty"`

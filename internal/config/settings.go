@@ -259,6 +259,9 @@ type SyncSettings struct {
 	// Commands is the same switch for the custom slash commands in
 	// ~/.vulnetix/belai/commands.
 	Commands *bool `json:"commands,omitempty"`
+	// MCPs is the same switch for the MCP servers in mcp.servers and for the
+	// website's requests to push or remove a server's secrets.
+	MCPs *bool `json:"mcps,omitempty"`
 }
 
 // GitSettings configures the repository hygiene a session does before a turn.
@@ -335,6 +338,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.Commands != nil && !*proj.Commands {
 		out.Commands = &f
 	}
+	if proj.MCPs != nil && !*proj.MCPs {
+		out.MCPs = &f
+	}
 	return out
 }
 
@@ -379,6 +385,10 @@ func (s Settings) SyncItemEnabled(kind string) bool {
 	case "command":
 		if s.Sync != nil {
 			v = s.Sync.Commands
+		}
+	case "mcp":
+		if s.Sync != nil {
+			v = s.Sync.MCPs
 		}
 	default:
 		return false

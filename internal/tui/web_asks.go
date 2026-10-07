@@ -367,6 +367,9 @@ func (a *App) recordPlanChoice(choice, source, remoteID, notes string) string {
 	if source == answerFromWeb {
 		text += " (answered on the web)"
 	}
+	if source == answerFromClef {
+		text += " (decided by Clef)"
+	}
 	meta := map[string]any{"plan_choice": choice}
 	if notes != "" {
 		meta["notes"] = notes

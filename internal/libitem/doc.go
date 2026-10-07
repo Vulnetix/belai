@@ -33,6 +33,8 @@ const (
 	Budget   Kind = "budget"
 	Provider Kind = "provider"
 	Rewrite  Kind = "rewrite"
+	// MCP is one MCP server of the user's own mcp.servers (docs/mcp.md).
+	MCP Kind = "mcp"
 )
 
 // KindInfo describes one kind.
@@ -74,6 +76,7 @@ var kinds = []KindInfo{
 	{Budget, "budgets", false, 16 << 10},
 	{Provider, "providers", false, 32 << 10},
 	{Rewrite, "rewrites", false, 16 << 10},
+	{MCP, "mcps", false, 16 << 10},
 }
 
 // Kinds lists every kind, in the contract's order.
@@ -139,11 +142,18 @@ var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 // ValidName reports whether name is a legal item name for the kind: the common
 // pattern, and for a rewrite exactly bash_rewrite.
 func ValidName(kind Kind, name string) bool {
-	if kind == Rewrite {
+	switch kind {
+	case Rewrite:
 		return name == RewriteName
+	case MCP:
+		// An MCP server keeps the name it has in mcp.servers: letters of either
+		// case, digits, _ and -, at most 32 (the library folds case).
+		return mcpNameRE.MatchString(name)
 	}
 	return nameRE.MatchString(name)
 }
+
+var mcpNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 func nameError(kind Kind, name string) error {
 	if kind == Rewrite {
@@ -151,6 +161,9 @@ func nameError(kind Kind, name string) error {
 	}
 	if name == "" {
 		return refuse("name is required")
+	}
+	if kind == MCP {
+		return refuse("name %q must be letters, digits, underscores and hyphens, at most 32 bytes", clip(name, 40))
 	}
 	return refuse("name %q must be lowercase letters, digits, dots, underscores and hyphens, starting with a letter or digit, at most %d bytes", clip(name, 40), MaxNameBytes)
 }

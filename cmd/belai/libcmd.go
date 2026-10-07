@@ -32,6 +32,7 @@ var libraryCommands = map[string]libitem.Kind{
 	"budget":   libitem.Budget,
 	"rewrite":  libitem.Rewrite,
 	"provider": libitem.Provider,
+	"mcp":      libitem.MCP,
 }
 
 // libraryNoun is the plural the usage text uses.
@@ -44,6 +45,7 @@ var libraryNoun = map[libitem.Kind]string{
 	libitem.Budget:   "budget sets",
 	libitem.Rewrite:  "rewrite tables",
 	libitem.Provider: "provider sets",
+	libitem.MCP:      "MCP servers",
 }
 
 func libraryUsage(kind libitem.Kind) string {
