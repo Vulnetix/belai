@@ -167,7 +167,7 @@ func settingsGroupOf(key string) string {
 	}
 	switch key {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
-		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "show_session_names", "idle_pane":
+		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "mac_key_hints", "show_session_names", "idle_pane":
 		return "display"
 	case "max_agents", "plan_explore", "goal_explore":
 		return "agents"
@@ -344,6 +344,7 @@ func (a *App) settingsRows() []settingsRow {
 	toolCallsVal := showLabel(s.ToolCallsVisible())
 	editsVal := showLabel(s.EditsVisible())
 	todosVal := showLabel(s.TodosVisible())
+	macHintsVal := showLabel(s.MacKeyHints())
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
@@ -389,6 +390,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "idle_pane", label: "empty composer pane", kind: "choose", opts: config.IdlePaneNames, value: s.IdlePane(), src: sourceLabel(origin["ui"]), help: "the one pane shown above an empty composer while the chat is idle: none, the kanban board, or a runs panel tab (activity, helpers, processes, crew, git, ci, intel). It goes away when you type; none by default"},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
+		{key: "mac_key_hints", label: "macOS keyboard hints", kind: "toggle", value: macHintsVal, src: sourceLabel(origin["ui"]), help: "adds the Mac form after an F key, such as f9 (Fn+⏭). Unset, it follows the platform: shown on macOS, hidden elsewhere. Turn it on in a virtual machine running on Mac hardware"},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
@@ -974,6 +976,11 @@ func (a *App) cycleToggle(key string) error {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.Mouse = nextBool(s.UI.Mouse)
+		case "mac_key_hints":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.MacKeyHints = nextBool(s.UI.MacKeyHints)
 		case "show_session_names":
 			s.ShowSessionNames = nextBool(s.ShowSessionNames)
 		case "update_check":
@@ -1154,6 +1161,10 @@ func (a *App) unsetSetting(key string) error {
 		case "mouse":
 			if s.UI != nil {
 				s.UI.Mouse = nil
+			}
+		case "mac_key_hints":
+			if s.UI != nil {
+				s.UI.MacKeyHints = nil
 			}
 		case "show_session_names":
 			s.ShowSessionNames = nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -1183,6 +1184,10 @@ type UISettings struct {
 	ShowEdits     *bool `json:"show_edits,omitempty"`
 	ShowTodos     *bool `json:"show_todos,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
+	// MacKeyHints adds the Mac media-key form after an F-key in the hints and
+	// help (f9 shown as f9 (Fn+⏭)). nil follows the platform: on for macOS, off
+	// elsewhere. It is display-only. See MacKeyHintsFor.
+	MacKeyHints *bool `json:"mac_key_hints,omitempty"`
 	// ShowInternalWork selects how much of the role manager's internal
 	// decision-making is shown in the belai panel: "hidden", "decisions",
 	// "security", or "all". It is display-only — every level runs exactly the
@@ -1244,6 +1249,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.ShowTodos != nil {
 		u.ShowTodos = from.ShowTodos
+	}
+	if from.MacKeyHints != nil {
+		u.MacKeyHints = from.MacKeyHints
 	}
 	if from.Mouse != nil {
 		u.Mouse = from.Mouse
@@ -1654,6 +1662,19 @@ func (s Settings) ToolCallsVisible() bool {
 func (s Settings) EditsVisible() bool {
 	return s.UI == nil || s.UI.ShowEdits == nil || *s.UI.ShowEdits
 }
+
+// MacKeyHintsFor reports whether F-key hints carry the Mac media-key form on
+// the given GOOS. An unset setting follows the platform (on for darwin), and
+// an explicit value wins, so a Linux VM on Mac hardware can turn it on.
+func (s Settings) MacKeyHintsFor(goos string) bool {
+	if s.UI != nil && s.UI.MacKeyHints != nil {
+		return *s.UI.MacKeyHints
+	}
+	return goos == "darwin"
+}
+
+// MacKeyHints is [Settings.MacKeyHintsFor] for the running platform.
+func (s Settings) MacKeyHints() bool { return s.MacKeyHintsFor(runtime.GOOS) }
 
 // TodosVisible reports whether the TODO panel renders. Default true.
 func (s Settings) TodosVisible() bool {

@@ -3560,7 +3560,9 @@ include `provider`, `model`, `effort`, `caveman`, `read_only`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
 `ui.show_tool_calls`, `ui.show_edits`, `ui.show_todos`, `ui.show_internal_work`,
-`ui.mouse`, `ui.colors`,
+`ui.mouse`, `ui.colors`, `ui.mac_key_hints` (unset follows the platform: on for
+macOS, off elsewhere; adds the Mac form after an F key, `f9 (Fn+⏭)`, in `/help`,
+tips, help bars and Getting started),
 `ui.kitty_keyboard` (all default on when unset except `ui.show_reasoning`,
 which defaults off unless explicitly true; `ui.show_internal_work` defaults to
 `hidden`, the four-level role-manager feed described in

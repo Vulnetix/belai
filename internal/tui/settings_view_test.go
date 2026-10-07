@@ -351,3 +351,25 @@ func TestLayoutRowCyclesAndUnsets(t *testing.T) {
 		t.Fatalf("x should unset layout, got %v", *got.UI.Layout)
 	}
 }
+
+func TestMacKeyHintsRowShowsTheEffectiveValue(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.push(viewSettings)
+	row, idx := settingsRowByKey(a, "mac_key_hints")
+	if idx < 0 {
+		t.Fatal("no mac_key_hints row")
+	}
+	if row.kind != "toggle" || settingsGroupOf("mac_key_hints") != "display" {
+		t.Fatalf("row kind %q group %q", row.kind, settingsGroupOf("mac_key_hints"))
+	}
+	on, off := true, false
+	a.settings.UI = &config.UISettings{MacKeyHints: &on}
+	if row, _ := settingsRowByKey(a, "mac_key_hints"); row.value != "shown" {
+		t.Fatalf("forced on shows %q", row.value)
+	}
+	a.settings.UI = &config.UISettings{MacKeyHints: &off}
+	if row, _ := settingsRowByKey(a, "mac_key_hints"); row.value != "hidden" {
+		t.Fatalf("forced off shows %q", row.value)
+	}
+}

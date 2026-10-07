@@ -50,7 +50,8 @@ var tips = []string{
 	"/vulnetix runs a code review and manages the firewall",
 }
 
-// PickTip returns a stable tip for the given seed string. It must be chosen
+// PickTip returns a stable tip for the given seed string, with the Mac form
+// of any F key it names when ui.mac_key_hints is on. It must be chosen
 // once, not per render — the banner re-renders every frame, so a per-render
 // pick would strobe. An empty seed returns "" so the caller can fall back to
 // the default /help line.
@@ -58,7 +59,7 @@ func PickTip(seed string) string {
 	if seed == "" {
 		return ""
 	}
-	return tips[tipOffset(seed)%len(tips)]
+	return MacKeyText(tips[tipOffset(seed)%len(tips)])
 }
 
 // CycleTip returns the tip step places after the seed's own tip, wrapping. It
@@ -69,7 +70,7 @@ func CycleTip(seed string, step int) string {
 	if step < 0 {
 		step = -step
 	}
-	return tips[(tipOffset(seed)+step)%len(tips)]
+	return MacKeyText(tips[(tipOffset(seed)+step)%len(tips)])
 }
 
 // TipCount is the number of rotating tips, exported for tests that assert the
