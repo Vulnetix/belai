@@ -993,6 +993,7 @@ func New(opts Options) *App {
 	sessionKey, _ := session.KeyFor(workdir)
 	cache, _ := rolemanager.LoadCache(rolemanager.DefaultCachePath())
 
+	components.SetMacKeyHints(eff.Settings.MacKeyHints())
 	a := &App{
 		tts:               ttsState{cardIdx: -1},
 		registry:          NewRegistry(workdir),
@@ -5393,6 +5394,7 @@ func (a *App) reloadSettings() error {
 		return err
 	}
 	a.settings = eff.Settings
+	components.SetMacKeyHints(a.settings.MacKeyHints())
 	a.eff = eff
 	a.applyCtlOverlay()
 	if a.resolver != nil {

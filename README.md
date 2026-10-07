@@ -240,6 +240,7 @@ scope, following the same precedence rules.
 | `ui.budget_cycle_seconds` | seconds the footer shows each budget of the selected model before cycling (default 10, minimum 2) |
 | `ui.budget_warn` | print a warning line on each call to the selected model while one of its budgets is amber or red (default off) |
 | `ui.intel` | session intelligence: the footer slot, the intel tab (`f12`) and `/intel` (default on) — see [Token budgets](docs/token-budgets.md#session-intelligence) |
+| `ui.mac_key_hints` | add the Mac form after an F key in hints and `/help`, such as `f9 (Fn+⏭)` (unset follows the platform: on for macOS, off elsewhere; display only) |
 | `ui.clipboard_images` | let `ctrl+v` and `/paste-image` attach an image from the clipboard (default on; a project file can turn it off, never on) — see [Images](docs/image-attachments.md) |
 | `intel.plan_limits` | global only: read provider rate-limit response headers into plan-limit readings (default on) |
 | `context_windows` | per-model context-window overrides, in tokens |

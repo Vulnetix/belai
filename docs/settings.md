@@ -38,7 +38,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Group | Rows |
 | --- | --- |
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task` |
-| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `mouse capture`, `session names` |
+| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
@@ -61,6 +61,23 @@ write the same record.
 | `chronological` | Strict time order. A notice an event raised is placed by the event's time too (never behind the rows already written, so each is written once), nothing is held below a streaming reply, and the blank line above each panel shows that panel's time as `HH:MM:SS`. A row with no recorded time shows none. |
 
 An unknown value reads as `clean`. A project layer may set it either way.
+
+### macOS keyboard hints
+
+`ui.mac_key_hints` (the `macOS keyboard hints` row in Display) adds the Mac form after
+an F key wherever Belai names one: `/help`, the Getting started guide, the
+rotating tips, the working hint above the composer and the key bars along the
+bottom. `f9` reads `f9 (Fn+⏭)`, `f3` reads `f3 (Fn+Mission Control)`, and so on
+for `f1` to `f12`.
+
+A Mac keyboard prints a media or system symbol on each F key, and the key sends
+that function until Fn is held. Belai's bindings are the function keys, so the
+hint says which printed key to press with Fn. If you turn on *Use F1, F2, etc.
+keys as standard function keys* in macOS Keyboard settings, the keys work without Fn.
+
+Unset, the setting follows the platform: shown on macOS, hidden on Linux and
+Windows. Set it on to see the hints in a virtual machine or a remote session
+running on Mac hardware, or off to hide them on a Mac. It is display only.
 
 ### Empty composer pane
 

@@ -115,8 +115,8 @@ func HelpBar(pairs ...string) string {
 		if i > 0 {
 			b.WriteString(MutedStyle.Render("  ·  "))
 		}
-		b.WriteString(KeyStyle.Render(pairs[i]))
-		b.WriteString(MutedStyle.Render(" " + pairs[i+1]))
+		b.WriteString(KeyStyle.Render(MacFKeyHint(pairs[i])))
+		b.WriteString(MutedStyle.Render(" " + MacKeyText(pairs[i+1])))
 	}
 	return b.String()
 }

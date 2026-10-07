@@ -1,6 +1,11 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+
+	"github.com/vulnetix/belai/internal/tui/components"
+)
 
 // The help body is assembled from two sources: the command registry, which
 // already knows every slash command, and the keySections table below, which is
@@ -451,11 +456,11 @@ func helpText(r *Registry) string {
 	for _, s := range keySections() {
 		width = 0
 		for _, k := range s.Bindings {
-			width = max(width, len(k.Keys))
+			width = max(width, utf8.RuneCountInString(components.MacKeyText(k.Keys)))
 		}
 		b.WriteString("\n\n" + s.Title + ":")
 		for _, k := range s.Bindings {
-			b.WriteString("\n  " + pad(k.Keys, width) + " — " + k.Desc)
+			b.WriteString("\n  " + pad(components.MacKeyText(k.Keys), width) + " — " + components.MacKeyText(k.Desc))
 		}
 	}
 
@@ -466,8 +471,9 @@ func helpText(r *Registry) string {
 
 // pad right-pads s with spaces to width, so the em dashes line up.
 func pad(s string, width int) string {
-	if len(s) >= width {
+	n := utf8.RuneCountInString(s)
+	if n >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-n)
 }
