@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/commandlib"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/libitem"
@@ -34,6 +35,10 @@ type Inventory struct {
 	// Items are the library items this host holds, for the kinds whose sync
 	// switch is on: kind, name and hash, never a document.
 	Items []sessionsync.RCItem
+	// Commands are the custom slash commands in the global commands directory, for
+	// the web's command picker: name, description and argument hint, never a
+	// template. Empty while sync.commands is off.
+	Commands []sessionsync.RCCommand
 	// Models is what a web-started session can run on (models.go).
 	Models *sessionsync.RCModels
 	// Knowledge is the catalogue of this host's knowledge indexes: document
@@ -60,10 +65,11 @@ func (i Inventory) catalogueHash() string {
 		C []sessionsync.RCCrew
 		A []sessionsync.RCAgent
 		I []sessionsync.RCItem
+		X []sessionsync.RCCommand
 		D *sessionsync.RCModels
 		K []sessionsync.RCKnowledge
 		F map[string]DirPrefs
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Agents, i.Items, i.Models, i.Knowledge, i.Prefs})
+	}{i.MaxWorkers, i.Profiles, i.Crews, i.Agents, i.Items, i.Commands, i.Models, i.Knowledge, i.Prefs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -117,6 +123,7 @@ func LocalInventory() Inventory {
 	}
 	inv.Agents = SessionAgents()
 	inv.Items = localInventoryItems()
+	inv.Commands = localInventoryCommands()
 	inv.Models = LocalModels()
 	inv.Workers = localWorkers()
 	return inv
@@ -141,6 +148,25 @@ func localInventoryItems() []sessionsync.RCItem {
 			break
 		}
 		out = append(out, sessionsync.RCItem{Kind: it.kind, Name: it.name, SHA256: hashOf(it.data)})
+	}
+	return out
+}
+
+// localInventoryCommands lists the custom slash commands the web may invoke on
+// this host: the global commands directory, while sync.commands is on. The
+// project layer is not advertised; a session in that project resolves it when
+// the command is invoked.
+func localInventoryCommands() []sessionsync.RCCommand {
+	s, err := config.LoadGlobal()
+	if err != nil || !s.SyncItemEnabled("command") {
+		return nil
+	}
+	var out []sessionsync.RCCommand
+	for _, c := range commandlib.LoadGlobal().Commands {
+		if len(out) >= sessionsync.MaxRCCommands {
+			break
+		}
+		out = append(out, sessionsync.RCCommand{Name: c.Name, Description: c.Description, ArgumentHint: c.ArgumentHint})
 	}
 	return out
 }

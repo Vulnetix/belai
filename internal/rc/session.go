@@ -11,6 +11,8 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/commandlib"
+	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -67,6 +69,11 @@ type SessionOptions struct {
 	Answers AnswerMirror
 	// AskWait bounds the wait for one web answer (DefaultAskWait).
 	AskWait time.Duration
+	// Workdir is the session's directory, where its project commands directory is
+	// read, and SlashCommands says sync.commands is on: a web session may invoke a
+	// custom slash command by name only then (RemoteCommand.Command).
+	Workdir       string
+	SlashCommands bool
 	// AfterTurn runs after each turn that ended cleanly, with the prompt, the
 	// turn's result and the paths its tools changed: the post-end test pass
 	// and auto-commit, each when its control is on.
@@ -115,6 +122,16 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		default:
 		}
 	}
+	// enqueue puts a prompt the host expanded itself (a custom slash command) in
+	// line behind the running turn; false when the line is full.
+	enqueue := func(p sessionsync.RemotePrompt) bool {
+		select {
+		case analysis <- p:
+			return true
+		default:
+			return false
+		}
+	}
 	resetIdle := func() {
 		if !idle.Stop() {
 			select {
@@ -157,7 +174,7 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
-				applyCommand(ctx, o, c, true, bridge, shells, analyse)
+				applyCommand(ctx, o, c, true, bridge, shells, analyse, enqueue)
 				// A shell line is activity: a console left open on a sandbox
 				// keeps its session alive while it is in use.
 				if c.Shell != "" {
@@ -183,6 +200,9 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		}
 		if p.Origin != "" {
 			meta = map[string]any{"source": p.Origin}
+		}
+		if p.Command != "" {
+			meta["command"] = p.Command
 		}
 		id := o.Log.User(text, meta)
 		if p.ID != "" {
@@ -219,7 +239,7 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
-				applyCommand(ctx, o, c, false, bridge, shells, analyse)
+				applyCommand(ctx, o, c, false, bridge, shells, analyse, enqueue)
 			}
 		}
 		if o.Controls != nil {
@@ -249,7 +269,11 @@ const maxTurnPaths = 1000
 
 // applyCommand applies one web control and reports it: a harness line in the
 // transcript, the ack with the new state, and the re-registration.
-func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge, shells *shellQueue, analyse func(sessionsync.RemotePrompt)) {
+func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, idle bool, bridge *askBridge, shells *shellQueue, analyse func(sessionsync.RemotePrompt), enqueue func(sessionsync.RemotePrompt) bool) {
+	if c.Command != "" {
+		runSlashCommand(o, c, enqueue)
+		return
+	}
 	if c.Shell != "" {
 		if o.Shell == nil {
 			if o.AckCommand != nil {
@@ -287,6 +311,61 @@ func applyCommand(ctx context.Context, o SessionOptions, c sessionsync.RemoteCom
 	// the turn for the whole wait.
 	if bridge != nil && !o.Controls.Asks() {
 		bridge.releaseOpen()
+	}
+}
+
+// runSlashCommand runs a custom slash command a web session named: the host
+// expands its own installed file with the arguments and queues the result as an
+// ordinary prompt, so the turn admits it exactly as it admits a typed one (the
+// sanitiser and the classifier run in the turn). The page sends a name and
+// argument text, never a template, and a name this host does not hold is
+// refused. A leading "/" in an ordinary web prompt stays plain text.
+func runSlashCommand(o SessionOptions, c sessionsync.RemoteCommand, enqueue func(sessionsync.RemotePrompt) bool) {
+	refuse := func(reason string) {
+		if o.AckCommand != nil {
+			o.AckCommand(c.ID, sessionsync.AckRefused, reason, nil)
+		}
+	}
+	switch {
+	case c.Line != "" || c.Key != "" || c.Shell != "":
+		refuse("a command is one name and its arguments")
+		return
+	case !o.SlashCommands:
+		refuse("custom slash commands are off on this host (sync.commands is false)")
+		return
+	case o.Mirror == nil || !o.Mirror.RemotePromptsEnabled():
+		refuse("this session takes no prompts from the web")
+		return
+	case !libitem.ValidName(libitem.Command, c.Command):
+		refuse("that is not a command name")
+		return
+	}
+	cmd, ok := commandlib.Load(o.Workdir).Find(c.Command)
+	if !ok {
+		refuse("this host has no command named " + c.Command)
+		return
+	}
+	text, err := commandlib.Expand(cmd, sessionsync.CleanPrompt(c.Args))
+	if err != nil {
+		refuse(err.Error())
+		return
+	}
+	if text = sessionsync.CleanPrompt(text); text == "" {
+		refuse("the command expanded to nothing")
+		return
+	}
+	if !enqueue(sessionsync.RemotePrompt{Content: text, Origin: "web", Command: cmd.Name}) {
+		refuse("too many commands are waiting; try again in a moment")
+		return
+	}
+	o.Log.System("web: /" + cmd.Name)
+	o.Mirror.Nudge()
+	var state json.RawMessage
+	if o.Controls != nil {
+		state = o.Controls.StateJSON()
+	}
+	if o.AckCommand != nil {
+		o.AckCommand(c.ID, sessionsync.AckAccepted, "", state)
 	}
 }
 

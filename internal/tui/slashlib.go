@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/commandlib"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fuzzy"
 	"github.com/vulnetix/belai/internal/processlib"
@@ -31,6 +32,7 @@ type slashLibCache struct {
 	active    bool
 	prompts   []promptlib.Entry
 	processes []processlib.Entry
+	commands  []commandlib.Command
 }
 
 // slashCandidate is one popup entry: the line it completes to and the extra
@@ -57,6 +59,8 @@ func (a *App) loadSlashLib() {
 	if promptlib.ExtraEntries != nil {
 		a.slashLib.prompts = append(a.slashLib.prompts, promptlib.ExtraEntries()...)
 	}
+
+	a.slashLib.commands = commandlib.Load(a.workdir).Commands
 
 	// Every saved process is offered, disabled ones too: disabled only turns
 	// off auto-start, and starting one by hand is the point of the chip.
@@ -91,6 +95,12 @@ func (a *App) slashCompletions(input string) []string {
 	}
 	for _, e := range a.slashLib.prompts {
 		cands = append(cands, slashCandidate{line: "/" + slashPromptPrefix + e.Name, name: e.Name})
+	}
+	for _, c := range a.slashLib.commands {
+		if _, builtin := a.registry.Command(a.registry.Canonical(c.Name)); builtin {
+			continue // a built-in wins, and is already offered
+		}
+		cands = append(cands, slashCandidate{line: "/" + c.Name})
 	}
 	for _, c := range a.agents {
 		cands = append(cands, slashCandidate{line: "/" + slashAgentPrefix + c.Name, name: c.Name})

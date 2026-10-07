@@ -201,6 +201,30 @@ a control rather than a prompt, and the keys work while the page has focus.
   reason. The Crews tab sends such a line to every chosen worker of a crew. See
   [fleet.md](fleet.md#session-controls).
 
+## Slash commands from the web
+
+A host that holds [custom slash commands](library-items.md#slash-commands) lists them in
+its advertisement as `commands: [{name, description, argumentHint}]` (names, descriptions and
+hints only, never a template, and only while `sync.commands` is on; an empty list when it
+holds none, and absent from a daemon that predates the kind). The session page offers them
+in a picker and sends the choice as a remote command `{command, args}`: `command` is the
+name without the slash and `args` the argument text. The command channel is the one session
+controls use, so a session takes them when it runs with `belai rc --web-controls`.
+
+- **The host expands its own file.** It resolves the name against the global commands
+  directory and the project layer of the session's directory (project wins), expands the
+  template with `$ARGUMENTS` and `$1`, `$2`, ..., and runs a normal model turn on the
+  result, queued behind a running turn like any prompt. The page never sends a template.
+- **Refusals.** A name this host does not hold, a name that is not a command name, arguments
+  over 4 KiB, `sync.commands` off, `sync.remote_prompts` off, or a command mixed with a
+  control line, key or shell line is refused with a reason. A fleet worker takes no
+  commands.
+- **Admission.** The expansion goes through the same sanitiser and classifier as any web
+  prompt, and the transcript shows a harness line (`web: /triage`) and a user turn whose
+  metadata names the command.
+- **A prompt that starts with `/` is still plain text.** Only the structured form runs a
+  command.
+
 ## Shell lines from the web
 
 `belai rc --web-shell` lets a web session run one shell line at a time on this
@@ -552,12 +576,12 @@ them, through the same queue and carrying identifiers only (see
   whether it may replace the host's item of the same name. The daemon fetches that
   version while the request is delivered to this host and writes it only if the
   document validates whole, carries the name the library item has, and either no
-  such item exists here or the request set replace. A skill or a prompt must also
+  such item exists here or the request set replace. A skill, a prompt or a command must also
   pass the sanitisation gate. Like a profile install it is a person's action and
   does not need `sync.remote_prompts`.
 
 Both are refused, before the library is asked for anything, while the kind's own
-switch is off (`sync.skills`, `sync.prompts`, `sync.processes`), and a kind this Belai predates is
+switch is off (`sync.skills`, `sync.prompts`, `sync.commands`, `sync.processes`), and a kind this Belai predates is
 refused with "update Belai on the host". The host also reports which items it holds
 in its advertisement (`rc.items`: kind, name and hash, never a document) for the
 kinds whose switch is on, and advertises again when they change.
@@ -645,6 +669,8 @@ avatar id, so the website can draw the agent. They are presentation only.
 | A worker profile and a crew in the advertisement carry the hash of the document the library would store, built from the same bytes the automatic sync hashes, and none while `sync.profiles` is off or for a built-in | `TestInventoryCarriesTheHashOfAStoredProfileAndCrew`, `TestInventoryHashFollowsTheStoredBytes`, `TestInventoryHashIsOmittedWithProfileSyncOff`, `TestInventoryRendersNoProfileWithProfileSyncOff` |
 | An installed library profile reports the library's hash for the bytes it installed while it is unedited, and the hash of what is there after an edit; the sync asks the server with the same hash; the render of a console-written agent is not the library's bytes | `TestARenderOfAConsoleAgentIsNotTheBytesTheLibraryHolds`, `TestAnInstalledAgentReportsTheLibraryHashUntilItIsEdited`, `TestSyncAsksWithTheLibraryHashForAnUneditedInstall`, `TestNoRecordIsKeptWhenTheRenderIsTheLibraryBytes` |
 | A fixed profile and crew render to the golden bytes and digests that vdb-site holds as the same literals | `TestGoldenProfileRenderAndHash`, `TestGoldenCrewRenderAndHash` |
+| A web command expands the host's own installed file with its arguments and runs it as a turn; the project layer wins, an unknown or malformed name, `sync.commands` off, oversized arguments and a mixed command are refused, and a web prompt that starts with `/` stays plain text | `TestWebCommandExpandsTheHostsOwnFile`, `TestWebCommandProjectLayerWinsAndIsReadAtInvocation`, `TestWebCommandRefusals`, `TestWebPromptStartingWithASlashIsStillPlainText` |
+| The advertisement lists commands by name, description and argument hint only, never a template, and changes the catalogue hash when a command is added or `sync.commands` goes off | `TestInventoryAdvertisesCommandsWithoutTemplates`, `TestSlashCommandWireForm` |
 | The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
 
 ## Files

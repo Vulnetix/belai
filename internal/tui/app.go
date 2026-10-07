@@ -34,6 +34,7 @@ import (
 	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/clipboard"
+	"github.com/vulnetix/belai/internal/commandlib"
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
@@ -4776,6 +4777,10 @@ func (a *App) handleCommand(input string) tea.Cmd {
 	canonical := a.registry.Canonical(name)
 	cmd, ok := a.registry.Command(canonical)
 	if !ok || cmd.Run == nil {
+		// A custom command (internal/commandlib) runs only after the built-ins miss.
+		if c, found := commandlib.Load(a.workdir).Find(name); found {
+			return a.runCustomCommand(c, arg)
+		}
 		a.addSystem("unknown command: " + input)
 		return nil
 	}

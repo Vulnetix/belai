@@ -404,6 +404,9 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(a.sandboxReport())
 		return nil
 	})
+	r.Register("commands", "list custom slash commands; /<name> runs one", nil, func(a *App, arg string) tea.Cmd {
+		return a.customCommandsCommand()
+	})
 	r.Register("skills", "list installed skills", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(skillsListing(tools.InstalledSkills()))
 		return nil

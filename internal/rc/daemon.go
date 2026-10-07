@@ -355,7 +355,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
-		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Models: inv.Models, Knowledge: inv.Knowledge,
+		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings}
 	if d.o.Controls {
 		for _, c := range sessionctl.Controls {
@@ -363,6 +363,9 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 				ID: c.ID, Command: c.Command, Usage: c.Usage, Keys: c.Keys, Values: c.Values, Kind: c.Kind,
 			})
 		}
+	}
+	if h.RC.Commands == nil {
+		h.RC.Commands = []sessionsync.RCCommand{}
 	}
 	if h.RC.Items == nil {
 		h.RC.Items = []sessionsync.RCItem{}

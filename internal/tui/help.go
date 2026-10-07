@@ -459,6 +459,7 @@ func helpText(r *Registry) string {
 	b.WriteString("\n  /prompt:<name>  — load a saved prompt into the composer")
 	b.WriteString("\n  /agent:<name>   — switch to agent mode with that profile")
 	b.WriteString("\n  /process:<name> — start a saved process if it is not running, and show its status")
+	b.WriteString("\n  /<name>         — run a custom command from the commands directories (see /commands)")
 
 	for _, s := range keySections() {
 		width = 0

@@ -3540,6 +3540,7 @@ Business rules:
 | `/export` | Export this session (or another by id prefix) as Markdown under `.vulnetix/exports` |
 | `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`); `log` opens the agent's audit trail |
 | `/agents` | Open the agents screen: `running`, `profiles` or `audit` (bare `/agents` opens running once any agent has run, profiles before that) |
+| `/commands` | List custom slash commands from `~/.vulnetix/belai/commands` and the project's `.vulnetix/belai/commands` |
 
 The table is the whole set registered by `internal/tui.NewRegistry`. Two
 aliases exist but are not table rows: `/new` is a visible alias of `/clear`
@@ -3552,6 +3553,12 @@ The popup also lists `/prompt:<name>`, `/agent:<name>` and
 `handleCommand` dispatches them before the registry is consulted. Completion
 over both commands and library entries is fuzzy. See *Slash popup: fuzzy
 matching and library entries* above.
+
+A custom slash command (`internal/commandlib`, see
+[library-items.md](library-items.md#slash-commands)) is not registered either, and
+the popup offers its bare `/<name>`. `handleCommand` looks it up only after the
+registry misses, so a built-in always wins, and `runCustomCommand` sends the
+expansion through `submitInput` as an ordinary typed prompt.
 
 ### Startup credential message
 
