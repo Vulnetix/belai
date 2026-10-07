@@ -208,3 +208,39 @@ func TestPIDIsolationProbeMatchesWhatACommandCanRead(t *testing.T) {
 		t.Fatalf("mode %d: the sandboxed command read another process's environ", mode)
 	}
 }
+
+// A TMPDIR outside the private /tmp (the Pix sandbox image sets /workspace/tmp)
+// is writable, or go build and its kin cannot make a work dir; one at or under
+// /tmp is not bound, which would replace the private /tmp with the host's.
+func TestCustomTempDirIsWritable(t *testing.T) {
+	for _, tc := range []struct {
+		tmp  string
+		want bool
+	}{
+		{"/workspace/tmp", true},
+		{"/workspace/tmp/", true},
+		{"/tmp", false},
+		{"/tmp/x", false},
+		{"/private/var/folders/ab/cd/T", false},
+		{"/", false},
+		{"relative/tmp", false},
+		{"", false},
+	} {
+		t.Setenv("TMPDIR", tc.tmp)
+		p := FromSettings(nil, []string{"/work"}, posture.Defaults())
+		got := false
+		for _, w := range p.Writable {
+			if w == filepath.Clean(tc.tmp) && tc.tmp != "" {
+				got = true
+			}
+		}
+		if got != tc.want {
+			t.Errorf("TMPDIR=%q writable=%v, want %v (%v)", tc.tmp, got, tc.want, p.Writable)
+		}
+	}
+	t.Setenv("TMPDIR", "/workspace/tmp")
+	no := false
+	if p := FromSettings(&config.SandboxSettings{Caches: &no}, []string{"/work"}, posture.Defaults()); strings.Join(p.Writable, ",") != "/work" {
+		t.Errorf("the strict policy must keep only the roots: %v", p.Writable)
+	}
+}

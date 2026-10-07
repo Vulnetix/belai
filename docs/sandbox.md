@@ -117,6 +117,10 @@ asks you rather than retrying blindly.
 - A cache directory that does not exist is skipped; bubblewrap binds only
   what is there.
 - A relative path in `extra_writable` is ignored.
+- When `caches` is on, `TMPDIR` is writable if it points outside the private
+  `/tmp` (the Pix sandbox image sets `/workspace/tmp`), so `go build`, `pip` and
+  `npm` can make their work directories. A `TMPDIR` at or under `/tmp` is left
+  alone.
 - An unknown `mode` means `auto` when no layer sets a valid one. When layers
   are merged an unknown `mode` is skipped, so the layer below it stands: a
   project file saying `strict` over a global `required` leaves `required`. A
