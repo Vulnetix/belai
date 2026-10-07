@@ -58,10 +58,8 @@ func mcpListing(st []mcp.Status) string {
 	return b.String()
 }
 
+// mcpClean reduces a server or tool error to one line of plain text: a body
+// that came back as an HTML page (a 403 from a gateway) loses its markup first.
 func mcpClean(s string, n int) string {
-	s = strings.Join(strings.Fields(sanitize.Sanitize(s)), " ")
-	if r := []rune(s); len(r) > n {
-		s = string(r[:n]) + "…"
-	}
-	return s
+	return sanitize.PlainText(sanitize.Sanitize(s), n)
 }
