@@ -35,6 +35,7 @@ the sanitiser sits in the tool-result pipeline.
 | Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
 | A skill or prompt document from the library, before it is written | `internal/libstore` | `untrustedGate` (with `sanitize.Sanitize`) | Refuses |
 | A library item document: shape, names, limits | `internal/libitem` | `Validate` | Refuses |
+| A file another harness wrote, before a scan or an import accepts it | `internal/agentimport` | `ImportItem` (with `libstore.UntrustedText`) | Refuses |
 
 Repairing is used for text whose content has value even when part of it is
 hostile (a tool result, a prompt): the dangerous part is cut and the rest
@@ -358,6 +359,36 @@ expansion is then admitted like typed text, and a command's `allowed-tools` is n
 applied, so a command cannot grant a tool. A library document is also validated whole by
 `internal/libitem` (a closed schema, bounded sizes, a name that cannot name a path),
 so no path or command comes from its text.
+
+## Items from other harnesses
+
+A scan or an import of a command, prompt, skill or agent that another harness wrote
+([agent-import.md](agent-import.md)) reads a file nobody at Belai has seen, so
+`agentimport.ImportItem` treats it as untrusted in the order below, and a failure at
+any step makes the item `invalid` (it is never repaired, so what is hashed is what
+the library would store):
+
+1. The reader (`agentimport` `load`) never follows a symbolic link, refuses a file
+   whose name looks like a credential store (`secretName`) and a file over 1 MiB, and
+   counts each as skipped rather than reporting an item. The scan lists a directory
+   itself and never descends through a link.
+2. The text must be valid UTF-8 with no NUL; a byte order mark is removed with a
+   warning.
+3. Only the keys the converter has a rule for are carried. Every other front-matter
+   key is named in the report as not imported, and every value that is carried is
+   cleaned to one line (`sanitize.Line`) first. `allowed-tools` is kept as metadata
+   text and never becomes a grant.
+4. The composed document goes through `libitem.Validate` (closed schema, bounded
+   sizes, a name that cannot name a path) and then `libstore.UntrustedText`, the same
+   gate an install applies: delimiter markup, a control or escape character, a
+   bidirectional override or an invisible rune refuses the item.
+5. An instruction document must also pass the profile-file gates (at most 256 KiB, no
+   private key block or known token) and must not carry the name of a credential store.
+
+Notes in a report are composed by Belai. Any source value in one is passed through
+`sanitize.Text`, folded to one line and cut to 160 bytes before it leaves the host.
+An import repeats all of this on the file it reads itself, so nothing the website
+sends is taken as the document.
 
 ## Testing
 

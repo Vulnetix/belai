@@ -622,6 +622,44 @@ already kept"), never a name. With every switch off it is refused and says so.
 Every request in this section is a `host.dispatch` audit event with the request kind and outcome (see
 [audit.md](audit.md)).
 
+### Scanning and importing from other harnesses
+
+Two requests let a person bring items kept by other agent harnesses (Claude Code,
+Cursor, Codex and the rest, see [agent-import.md](agent-import.md)) into the library.
+They are always on. There is no `sync.*` switch: neither reads anything until a
+person presses Scan hosts or Import on the website, a scan answers with names,
+paths, hashes, verdicts and short notes and never a document, and a document leaves
+the host only when that person imports that item. A Belai that predates them
+refuses both with "update Belai on the host".
+
+- **`library_scan`** may name one kind in `itemKind` (empty is every kind: `command`,
+  `skill`, `prompt`, `agent`, `crew`, `process`, `budget`, `rewrite`, `provider`,
+  `repo`, `document`). The daemon answers in the background, one scan at a time (a
+  second is refused with the reason), searches the installed harnesses, Belai's own
+  directories and the trusted repositories for at most 25 seconds, uploads the report
+  with `POST /hosts/{id}/library/scans` as `{"dispatch": id, "report": {...}}`
+  (gzipped from 8 KiB) and acknowledges `started` with one line such as "7 found in
+  21 locations". A scan that reaches the 25 seconds uploads what it has with
+  `partial: true`. The report is described in [agent-import.md](agent-import.md#what-a-scan-reports):
+  at most 2000 items and 1 MiB, notes of at most 160 bytes. If the upload fails the
+  request is refused with the reason.
+- **`library_import`** names one item a scan reported: `itemKind`, `path` (a file, with
+  `#name` after a settings file), `sha256` (of the canonical document the scan saw)
+  and `scanDispatch`, and for a document `target`, the agent that receives it. The
+  host does not trust the path. It re-derives its own scan roots, refuses a path
+  that is not exactly a file a scan would list or is reached through a symbolic
+  link, reads the file itself, runs the same converter, and refuses the item when
+  the canonical hash is not `sha256` ("that item changed since the scan"). It then
+  uploads with `POST /hosts/{id}/library/imports` as `{"dispatch", "kind", "name",
+  "body", "skills": [{"name", "body"}], "target"}`: `body` is a string for a skill,
+  prompt, command, agent (the profile Markdown) and document, and an object for the
+  JSON kinds and a crew. `skills` are an agent's bundled skills; the library installs
+  one only when it holds none of that name. Imports run in the background, one at a
+  time, because a selection sends one request per item.
+
+Both are `host.dispatch` audit events like the rest, and both routes accept an upload
+only while the request is delivered to this host.
+
 ### Avatars
 
 The website's agent builder can give an agent a customised Pix. The website runs
@@ -662,6 +700,8 @@ avatar id, so the website can draw the agent. They are presentation only.
 
 | Rule | Tests |
 | --- | --- |
+| A `library_scan` request uploads a report of the harnesses, Belai's own files and the trusted repositories (a repository with nothing is listed with where it looked), with no document text, with every `sync.*` switch off; a kind filter limits it, an unknown kind and a second scan at once are refused, a scan past its budget is flagged partial, and a library that takes no report refuses with the reason | `TestLibraryScanUploadsAReportAndAcknowledgesASummary`, `TestLibraryScanKindFilterAndRefusals`, `TestLibraryScanIsPartialAtItsBudget`, `TestLibraryScanRefusedWhenTheLibraryTakesNoReport`, `TestScanBudgetIsTwentyFiveSeconds` |
+| A `library_import` request uploads the canonical item (a string for Markdown kinds, an object for JSON kinds, the target for a document) and writes nothing on the host; it refuses a changed file, a wrong or missing hash, a path outside the roots, a traversal, a link swapped in for a file or its folder, a document with no target and a repository that is not trusted | `TestLibraryImportUploadsTheCanonicalItem`, `TestLibraryImportBodiesByKind`, `TestLibraryImportRefusals`, `TestLibraryImportRefusesALibraryFailure`, `TestOnlyATrustedRepositoryIsRead` |
 | A `library_sync` request runs one pass of the automatic sync at once, asking about every profile, crew and item whose switch is on, including ones a recent answer settled, and acknowledges with counts only, never a name | `TestLibrarySyncNowAsksAboutSettledItemsAndReportsCountsOnly` |
 | With every sync switch off a `library_sync` request is refused and says so; a website that does not know the sync routes is reported in plain words | `TestLibrarySyncNowRefusesWithEverySwitchOffAndSaysWhyOnError` |
 | An offered directory carries `remote`, `host`, `provider`, `branch` and `defaultBranch` only when they have an identifier shape, read from the repository's files; a remote with credentials keeps none of them | `TestDirGitCarriesIdentifierFactsAndNoCredential` |
@@ -730,6 +770,10 @@ avatar id, so the website can draw the agent. They are presentation only.
     the automatic sync carries `items` in `POST /hosts/{id}/library/sync` and a
     push on `PUT /hosts/{id}/library/sync/items`. The host's advertisement carries
     `rc.items`. See [library-items.md](library-items.md#server-side).
+  - Scan and import (`belai_library_scan.go`): a host answers `library_scan` with
+    `POST /hosts/{id}/library/scans` and `library_import` with
+    `POST /hosts/{id}/library/imports`; the page reads a report with
+    `GET /library/scans/{dispatch}`.
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
   `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,

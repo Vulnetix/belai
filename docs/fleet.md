@@ -938,6 +938,8 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai agent show NAME` | one profile as JSON |
 | `belai agent validate FILE` | validate a `.json` or `.md` profile |
 | `belai agent import [-force] FILE` | validate and save a profile |
+| `belai agent import -from FORMAT [-yes] [-force] [-name N] SOURCE` | convert an agent definition written for another harness (see [agent-import.md](agent-import.md)); a preview unless `-yes` |
+| `belai library scan [-kind KIND] [-json]` | search this host for commands, skills, prompts, agents, crews, processes, budgets, rewrites, providers, repos and documents kept by other agent harnesses and by Belai, and say what an import would make of each. Writes and sends nothing; it is the report the website's Scan hosts action asks for (see [agent-import.md](agent-import.md#scanning-a-host)) |
 | `belai agent draft [-json] [-o FILE] PREMISE` | draft a profile from a premise (every offer taken) as markdown for `import`; `-json` prints each offer with its reason |
 | `belai agent crews` | crews and their members |
 | `belai agent crew import [-force] FILE \| export NAME \| delete NAME` | a crew as the JSON the library keeps: `import` validates (every member must be an installed worker profile) and saves, `export` prints it with its `id`, `delete` removes a user crew. Built-in crews are never replaced or deleted |

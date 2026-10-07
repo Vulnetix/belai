@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/libitem"
 )
@@ -143,6 +144,71 @@ func (c *Client) ItemFetch(ctx context.Context, hostID string, kind libitem.Kind
 		return ItemFetched{}, err
 	}
 	return ItemFetched{Version: versionOf(out.Version), Name: out.Name, Body: body, Overwrite: out.Overwrite}, nil
+}
+
+// ── Library scan and import ──────────────────────────────────────────────
+
+// scanTimeout bounds the upload of a scan report, which can be large.
+const scanTimeout = 30 * time.Second
+
+// PostLibraryScan uploads the report of a library_scan request, answering
+// dispatchID. The report is the JSON of libscan.Report; the body is gzipped
+// from 8 KiB. The server accepts it only while that request is delivered to this
+// host.
+func (c *Client) PostLibraryScan(ctx context.Context, hostID, dispatchID string, report any) error {
+	return c.doBody(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/library/scans",
+		map[string]any{"dispatch": dispatchID, "report": report}, nil, scanTimeout, true)
+}
+
+// LibraryImportSkill is a skill that came with an imported agent.
+type LibraryImportSkill struct {
+	Name string `json:"name"`
+	Body string `json:"body"`
+}
+
+// LibraryImport is what a library_import request uploads: the canonical item the
+// host read from the file the scan reported.
+type LibraryImport struct {
+	Dispatch string `json:"dispatch"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	// Body is a string for a Markdown kind and a document, an object for a JSON
+	// kind (see ImportBody).
+	Body any `json:"body"`
+	// Skills are an agent's bundled skills.
+	Skills []LibraryImportSkill `json:"skills,omitempty"`
+	// Target is the profile that receives a document.
+	Target string `json:"target,omitempty"`
+}
+
+// MaxImportBytes is the largest document an import uploads.
+const MaxImportBytes = 256 << 10
+
+// ImportBody wraps a canonical document for the upload: text as a string, JSON as
+// the object it is.
+func ImportBody(text bool, doc []byte) (any, error) {
+	if len(doc) == 0 || len(doc) > MaxImportBytes {
+		return nil, fmt.Errorf("sessionsync: an import is 1 to %d bytes", MaxImportBytes)
+	}
+	if text {
+		return string(doc), nil
+	}
+	if !json.Valid(doc) {
+		return nil, errors.New("sessionsync: the import is not JSON")
+	}
+	return json.RawMessage(doc), nil
+}
+
+// PostLibraryImport uploads an imported item, answering the library_import
+// request in.Dispatch. The server validates it like any item and stores it as a
+// version of kind import.
+func (c *Client) PostLibraryImport(ctx context.Context, hostID string, in LibraryImport) (ItemSaved, error) {
+	var out struct {
+		Version json.RawMessage `json:"version"`
+		Created bool            `json:"created"`
+	}
+	err := c.doBody(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/library/imports", in, &out, requestTimeout, true)
+	return ItemSaved{Version: versionOf(out.Version), Created: out.Created}, err
 }
 
 // ── Automatic sync ───────────────────────────────────────────────────────

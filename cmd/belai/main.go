@@ -97,6 +97,12 @@ func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "skill" || os.Args[1] == "prompt" || os.Args[1] == "command" || os.Args[1] == "process" || os.Args[1] == "repo" || os.Args[1] == "budget" || os.Args[1] == "rewrite" || os.Args[1] == "provider" || os.Args[1] == "mcp") {
 		exitProcess(runLibraryCLI(ctx, libraryCommands[os.Args[1]], os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	// `belai library scan` searches this host for items kept by other agent
+	// harnesses and reports them as the website's Scan hosts action would
+	// (docs/agent-import.md).
+	if len(os.Args) > 1 && os.Args[1] == "library" {
+		exitProcess(runLibraryScanCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// `belai rc` runs remote control; `belai rc-session` is one session it
 	// started (hidden: only the daemon runs it).
 	if len(os.Args) > 1 && os.Args[1] == "rc" {

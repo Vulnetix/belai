@@ -594,7 +594,28 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   carried over; what has no field is metadata or only named in the report. It
   writes nothing: `belai agent import -from` previews unless `-yes`, and installs
   skills only through the library validator. Foreign format names stay in this
-  package and its docs.
+  package and its docs. `ImportItem` extends the same converter to every item
+  kind and to the file layouts of the harnesses in `internal/harness` (one
+  adapter per format id, `generic-md` for the rest); it is the one reader behind
+  `belai library scan` and the website's import, see the next entry.
+- **A scan reads what the user's harnesses hold, and an import re-reads it.**
+  `library_scan` and `library_import` (`internal/rc/scan.go`) are always on: no
+  `sync.*` switch, no opt-in, because neither reads anything unless a person asks
+  on the website, a scan reports names, paths, hashes, verdicts and notes of at
+  most 160 bytes (never a document, at most 2000 items and 1 MiB, `partial` at 25
+  seconds), and a document leaves only through an import of that item.
+  `internal/libscan` derives the roots itself from the harness registry (user
+  directories of installed harnesses), Belai's own directories and the projects
+  `projectregistry` has `Trusted` and not `Missing`, and never follows a symbolic
+  link. A `library_import` request is identifiers only and is never trusted:
+  `libscan.Resolve` accepts a path only if it is exactly a file a scan would list,
+  under no link below its root, and `ImportItem` must reproduce the `sha256` the
+  scan saw or the item is refused as changed. `allowed-tools` and any other tool
+  list from a source is metadata text and is never a grant; text that
+  `libstore.UntrustedText` refuses makes the item `invalid`, never repaired. Do not
+  add a harness path to a scanner or a format name to a kind outside
+  `internal/harness`, and do not read a file in `libscan` except through
+  `agentimport.ImportItem`. Docs: [docs/agent-import.md](docs/agent-import.md).
 - **Plugins are installed by the user, validated whole, and namespaced.**
   `internal/plugins` installs only after the user confirms a full listing
   (every hook's event and command included), or `-yes` on the CLI; the TUI
