@@ -18,8 +18,9 @@ import (
 )
 
 // The Getting started view runs once per user on the first interactive
-// launch, and again on /vulnetix setup. It opens on a page of core Belai
-// concepts, explains the main keys and commands, then walks the Vulnetix setup: install the CLI through the
+// launch, and again on /vulnetix setup. It opens on one page of three ideas
+// that carry the rest of Belai, with the commands and keys for each, then walks
+// the Vulnetix setup: install the CLI through the
 // platform package manager (only after the user picks Install), create an
 // account through the enrollment flow, log the CLI in with the device flow,
 // and turn the AI Firewall and the Vulnetix MCP server on.
@@ -31,9 +32,7 @@ import (
 type gsStep int
 
 const (
-	gsConcepts gsStep = iota
-	gsKeys
-	gsCommands
+	gsWelcome gsStep = iota
 	gsCLI
 	gsAccount
 	gsSignup
@@ -42,53 +41,24 @@ const (
 )
 
 // gsPageCount is the number of Getting started pages the header shows.
-const gsPageCount = 6
+const gsPageCount = 4
 
-// gsConcept is one core Belai concept the first page teaches.
-type gsConcept struct {
-	term string
-	desc string
+// gsSection is one of the three ideas the welcome page teaches. The prose
+// marks keys and commands with backticks, which the page renders as key caps.
+type gsSection struct {
+	title string
+	prose string
 }
 
-// gsConceptList, gsKeyList and gsCommandList are what the first three pages
-// teach.
-var (
-	gsConceptList = []gsConcept{
-		{"modes", "agent steers each turn · plan drafts and you approve · goal keeps going until the work stalls"},
-		{"intent", "a mode-less prompt is detected as agent, plan or goal before it runs"},
-		{"guardrails", "untrusted content — tool results, web, files — is classified before it can steer you"},
-		{"ask", "every tool call is allowed, asked or denied; off with guardrails is YOLO"},
-		{"jev", "a decision backend answers with probabilities, never text — guards, intent and routing"},
-		{"routing", "each use case can pick its own model; Jev can route them · /model"},
-		{"relevance", "Jev jobs narrow and reorder, never approve — swap, search, compaction, locate"},
-		{"agents", "a profile carries your turns — built-ins and your own — /profile"},
-		{"locate", "explore ranks files before searching — paths and scores, never contents · /locate"},
-		{"sandbox", "commands run inside an OS sandbox; only workspace roots and caches are writable"},
-		{"budgets", "token budgets cap spend per provider and model · /budgets"},
-		{"intel", "session intelligence: plan limits, pace, trend and usage · /intel"},
-		{"providers", "credentials and local models for every provider · /providers"},
-		{"sessions", "sessions persist, resume and compact · /resume /compact"},
-		{"kanban", "a shared board tracks work across sessions · /kanban"},
-		{"fleet", "kanban workers claim items and work in isolated worktrees · /fleet"},
-		{"firewall", "an AI Firewall can sit in front of every provider call · /firewall"},
-		{"resilience", "transport, turn and semantic-repair retries recover provider trouble"},
-		{"lsp", "language servers give diagnostics only under directories you trust · /lsp"},
-		{"mcp", "MCP servers bring their own tools; their output is classified too · /mcp"},
-		{"skills", "skills load by name and validate before they run · /skills"},
-		{"plugins", "plugins install whole and namespaced, never shadowing built-ins · /plugin"},
-		{"permissions", "allow, ask and deny rules per tool · a deny from either scope wins · /permissions"},
-		{"prompts", "save and reuse prompts from the composer · /prompts"},
-		{"processes", "long-lived commands run supervised with their own log · /processes"},
-		{"sync", "mirror sessions to the Vulnetix website · /sync"},
-		{"rc", "remote control: start and drive sessions here from the website · /rc"},
-		{"hooks", "your hooks only narrow a decision; their text is classified"},
-		{"telemetry", "OpenTelemetry exports facts and identifiers, never prompt content"},
-		{"acp", "editors drive Belai over the Agent Client Protocol · belai acp"},
-		{"confinement", "paths resolve inside workspace roots; a traversal is refused, never clamped"},
-	}
-	gsKeyList     = []string{"tab", "shift+tab", "f3", "f4", "f9"}
-	gsCommandList = []string{"permissions", "model", "settings", "help"}
-)
+// gsSections is what the welcome page says. Three sections cover the lower
+// level concepts (modes, guardrails, jev, routing, agents, sandbox, budgets,
+// sessions, kanban, fleet, firewall, mcp, skills, plugins and the rest) by
+// naming the command or key that opens each.
+var gsSections = []gsSection{
+	{"Stay in control", "Belai checks untrusted content, such as tool results, web pages and files, before it can steer a turn. `shift+tab` cycles the modes (agent, plan, goal, code, auto), `f3` toggles guardrails and `f4` toggles asking before a tool runs. `/permissions` sets allow, ask and deny rules, and commands run inside an OS sandbox."},
+	{"Choose the models and agents", "Every job can use its own model, and a decision backend can route them. `/model` picks them, `/providers` holds credentials and local models, `/agent` engages a profile, `/budgets` caps spend and `/intel` shows plan limits and pace."},
+	{"Keep work going", "Sessions persist: `/resume` returns to one and `/compact` condenses it. `/kanban` and `/fleet` hand work to isolated workers. `/firewall`, `/mcp`, `/skills` and `/plugin` extend and protect Belai, and `/rc` and `/sync` reach your sessions from the website. `/help` lists every key and command."},
+}
 
 type gsField struct {
 	key    string
@@ -569,15 +539,15 @@ func (a *App) handleGettingStartedKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "esc":
-		return a, a.gsBack()
-	case "left":
-		if st.step == gsConcepts || st.step == gsKeys || st.step == gsCommands {
+		return a, a.gsEsc()
+	case "left", "shift+tab":
+		if st.step == gsCLI || st.step == gsAccount {
 			return a, a.gsBack()
 		}
 		return a, nil
 	case "right":
-		if st.step == gsConcepts || st.step == gsKeys || st.step == gsCommands {
-			return a, a.gsGo(st.step + 1)
+		if st.step == gsWelcome {
+			return a, a.gsGo(gsCLI)
 		}
 		return a, nil
 	case "enter", " ":
@@ -586,12 +556,34 @@ func (a *App) handleGettingStartedKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// gsBack steps back a page; on the first page it skips the whole view.
+// gsEsc is esc. On the pages that only tell or ask (welcome, CLI, account,
+// enable) it starts Belai, which is what the header says. The sign-up and login
+// pages are forms with something in flight, so esc steps back from them, as the
+// header says there too. Nothing in flight is ever finished under the user: an
+// install and the enabling run to the end first.
+func (a *App) gsEsc() tea.Cmd {
+	st := &a.gsState
+	switch st.step {
+	case gsSignup, gsLogin:
+		return a.gsBack()
+	case gsCLI:
+		if st.installing {
+			return nil
+		}
+	case gsEnable:
+		if st.enabling {
+			return nil
+		}
+	}
+	a.finishGettingStarted()
+	return nil
+}
+
+// gsBack steps back a page. The first page has nowhere to go back to.
 func (a *App) gsBack() tea.Cmd {
 	st := &a.gsState
 	switch st.step {
-	case gsConcepts:
-		a.finishGettingStarted()
+	case gsWelcome:
 		return nil
 	case gsCLI:
 		if st.installing {
@@ -621,8 +613,8 @@ func (a *App) gsBack() tea.Cmd {
 func (a *App) gsEnter(opts []string) tea.Cmd {
 	st := &a.gsState
 	switch st.step {
-	case gsConcepts, gsKeys, gsCommands:
-		return a.gsGo(st.step + 1)
+	case gsWelcome:
+		return a.gsGo(gsCLI)
 	case gsCLI:
 		switch {
 		case !st.cliChecked || st.installing:
@@ -689,47 +681,27 @@ func (a *App) gettingStartedView() string {
 	w := a.contentWidth()
 	st := &a.gsState
 	titles := map[gsStep]string{
-		gsConcepts: "Concepts", gsKeys: "Keys", gsCommands: "Commands", gsCLI: "Vulnetix CLI", gsAccount: "Vulnetix account",
+		gsWelcome: "Welcome", gsCLI: "Vulnetix CLI", gsAccount: "Vulnetix account",
 		gsSignup: "Create an account", gsLogin: "Log in", gsEnable: "AI Firewall and MCP",
 	}
 	var b strings.Builder
-	b.WriteString(components.SectionHeader("Getting started · "+titles[st.step], fmt.Sprintf("%d/%d", gsPage(st.step), gsPageCount), w))
+	title := fmt.Sprintf("Getting started · %s %d/%d", titles[st.step], gsPage(st.step), gsPageCount)
+	b.WriteString(components.SectionHeaderChoose(title, gsEscHints(st.step), w-2))
 	muted, emph, accent := components.MutedStyle, components.EmphStyle, components.AccentStyle
 	line := func(s string) { b.WriteString(s + "\n") }
-	help := components.HelpBar("enter", "next", "esc", "back")
+	help := components.HelpBar("enter", "next")
 
 	switch st.step {
-	case gsConcepts:
-		line(muted.Render("Welcome to Belai, a safer LLM coding harness. Core concepts that shape every turn:"))
+	case gsWelcome:
+		line(muted.Render("Welcome to Belai, a safer LLM coding harness. Three ideas carry the rest."))
 		line("")
-		for _, c := range gsConceptList {
-			line(fmt.Sprintf("  %s  %s", components.KeyStyle.Render(fmt.Sprintf("%-10s", c.term)), c.desc))
+		body := lipgloss.NewStyle().Width(max(w-8, 24)).PaddingLeft(3)
+		for i, sec := range gsSections {
+			line(accent.Bold(true).Render(fmt.Sprintf("%d  %s", i+1, sec.title)))
+			line(body.Render(gsMark(components.MacKeyText(sec.prose))))
+			line("")
 		}
-		line("")
-		line(muted.Render("shift+tab cycles the modes · f3 toggles guardrails · f4 toggles ask."))
-		help = components.HelpBar("enter/→", "next", "esc", "skip getting started")
-	case gsKeys:
-		line(muted.Render("Welcome to Belai. A few keys worth knowing:"))
-		line("")
-		for _, k := range gsKeyList {
-			line(fmt.Sprintf("  %s  %s", components.KeyStyle.Render(fmt.Sprintf("%-10s", k)), keyDescription(k)))
-		}
-		line("")
-		line(muted.Render("Every binding is listed under /help."))
-		help = components.HelpBar("enter/→", "next", "←/esc", "back")
-	case gsCommands:
-		line(muted.Render("Type / in the prompt for every command. The ones to start with:"))
-		line("")
-		for _, name := range gsCommandList {
-			desc := ""
-			if a.registry != nil {
-				if c, ok := a.registry.Command(name); ok {
-					desc = c.Description
-				}
-			}
-			line(fmt.Sprintf("  %s  %s", components.KeyStyle.Render(fmt.Sprintf("%-13s", "/"+name)), desc))
-		}
-		help = components.HelpBar("enter/→", "next", "←/esc", "back")
+		help = components.HelpBar("enter/→", "next")
 	case gsCLI:
 		switch {
 		case !st.cliChecked:
@@ -759,13 +731,20 @@ func (a *App) gettingStartedView() string {
 			line("")
 			line(components.DangerStyle.Render("✗ " + mcpClean(st.installErr, 300)))
 		}
+		if st.cliChecked && !st.installing {
+			line("")
+			line(muted.Render(gsNetworkNote))
+			help = components.HelpBar("enter", "next (network check)", "←", "back")
+		}
 	case gsAccount:
 		switch {
 		case !st.credChecked:
 			line(muted.Render("Checking for Vulnetix CLI credentials…"))
 		case st.hasCred:
 			line(accent.Render("✓ ") + "Vulnetix CLI credentials found.")
-			help = components.HelpBar("enter", "turn on the AI Firewall and MCP", "esc", "back")
+			line("")
+			line(muted.Render(gsNetworkNote))
+			help = components.HelpBar("enter", "turn on the AI Firewall and MCP (network check)", "←", "back")
 		default:
 			line("A Vulnetix account turns on the AI Firewall and the Vulnetix MCP server.")
 		}
@@ -863,7 +842,10 @@ func (a *App) gettingStartedView() string {
 			}
 			line(components.Cursor(i == st.sel) + label)
 		}
-		help = components.HelpBar("↑↓", "choose", "enter", "confirm", "esc", "back")
+		help = components.HelpBar("↑↓", "choose", "enter", "confirm")
+		if st.step == gsCLI {
+			help = components.HelpBar("↑↓", "choose", "enter", "confirm (the next step is a network check)")
+		}
 	}
 	if help != "" {
 		b.WriteString("\n" + help + "\n")
@@ -874,32 +856,49 @@ func (a *App) gettingStartedView() string {
 // gsPage maps a step to the page count shown in the header.
 func gsPage(s gsStep) int {
 	switch s {
-	case gsConcepts:
+	case gsWelcome:
 		return 1
-	case gsKeys:
-		return 2
-	case gsCommands:
-		return 3
 	case gsCLI:
-		return 4
+		return 2
 	case gsAccount, gsSignup, gsLogin:
-		return 5
+		return 3
 	}
-	return 6
+	return 4
 }
 
-// keyDescription reads a binding's description from the /help table, so the
-// getting-started page cannot drift from it.
-func keyDescription(key string) string {
-	for _, sec := range keySections() {
-		if sec.Title != "anywhere" && sec.Title != "chat" {
-			continue
-		}
-		for _, kb := range sec.Bindings {
-			if kb.Keys == key {
-				return kb.Desc
-			}
+// gsNetworkNote tells the user what Next does on the steps before the Enable
+// page: it reaches the AI Firewall and the Vulnetix MCP server.
+const gsNetworkNote = "Next checks the AI Firewall and the Vulnetix MCP server over the network."
+
+// gsEscHints returns the header's right-hand text for a step, longest first;
+// the header uses the first one that fits. The pronunciation is italic.
+func gsEscHints(step gsStep) []string {
+	esc := components.KeyStyle.Render("esc")
+	if step == gsSignup || step == gsLogin {
+		return []string{
+			components.MutedStyle.Render("Press ") + esc + components.MutedStyle.Render(" to go back"),
+			esc + components.MutedStyle.Render(" goes back"),
 		}
 	}
-	return ""
+	m := components.MutedStyle
+	ital := m.Italic(true)
+	return []string{
+		m.Render("Press ") + esc + m.Render(" to start using Belai ") + ital.Render("(bell-lay)") + m.Render(" now"),
+		m.Render("Press ") + esc + m.Render(" to start using Belai now"),
+		esc + m.Render(" to start"),
+	}
+}
+
+// gsMark renders the backticked words of the welcome prose as key caps.
+func gsMark(s string) string {
+	parts := strings.Split(s, "`")
+	var b strings.Builder
+	for i, p := range parts {
+		if i%2 == 1 {
+			b.WriteString(components.KeyStyle.Render(p))
+			continue
+		}
+		b.WriteString(p)
+	}
+	return b.String()
 }

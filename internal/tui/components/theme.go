@@ -107,6 +107,26 @@ func SectionHeader(title, subtitle string, width int) string {
 	return line + "\n" + Rule(width) + "\n"
 }
 
+// SectionHeaderChoose is [SectionHeader] with an already styled right-hand side
+// chosen from rights, longest first: the first one that fits beside the title
+// with two columns between them is used, and none is drawn when none fits.
+func SectionHeaderChoose(title string, rights []string, width int) string {
+	if width < 20 {
+		width = 20
+	}
+	mark := AccentStyle.Render("◈")
+	left := mark + " " + headerStyle.Render(title)
+	leftW := visibleLen("◈ " + title)
+	line := left
+	for _, r := range rights {
+		if rw := lipgloss.Width(r); leftW+2+rw <= width {
+			line = left + spaces(width-leftW-rw) + r
+			break
+		}
+	}
+	return line + "\n" + Rule(width) + "\n"
+}
+
 // HelpBar renders key/action pairs as one dim line: keycaps in the accent
 // colour, actions muted, separated by mid dots.
 func HelpBar(pairs ...string) string {
