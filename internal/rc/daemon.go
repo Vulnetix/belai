@@ -205,6 +205,10 @@ type Daemon struct {
 	codeSlot chan struct{}
 	// libsync is the automatic sync's memory of what it has settled (autosync.go).
 	libsync *libSyncState
+	// scanSlot holds a token while a library scan runs; importMu serialises the
+	// library imports a website selection fans out (scan.go).
+	scanSlot chan struct{}
+	importMu sync.Mutex
 }
 
 type child struct {
@@ -306,7 +310,7 @@ func New(o Options) (*Daemon, error) {
 		o.LibrarySyncEvery = DefaultLibrarySyncEvery
 	}
 	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
-		codeSlot: make(chan struct{}, 2), libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
+		codeSlot: make(chan struct{}, 2), scanSlot: make(chan struct{}, 1), libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -463,7 +467,8 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		kind := "unknown"
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
-			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "mcp_secrets_install", "mcp_secrets_remove", "library_sync", "project_prefs", "teleport_backup", "teleport_code":
+			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "mcp_secrets_install", "mcp_secrets_remove", "library_sync", "library_scan", "library_import",
+			"project_prefs", "teleport_backup", "teleport_code":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -566,6 +571,12 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("%s: %s", r.Kind, report)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "library_scan":
+		// Answered in the background: a scan walks directories for up to 25 seconds.
+		d.startLibraryScan(ctx, r, ack)
+	case "library_import":
+		// Answered in the background, one import at a time.
+		d.startLibraryImport(ctx, r, ack)
 	case "library_sync":
 		// Counts go in the acknowledgement; no item name or document does.
 		report, why := d.librarySyncNow(ctx)

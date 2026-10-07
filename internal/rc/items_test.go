@@ -1,9 +1,11 @@
 package rc
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +35,11 @@ type itemSite struct {
 	mu      sync.Mutex
 	acks    map[string][3]string
 	backups []map[string]json.RawMessage
+	// scans and imports are what library_scan and library_import uploaded
+	// (scan.go); gzipped counts the bodies that arrived compressed.
+	scans   []map[string]json.RawMessage
+	imports []map[string]json.RawMessage
+	gzipped int
 	// served is what a fetch of itemID returns: the name and the body (a string
 	// for Markdown, an object for JSON).
 	name      string
@@ -59,6 +66,26 @@ func (s *itemSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var in map[string]json.RawMessage
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		s.backups = append(s.backups, in)
+		w.Write([]byte(`{"item":{"id":"` + itemID + `"},"version":"` + itemVer + `","created":true}`))
+	case r.Method == http.MethodPost && (p == h+"/library/scans" || p == h+"/library/imports"):
+		var in map[string]json.RawMessage
+		var body io.Reader = r.Body
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			zr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, "bad gzip", http.StatusBadRequest)
+				return
+			}
+			s.gzipped++
+			body = zr
+		}
+		_ = json.NewDecoder(body).Decode(&in)
+		if p == h+"/library/scans" {
+			s.scans = append(s.scans, in)
+			w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		s.imports = append(s.imports, in)
 		w.Write([]byte(`{"item":{"id":"` + itemID + `"},"version":"` + itemVer + `","created":true}`))
 	case r.Method == http.MethodGet && p == h+"/library/provider-keys":
 		s.keysCalls++

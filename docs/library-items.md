@@ -657,7 +657,7 @@ no longer lists a provider that has no credentials left.
 
 ## How a document travels
 
-Three things move a document between a host and the library. All of them need
+These move a document between a host and the library. All of them need
 `belai rc` running and the Vulnetix CLI signed in, and all of them go through the
 same client as session sync (same origin allowlist, same credential).
 
@@ -668,6 +668,17 @@ version. A backup writes nothing here.
 **Sync now (`library_sync`).** The website asks; the host runs one pass of the
 automatic sync for every item whose kind is switched on, including items a recent
 answer settled, and replies with counts. It is the Library page's "Sync from hosts".
+
+**Scan hosts (`library_scan`) and Import (`library_import`).** A person who wants
+what another agent harness holds (a Claude Code command, a Cursor command, an
+`AGENTS.md`) in the library presses Scan hosts on the page. Each online host searches
+the harnesses installed on it, Belai's own files and the repositories it trusts,
+checks every candidate with the converter described in [agent-import.md](agent-import.md),
+and uploads a report. The page lists what was found by host, and Import moves the items
+the person picks into the library as new versions. Both requests are always on (no
+`sync.*` switch), carry identifiers only, and the host reads a file only when it is
+exactly one a scan would list. See
+[remote-control.md](remote-control.md#scanning-and-importing-from-other-harnesses).
 
 **Install (`item_install`).** The website names a library item, one of its
 versions, a kind, and whether it may replace the host's item. The host fetches that

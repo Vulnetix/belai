@@ -457,6 +457,17 @@ type Dispatch struct {
 	// fetched, never carried.
 	ItemKind string `json:"itemKind,omitempty"`
 	Name     string `json:"name,omitempty"`
+	// A "library_scan" request may name one kind in ItemKind (empty is every
+	// kind). A "library_import" request names the item a scan reported: its kind
+	// in ItemKind, its Path (a file under a place the host scans, with "#name"
+	// after a settings file) and the SHA256 of the canonical document the scan
+	// saw, the scan's own dispatch in ScanDispatch, and for a document the
+	// profile that receives it in Target. Identifiers only: the host re-derives
+	// where it may read, checks the hash and reads the file itself.
+	ScanDispatch string `json:"scanDispatch,omitempty"`
+	Path         string `json:"path,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	Target       string `json:"target,omitempty"`
 	// A "provider_keys_install" request names the catalogue slugs of the providers
 	// whose stored keys the host is to take. Slugs only: a key is fetched over TLS,
 	// once, never carried.
