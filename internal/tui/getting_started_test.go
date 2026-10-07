@@ -268,3 +268,14 @@ func TestFirewallKeySyncSendsTheKeyOnStdin(t *testing.T) {
 		t.Fatalf("stdin = %q", stdin)
 	}
 }
+
+func TestMCPCleanDropsHTMLFromAServerError(t *testing.T) {
+	err := `mcp server returned HTTP 403 (server said: HTTP 403: <html><head><title>403 Forbidden</title><link rel="stylesheet" href="/a.css"><link rel="ic`
+	got := mcpClean(err, 200)
+	if strings.ContainsAny(got, "<>") || strings.Contains(got, "href") {
+		t.Fatalf("markup left in %q", got)
+	}
+	if !strings.Contains(got, "HTTP 403") || !strings.Contains(got, "403 Forbidden") {
+		t.Fatalf("the status and page title should survive: %q", got)
+	}
+}

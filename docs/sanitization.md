@@ -20,6 +20,7 @@ the sanitiser sits in the tool-result pipeline.
 | Free text for a model or transcript | `internal/sanitize` | `Text`, `TextN` | Repairs |
 | Dictated speech, before and after the `voice_cleanup` role | `internal/sanitize` | `Text` | Repairs |
 | One line of UI, log or notification text | `internal/sanitize` | `Line`, `Clip` | Repairs |
+| An HTML error body shown on one line (an MCP 403 page) | `internal/sanitize` | `PlainText` | Repairs |
 | Identifier or label | `internal/sanitize` | `Ident` | Repairs |
 | State for a decision backend (Jev) | `internal/sanitize` | `ForDecision` (returns `DecisionText`) | Repairs |
 | File path, before resolution | `internal/sanitize` | `PathText` | Refuses |
@@ -59,6 +60,11 @@ argument so the model can correct it.
 whitespace to single spaces; `Clip` also caps the length and appends an
 ellipsis after at most `max` runes. The ad hoc copies of this logic in the
 firewall, forge, TUI and session-sync code now call these functions.
+
+`PlainText` is `Line` for a body that may be a web page. It drops tags, comments
+and the content of script and style elements, drops a tag cut off by a byte
+limit, decodes entities and folds the rest onto one line. The MCP check and the
+Getting started screen use it, so a gateway's 403 page reads as its text.
 
 ### Delimiter markup: `Sanitize`
 
