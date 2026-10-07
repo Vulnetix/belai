@@ -349,9 +349,8 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.addWorkspaceDirCmd(arg, true)
 	})
-	r.Register("help", "show commands and keyboard shortcuts", nil, func(a *App, arg string) tea.Cmd {
-		a.addSystem(helpText(a.registry))
-		return nil
+	r.Register("help", "browse commands and keyboard shortcuts in a scrollable screen", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewHelp)
 	})
 	r.Register("clear", "start a new session", nil, func(a *App, arg string) tea.Cmd {
 		a.startNewSession()

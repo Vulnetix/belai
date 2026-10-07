@@ -136,20 +136,23 @@ func TestHelpTextCoversEveryHandledKey(t *testing.T) {
 	}
 }
 
-// /help writes one system message holding the whole body.
-func TestHelpCommandAddsOneSystemMessage(t *testing.T) {
-	a := New(Options{})
+// /help opens a screen. It adds nothing to the transcript or the session
+// record: the text is the user's to read, not a message.
+func TestHelpCommandOpensTheScreenAndAddsNoMessage(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
 	before := len(a.messages)
 	a.handleCommand("/help")
-	if len(a.messages) != before+1 {
-		t.Fatalf("messages = %d, want %d", len(a.messages), before+1)
+	if a.view != viewHelp {
+		t.Fatalf("view = %v, want the help screen", a.view)
 	}
-	last := a.messages[len(a.messages)-1]
-	if last.Role != "system" {
-		t.Fatalf("role = %q, want system", last.Role)
+	if len(a.messages) != before {
+		t.Fatalf("messages = %d, want %d: help must not enter the transcript", len(a.messages), before)
 	}
-	if !strings.Contains(last.Text(), "commands:") || !strings.Contains(last.Text(), "shift+tab") {
-		t.Fatalf("help message lacks commands or keys:\n%s", last.Text())
+	lines, _ := a.helpLines(a.contentWidth())
+	page := gsPlain(strings.Join(lines, "\n"))
+	if !strings.Contains(page, "commands:") || !strings.Contains(page, "shift+tab") {
+		t.Fatalf("help screen lacks commands or keys:\n%s", page)
 	}
 }
 
