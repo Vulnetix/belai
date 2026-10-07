@@ -85,6 +85,8 @@ const (
 	// emitted after the tool call that moved it and carries the new location
 	// both root-relative and absolute. Informational: it changes nothing the
 	// model can see, it tells the UI where later relative paths now point.
+	// A turn that moved the directory ends with a second one (CwdReset) that
+	// puts it back where the turn started.
 	EventCwdKind
 	// EventToolMetaKind carries metadata from a tool result, keyed by
 	// ToolCallID. Render-only: it never enters the conversation and never
@@ -197,6 +199,9 @@ type Event struct {
 	// the same location as an absolute path, for the footer.
 	Cwd    string
 	CwdDir string
+	// CwdReset marks an EventCwdKind that is the end-of-turn reset to the
+	// directory the turn started in, not a move the model made.
+	CwdReset bool
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string

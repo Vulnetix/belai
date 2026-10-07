@@ -239,7 +239,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   leading `~/` expands to the user's home before the root match. `Read`,
   `Glob`, `Grep`, `Cd`, and the native catalogue all share this rule through
   the one `*Cwd`; do not add an `IsAbs` bypass to `SanitizePath` — the
-  confinement check stays the last word.
+  confinement check stays the last word. A turn restores the working directory
+  it started in when it ends (`Session.run`, `Cwd.Restore`), so a `Cd` lasts
+  for one turn; the reset line the TUI writes is harness text.
 - **Plan mode has no Bash by default.** Plan mode advertises and enforces
   the fail-closed surface (`Registry.PlanWith` and `modes.ToolAllowed`):
   no mutating tools and no `Bash`. A read-only `Bash` returns only when an

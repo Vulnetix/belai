@@ -18,6 +18,9 @@ import (
 // histogram. Only the mode, pass count and an outcome word are recorded:
 // nothing from the prompt or the reply.
 func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
+	if !s.exploreSubagent {
+		defer s.resetCwdAfterTurn(emit)()
+	}
 	if !otel.Enabled() || s.exploreSubagent {
 		return s.runWithClarify(ctx, history, in, streaming, emit)
 	}
@@ -40,6 +43,25 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	span.End()
 	otel.Observe("belai.turn.duration", time.Since(start), otel.S(otel.AttrMode, mode), otel.S(otel.AttrOutcome, outcome))
 	return res, err
+}
+
+// resetCwdAfterTurn records the working directory a turn starts in and returns
+// the function that puts it back when the turn ends, however it ends, and says
+// so with an EventCwdKind marked CwdReset. Every transport goes through run,
+// so the TUI, headless, remote-control and ACP sessions all start each turn
+// where the last one started, not where the model last moved. A move made
+// between turns (the TUI's worktree switch) is the next turn's starting point.
+func (s *Session) resetCwdAfterTurn(emit func(Event)) func() {
+	cwd := s.registry.Cwd()
+	if cwd == nil {
+		return func() {}
+	}
+	start := cwd.Rel()
+	return func() {
+		if cwd.Restore(start) {
+			emit(Event{Kind: EventCwdKind, Cwd: cwd.Rel(), CwdDir: cwd.Dir(), CwdReset: true})
+		}
+	}
 }
 
 func turnOutcome(ctx context.Context, err error) string {

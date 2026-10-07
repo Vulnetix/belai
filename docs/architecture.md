@@ -1110,6 +1110,23 @@ extra roots so the model knows the boundary. `Cd` still moves only inside
 the primary root; added roots are reached by naming absolute paths. This is
 a deliberate, user-confirmed relaxation of the default single-root invariant.
 
+**A turn gives the directory back.** The working directory a turn starts in is
+where the next one starts. `Session.run` (the one wrapper every transport goes
+through: the TUI, headless, remote control and ACP) records `Cwd.Rel()` when a
+turn begins and, however the turn ends, calls `Cwd.Restore` with it. A
+directory that has since been deleted falls back to the session root. When the
+restore moved anything, the session sends one more `agent.EventCwdKind` with
+`CwdReset` set, before the turn is reported done. A move made between turns
+(the TUI's worktree switch, which needs an idle session) is simply where the
+next turn starts.
+
+The TUI writes a plain system line for each move and for the reset:
+`working directory: /internal`, then `working directory reset to / (session
+root)`. Both are ordinary, persisted system entries, so they are in the session
+record and come back on `/resume`. A cancelled turn drops the agent's reset event
+(the stream's context is done), so the TUI remembers the directory the turn
+started in and puts it back itself on an interrupt, with the same line.
+
 ### First-run workspace trust
 
 Belai refuses to touch a directory it has never seen without an explicit
