@@ -174,7 +174,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall,
+		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP,
 	} {
 		if err := v(s); err != nil {
 			return err
@@ -384,6 +384,7 @@ func (e *Effective) apply(s Settings, src Source) {
 		for name, srv := range s.MCP.Servers {
 			e.Settings.MCP.Servers[name] = srv
 		}
+		e.Settings.MCP.Builtin = mergeMCPBuiltin(e.Settings.MCP.Builtin, s.MCP.Builtin)
 		e.Origin["mcp"] = src
 	}
 	if s.Sandbox != nil {

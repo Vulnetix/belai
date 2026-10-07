@@ -35,6 +35,11 @@ package tools
 //     same arbitrary bytes read back, so it classifies again rather than
 //     trading on the earlier verdict.
 //
+// KindDecision (the built-in decision server's result) is absent on purpose:
+// it is JSON the harness builds from numbers and the caller's own options, and
+// no backend or server text can reach it, so it is sanitised and promoted.
+// Never let text from a decision backend into that kind.
+//
 // KindFetched (a SearchFetched result) is the one place arbitrary web text
 // rides in a sanitise-only kind, and it is safe only because the session's
 // index classified each chunk when the page was indexed (docs/web-fetch.md),

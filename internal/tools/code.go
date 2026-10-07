@@ -94,7 +94,7 @@ func (c Code) Execute(ctx context.Context, args map[string]any) (Result, error) 
 var nestedKinds = map[Kind]bool{
 	KindRead: true, KindGrep: true, KindGlob: true, KindEdit: true, KindWrite: true,
 	KindBash: true, KindWebFetch: true, KindWebSearch: true, KindNative: true,
-	KindRemote: true, KindFetched: true,
+	KindRemote: true, KindFetched: true, KindDecision: true,
 }
 
 // nestedExcluded names tools whose kind is otherwise reachable but which a
@@ -111,8 +111,8 @@ func NestedAllowed(t Tool) bool {
 	return nestedKinds[t.Kind()] && !nestedExcluded[t.Definition().Name]
 }
 
-// CodeSurface returns the registry code mode advertises: r without MCP tools,
-// plus the Code tool. r is never changed, so the other modes' registries stay
+// CodeSurface returns the registry code mode advertises: r without MCP tools
+// (the built-in decision tools are not MCP-kind and stay), plus the Code tool. r is never changed, so the other modes' registries stay
 // byte-for-byte what they were.
 func (r *Registry) CodeSurface(code *Code) *Registry {
 	list := make([]Tool, 0, len(r.tools)+1)

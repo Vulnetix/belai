@@ -423,8 +423,7 @@ func main() {
 
 	// MCP servers start only here: past the trust gate, from the user's own
 	// settings, and in the background so a slow server never holds startup.
-	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
-		Builtins:   builtinMCP(settings, workdir),
+	mcpMgr := mcp.StartAsync(ctx, effectiveMCP(settings, workdir), withBuiltinMCP(mcp.Options{
 		Workdir:    workdir,
 		HTTPClient: httpclient.Default(),
 		VulnetixAuth: func() (string, error) {
@@ -433,7 +432,7 @@ func main() {
 		Sandbox: func() sandbox.Policy {
 			return sandbox.FromSettings(settings.Sandbox, []string{workdir}, pol)
 		},
-	})
+	}, settings, workdir))
 	mcp.SetActive(mcpMgr)
 	stopTelemetry := startTelemetry(settings, workdir)
 	shutdown := func() {
@@ -693,7 +692,8 @@ func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol
 	return headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
 		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk,
-		MCP: mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
+		AskDecider: cliAskDecider(allowAsk, settings, workdir),
+		MCP:        mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
 	})
 }
 

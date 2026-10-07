@@ -84,6 +84,9 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// A teleport replay's hand-over is another host's model's text and the
 		// parts of a patch from another host's working tree.
 		KindTeleport: true,
+		// The built-in decision server's result is JSON the harness composes
+		// from numbers and the caller's own options: sanitise-only.
+		KindDecision: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

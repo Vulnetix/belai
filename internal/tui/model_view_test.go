@@ -28,6 +28,7 @@ func TestModelViewRendersRolesAndWarning(t *testing.T) {
 }
 
 func TestModelRowsReflectSettings(t *testing.T) {
+	noVulnetixCredentials(t)
 	a := New(Options{})
 	// Pin the llm stack: an embedded build defaults to models, which adds the
 	// phase rows, and an explicit kind is honoured on every build.
@@ -35,10 +36,11 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	// 18 fixed rows, then one routing row per role-manager use case, so a new
-	// use case adds a row without this count being edited by hand.
-	if want := 18 + len(routingUseCaseKeys()); len(rows) != want {
-		t.Fatalf("len(rows) = %d, want %d (18 fixed + %d use cases)", len(rows), want, len(routingUseCaseKeys()))
+	// 20 fixed rows (the built-in MCP group's two among them: the Vulnetix row
+	// needs credentials), then one routing row per role-manager use case, so a
+	// new use case adds a row without this count being edited by hand.
+	if want := 20 + len(routingUseCaseKeys()); len(rows) != want {
+		t.Fatalf("len(rows) = %d, want %d (20 fixed + %d use cases)", len(rows), want, len(routingUseCaseKeys()))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])
@@ -49,8 +51,8 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	if rows[13].role != roleRouting || rows[13].key != "kind" {
 		t.Fatalf("routing kind row = %+v", rows[13])
 	}
-	if last := rows[len(rows)-1]; last.role != rolePosture {
-		t.Fatalf("last row = %+v, want the posture group", last)
+	if last := rows[len(rows)-1]; last.role != roleMCP || last.key != "mcp_skip_ask" {
+		t.Fatalf("last row = %+v, want the built-in MCP group", last)
 	}
 	// The save target lives on the group header; no group carries a scope row.
 	for _, r := range rows {

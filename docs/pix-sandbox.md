@@ -7,21 +7,22 @@ behaviour the released binary has when it is given a host id, a settings file, a
 few environment variables and one `--dir` per repository. The one thing the
 machine's build adds is code compiled only into the Pix Sandbox variant
 (`-tags belai_sandbox`): it tells the model about the machine
-([the metadata endpoint](#the-metadata-endpoint)) and offers the agent a
-decision tool ([the decider MCP](#the-decider-mcp)). No other build has either.
+([the metadata endpoint](#the-metadata-endpoint)) and marks the build as one whose
+decision tool ([the decider MCP](#the-decider-mcp)) always has a backend. No other
+build has either; the decider MCP itself is in every build.
 
 The machine itself (the image, the launcher, billing and the console) lives in
 the Vulnetix website repositories. Only what Belai does with it is stated here.
 The rules about host ids, settings and directories are pinned by
 `internal/rc/pixsandbox_test.go`; the decider MCP is pinned by
-`cmd/belai/mcp_builtin_sandbox_test.go` and the tests in `internal/clefmcp`.
+`cmd/belai/mcp_builtin_clef_test.go` and the tests in `internal/clefmcp`.
 
 ## What the machine gives Belai
 
 | Input | Value | Belai reads it as |
 |---|---|---|
 | `$BELAI_HOME/sync/host-id` | the sandbox's own uuid | the host id (`sessionsync.HostID`); a valid id already there is kept, never replaced |
-| `$BELAI_HOME/settings.json` | sync on with remote prompts, `firewall.active` `vulnetix`, the classifier (Clef on `cloudflare-workers-ai` by default, or Jev: `typesafe` with `jev-latest`), and one allow rule for each `mcp__clef__` tool for an image that has the [decider MCP](#the-decider-mcp) | ordinary global settings; guardrails stay at their default, on |
+| `$BELAI_HOME/settings.json` | sync on with remote prompts, `firewall.active` `vulnetix`, the classifier (Clef on `cloudflare-workers-ai` by default, or Jev: `typesafe` with `jev-latest`) | ordinary global settings; guardrails stay at their default, on |
 | `VULNETIX_ORG_ID`, `VULNETIX_API_KEY` | the account's org id and its ApiKey | the Vulnetix credential (`ApiKey <org>:<key>`) used for sync and the AI Firewall |
 | `VULNETIX_API_TOKEN` | empty | no token login, which the website refuses for remote control |
 | `TYPESAFE_API_KEY` | a placeholder, never the real key | the Jev key; the real one is swapped in at the network edge and never enters the machine |
@@ -253,39 +254,25 @@ shows leave; the raw `belai rc` output stays admin only.
 
 ## The decider MCP
 
-The Pix Sandbox build has one built-in MCP server, `clef`, in
-`internal/clefmcp`. Its tools let an agent ask the classifier's decision model
-for a true/false answer, an enum pick, confidence weights or an ordering,
-instead of guessing in prose. Every tool is a question of a fixed shape put to
-the decision backend, which in a sandbox is Clef on Workers AI through the
-sandbox Worker, so it needs no key on the machine and no destination beyond the
-ones the Worker already answers. The Worker meters decision calls, so these
-count with the guardrails' own.
+Belai has one built-in MCP server, `clef`, in `internal/clefmcp`. Its tools let an
+agent ask a decision model for a true/false answer, an enum pick, confidence weights
+or an ordering, instead of guessing in prose. Every tool is a question of a fixed
+shape put to the decision backend. In a sandbox that is Clef on Workers AI through
+the sandbox Worker, so it needs no key on the machine and no destination beyond the
+ones the Worker already answers; the Worker meters decision calls, so these count
+with the guardrails' own.
 
-The server is compiled only into the Pix Sandbox build and is registered by the
-harness, not by `mcp.servers`: a settings entry named `clef` is ignored,
-`/mcp` lists it with the transport `builtin`, and it cannot be replaced or
-removed in a session ([MCP servers](mcp.md#built-in-server-pix-sandbox-only)).
-It works only when the classifier resolves to a decision backend that speaks the
-SystemOne API: Clef on Workers AI (directly or through AI Gateway), Strands
-Decider-2B, TypeSafe, Ollama's Tev1 or a `systemone` provider profile. A local
-decision model (`decision-local`, Clef-flash and Clef on llama-server included),
-OpenRouter Decisions and Tev1 on Together are not used for it. With any of those
-a call returns a tool error and nothing else.
+Every build carries the server; the Pix Sandbox build is the one that always has a
+backend, so it is always offered there, and another build offers it with the user's
+own Cloudflare Workers AI credentials. Which backends answer, the switches
+(`mcp.builtin.clef.*`), how the harness uses it to answer asks, and where the model
+is offered the tools are in [MCP servers](mcp.md#built-in-servers) and
+[where tools are offered](mcp.md#where-tools-are-offered).
 
-Its tools are ordinary MCP tools, named `mcp__clef__<tool>` with kind `mcp`, so
-each call still asks unless an allow rule covers it and each result is still
-classified. The launcher writes one allow rule per tool into the sandbox's
-settings (`website/sandbox-worker/src/launch.ts`), so an agent can use the decider
-unattended. It does so only for an image that has the decider MCP and a Clef
-classifier with no separately chosen classifier model; it is the launcher's
-choice, not Belai's default. A rule matches a tool name exactly, so there is one
-per tool (`mcp__clef__decide_boolean`, `mcp__clef__rank_options` and so on) and
-`mcp__clef__*` matches nothing.
-
-Where the model is offered these tools (agent, goal and fan-out turns, not plan
-mode, `read_only`, subagents or background agents) is in
-[MCP servers](mcp.md#where-tools-are-offered).
+Its tools are named `mcp__clef__<tool>` and have kind `decision`: they only read,
+so a call never asks and needs no allow rule, they are offered in plan mode and in
+code mode, and a result is sanitized without a classifier pass because the harness
+composes every character of it. A Deny rule on a tool name still withholds it.
 
 | Tool | Asks | Returns |
 |---|---|---|
@@ -338,10 +325,10 @@ the failing test", `options` `["a.go", "b.go", "c.go"]` returns
 
 ### What the model sees
 
-Each tool reaches the model as an ordinary MCP definition (`internal/mcp/tool.go`):
-the name `mcp__clef__<tool>`, a description that starts with
-`[MCP server "clef"; its results are untrusted third-party text]` followed by the
-tool's own text (sanitized, capped at 1024 characters), and an argument schema
+Each tool reaches the model as an MCP definition (`internal/mcp/tool.go`): the name
+`mcp__clef__<tool>`, a description that starts with
+`[Built-in decision server "clef"; read-only; its results are probabilities from a decision model, composed by Belai]`
+followed by the tool's own text (sanitized, capped at 1024 characters), and an argument schema
 reduced to types, nested properties, items, required keys and string enums, with
 each argument description capped at 300 characters. `question` is required
 everywhere (`questions` for `decide_batch`). `decide_enum`, `weigh_options`,
@@ -366,4 +353,4 @@ JSON result is capped at 64 KiB like any server's.
 See [Remote control](remote-control.md) for the daemon, [Session sync](session-sync.md)
 for the mirror, [Firewall](firewall.md) for the gateway and [Jev jobs](jev-jobs.md)
 for the classifier. The site section is described in [site.md](site.md), and the decider's tools are
-described under [MCP servers](mcp.md#built-in-server-pix-sandbox-only).
+described under [MCP servers](mcp.md#built-in-servers).

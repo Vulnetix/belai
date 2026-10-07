@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -258,5 +259,69 @@ func TestResultRendering(t *testing.T) {
 	}
 	if got := render(CallResult{Content: []Content{{Type: "resource"}}}); got != "[resource omitted]" {
 		t.Fatalf("resource = %q", got)
+	}
+}
+
+// A cred: header value is read from the credential store at dial time, and the
+// server sees the secret; settings keep only the reference.
+func TestHTTPServerCredReference(t *testing.T) {
+	srv := serveHTTP(t, false)
+	defer srv.Close()
+	var asked [][2]string
+	m := Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
+		"fake": {Transport: "http", URL: srv.URL, Headers: map[string]string{"Authorization": "cred:token"}},
+	}}, Options{HTTPClient: srv.Client(), Secret: func(server, key string) (string, error) {
+		asked = append(asked, [2]string{server, key})
+		return "Bearer tok", nil
+	}})
+	defer m.Close()
+	checkEcho(t, m)
+	if len(asked) == 0 || asked[0] != [2]string{"fake", "token"} {
+		t.Fatalf("the credential must be read for this server only: %v", asked)
+	}
+}
+
+// A reference that cannot be resolved fails the server with the reason and
+// never starts it with the literal reference text as its credential.
+func TestUnresolvedReferencesFailTheServer(t *testing.T) {
+	srv := serveHTTP(t, false)
+	defer srv.Close()
+	cases := map[string]config.MCPServer{
+		"nosecret": {Transport: "http", URL: srv.URL, Headers: map[string]string{"Authorization": "cred:token"}},
+		"novault":  {Transport: "http", URL: srv.URL, Headers: map[string]string{"Authorization": "vault:TOKEN"}},
+		"vaultenv": {Command: os.Args[0], Env: map[string]string{"BELAI_FAKE_MCP": "1", "X": "vault:TOKEN"}},
+		"vxenv":    {Command: os.Args[0], Env: map[string]string{"BELAI_FAKE_MCP": "1", "X": "vulnetix:cli"}},
+		"badref":   {Command: os.Args[0], Env: map[string]string{"BELAI_FAKE_MCP": "1", "X": "cred:"}},
+	}
+	m := Start(context.Background(), &config.MCPSettings{Servers: cases}, Options{HTTPClient: srv.Client(),
+		Secret: func(string, string) (string, error) { return "", errors.New("not stored") }})
+	defer m.Close()
+	if len(m.Tools()) != 0 {
+		t.Fatal("a server with an unresolved reference offered tools")
+	}
+	for _, s := range m.Status() {
+		if s.State != StateFailed || s.Err == "" {
+			t.Errorf("%s: %+v", s.Name, s)
+		}
+	}
+}
+
+// A vault entry resolves from the host's lease, in a header only, and a secret
+// that looks like a reference is refused.
+func TestVaultReferenceAndSecretShape(t *testing.T) {
+	srv := serveHTTP(t, false)
+	defer srv.Close()
+	m := Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
+		"fake": {Transport: "http", URL: srv.URL, Headers: map[string]string{"Authorization": "vault:PROD_TOKEN"}},
+	}}, Options{HTTPClient: srv.Client(), Vault: func(name string) (string, bool) { return "Bearer tok", name == "PROD_TOKEN" }})
+	checkEcho(t, m)
+	m.Close()
+
+	m = Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
+		"fake": {Transport: "http", URL: srv.URL, Headers: map[string]string{"Authorization": "cred:t"}},
+	}}, Options{HTTPClient: srv.Client(), Secret: func(string, string) (string, error) { return "env:HOME", nil }})
+	defer m.Close()
+	if len(m.Tools()) != 0 {
+		t.Fatal("a stored secret that starts with env: must be refused, not read as a reference")
 	}
 }

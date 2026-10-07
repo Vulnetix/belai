@@ -405,6 +405,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindCode: false,
 		// No tool carries KindTeleport; it stays off the read-only list.
 		KindTeleport: false,
+		// Decisions only read: no ask, offered in plan mode, run concurrently.
+		KindDecision: true,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

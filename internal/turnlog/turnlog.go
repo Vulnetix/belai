@@ -202,6 +202,12 @@ func (l *Log) Observe(e agent.Event) {
 		if e.Warning != "" {
 			l.w.System(e.Warning)
 		}
+	case agent.EventAskDecidedKind:
+		// An ask the decision model answered in the user's place: a harness
+		// line of kind, outcome and confidence, never the question.
+		if e.Decided != nil {
+			l.w.System(e.Decided.Line())
+		}
 	case agent.EventTodosKind, agent.EventPassKind, agent.EventGoalEvalKind, agent.EventPlanEvalKind:
 		l.todoList(e.Todos)
 	case agent.EventGoalStateKind:

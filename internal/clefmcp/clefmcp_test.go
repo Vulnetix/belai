@@ -1,5 +1,3 @@
-//go:build belai_sandbox
-
 package clefmcp
 
 import (

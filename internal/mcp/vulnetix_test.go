@@ -56,11 +56,11 @@ func TestVulnetixRefGuard(t *testing.T) {
 		{"https://user@mcp.vulnetix.com/mcp", "Authorization"},
 		{"https://mcp.vulnetix.com/mcp", "X-Leak"},
 	} {
-		if h, err := m.resolveHeaders(tc.url, map[string]string{tc.header: VulnetixCLIRef}); err == nil {
+		if h, err := m.resolveHeaders("v", tc.url, map[string]string{tc.header: VulnetixCLIRef}); err == nil {
 			t.Errorf("%s %s: resolved to %v", tc.url, tc.header, h)
 		}
 	}
-	h, err := m.resolveHeaders("https://mcp.vulnetix.com/mcp", map[string]string{"authorization": VulnetixCLIRef, "X-Other": "v"})
+	h, err := m.resolveHeaders("v", "https://mcp.vulnetix.com/mcp", map[string]string{"authorization": VulnetixCLIRef, "X-Other": "v"})
 	if err != nil || h["authorization"] != "ApiKey org:secret" || h["X-Other"] != "v" {
 		t.Fatalf("h = %v err = %v", h, err)
 	}

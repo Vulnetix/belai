@@ -523,6 +523,9 @@ func (a *App) modelRows() []modelRow {
 		value: boolLabel(a.settings.CavemanEnabled()), src: sourceLabel(origin["caveman"]),
 	}})
 
+	// The servers Belai offers itself, saved to the global mcp.builtin key.
+	rows = append(rows, a.mcpRows()...)
+
 	return rows
 }
 
@@ -640,6 +643,8 @@ func (a *App) roleScope(role modelRole) string {
 		}
 	case rolePosture:
 		return postureScope
+	case roleMCP:
+		return "global"
 	}
 	return "project"
 }
@@ -738,9 +743,11 @@ func (a *App) modelGroupHeader(g modelGroup, w int) string {
 		name = "FAST TIER"
 	case rolePosture:
 		name = "SESSION POSTURE"
+	case roleMCP:
+		name = "BUILT-IN MCP"
 	}
 	chipColor := components.ColorTealSoft
-	if g.role == rolePosture {
+	if g.role == rolePosture || g.role == roleMCP {
 		chipColor = components.ColorCream // fixed: `s` cannot cycle it
 	}
 	b := strings.Builder{}
@@ -1345,6 +1352,9 @@ func (a *App) changeModelRow() tea.Cmd {
 	if row.disabled {
 		return nil
 	}
+	if row.role == roleMCP {
+		return a.changeMCPRow(row.key)
+	}
 	if row.role == roleFast {
 		switch row.key {
 		case "provider":
@@ -1445,6 +1455,8 @@ func (a *App) unsetModelRow() tea.Cmd {
 				a.settings.Effort = ""
 			})
 		}
+	case roleMCP:
+		return a.unsetMCPRow(row.key)
 	case rolePosture:
 		switch row.key {
 		case "caveman":

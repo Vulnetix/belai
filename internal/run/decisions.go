@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -459,4 +460,36 @@ func NewJevJobs(cfg Config, on func(config.JevJob) bool) *jev.Jobs {
 	}
 	client.SetScoreCache(jev.NewScoreCache(0))
 	return &jev.Jobs{Client: client, On: on}
+}
+
+// ClefCredsOK reports whether the user has Cloudflare Workers AI credentials
+// that could run Clef: a Cloudflare account id and an API token. It reads the
+// credential source only and makes no request, so it says the credentials are
+// set and well shaped, not that Cloudflare accepts them.
+func ClefCredsOK(src CredentialSource) bool {
+	return cfAccountID.MatchString(lookupCred(src, decisions.CloudflareWorkersAIProvider, "account_id")) &&
+		lookupCred(src, decisions.CloudflareWorkersAIProvider, "api_key") != ""
+}
+
+// ClefDecider returns the decision backend for the built-in clef MCP server and
+// for ask decisions. It is the user's classifier when that is a SystemOne
+// backend (in a Pix Sandbox, Clef through the sandbox Worker); otherwise it is
+// Clef-flash on Cloudflare Workers AI from the user's own credentials. A local
+// decision model, OpenRouter's Decisions API and Tev1 on Together are not used:
+// the first does not speak the SystemOne API the tools' questions need to be
+// answered by a Clef-class head, and the others are not Clef. The request is
+// built here and never firewall-routed (resolveClef).
+func ClefDecider(cls *config.ClassifierSettings, src CredentialSource, client *http.Client) (decisions.Decider, error) {
+	if cc, err := ResolveClassifier(Config{}, cls, src); err == nil && cc.Decisions.On() && cc.Decisions.Backend == decisions.BackendSystemOne {
+		return cc.Decisions.NewDecider(client), nil
+	}
+	if !ClefCredsOK(src) {
+		return nil, errors.New("no decision model is configured: set Cloudflare Workers AI credentials or a Clef or SystemOne classifier")
+	}
+	own := &config.ClassifierSettings{Provider: decisions.CloudflareWorkersAIProvider, Model: decisions.ClefModels[0].ID}
+	cc, err := ResolveClassifier(Config{}, own, src)
+	if err != nil || !cc.Decisions.On() {
+		return nil, errors.New("Cloudflare Workers AI is not set up for decisions")
+	}
+	return cc.Decisions.NewDecider(client), nil
 }

@@ -74,6 +74,8 @@ func modelRoleTitle(role modelRole) string {
 		return "Routing"
 	case rolePosture:
 		return "Posture"
+	case roleMCP:
+		return "Built-in MCP"
 	}
 	return string(role)
 }
@@ -112,6 +114,8 @@ func (a *App) modelRoleValue(role modelRole) string {
 		return fmt.Sprintf("%s · %d in pool", kind, pool)
 	case rolePosture:
 		return "guardrails " + boolLabel(a.guardrailsEnabled()) + " · ask " + boolLabel(a.askEnabled())
+	case roleMCP:
+		return "clef " + boolLabel(a.settings.ClefMCPEnabled()) + " · skip " + mcpSkipAskValue(a.settings)
 	}
 	return ""
 }

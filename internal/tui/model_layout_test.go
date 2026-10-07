@@ -138,8 +138,8 @@ func TestModelRoleNavigation(t *testing.T) {
 	}
 	// Wraps at both ends.
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if got := safeRow(rows, a.modelState.selected).role; got != rolePosture {
-		t.Fatalf("left from the first role went to %q, want posture", got)
+	if got := safeRow(rows, a.modelState.selected).role; got != roleMCP {
+		t.Fatalf("left from the first role went to %q, want the built-in MCP group", got)
 	}
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyRight})
 	if got := safeRow(rows, a.modelState.selected).role; got != roleAgent {

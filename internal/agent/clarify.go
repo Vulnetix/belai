@@ -160,7 +160,14 @@ func (s *Session) askUserModeChoice(ctx context.Context, q clarify.Questionnaire
 	return s.askUserWithModeChoice(ctx, q, true, emit)
 }
 
+// askUserWithModeChoice asks the questionnaire. The decision model, when it is on
+// and confident, answers groups first (askQuestions); the rest reach the user.
 func (s *Session) askUserWithModeChoice(ctx context.Context, q clarify.Questionnaire, modeChoice bool, emit func(Event)) (clarify.Answers, bool) {
+	return s.askQuestions(ctx, q, modeChoice, emit)
+}
+
+// askUserDirect emits the questionnaire to the UI and blocks for the user.
+func (s *Session) askUserDirect(ctx context.Context, q clarify.Questionnaire, modeChoice bool, emit func(Event)) (clarify.Answers, bool) {
 	reply := make(chan clarify.Answers, 1)
 	emit(Event{Kind: EventClarifyAskKind, Clarify: &q, Reply: reply, ModeChoice: modeChoice})
 	select {

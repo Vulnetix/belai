@@ -629,15 +629,14 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		return err
 	}
 
-	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
-		Builtins:     builtinMCP(settings, cwd),
+	mcpMgr := mcp.StartAsync(ctx, effectiveMCP(settings, cwd), withBuiltinMCP(mcp.Options{
 		Workdir:      cwd,
 		HTTPClient:   httpclient.Default(),
 		VulnetixAuth: func() (string, error) { return credentials.VulnetixAuthHeader(cwd) },
 		Sandbox: func() sandbox.Policy {
 			return sandbox.FromSettings(settings.Sandbox, roots, pol)
 		},
-	})
+	}, settings, cwd))
 	mcp.SetActive(mcpMgr)
 	defer mcpMgr.Close()
 	defer startTelemetry(settings, cwd)()
@@ -794,7 +793,8 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		sess, err := headless.NewSession(ctx, headless.Params{
 			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, WorkspaceDirs: pick.Dirs, Settings: s,
 			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
-			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
+			AskDecider: cliAskDecider(st.Ask, s, cwd),
+			MCP:        mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 			Diagnostics: &gate, Narrow: rcProfileNarrow(pick.Profile),
 		})
 		if err != nil {

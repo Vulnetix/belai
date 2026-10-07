@@ -52,6 +52,10 @@ type Answer struct {
 	Chosen     []int
 	Note       string
 	Skipped    bool
+	// Decided marks an answer the decision model gave in the user's place,
+	// with the confidence it was given at (above the user's threshold).
+	Decided    bool
+	Confidence float64
 }
 
 // Answers collects the user's response to a whole questionnaire.
@@ -186,7 +190,15 @@ func (a Answers) Render(q Questionnaire) string {
 		return "Clarifications from the user: (none)"
 	}
 	var b strings.Builder
-	b.WriteString("Clarifications from the user:\n")
+	all := true
+	for _, ans := range a.Items {
+		all = all && ans.Decided
+	}
+	if all {
+		b.WriteString("Clarifications decided by the decision model (the user was not asked):\n")
+	} else {
+		b.WriteString("Clarifications from the user:\n")
+	}
 	for i, ans := range a.Items {
 		if ans.GroupIndex < 0 || ans.GroupIndex >= len(q.Groups) {
 			continue
@@ -207,6 +219,9 @@ func (a Answers) Render(q Questionnaire) string {
 			b.WriteString("   chose: (none)\n")
 		} else {
 			b.WriteString("   chose: " + strings.Join(labels, ", ") + "\n")
+		}
+		if ans.Decided {
+			fmt.Fprintf(&b, "   decided by the decision model (confidence %.2f), not by the user\n", ans.Confidence)
 		}
 		if ans.Note != "" {
 			b.WriteString("   note: " + ans.Note + "\n")

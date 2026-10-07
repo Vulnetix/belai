@@ -164,8 +164,8 @@ const metadataPaths: [path: string, what: string][] = [
   ['/pix/v1/model', 'the decision model, the built-in model labels and the monthly token allowance'],
   ['/pix/v1/settings', 'the egress mode, packs, extensions and reserve percent'],
 ];
-// The built-in clef MCP (internal/clefmcp in the Belai repository, compiled only
-// with -tags belai_sandbox). Names, limits and rules come from
+// The built-in clef MCP (internal/clefmcp in the Belai repository, in every build
+// and always offered in the Pix Sandbox one). Names, limits and rules come from
 // docs/pix-sandbox.md#the-decider-mcp.
 const deciderTools: [name: string, tag: string, body: string][] = [
   ['decide_boolean', 'true or false', 'One proposition in; answer, p_true, confidence and margin out. Takes an optional threshold.'],
@@ -183,7 +183,7 @@ const deciderRules: [title: string, body: string][] = [
   ['The model scores, Belai decides', 'Clef returns probabilities. Weights are normalised to sum to 1, every number is rounded to four places, and the ranking is a stable sort, so the same answers always give the same order.'],
   ['Numbers and your own words', 'A result is JSON Belai builds from the probabilities and the options you passed. It holds no model text, and a failure is a fixed error code, never the backend\'s message or a guessed true.'],
   ['Clef limits, checked first', 'At most 255 options and 64 questions a request. Empty or repeated options, too many items and unknown arguments are refused before any model call.'],
-  ['Still an MCP tool', 'Each tool is mcp__clef__name with the same permission kind as any server tool: classified, and allowed by a rule the sandbox launches with, not by an exemption.'],
+  ['Read-only', 'Each tool is mcp__clef__name with its own read-only kind: no approval prompt, offered in plan mode and in code mode, and a deny rule still withholds it.'],
 ];
 
 const deciderSample = `rank_options
