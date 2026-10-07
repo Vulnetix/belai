@@ -1,0 +1,2238 @@
+[
+  {
+    "id": "adal",
+    "name": "AdaL",
+    "detect": [
+      "~/.adal"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.adal/skills"
+        ],
+        "project": [
+          ".adal/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "aider",
+    "name": "Aider",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "project": [
+          ".aider/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "aider-desk",
+    "name": "AiderDesk",
+    "detect": [
+      "~/.aider-desk"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.aider-desk/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "amazon-q",
+    "name": "Amazon Q Developer",
+    "detect": [
+      "~/.aws/amazonq"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "prompt": {
+        "user": [
+          "~/.aws/amazonq/prompts"
+        ],
+        "project": [
+          ".amazonq/prompts"
+        ],
+        "shape": "md-file"
+      },
+      "skill": {
+        "project": [
+          ".amazonq/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "amp",
+    "name": "Amp",
+    "detect": [
+      "~/.config/amp"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.config/amp/commands"
+        ],
+        "project": [
+          ".agents/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.config/amp",
+          "~/.config"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.config/agents/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".amp/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "antigravity",
+    "name": "Google Antigravity",
+    "detect": [
+      "~/.gemini/antigravity"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.gemini/antigravity/global_workflows"
+        ],
+        "project": [
+          ".agents/workflows",
+          ".agent/workflows"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.gemini"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md",
+          "GEMINI.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.gemini/antigravity/skills"
+        ],
+        "project": [
+          ".agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "antigravity-cli",
+    "name": "Antigravity CLI",
+    "detect": [
+      "~/.gemini/antigravity-cli"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.gemini/antigravity-cli/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "astrbot",
+    "name": "AstrBot",
+    "detect": [
+      "~/.astrbot/data"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.astrbot/data/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "augment",
+    "name": "Augment",
+    "detect": [
+      "~/.augment"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.augment/commands"
+        ],
+        "project": [
+          ".augment/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".augment-guidelines",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.augment/skills"
+        ],
+        "project": [
+          ".augment/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "autohand-code",
+    "name": "Autohand Code",
+    "detect": [
+      "~/.autohand"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.autohand/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "bob",
+    "name": "IBM Bob",
+    "detect": [
+      "~/.bob"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "ibm-bob"
+    ],
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.bob/skills"
+        ],
+        "project": [
+          ".bob/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "claude-code",
+    "name": "Claude Code",
+    "detect": [
+      "~/.claude"
+    ],
+    "format": "claude-code",
+    "dirs": {
+      "agent": {
+        "user": [
+          "~/.claude/agents"
+        ],
+        "project": [
+          ".claude/agents"
+        ],
+        "shape": "md-file"
+      },
+      "command": {
+        "user": [
+          "~/.claude/commands"
+        ],
+        "project": [
+          ".claude/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.claude"
+        ],
+        "project": [
+          ".",
+          ".claude"
+        ],
+        "shape": "doc-file",
+        "files": [
+          "CLAUDE.md",
+          "AGENTS.md",
+          "CLAUDE.local.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.claude/skills"
+        ],
+        "project": [
+          ".claude/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "cline",
+    "name": "Cline",
+    "detect": [
+      "~/.cline",
+      "~/Documents/Cline"
+    ],
+    "format": "cline",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/Documents/Cline/Workflows"
+        ],
+        "project": [
+          ".clinerules/workflows"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".clinerules",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills",
+          "~/.cline/skills"
+        ],
+        "project": [
+          ".cline/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codearts-agent",
+    "name": "CodeArts Agent",
+    "detect": [
+      "~/.codeartsdoer"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.codeartsdoer/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codebuddy",
+    "name": "CodeBuddy",
+    "detect": [
+      "~/.codebuddy"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.codebuddy/skills"
+        ],
+        "project": [
+          ".codebuddy/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codebuff",
+    "name": "Codebuff",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "project": [
+          ".codebuff/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codemaker",
+    "name": "CodeMaker",
+    "detect": [
+      "~/.codemaker"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.codemaker/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codestudio",
+    "name": "CodeStudio",
+    "detect": [
+      "~/.codestudio"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.codestudio/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "codex",
+    "name": "OpenAI Codex",
+    "detect": [
+      "~/.codex"
+    ],
+    "format": "codex",
+    "aliases": [
+      "openai-codex"
+    ],
+    "dirs": {
+      "document": {
+        "user": [
+          "~/.codex"
+        ],
+        "project": [
+          ".",
+          ".codex"
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md",
+          "AGENTS.override.md"
+        ]
+      },
+      "prompt": {
+        "user": [
+          "~/.codex/prompts"
+        ],
+        "shape": "md-file"
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills",
+          "~/.codex/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".codex/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "command-code",
+    "name": "Command Code",
+    "detect": [
+      "~/.commandcode"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.commandcode/skills"
+        ],
+        "project": [
+          ".commandcode/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "continue",
+    "name": "Continue",
+    "detect": [
+      "~/.continue"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "prompt": {
+        "user": [
+          "~/.continue/prompts"
+        ],
+        "project": [
+          ".continue/prompts"
+        ],
+        "shape": "unsupported"
+      },
+      "skill": {
+        "user": [
+          "~/.continue/skills"
+        ],
+        "project": [
+          ".continue/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "cortex",
+    "name": "Snowflake Cortex Code",
+    "detect": [
+      "~/.snowflake/cortex"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "cortex-code"
+    ],
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.snowflake/cortex/skills"
+        ],
+        "project": [
+          ".cortex/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "crush",
+    "name": "Crush",
+    "detect": [
+      "~/.config/crush"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "CRUSH.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.config/crush/skills"
+        ],
+        "project": [
+          ".crush/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "detect": [
+      "~/.cursor"
+    ],
+    "format": "cursor",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.cursor/commands"
+        ],
+        "project": [
+          ".cursor/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".cursorrules",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills",
+          "~/.cursor/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".cursor/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "deepagents",
+    "name": "Deep Agents",
+    "detect": [
+      "~/.deepagents/agent"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.deepagents/agent/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "devin",
+    "name": "Devin",
+    "detect": [
+      "~/.config/devin"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.config/devin/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "dexto",
+    "name": "Dexto",
+    "detect": [
+      "~/.dexto"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "droid",
+    "name": "Factory Droid",
+    "detect": [
+      "~/.factory"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "agent": {
+        "user": [
+          "~/.factory/droids"
+        ],
+        "project": [
+          ".factory/droids"
+        ],
+        "shape": "md-file"
+      },
+      "command": {
+        "user": [
+          "~/.factory/commands"
+        ],
+        "project": [
+          ".factory/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.factory/skills"
+        ],
+        "project": [
+          ".factory/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "firebender",
+    "name": "Firebender",
+    "detect": [
+      "~/.firebender"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.firebender/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "forgecode",
+    "name": "ForgeCode",
+    "detect": [
+      "~/.forge"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "forge"
+    ],
+    "dirs": {
+      "agent": {
+        "user": [
+          "~/.forge/agents"
+        ],
+        "project": [
+          ".forge/agents"
+        ],
+        "shape": "md-file"
+      },
+      "command": {
+        "user": [
+          "~/.forge/commands"
+        ],
+        "project": [
+          ".forge/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.forge/skills"
+        ],
+        "project": [
+          ".forge/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "g3",
+    "name": "g3",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "project": [
+          ".g3/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "gemini-cli",
+    "name": "Gemini CLI",
+    "detect": [
+      "~/.gemini"
+    ],
+    "format": "gemini-cli",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.gemini/commands"
+        ],
+        "project": [
+          ".gemini/commands"
+        ],
+        "shape": "unsupported"
+      },
+      "document": {
+        "user": [
+          "~/.gemini"
+        ],
+        "project": [
+          ".",
+          ".gemini"
+        ],
+        "shape": "doc-file",
+        "files": [
+          "GEMINI.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills",
+          "~/.gemini/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".gemini/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "github-copilot",
+    "name": "GitHub Copilot",
+    "detect": [
+      "~/.copilot"
+    ],
+    "format": "copilot",
+    "dirs": {
+      "agent": {
+        "user": [
+          "~/.copilot/agents"
+        ],
+        "project": [
+          ".github/agents"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.copilot"
+        ],
+        "project": [
+          ".github",
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "copilot-instructions.md",
+          "AGENTS.md"
+        ]
+      },
+      "prompt": {
+        "project": [
+          ".github/prompts"
+        ],
+        "shape": "md-file"
+      },
+      "skill": {
+        "user": [
+          "~/.copilot/skills"
+        ],
+        "project": [
+          ".github/skills",
+          ".copilot/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "goose",
+    "name": "Goose",
+    "detect": [
+      "~/.config/goose"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "user": [
+          "~/.config/goose"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".goosehints",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.config/goose/skills"
+        ],
+        "project": [
+          ".goose/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "gptme",
+    "name": "gptme",
+    "detect": [
+      "~/.config/gptme"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "project": [
+          ".gptme/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "hermes-agent",
+    "name": "Hermes Agent",
+    "detect": [
+      "~/.hermes"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.hermes/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "iflow-cli",
+    "name": "iFlow CLI",
+    "detect": [
+      "~/.iflow"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "iflow"
+    ],
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.iflow/commands"
+        ],
+        "project": [
+          ".iflow/commands"
+        ],
+        "shape": "unsupported"
+      },
+      "document": {
+        "user": [
+          "~/.iflow"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "IFLOW.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.iflow/skills"
+        ],
+        "project": [
+          ".iflow/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "inference-sh",
+    "name": "inference.sh",
+    "detect": [
+      "~/.inferencesh"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.inferencesh/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "jazz",
+    "name": "Jazz",
+    "detect": [
+      "~/.jazz"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.jazz/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "jetbrains-ai-assistant",
+    "name": "JetBrains AI Assistant",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      }
+    }
+  },
+  {
+    "id": "junie",
+    "name": "Junie",
+    "detect": [
+      "~/.junie"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          ".junie",
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "guidelines.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.junie/skills"
+        ],
+        "project": [
+          ".junie/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "kilo",
+    "name": "Kilo Code",
+    "detect": [
+      "~/.kilocode"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "kilo-code"
+    ],
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.kilocode/workflows"
+        ],
+        "project": [
+          ".kilocode/workflows"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.kilocode/skills"
+        ],
+        "project": [
+          ".kilocode/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "kimi-code-cli",
+    "name": "Kimi Code CLI",
+    "detect": [
+      "~/.kimi"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "kimi-cli"
+    ],
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills"
+        ],
+        "project": [
+          ".kimi/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "kiro-cli",
+    "name": "Kiro",
+    "detect": [
+      "~/.kiro"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "kiro"
+    ],
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.kiro/skills"
+        ],
+        "project": [
+          ".kiro/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "kode",
+    "name": "Kode",
+    "detect": [
+      "~/.kode"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.kode/skills"
+        ],
+        "project": [
+          ".kode/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "letta-code",
+    "name": "Letta Code",
+    "detect": [
+      "~/.letta"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "project": [
+          ".letta/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "lingma",
+    "name": "Tongyi Lingma",
+    "detect": [
+      "~/.lingma"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "tongyi-lingma"
+    ],
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.lingma/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "loaf",
+    "name": "Loaf",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "mcpjam",
+    "name": "MCPJam",
+    "detect": [
+      "~/.mcpjam"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.mcpjam/skills"
+        ],
+        "project": [
+          ".mcpjam/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "mistral-vibe",
+    "name": "Mistral Vibe",
+    "detect": [
+      "~/.vibe"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.vibe/skills"
+        ],
+        "project": [
+          ".vibe/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "moxby",
+    "name": "Moxby",
+    "detect": [
+      "~/.moxby"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.moxby/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "mux",
+    "name": "Mux",
+    "detect": [
+      "~/.mux"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.mux/skills"
+        ],
+        "project": [
+          ".mux/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "nanocoder",
+    "name": "Nanocoder",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      }
+    }
+  },
+  {
+    "id": "neovate",
+    "name": "Neovate",
+    "detect": [
+      "~/.neovate"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.neovate/skills"
+        ],
+        "project": [
+          ".neovate/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "octofriend",
+    "name": "Octofriend",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "OCTO.md"
+        ]
+      }
+    }
+  },
+  {
+    "id": "ona",
+    "name": "Ona",
+    "detect": [
+      "~/.ona"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.ona/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "openclaw",
+    "name": "OpenClaw",
+    "detect": [
+      "~/.openclaw"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.openclaw/skills"
+        ],
+        "project": [
+          ".openclaw/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "opencode",
+    "name": "opencode",
+    "detect": [
+      "~/.config/opencode"
+    ],
+    "format": "opencode",
+    "dirs": {
+      "agent": {
+        "user": [
+          "~/.config/opencode/agent",
+          "~/.config/opencode/agents"
+        ],
+        "project": [
+          ".opencode/agent",
+          ".opencode/agents"
+        ],
+        "shape": "md-file"
+      },
+      "command": {
+        "user": [
+          "~/.config/opencode/command",
+          "~/.config/opencode/commands"
+        ],
+        "project": [
+          ".opencode/command",
+          ".opencode/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.config/opencode"
+        ],
+        "project": [
+          ".",
+          ".opencode"
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.config/opencode/skills"
+        ],
+        "project": [
+          ".opencode/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "openhands",
+    "name": "OpenHands",
+    "detect": [
+      "~/.openhands"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.openhands/skills"
+        ],
+        "project": [
+          ".openhands/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "pi",
+    "name": "Pi",
+    "detect": [
+      "~/.pi"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "user": [
+          "~/.pi/agent"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "prompt": {
+        "user": [
+          "~/.pi/agent/prompts"
+        ],
+        "project": [
+          ".pi/prompts"
+        ],
+        "shape": "md-file"
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills",
+          "~/.pi/agent/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".pi/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "pochi",
+    "name": "Pochi",
+    "detect": [
+      "~/.pochi"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.pochi/skills"
+        ],
+        "project": [
+          ".pochi/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "promptscript",
+    "name": "PromptScript",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "project": [
+          ".agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "qoder",
+    "name": "Qoder",
+    "detect": [
+      "~/.qoder"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.qoder/skills"
+        ],
+        "project": [
+          ".qoder/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "qoder-cn",
+    "name": "Qoder CN",
+    "detect": [
+      "~/.qoder-cn"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.qoder-cn/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "qwen-code",
+    "name": "Qwen Code",
+    "detect": [
+      "~/.qwen"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.qwen/commands"
+        ],
+        "project": [
+          ".qwen/commands"
+        ],
+        "shape": "unsupported"
+      },
+      "document": {
+        "user": [
+          "~/.qwen"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "QWEN.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.qwen/skills"
+        ],
+        "project": [
+          ".qwen/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "reasonix",
+    "name": "Reasonix",
+    "detect": [
+      "~/.reasonix"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.reasonix/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "replit",
+    "name": "Replit",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.config/agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "roo",
+    "name": "Roo Code",
+    "detect": [
+      "~/.roo"
+    ],
+    "format": "generic-md",
+    "aliases": [
+      "roo-code"
+    ],
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.roo/commands"
+        ],
+        "project": [
+          ".roo/commands"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".roorules",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.roo/skills"
+        ],
+        "project": [
+          ".roo/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "rovodev",
+    "name": "Rovo Dev",
+    "detect": [
+      "~/.rovodev"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.rovodev/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "sourcegraph-cody",
+    "name": "Sourcegraph Cody",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "project": [
+          ".cody/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "tabnine",
+    "name": "Tabnine",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "project": [
+          ".tabnine/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "tabnine-cli",
+    "name": "Tabnine CLI",
+    "detect": [
+      "~/.tabnine/agent"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.tabnine/agent/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "terramind",
+    "name": "TerraMind",
+    "detect": [
+      "~/.terramind"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.terramind/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "tinycloud",
+    "name": "TinyCloud",
+    "detect": [
+      "~/.tinycloud"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.tinycloud/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "trae",
+    "name": "Trae",
+    "detect": [
+      "~/.trae"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.trae/skills"
+        ],
+        "project": [
+          ".trae/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "trae-cn",
+    "name": "Trae CN",
+    "detect": [
+      "~/.trae-cn"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.trae-cn/skills"
+        ],
+        "project": [
+          ".trae/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "traycer",
+    "name": "Traycer",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "agent": {
+        "project": [
+          ".traycer/cli-agents"
+        ],
+        "shape": "md-file"
+      }
+    }
+  },
+  {
+    "id": "universal",
+    "name": "Universal agents directory",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.config/agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "vtcode",
+    "name": "VT Code",
+    "detect": [
+      "~/.vtcode"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "agent": {
+        "project": [
+          ".vtcode/agents"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "project": [
+          ".vtcode/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "warp",
+    "name": "Warp",
+    "detect": [
+      "~/.warp"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "WARP.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "windsurf",
+    "name": "Windsurf",
+    "detect": [
+      "~/.codeium/windsurf"
+    ],
+    "format": "windsurf",
+    "dirs": {
+      "command": {
+        "user": [
+          "~/.codeium/windsurf/global_workflows"
+        ],
+        "project": [
+          ".windsurf/workflows"
+        ],
+        "shape": "md-file"
+      },
+      "document": {
+        "user": [
+          "~/.codeium/windsurf/memories"
+        ],
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".windsurfrules",
+          "AGENTS.md",
+          "global_rules.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.codeium/windsurf/skills"
+        ],
+        "project": [
+          ".windsurf/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "zed",
+    "name": "Zed",
+    "detect": [
+      "~/.config/zed"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          ".rules",
+          "AGENT.md",
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.agents/skills"
+        ],
+        "project": [
+          ".agents/skills",
+          ".zed/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "zencoder",
+    "name": "Zencoder",
+    "detect": [
+      "~/.zencoder"
+    ],
+    "format": "generic-md",
+    "dirs": {
+      "document": {
+        "project": [
+          "."
+        ],
+        "shape": "doc-file",
+        "files": [
+          "AGENTS.md"
+        ]
+      },
+      "skill": {
+        "user": [
+          "~/.zencoder/skills"
+        ],
+        "project": [
+          ".zencoder/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  },
+  {
+    "id": "zenflow",
+    "name": "Zencoder Zenflow",
+    "detect": [],
+    "format": "generic-md",
+    "dirs": {
+      "skill": {
+        "user": [
+          "~/.zencoder/skills"
+        ],
+        "shape": "skill-dir"
+      }
+    }
+  }
+]
