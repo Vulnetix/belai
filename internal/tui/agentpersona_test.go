@@ -338,3 +338,22 @@ func TestAFlatProfileWearsTheDefinitionOfTheSameName(t *testing.T) {
 		t.Fatalf("a flat profile with no definition shows %q, want its name", a.footer.Agent)
 	}
 }
+
+// A mode decision's intent label ("agent") must not hide the profile name the
+// user engaged with ctrl+p, whether it arrived before or after the pick.
+func TestIntentLabelDoesNotHideEngagedAgent(t *testing.T) {
+	a := personaApp(t)
+	a.footerAgentOverride = "agent"
+
+	a.setNamedAgent("belai:patcher")
+	a.refreshFooter()
+	if a.footer.Agent != "Kremvax" {
+		t.Fatalf("footer.Agent = %q, want the display name", a.footer.Agent)
+	}
+
+	a.footerAgentOverride = "agent"
+	a.refreshFooter()
+	if a.footer.Agent != "Kremvax" {
+		t.Fatalf("stale override hid the profile: footer.Agent = %q", a.footer.Agent)
+	}
+}
