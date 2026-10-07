@@ -215,3 +215,26 @@ func TestAPluginNamedBuiltinCannotBeMistakenForAnEmbeddedSkill(t *testing.T) {
 		t.Errorf("err = %v (a plugin skill must be read from its path)", err)
 	}
 }
+
+func TestValidateCommandTakesArgumentHintAndNoBelaiRules(t *testing.T) {
+	doc := "---\nname: triage\ndescription: Triage\nargument-hint: <id>\nmetadata:\n  belai.typo: x\n---\n\nbody\n"
+	m, err := ValidateCommand(doc)
+	if err != nil || m.ArgumentHint != "<id>" {
+		t.Fatalf("ValidateCommand: %v %+v", err, m)
+	}
+	// A skill refuses both: no argument-hint, and its belai.* keys are checked.
+	if _, err := ValidateSkill(doc); err == nil {
+		t.Error("a skill took argument-hint")
+	}
+	if _, err := ValidateSkill(strings.Replace(doc, "argument-hint: <id>\n", "", 1)); err == nil {
+		t.Error("a skill took an unknown belai.* key")
+	}
+	// The legacy line-by-line reader reads argument-hint too.
+	legacy := "---\nname: triage\ndescription: Do it: now\nargument-hint: <id>\n---\n\nbody\n"
+	if m, err := ValidateCommand(legacy); err != nil || m.ArgumentHint != "<id>" {
+		t.Errorf("legacy form: %v %+v", err, m)
+	}
+	if _, err := ValidateCommand("---\nname: a\ndescription: d\nmodel: x\n---\n\nb"); err == nil {
+		t.Error("an unknown key was accepted")
+	}
+}

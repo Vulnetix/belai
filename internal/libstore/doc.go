@@ -187,3 +187,10 @@ func unsafeRune(r rune) bool {
 	}
 	return false
 }
+
+// UntrustedText applies the gate an install applies to a Markdown document: it
+// refuses text that carries delimiter markup, a control or escape character, a
+// bidirectional override or an invisible rune. A reader of a file the host did
+// not install itself (a project's commands directory) calls it before the text
+// can reach a model.
+func UntrustedText(doc []byte) error { return untrustedGate(doc) }

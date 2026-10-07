@@ -15,6 +15,7 @@ func TestSyncItemEnabled(t *testing.T) {
 		"budget":   func(s *SyncSettings, v *bool) { s.Budgets = v },
 		"rewrite":  func(s *SyncSettings, v *bool) { s.Rewrites = v },
 		"provider": func(s *SyncSettings, v *bool) { s.Providers = v },
+		"command":  func(s *SyncSettings, v *bool) { s.Commands = v },
 	}
 	for kind, set := range kinds {
 		if !(Settings{}).SyncItemEnabled(kind) {
@@ -51,9 +52,12 @@ func TestSyncItemEnabled(t *testing.T) {
 
 // A project settings file may turn a kind off and never on.
 func TestProjectLayerCanOnlySwitchLibrarySyncOff(t *testing.T) {
-	user := Settings{Sync: &SyncSettings{Skills: bp(false), Prompts: bp(true)}}
-	proj := Settings{Sync: &SyncSettings{Skills: bp(true), Prompts: bp(false), Processes: bp(false)}}
+	user := Settings{Sync: &SyncSettings{Skills: bp(false), Prompts: bp(true), Commands: bp(false)}}
+	proj := Settings{Sync: &SyncSettings{Skills: bp(true), Prompts: bp(false), Processes: bp(false), Commands: bp(true)}}
 	got := user.Override(proj)
+	if got.SyncItemEnabled("command") {
+		t.Error("a project layer turned sync.commands back on")
+	}
 	if got.SyncItemEnabled("skill") {
 		t.Error("a project layer turned sync.skills back on")
 	}

@@ -26,6 +26,7 @@ var topCommands = []topCommand{
 	{"kanban", "read and edit the global kanban board"},
 	{"skill", "list, import and export skills (library items)"},
 	{"prompt", "list, import and export prompts (library items)"},
+	{"command", "list, import and export custom slash commands (library items)"},
 	{"process", "list, import and export supervised processes (library items)"},
 	{"repo", "list, sync, import and export git repositories to keep cloned"},
 	{"budget", "list, import and export the token budgets (library item)"},
