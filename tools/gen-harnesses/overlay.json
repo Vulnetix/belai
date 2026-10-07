@@ -49,7 +49,8 @@
       "dirs": {
         "agent": {"user": ["~/.claude/agents"]},
         "command": {"user": ["~/.claude/commands"]},
-        "document": {"user": ["~/.claude"], "files": ["CLAUDE.md", "CLAUDE.local.md"]}
+        "document": {"user": ["~/.claude"], "files": ["CLAUDE.md", "CLAUDE.local.md"]},
+        "hook": {"user": ["~/.claude/settings.json"], "project": [".claude/settings.json", ".claude/settings.local.json"], "shape": "json-key", "key": "hooks", "replace": true}
       }
     },
     "cline": {
@@ -67,6 +68,7 @@
       "format": "codex",
       "dirs": {
         "document": {"user": ["~/.codex"], "files": ["AGENTS.md", "AGENTS.override.md"]},
+        "hook": {"user": ["~/.codex/hooks.json"], "project": [".codex/hooks.json"], "shape": "json-file"},
         "prompt": {"user": ["~/.codex/prompts"]}
       }
     },

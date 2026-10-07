@@ -23,6 +23,9 @@ const (
 	Prompt   = "prompt"
 	Agent    = "agent"
 	Document = "document"
+	// Hook is a harness's lifecycle hooks: a hooks block in a settings file, a
+	// hooks file, or a directory of hook scripts.
+	Hook = "hook"
 )
 
 // Shapes of the files in a directory.
@@ -33,6 +36,14 @@ const (
 	SkillDir = "skill-dir"
 	// DocFile: the directory holds fixed file names (AGENTS.md, CLAUDE.md).
 	DocFile = "doc-file"
+	// JSONKey: the user and project entries are JSON files (not directories),
+	// and the item is the value of the KindDirs.Key key inside each one, such as
+	// the `hooks` key of Claude Code's settings.json. Nothing else in the file is
+	// read.
+	JSONKey = "json-key"
+	// JSONFile: the user and project entries are JSON files that are the item
+	// themselves, one item per file (Codex's hooks.json).
+	JSONFile = "json-file"
 	// Unsupported: the harness stores this kind in a format Belai does not read
 	// (for example TOML). It is reported, never read.
 	Unsupported = "unsupported"
@@ -48,6 +59,8 @@ type KindDirs struct {
 	Shape string `json:"shape"`
 	// Files names the fixed files of a DocFile shape.
 	Files []string `json:"files,omitempty"`
+	// Key names the key a JSONKey shape reads from each file ("hooks").
+	Key string `json:"key,omitempty"`
 }
 
 // Harness is one agent harness.
@@ -61,7 +74,7 @@ type Harness struct {
 	// Aliases are other ids the cli sources use for this harness (for example
 	// openai-codex for codex). ByID resolves them.
 	Aliases []string `json:"aliases,omitempty"`
-	// Dirs is keyed by kind (Command, Skill, Prompt, Agent, Document).
+	// Dirs is keyed by kind (Command, Skill, Prompt, Agent, Document, Hook).
 	Dirs map[string]KindDirs `json:"dirs"`
 }
 

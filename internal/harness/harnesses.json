@@ -333,6 +333,17 @@
           "CLAUDE.local.md"
         ]
       },
+      "hook": {
+        "user": [
+          "~/.claude/settings.json"
+        ],
+        "project": [
+          ".claude/settings.json",
+          ".claude/settings.local.json"
+        ],
+        "shape": "json-key",
+        "key": "hooks"
+      },
       "skill": {
         "user": [
           "~/.claude/skills"
@@ -371,6 +382,12 @@
           ".clinerules",
           "AGENTS.md"
         ]
+      },
+      "hook": {
+        "project": [
+          ".clinerules/hooks"
+        ],
+        "shape": "unsupported"
       },
       "skill": {
         "user": [
@@ -507,6 +524,15 @@
           "AGENTS.md",
           "AGENTS.override.md"
         ]
+      },
+      "hook": {
+        "user": [
+          "~/.codex/hooks.json"
+        ],
+        "project": [
+          ".codex/hooks.json"
+        ],
+        "shape": "json-file"
       },
       "prompt": {
         "user": [
@@ -678,6 +704,12 @@
           ".cursorrules",
           "AGENTS.md"
         ]
+      },
+      "hook": {
+        "project": [
+          ".cursor/hooks.json"
+        ],
+        "shape": "unsupported"
       },
       "skill": {
         "user": [
@@ -1244,6 +1276,12 @@
         "files": [
           "AGENTS.md"
         ]
+      },
+      "hook": {
+        "project": [
+          ".kiro/hooks"
+        ],
+        "shape": "unsupported"
       },
       "skill": {
         "user": [
@@ -2150,6 +2188,12 @@
           "AGENTS.md",
           "global_rules.md"
         ]
+      },
+      "hook": {
+        "project": [
+          ".windsurf/hooks.json"
+        ],
+        "shape": "unsupported"
       },
       "skill": {
         "user": [
