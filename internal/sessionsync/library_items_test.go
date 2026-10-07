@@ -385,3 +385,39 @@ func TestDispatchCarriesProviders(t *testing.T) {
 		t.Fatalf("dispatch = %+v", d)
 	}
 }
+
+// The wire contract for custom slash commands: a host advertises `commands`
+// (name, description, argumentHint) in its rc info, and the web invokes one with
+// `command` and `args` on a remote command.
+func TestSlashCommandWireForm(t *testing.T) {
+	b, err := json.Marshal(RCInfo{Commands: []RCCommand{{Name: "triage", Description: "Triage a finding", ArgumentHint: "<id>"}, {Name: "plain", Description: "d"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info map[string]json.RawMessage
+	if err := json.Unmarshal(b, &info); err != nil {
+		t.Fatal(err)
+	}
+	var cmds []map[string]string
+	if err := json.Unmarshal(info["commands"], &cmds); err != nil || len(cmds) != 2 {
+		t.Fatalf("commands = %s (%v)", info["commands"], err)
+	}
+	if cmds[0]["name"] != "triage" || cmds[0]["description"] != "Triage a finding" || cmds[0]["argumentHint"] != "<id>" {
+		t.Errorf("first = %v", cmds[0])
+	}
+	if _, has := cmds[1]["argumentHint"]; has {
+		t.Errorf("an empty argumentHint is sent: %v", cmds[1])
+	}
+	// An empty list is still a list, so the website can tell it from an older daemon.
+	if b, _ := json.Marshal(RCInfo{Commands: []RCCommand{}}); !strings.Contains(string(b), `"commands":[]`) {
+		t.Errorf("empty commands = %s", b)
+	}
+
+	var rc RemoteCommand
+	if err := json.Unmarshal([]byte(`{"id":"c1","sessionId":"s1","command":"triage","args":"CVE-1 now","createdAt":1}`), &rc); err != nil {
+		t.Fatal(err)
+	}
+	if rc.Command != "triage" || rc.Args != "CVE-1 now" || rc.Line != "" || rc.Key != "" || rc.Shell != "" {
+		t.Errorf("remote command = %+v", rc)
+	}
+}

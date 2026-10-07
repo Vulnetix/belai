@@ -141,6 +141,12 @@ type RCInfo struct {
 	// kind, name and the hash of their canonical document: facts only, no
 	// content, and only for the kinds whose sync switch is on.
 	Items []RCItem `json:"items"`
+	// Commands are the custom slash commands this host holds in its global commands
+	// directory (a library install writes there): name, description and argument
+	// hint only, never a template, and only while sync.commands is on. The website
+	// offers them in a web session, which invokes one by name (RemoteCommand.Command).
+	// Absent from an older daemon; an empty list from one that holds none.
+	Commands []RCCommand `json:"commands"`
 	// Knowledge is the catalogue of this host's knowledge indexes: document
 	// facts only (rc knowledge.go), never passage text. Nil from an older daemon.
 	Knowledge []RCKnowledge `json:"knowledge,omitempty"`
@@ -208,6 +214,17 @@ type RCItem struct {
 	Name   string `json:"name"`
 	SHA256 string `json:"sha256"`
 }
+
+// RCCommand is one custom slash command a host advertises.
+type RCCommand struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ArgumentHint string `json:"argumentHint,omitempty"`
+}
+
+// MaxRCCommands is how many commands one advertisement carries; the server
+// applies the same cap.
+const MaxRCCommands = 200
 
 // MaxRCItems is how many items one advertisement carries; the server applies
 // the same cap.
@@ -537,6 +554,9 @@ type RemotePrompt struct {
 	// Origin names a prompt the host raised itself (a failed shell line to
 	// analyse) rather than one that came from the web. It is never on the wire.
 	Origin string `json:"-"`
+	// Command names the custom slash command the host expanded this prompt from,
+	// for the transcript. It is never on the wire.
+	Command string `json:"-"`
 }
 
 // RemoteAnswer is a web answer to a question the host asked, claimed from the
@@ -570,8 +590,9 @@ type RemoteDraft struct {
 }
 
 // RemoteCommand is a request sent from the website, claimed from the inbox: a
-// session control (a slash line "/caveman on" or a key "f4") or, from a host
-// run with --web-shell, one shell line; exactly one of Line, Key and Shell.
+// session control (a slash line "/caveman on" or a key "f4"), a custom slash
+// command by name (Command and Args) or, from a host run with --web-shell, one
+// shell line; exactly one of Line, Key, Command and Shell.
 // It is untrusted: a control is parsed by internal/sessionctl, which knows
 // only its fixed controls, and a shell line runs only after the TUI's own
 // permission rules and under its sandbox profile (internal/rc shell.go).
@@ -580,6 +601,11 @@ type RemoteCommand struct {
 	SessionID string `json:"sessionId"`
 	Line      string `json:"line,omitempty"`
 	Key       string `json:"key,omitempty"`
+	// Command is the name of a custom slash command without the slash and Args its
+	// argument text. The host expands its own installed file; the page never
+	// sends a template, and a name the host does not hold is refused.
+	Command string `json:"command,omitempty"`
+	Args    string `json:"args,omitempty"`
 	// Shell is the line to run, Cwd the directory the page was showing and
 	// Attach whether its output may go to the model's next turn (the
 	// composer's `!cmd`; the console's remote shell never attaches).

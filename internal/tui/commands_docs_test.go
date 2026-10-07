@@ -35,6 +35,8 @@ var notCommands = map[string]bool{
 	"a": true, "c": true, "p": true, "pmt": true, "dpl": true,
 	// the prefixes of /prompt:NAME and /process:NAME
 	"prompt": true,
+	// the placeholder in "/name args", the form of a custom slash command
+	"name": true,
 }
 
 // TestDocsNameOnlyRealSlashCommands is the reverse check: a `/word` the docs put

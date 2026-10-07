@@ -723,6 +723,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	opts := rc.SessionOptions{
 		Log: tlog, Mirror: syncer, Dispatch: dispatch,
 		Prompt: prompt, Mode: mode, Profile: pick.Profile, Idle: idle, Out: stderr,
+		Workdir: cwd, SlashCommands: settings.SyncItemEnabled("command"),
 		Facts: map[string]any{
 			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
 			"guardrails": settings.GuardrailsEnabled(), "routing": cfg.Routing.Kind,

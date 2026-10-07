@@ -338,7 +338,7 @@ read by the harness and left out of the prompt.
 
 ## Library items
 
-A skill or a prompt that the website's library installs on a host
+A skill, a prompt or a slash command that the website's library installs on a host
 ([library-items.md](library-items.md)) is text another party may have written, so it
 is refused rather than repaired: a repair would change the bytes and so the hash the
 library compares, and the stored document would no longer be the library's. Before
@@ -351,7 +351,11 @@ The refusal names the rule and the code point, never the surrounding text.
 
 The gate is the write-time half. Reading is unchanged: a skill result is still
 `KindSkill`, always sanitised and classified, and a prompt is still admitted like
-any text the user submits. A library document is also validated whole by
+any text the user submits. A custom slash command is read by `internal/commandlib`,
+which runs the same gate (`libstore.UntrustedText`) and `libitem` validator on every
+file of both layers, the project one included, before a template can be expanded; the
+expansion is then admitted like typed text, and a command's `allowed-tools` is never
+applied, so a command cannot grant a tool. A library document is also validated whole by
 `internal/libitem` (a closed schema, bounded sizes, a name that cannot name a path),
 so no path or command comes from its text.
 

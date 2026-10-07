@@ -110,7 +110,8 @@ classifier refuses it.
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.
 - Audio in prompts is not accepted. Images are: see below.
-- `/tree` is the only slash command, and the TUI panels are not exposed.
+- `/tree` is the only slash command, and the TUI panels are not exposed. A custom slash command
+  is not announced either: it is a TUI and web-session feature.
   `/tree fork <id>` is TUI only: a forked session could not be opened from the
   editor without `loadSession`.
 

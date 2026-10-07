@@ -1412,7 +1412,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   turn it off, never on): off means nothing is hashed, advertised or sent for it
   and its requests are refused. A refusal reason is harness text and never the
   document, only the user's global layers are read or written, and a host never
-  advertises more than kind, name and hash. A structured process is an argv run
+  advertises more than kind, name and hash. A custom slash command (`internal/commandlib`) is a prompt template the host expands from its own file (the global commands directory, then a read-only project layer, never overriding a built-in command): both layers pass the same validator and `libstore.UntrustedText` gate, the expansion is admitted like typed text, `allowed-tools` is never applied (a command cannot grant a tool), and a web session names a command and its arguments but never sends a template. A structured process is an argv run
   with no shell: a secret-looking `env` name takes only `env:OTHER` (the value is
   copied from the host at start, an unset one refuses the start), `user` is
   honoured only when Belai is root and never falls back to the current user, a
