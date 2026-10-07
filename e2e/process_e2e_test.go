@@ -209,8 +209,15 @@ func TestProcessStartAndRecovery(t *testing.T) {
 		return false
 	})
 
-	// Give the process time to exit and the recovery subagent to fire.
-	time.Sleep(3 * time.Second)
+	// Wait for the process to exit and the recovery subagent to send its turn.
+	// A fixed sleep was too short on a loaded CI runner under -race.
+	waitFor(t, out, 60*time.Second, func() bool {
+		pm.mu.Lock()
+		defer pm.mu.Unlock()
+		return len(pm.chatUsers) > 0
+	})
+	// Settle, so a second turn would show up in the exactly-one check below.
+	time.Sleep(500 * time.Millisecond)
 
 	// Ctrl-D starts quit confirmation in the TUI; a second Ctrl-D confirms.
 	if _, err := pty.Write([]byte{0x04}); err != nil {

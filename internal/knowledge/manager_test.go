@@ -291,10 +291,25 @@ func TestForcedRefreshDuringARunIsQueued(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if h := s.Set().Search("signing key rotation", 0, nil); len(h) > 0 {
-			return
+			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the queued pass never indexed the new profile")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The pass is still saving its indexes under BELAI_HOME when the search
+	// first finds the document. Wait for it to finish, or the temp directory is
+	// removed under it and cleanup fails with "directory not empty".
+	for {
+		s.mu.Lock()
+		idle := !s.running
+		s.mu.Unlock()
+		if idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the refresh never finished")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
