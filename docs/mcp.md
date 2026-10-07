@@ -10,6 +10,7 @@ text.
 
 - [Configuring servers](#configuring-servers)
 - [How tools appear](#how-tools-appear)
+- [Where tools are offered](#where-tools-are-offered)
 - [Security model](#security-model)
 - [Built-in server (Pix Sandbox only)](#built-in-server-pix-sandbox-only)
 - [Commands](#commands)
@@ -80,11 +81,36 @@ The `mcp` key is read from your global settings only. A repository's
 - Permission rules match the full tool name, for example
   `"allow": ["mcp__github__get_issue"]`. Without an allow rule every call
   asks, because a server tool may do anything.
-- Server tools are not offered in plan mode, and an agent profile's tool
-  allowlist drops them.
+- Server tools are not offered in plan mode ([where they are offered](#where-tools-are-offered)).
+- An agent profile's `tools` allowlist keeps a server tool only when it names it
+  as `mcp__<server>__<tool>`. A fleet worker and a web session engaged with a
+  profile also expand `mcp__<server>__*` to every tool of that server; a
+  profile engaged in the TUI matches names exactly, so list each tool there.
 - In [code mode](code-mode.md) they are not advertised either: a script calls
   them as `mcp.<server>.<tool>(args)`, with the same permission rules and
   classification. Agent, plan and goal mode are unchanged.
+
+## Where tools are offered
+
+A server tool is a mutating tool (kind `mcp`), so every surface that removes
+mutating tools removes it too. Only the main session's model is offered MCP
+tools.
+
+| Surface | Server tools |
+| --- | --- |
+| Agent mode, goal mode, an approved plan's execute turn and a fan-out turn | offered |
+| Plan mode, and agent mode with `read_only` on | not offered |
+| Code mode | not advertised; a script calls `mcp.<server>.<tool>()` |
+| Task, Explore, handoff and recovery subagents, and background agents | never offered |
+| The classifier and the Jev jobs | none: those turns carry no tools |
+
+- With `defer_tools` on (the default) the definitions are not in the core tool
+  set. The sealed tools briefing names them and `ToolSearch` loads one into later
+  requests.
+- `belai agent run` starts the MCP servers only for a profile whose `tools` names
+  an `mcp__` tool, because an MCP tool runs outside the worker's worktree.
+- Each call still asks unless an allow rule covers it, so a session that cannot
+  ask (a fleet worker) can use a server tool only through an allow rule.
 
 ## Security model
 
@@ -127,11 +153,15 @@ list or turn off.
   it alone. `/mcp restart clef` reconnects it.
 - Its tools ask the classifier's decision model for a true/false answer, an enum
   pick, weights or an ordering, and return numbers and the caller's own options.
-  It starts only a decision model that speaks Clef or SystemOne; with none, a
-  call returns a tool error.
+  It uses only a decision backend that speaks the SystemOne API: Clef on
+  Workers AI (directly or through AI Gateway), Strands Decider-2B, TypeSafe, Ollama's
+  Tev1 or a `systemone` provider profile. A local decision model (`decision-local`,
+  Clef included), OpenRouter Decisions and Tev1 on Together are not used for it;
+  with no backend it can use, a call returns a tool error.
 
-The tools, their limits and their rules are in
-[Pix Sandbox](pix-sandbox.md#the-decider-mcp).
+The tools, their limits, their rules and the definitions the model sees are in
+[Pix Sandbox](pix-sandbox.md#the-decider-mcp). Where they are offered is in
+[the table above](#where-tools-are-offered).
 
 ## Commands
 

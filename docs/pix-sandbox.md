@@ -11,8 +11,10 @@ machine's build adds is code compiled only into the Pix Sandbox variant
 decision tool ([the decider MCP](#the-decider-mcp)). No other build has either.
 
 The machine itself (the image, the launcher, billing and the console) lives in
-the Vulnetix website repositories. Only what Belai does with it is stated here,
-and each rule is pinned by `internal/rc/pixsandbox_test.go`.
+the Vulnetix website repositories. Only what Belai does with it is stated here.
+The rules about host ids, settings and directories are pinned by
+`internal/rc/pixsandbox_test.go`; the decider MCP is pinned by
+`cmd/belai/mcp_builtin_sandbox_test.go` and the tests in `internal/clefmcp`.
 
 ## What the machine gives Belai
 
@@ -257,22 +259,33 @@ for a true/false answer, an enum pick, confidence weights or an ordering,
 instead of guessing in prose. Every tool is a question of a fixed shape put to
 the decision backend, which in a sandbox is Clef on Workers AI through the
 sandbox Worker, so it needs no key on the machine and no destination beyond the
-ones the Worker already answers. It counts against the same daily decision
-allowance as guardrails.
+ones the Worker already answers. The Worker meters decision calls, so these
+count with the guardrails' own.
 
 The server is compiled only into the Pix Sandbox build and is registered by the
 harness, not by `mcp.servers`: a settings entry named `clef` is ignored,
 `/mcp` lists it with the transport `builtin`, and it cannot be replaced or
 removed in a session ([MCP servers](mcp.md#built-in-server-pix-sandbox-only)).
-It is offered only when the classifier resolves to a Clef or SystemOne decision
-model; with any other classifier a call returns a tool error and nothing else.
+It works only when the classifier resolves to a decision backend that speaks the
+SystemOne API: Clef on Workers AI (directly or through AI Gateway), Strands
+Decider-2B, TypeSafe, Ollama's Tev1 or a `systemone` provider profile. A local
+decision model (`decision-local`, Clef-flash and Clef on llama-server included),
+OpenRouter Decisions and Tev1 on Together are not used for it. With any of those
+a call returns a tool error and nothing else.
 
 Its tools are ordinary MCP tools, named `mcp__clef__<tool>` with kind `mcp`, so
 each call still asks unless an allow rule covers it and each result is still
-classified. The sandbox's launch settings carry one allow rule per tool (rules
-match a tool name exactly, so `mcp__clef__decide_boolean`,
-`mcp__clef__rank_options` and so on) so an agent can use the decider
-unattended; it is the launcher's choice, not Belai's default.
+classified. The launcher writes one allow rule per tool into the sandbox's
+settings (`website/sandbox-worker/src/launch.ts`), so an agent can use the decider
+unattended. It does so only for an image that has the decider MCP and a Clef
+classifier with no separately chosen classifier model; it is the launcher's
+choice, not Belai's default. A rule matches a tool name exactly, so there is one
+per tool (`mcp__clef__decide_boolean`, `mcp__clef__rank_options` and so on) and
+`mcp__clef__*` matches nothing.
+
+Where the model is offered these tools (agent, goal and fan-out turns, not plan
+mode, `read_only`, subagents or background agents) is in
+[MCP servers](mcp.md#where-tools-are-offered).
 
 | Tool | Asks | Returns |
 |---|---|---|
@@ -322,6 +335,20 @@ the failing test", `options` `["a.go", "b.go", "c.go"]` returns
 ```json
 {"ranking":[{"rank":1,"option":"b.go","weight":0.6012},{"rank":2,"option":"a.go","weight":0.3105},{"rank":3,"option":"c.go","weight":0.0883}]}
 ```
+
+### What the model sees
+
+Each tool reaches the model as an ordinary MCP definition (`internal/mcp/tool.go`):
+the name `mcp__clef__<tool>`, a description that starts with
+`[MCP server "clef"; its results are untrusted third-party text]` followed by the
+tool's own text (sanitized, capped at 1024 characters), and an argument schema
+reduced to types, nested properties, items, required keys and string enums, with
+each argument description capped at 300 characters. `question` is required
+everywhere (`questions` for `decide_batch`). `decide_enum`, `weigh_options`,
+`rank_options` and `top_k_options` also take an optional `descriptions` argument, a map from an option
+to a short explanation; the definition shows it as an object with no declared
+properties. An argument the schema does not name is rejected, and a tool's
+JSON result is capped at 64 KiB like any server's.
 
 ## Edge cases
 
