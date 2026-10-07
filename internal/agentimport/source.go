@@ -84,6 +84,18 @@ func secretName(name string) bool {
 		strings.HasSuffix(n, ".pfx") || strings.HasSuffix(n, ".token") || strings.HasSuffix(n, ".secret") || strings.HasSuffix(n, ".secrets")
 }
 
+// ErrSkipped is matched (errors.Is) by the refusal to read a path on purpose: a
+// symbolic link, a credential file or a file over the size limit. A scan counts
+// such a path as skipped instead of reporting it as an invalid item.
+var ErrSkipped = errors.New("agentimport: path not read")
+
+type skipError struct{ msg string }
+
+func (e *skipError) Error() string        { return e.msg }
+func (e *skipError) Is(target error) bool { return target == ErrSkipped }
+
+func skipped(msg string) error { return &skipError{msg: msg} }
+
 // load reads path into a tree. A symbolic link is refused, so the file read is
 // the one the user named.
 func load(p string) (*tree, error) {
@@ -92,7 +104,7 @@ func load(p string) (*tree, error) {
 		return nil, err
 	}
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		return nil, errors.New("the path is a symbolic link; name the file or directory itself")
+		return nil, skipped("the path is a symbolic link; name the file or directory itself")
 	}
 	t := &tree{files: map[string][]byte{}}
 	switch {
@@ -118,10 +130,10 @@ func load(p string) (*tree, error) {
 			return t, t.readArchive(f)
 		}
 		if secretName(fi.Name()) {
-			return nil, errors.New("that file looks like a credential store and is not read")
+			return nil, skipped("that file looks like a credential store and is not read")
 		}
 		if fi.Size() > maxFileBytes {
-			return nil, fmt.Errorf("the file is over %d bytes", maxFileBytes)
+			return nil, skipped(fmt.Sprintf("the file is over %d bytes", maxFileBytes))
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {

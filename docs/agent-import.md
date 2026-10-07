@@ -1,10 +1,225 @@
-# Importing agent definitions
+# Importing from other agent harnesses
 
-**Status:** alpha-20261006. Shipped in an early form; the mapping may still change.
+**Status:** alpha-20261007. Shipped in an early form; the mapping may still change.
 
-Four other agent harnesses describe an agent in files Belai can read. None of them
-is a standard, so Belai keeps its own [profile schema](agent-profiles.md) and has one
-adapter per format that converts a definition into an ordinary profile:
+Last Updated: 2026-10-07
+
+Other agent harnesses keep commands, skills, prompts, agents and instruction
+documents as files. None of their layouts is a standard, so Belai keeps its own
+schemas and has one adapter per layout that converts a file into the document the
+[library](library-items.md) stores. The same converter does three jobs:
+
+| Job | Where | What it does |
+| --- | --- | --- |
+| `belai agent import` | the command line | converts one agent definition in one of four formats into a profile ([agent definitions](#importing-an-agent-definition)) |
+| `belai library scan` | the command line | searches this host for items of every kind kept by other harnesses and by Belai, and says what an import would make of each |
+| Scan hosts and Import | the website | the same scan and the same conversion, started by a person from the library page ([from the website](#from-the-website)) |
+
+Nothing here is written to disk by the converter. A scan reads files and reports;
+an import reads one file again and uploads the converted document to the library.
+
+- [Formats](#formats)
+- [Scanning a host](#scanning-a-host)
+- [What a scan reports](#what-a-scan-reports)
+- [Mapping by kind](#mapping-by-kind)
+- [From the website](#from-the-website)
+- [What a scan and an import never do](#what-a-scan-and-an-import-never-do)
+- [Importing an agent definition](#importing-an-agent-definition)
+- [Edge cases](#edge-cases)
+
+## Formats
+
+A format names how a harness writes its files. Nine are harness formats, read by
+`agentimport.ImportItem`; the [harness registry](harnesses.md) says which harness
+uses which and where it keeps each kind. `belai` is Belai's own layout and the four
+at the bottom are the agent formats of `belai agent import`.
+
+| Format | Files it reads | What is particular |
+| --- | --- | --- |
+| `claude-code` | commands and subagents as Markdown, skills as `<name>/SKILL.md`, `CLAUDE.md` | front matter with `description`, `argument-hint`, `allowed-tools`, `model`, `hooks`; `` !`command` `` lines in a body; `$ARGUMENTS` and `$1` |
+| `cursor` | commands as plain Markdown with no front matter, `.cursorrules`, `AGENTS.md` | the first line of the body becomes the description |
+| `codex` | custom prompts as Markdown, `AGENTS.md` | `description` and `argument-hint` in front matter, `$1` placeholders |
+| `gemini-cli` | `GEMINI.md`, Markdown files | commands are TOML and are listed as unsupported; `{{args}}` is Gemini's placeholder and stays as written |
+| `opencode` | commands and agents as Markdown | `agent`, `model`, `subtask`, a `tools` map of tool name to on or off, a `permission` block |
+| `windsurf` | workflows as Markdown | `auto_execution_mode` is not imported |
+| `copilot` | `.prompt.md`, `.agent.md`, `copilot-instructions.md` | `mode`, `tools` and `model` keys; the `.prompt` and `.agent` suffixes are not part of the name |
+| `cline` | workflows as plain Markdown | no front matter |
+| `generic-md` | Markdown with optional front matter | what the registry points every other harness at |
+| `belai` | Belai's own files | commands, skills, prompts, agents, crews, processes and the settings file |
+| `claws`, `nemoclaw`, `hermes`, `mini-swe` | the agent formats of [`belai agent import`](#importing-an-agent-definition) | agents only |
+
+## Scanning a host
+
+```sh
+belai library scan                     # every kind
+belai library scan -kind command       # one kind
+belai library scan -json               # the report as it is uploaded
+```
+
+`-kind` is one of `command`, `skill`, `prompt`, `agent`, `crew`, `process`, `budget`,
+`rewrite`, `provider`, `repo` or `document`. The scan prints each item with its
+verdict, then what it searched. It writes nothing and sends nothing.
+
+A scan looks in three places.
+
+1. **The user directories of every installed harness.** A harness is installed when
+   one of its `detect` paths exists under your home directory. A harness that is not
+   installed is counted, not searched.
+2. **Belai's own directories**: commands, skills, prompts, processes, agent profiles
+   and crews under `~/.vulnetix/belai`, and its `settings.json` for budgets, the
+   rewrite table, provider sets and repositories. Belai is listed as the harness
+   `belai`.
+3. **Each repository you trust** (`belai` asks the first time you open a directory;
+   the choice is kept in `projects.json`, and a repository cannot trust itself). In
+   each one the scan looks at the project directories of every harness, installed
+   or not, plus `.vulnetix/belai/commands`, `skills`, `profiles/agents` and
+   `profiles/crews`, `.vulnetix/prompts`, `.vulnetix/processes` and
+   `.vulnetix/settings.json`. A repository with nothing is still listed, with the
+   folders it was searched in.
+
+The reader is bounded. It never follows a symbolic link, reads no file whose name
+looks like a credential store (`.env`, `auth.json`, key files and the rest of
+`secretName`), skips a file over 1 MiB, looks at 500 entries of a directory at most
+and about 6000 files in all, and stops after 25 seconds. A scan that stops early
+says `partial`. Every link, credential file or oversize file it passed over is
+counted in `skipped`.
+
+## What a scan reports
+
+Each candidate goes through the converter in preview mode, so the verdict is what
+an import would do:
+
+| Verdict | Meaning |
+| --- | --- |
+| `valid` | the converter took the file whole |
+| `warning` | it imports, but part was not imported or needs a look: a key with no Belai field, an agent that named no tool and got the read-only set, a skill name that had to be changed |
+| `invalid` | the converter refused it, and `reason` says why (delimiter markup, an invisible character, a missing body, a name that cannot be made into one) |
+
+An item carries its `id` (the first twelve hex digits of the SHA-256 of
+`kind|path`), `kind`, `name`, `path`, `harness`, `format`, `scope` (`user` or
+`project`), `repo` for a project item, the `sha256` and size of the canonical
+document, the item's own `description` when it has one (at most 200 bytes), the verdict and `reason`, `converted` (true when Belai front matter had to
+be added or changed), and up to eight `notes` of 160 bytes each, taken from the
+converter's report. A note is `mapped`, `metadata`, `dropped` or `warning`; warnings
+and drops come first when there are more than eight.
+
+The report also has `harnesses` (each installed harness with counts per kind and
+any kind it keeps in a format Belai does not read), `checked` and `notInstalled`
+(how many harnesses the registry knows, and how many are not installed here),
+`repos`, `skipped`, `partial`, `scannedAt` and `durationMs`. The report is under 1
+MiB and 2000 items; past that notes are trimmed first, then the least useful items
+are dropped (invalid first) and the report is marked partial.
+
+An item in a settings file has `#name` after the file in its `path`
+(`~/.vulnetix/belai/settings.json#my-repo`), because one file holds several.
+
+## Mapping by kind
+
+### Commands, prompts and skills
+
+The name comes from the file (a command or prompt) or from the front matter and
+then the folder (a skill), lower-cased, and is changed with a warning if it holds
+anything but letters, digits and hyphens (a command may also keep `.` and `_`). A
+file one folder down (`commands/git/commit.md`) is named `git-commit`. The
+description comes from the front matter, else from the first line of the body.
+
+| Source | Becomes |
+| --- | --- |
+| `description` | `description` |
+| `argument-hint`, `argument_hint` | a command's `argument-hint` (at most 256 bytes); kept in metadata for a skill; not imported for a prompt |
+| `allowed-tools`, `tools` | **text only**: kept in metadata as `source.allowed-tools`, never as a Belai `allowed-tools`, so an imported file never grants a tool. Not imported for a prompt |
+| `license`, `compatibility`, `metadata`, `disable-model-invocation` | kept by a skill or command; keys starting `belai.` are dropped |
+| `order`, `enabled` | kept by a prompt |
+| `model`, `hooks`, `agent`, `mode`, `subtask`, `context`, any other key | named in the report as not imported |
+| no front matter | added; `converted` is true |
+
+`$ARGUMENTS`, `$1`, `$2` work as they do in Claude Code. `` !`command` `` lines
+and `{{args}}` have no meaning in Belai and stay as plain text, with a warning. A
+file that already is a Belai document keeps its own bytes, so its hash matches the
+library's copy.
+
+### Agents
+
+A subagent file is Markdown with front matter and the instructions as the body. It
+becomes a single-mode, supervised profile through the same builder
+`belai agent import` uses: `tools` go through the fixed table (a name with no match is
+dropped and named), no tool at all gets `Read`, `Grep` and `Glob`, a `provider/model`
+value is used only when Belai has that provider built in, and `maxTurns` is capped
+at 200. `skills`, `mode` and `temperature` are kept in metadata. `permission`,
+`permissionMode`, `hooks`, `mcpServers` and the rest are not imported. A file from
+Belai's own `profiles/agents` is read strictly and kept whole. The canonical document
+is the profile Markdown the agent library stores.
+
+### Crews
+
+A crew file is decoded strictly (no unknown key), with the checks that need no
+profile on this host: a lower-case name, 1 to 8 members, 0 to 8 replicas each. A
+member that names no agent is a warning. The canonical document is the crew JSON.
+
+### Processes
+
+A file named `<NNN>-<name>.json` or `.sh` (a leading `_` means disabled) in the
+global or project processes directory. A `.sh` file is offered as one `sh -c`
+command. Belai's own validator decides.
+
+### Budgets, rewrites, providers and repositories
+
+Read from the `token_budgets`, `bash_rewrite`, `providers` and `firewall`, and
+`repos` settings of a settings file, through the library validators. A file gives one
+budget set, one rewrite table and one provider set, and one item per repository. No
+other harness stores these, so Belai is their only source. A provider document never
+holds a key: `api_key_env` names a variable, and a key is never read from settings.
+
+### Documents
+
+`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and the like, as the registry
+lists them. A document is UTF-8 text with no NUL, at most 256 KiB, whose name is not a
+credential store's, with no private key block or known token anywhere in it and no
+delimiter markup or invisible character. A leading byte order mark is removed with a
+warning and CRLF becomes LF. The importing person says which agent receives it.
+
+## From the website
+
+The library page has one **Scan hosts** action per tab. It sends a `library_scan`
+request to every online host, each host scans for up to 25 seconds and uploads its
+report, and the page groups what was found by host. When nothing is found it shows
+what was searched. Selected items are imported with one `library_import` request
+each.
+
+The two requests are [dispatch kinds](remote-control.md#scanning-and-importing-from-other-harnesses)
+and are always on. There is no `sync.*` switch: nothing is read until a person asks
+on the website, a scan sends names, paths, hashes, verdicts and short notes and no
+document, and a document leaves the host only when that person imports that item.
+
+An import does not trust the request. The host:
+
+1. re-derives where it may read from its own harness list and trusted repositories
+   and refuses a path that is not exactly a file a scan would list;
+2. checks that no part of the path below the root is a symbolic link;
+3. reads the file itself and runs the same converter;
+4. refuses the item when the SHA-256 of the canonical document is not the one the scan
+   reported (`that item changed since the scan; scan again`);
+5. uploads the canonical document, a string for Markdown kinds and documents, an
+   object for JSON kinds, with an agent's bundled skills and a document's target agent.
+
+## What a scan and an import never do
+
+- Follow a symbolic link, read a credential file or a file over 1 MiB.
+- Write to disk. The only writes are by the library after an upload.
+- Grant a tool. `allowed-tools` from a source is text in metadata. An agent with no
+  mappable tool gets the read-only set.
+- Carry a hook, an MCP server entry, a permission rule, an endpoint, a credential or an
+  environment variable name from a source.
+- Turn on a schedule, a worker block or an autonomy level.
+- Repair text. A file with delimiter markup, a control or escape character, a
+  bidirectional override or an invisible rune is `invalid`, not cleaned.
+- Read a path the request names that the host would not have listed itself.
+
+## Importing an agent definition
+
+`belai agent import` converts an agent definition written for one of four other
+harnesses into an ordinary profile. Belai keeps its own [profile schema](agent-profiles.md)
+and has one adapter per format:
 
 | `-from` | What it reads |
 | --- | --- |
@@ -13,12 +228,7 @@ adapter per format that converts a definition into an ordinary profile:
 | `hermes` | a Hermes profile: its directory, or a `.tar.gz` made by `hermes profile export` |
 | `mini-swe` | a mini-SWE-agent YAML configuration |
 
-- [Using it](#using-it)
-- [What is mapped](#what-is-mapped)
-- [What an import never does](#what-an-import-never-does)
-- [Edge cases](#edge-cases)
-
-## Using it
+### Using it
 
 ```sh
 belai agent import -from claws ./release-helper          # preview
@@ -38,7 +248,7 @@ the profile's metadata**, what was **not imported**, and anything to **read befo
 saving**. The tools line marks any tool that can change files or run commands, and any that sends
 text off this machine (`WebFetch`, `WebSearch`).
 
-## What is mapped
+### What is mapped
 
 | Profile field | From |
 | --- | --- |
@@ -54,7 +264,7 @@ text off this machine (`WebFetch`, `WebSearch`).
 A definition that names no tool Belai knows, or none at all, gets `Read`, `Grep` and
 `Glob`: an import never ends up with every tool because a source was silent.
 
-## What an import never does
+### What an agent import never does
 
 - It makes a single-mode, supervised profile. There is no worker block, schedule,
   `guardrails` or `ask_permission` override, `facts` or `knowledge`. A cron job in the
@@ -67,7 +277,7 @@ A definition that names no tool Belai knows, or none at all, gets `Read`, `Grep`
   and the result goes through the profile validator, so a definition that would not
   be a valid profile is refused whole.
 
-## Edge cases
+### Agent definition edge cases
 
 - A symbolic link given as the source is refused. A link, a special file, a credential
   file, a file over 1 MiB or a file that cannot be read inside a directory or an archive
@@ -89,3 +299,27 @@ A definition that names no tool Belai knows, or none at all, gets `Read`, `Grep`
 - mini-SWE templates keep their `{{ }}` placeholders; Belai does not fill them, and the
   report says so.
 - A skill whose name starts with `belai-` is not imported: that prefix is Belai's own.
+
+## Edge cases
+
+- A file several harnesses list (a repository's `AGENTS.md`, a shared `~/.agents/skills`)
+  is one item. It goes under the installed harness that has its own format, then under
+  the first one the registry names.
+- Two items of the same kind and name in different places are two items with different
+  paths. The website asks which one to import.
+- A harness that keeps a kind in a format Belai does not read (Gemini CLI commands
+  are TOML) is named in the report under that harness, and nothing in it is read.
+- A directory that is itself a symbolic link (a `commands` folder pointing at a
+  dotfiles checkout) is skipped and counted, as is any link inside one. Name the real
+  folder in a trusted repository, or copy the files, if you want them scanned.
+- A repository the registry lists as missing, or one that is not trusted, is not
+  searched, and an import never reads from it.
+- A file edited, replaced or swapped for a link between the scan and the import is
+  refused; scan again.
+- A host that predates the scan answers `library_scan` and `library_import` with
+  `update Belai on the host`.
+- A scan does not stop for one bad file. An unreadable directory counts for nothing and
+  the scan goes on.
+- `belai library scan` and the website scan the same way, so a result seen at the
+  command line is what the website will show for that host.
+

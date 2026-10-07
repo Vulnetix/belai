@@ -35,6 +35,11 @@ func Import(path string, f Format, o Options) (Result, error) {
 			return Result{}, err
 		}
 	}
+	return importTree(t, f, o)
+}
+
+// importTree runs the adapter for one of the four formats Import reads.
+func importTree(t *tree, f Format, o Options) (Result, error) {
 	switch f {
 	case Claws:
 		return importClaws(t, o)
