@@ -527,7 +527,8 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	bare := exec.Command("sh", "-c", "git status")
 	bare.Dir = ws.Dir
 	sandbox.Wrap(bare, sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}})
-	if out, err := bare.CombinedOutput(); err == nil || !strings.Contains(string(out), "not a git repository") {
+	// Newer git words the same failure as an invalid gitfile.
+	if out, err := bare.CombinedOutput(); err == nil || !(strings.Contains(string(out), "not a git repository") || strings.Contains(string(out), "does not point to a valid repository")) {
 		t.Fatalf("expected the old failure without git paths: %v %s", err, out)
 	}
 	before := ws.RootEntries()
