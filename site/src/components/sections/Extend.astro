@@ -80,6 +80,7 @@ const integrations = [
 
 const limits = [
   ['Hooks come from your folder', 'Hooks load from your global hooks directory, and each command must resolve inside its own directory. A project has no way to add one.'],
+  ['Hook bundles run what they carry', 'A bundle is a hook definition and its scripts, in the format other coding agents write. It reaches a machine only when you install it from your library, and each command must be a file in the bundle or a program you allowed by name in your own settings.'],
   ['Hook and skill text classifies', 'What a hook says to the model, and every skill the model loads, goes through the classifier like any other untrusted result.'],
   ['Skills by name', '`Skill` takes a name and loads only a registered skill, checked against its schema as it loads.'],
   ['Search finds names', '`ToolSearch` finds skills as well as tools and returns names only. With a decision backend, only the skills your request needs are listed, and it ranks what it finds.'],
@@ -167,7 +168,7 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </div>
       <p class="text-sm text-vx-ink/75">
         A hook runs after the permission rules, so it can only narrow them. A project can turn hooks off,
-        never on. <a class="text-vx-ink underline" href={`${docBase}hooks.md`}>docs/hooks.md</a>
+        never on. A hook bundle follows the same rules, and its scripts install only on your yes. <a class="text-vx-ink underline" href={`${docBase}hooks.md`}>docs/hooks.md</a>
       </p>
     </aside>
   </div>
