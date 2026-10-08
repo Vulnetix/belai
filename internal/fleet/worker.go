@@ -36,6 +36,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/scanartifacts"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/testdetect"
@@ -778,6 +779,14 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the branch commits a crew file the harness keeps out of branches: " + sanitize.Line(strings.Join(bad, ", "), 200)}
 		}
 	}
+	// An attempt that ended without completing, with the fix committed and the
+	// scanner no longer reporting the finding, is not thrown away: the verifier
+	// checks it independently, as it does every fix.
+	if o.failed && !o.blocked && o.files > 0 && ctx.Err() == nil {
+		if salvaged := w.salvage(ctx, ws, it, o, claim); salvaged != nil {
+			o = *salvaged
+		}
+	}
 	if mode := w.gatesMode(); mode != "off" && !o.failed && ws.Worktree && itemCtx.Err() == nil {
 		v := w.verifyBranch(itemCtx, it, ws)
 		if w.stopped(ctx, itemCtx, it, ws) {
@@ -942,6 +951,61 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 	}
 	o.note = fmt.Sprintf("agent %s did not complete it: %s after %d passes", w.Profile.Name, why, res.Passes)
 	return o
+}
+
+// salvage turns a failed attempt into a completed fix when the harness can
+// prove the fix: the profile opts in (kanban.security.salvage), the card is an
+// SCA finding worked in a worktree, the branch holds committed changes and a
+// fresh scan of the worktree no longer reports the finding. The draft pull
+// request is opened here, before the card moves, because the next worker to
+// claim it needs the branch free of this worktree. It returns nil when the
+// attempt stays failed.
+func (w *Worker) salvage(ctx context.Context, ws *Workspace, it kanban.Item, o outcome, claim *tools.WorkerClaim) *outcome {
+	k := w.Profile.Kanban
+	if k == nil || k.Security == nil || !k.Security.Salvage || ws == nil || !ws.Worktree || w.Profile.ReadOnlyWorkspace() {
+		return nil
+	}
+	if it.Finding == "" || scanartifacts.KindOfID(it.Finding) != scanartifacts.KindSCA || strings.HasPrefix(it.Finding, SweepFindingPrefix) {
+		return nil
+	}
+	// A verdict other than fixed is not a claim of a fix.
+	if rec, ok := claim.Recorded(); ok && rec.Verdict != kanban.VerdictFixed {
+		return nil
+	}
+	fb, ok := w.scanFresh(context.WithoutCancel(ctx), ws, it)
+	if !ok || fb.present {
+		return nil
+	}
+	w.logf("%s: %s; the scanner confirms %s is gone from %s, sending it for verification", it.Short(), o.note, sanitize.Ident(it.Finding, 64), o.branch)
+	out := o
+	out.failed, out.verdict = false, kanban.VerdictFixed
+	out.note = fmt.Sprintf("agent %s ended without finishing (%s) but the scanner confirms %s is gone from the branch", w.Profile.Name, strings.TrimPrefix(o.note, "agent "+w.Profile.Name+" did not complete it: "), sanitize.Ident(it.Finding, 64))
+	if w.publishes() {
+		w.publish(ctx, ws, it, o.files)
+	}
+
+	return &out
+}
+
+// scanFresh scans the worktree for the card's finding. A model that ran the
+// scanner itself leaves a .vulnetix directory behind, which scanForFinding
+// would trust or refuse; it is set aside for the scan and put back after, so
+// the answer is always about the branch as committed.
+func (w *Worker) scanFresh(ctx context.Context, ws *Workspace, it kanban.Item) (scanFeedback, bool) {
+	if w.Scan == nil {
+		art := filepath.Join(ws.Dir, ".vulnetix")
+		if fi, err := os.Lstat(art); err == nil && fi.Mode()&os.ModeSymlink == 0 {
+			aside := art + ".before-salvage"
+			if os.Rename(art, aside) == nil {
+				defer func() {
+					_ = os.RemoveAll(art)
+					_ = os.Rename(aside, art)
+				}()
+			}
+		}
+	}
+
+	return w.scanForFinding(ctx, ws, it, 1, 1)
 }
 
 // routesToDone reports whether release would send a successful outcome to the
