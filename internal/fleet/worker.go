@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -908,11 +909,15 @@ func (w *Worker) workspace(ctx context.Context, it kanban.Item) (*Workspace, err
 type outcome struct {
 	failed  bool
 	blocked bool
-	note    string
-	branch  string
-	files   int
-	stop    run.StopReason
-	passes  int
+	// transient marks a failure that was the model provider's (rate limit, quota,
+	// outage) before the agent did any work: the item goes back where it came from
+	// and the attempt is not counted, because nothing was tried.
+	transient bool
+	note      string
+	branch    string
+	files     int
+	stop      run.StopReason
+	passes    int
 	// The security verdict routes the item and names its VEX. to, when set,
 	// replaces the profile's route with these label edits.
 	verdict    kanban.Verdict
@@ -940,6 +945,9 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 		return o
 	}
 	o.failed = true
+	if runErr != nil && res.Passes == 0 && transientProviderError(runErr) {
+		o.transient = true
+	}
 	why := string(res.StopReason)
 	switch {
 	case cause != nil && !errors.Is(cause, context.Canceled):
@@ -950,8 +958,19 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 		why = "incomplete"
 	}
 	o.note = fmt.Sprintf("agent %s did not complete it: %s after %d passes", w.Profile.Name, why, res.Passes)
+	if o.transient {
+		o.note += "; the model provider was unavailable, so this is not counted as an attempt"
+	}
 	return o
 }
+
+// providerOutage matches the error a worker turn ends with when the provider
+// refused the very first call: rate limit or quota (429) or a server error.
+var providerOutage = regexp.MustCompile(`provider returned (429|50[0-9])\b`)
+
+// transientProviderError reports whether err is the model provider refusing the
+// call for its own reasons, which says nothing about the item.
+func transientProviderError(err error) bool { return providerOutage.MatchString(err.Error()) }
 
 // salvage turns a failed attempt into a completed fix when the harness can
 // prove the fix: the profile opts in (kanban.security.salvage), the card is an
@@ -1031,7 +1050,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	if k == nil {
 		k = &agentprofile.KanbanSpec{}
 	}
-	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed, Branch: o.branch}
+	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient, Branch: o.branch}
 	if o.files > 0 {
 		out.Note += fmt.Sprintf("; %d files changed on %s", o.files, o.branch)
 	} else if o.branch != "" && !o.failed {
@@ -1047,7 +1066,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		out.To = kanban.Blocked
 	case !o.failed:
 		route = k.OnSuccess
-	case it.Attempts+1 >= p.MaxAttemptsOr():
+	case !o.transient && it.Attempts+1 >= p.MaxAttemptsOr():
 		out.To = kanban.Blocked
 		out.Note += fmt.Sprintf("; blocked after %d failed attempts", it.Attempts+1)
 	default:

@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -261,5 +262,39 @@ func TestSalvageIsOffUnlessTheProfileAsksForIt(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if *calls != 0 || got.List != kanban.Backlog || got.Attempts != 1 {
 		t.Fatalf("%d scans, card %+v", *calls, got)
+	}
+}
+
+// A provider that refuses the very first call (rate limit, quota, outage) says
+// nothing about the card, so the attempt is not counted and the card goes back.
+func TestAProviderOutageBeforeAnyWorkIsNotAnAttempt(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, _ Turn) (run.Result, error) {
+		return run.Result{StopReason: run.StopError, Passes: 0}, errors.New(`provider returned 503: {"errors":[{"code":503,"message":"unavailable"}]}`)
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Backlog || got.Attempts != 0 || !strings.Contains(got.LastNote(), "not counted as an attempt") {
+		t.Fatalf("an outage cost the card an attempt: %+v (%q)", got, got.LastNote())
+	}
+}
+
+func TestAnErrorAfterWorkStillCountsAsAnAttempt(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, _ Turn) (run.Result, error) {
+		return run.Result{StopReason: run.StopError, Passes: 3}, errors.New(`provider returned 503: unavailable`)
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 (%q)", got.Attempts, got.LastNote())
 	}
 }
