@@ -170,19 +170,60 @@ var (
 	probeOnce sync.Once
 	probeName string
 	probePath string
+	probeWhy  string
 )
+
+// Probe tunables, shortened by tests.
+var (
+	probeTries   = 4
+	probeBackoff = 250 * time.Millisecond
+	// runBwrapProbe runs the one command that proves bubblewrap works here and
+	// returns what it printed with its error.
+	runBwrapProbe = func(path string) (string, error) {
+		out, err := exec.Command(path, "--ro-bind", "/", "/", "--dev", "/dev", "--", "true").CombinedOutput()
+		return string(out), err
+	}
+)
+
+// transientProbeFailure reports a failure that says the machine was out of
+// processes, threads or memory at that moment, not that bubblewrap cannot work
+// here: a fork refused with EAGAIN, or an allocation refused. A fleet of
+// workers on a small machine reaches this, and a probe that took it as "no
+// backend" would refuse every autonomous worker with Bash until the process
+// that probed ended.
+func transientProbeFailure(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "resource temporarily unavailable") || strings.Contains(m, "cannot allocate memory") || strings.Contains(m, "eagain")
+}
 
 // Backend returns the working backend's name ("bwrap", "sandbox-exec") and
 // path, or "" when none works here. It is probed once per process: bwrap
 // can be installed yet unusable when unprivileged user namespaces are off.
+// A probe that fails because the machine is out of processes or memory is tried
+// again a few times before it counts, and BackendProblem says why it failed.
 func Backend() (name, path string) {
 	probeOnce.Do(func() {
 		switch runtime.GOOS {
 		case "linux":
-			if p, err := exec.LookPath("bwrap"); err == nil {
-				if exec.Command(p, "--ro-bind", "/", "/", "--dev", "/dev", "--", "true").Run() == nil {
-					probeName, probePath = "bwrap", p
+			p, err := exec.LookPath("bwrap")
+			if err != nil {
+				probeWhy = "bwrap is not installed"
+				return
+			}
+			for try := 0; try < probeTries; try++ {
+				out, err := runBwrapProbe(p)
+				if err == nil {
+					probeName, probePath, probeWhy = "bwrap", p, ""
+					return
 				}
+				probeWhy = strings.TrimSpace(strings.Join(strings.Fields(out+" "+err.Error()), " "))
+				if len(probeWhy) > 200 {
+					probeWhy = probeWhy[:200]
+				}
+				if !transientProbeFailure(probeWhy) {
+					return
+				}
+				time.Sleep(probeBackoff << try)
 			}
 		case "darwin":
 			if p, err := exec.LookPath("sandbox-exec"); err == nil {
@@ -191,6 +232,15 @@ func Backend() (name, path string) {
 		}
 	})
 	return probeName, probePath
+}
+
+// BackendProblem is why Backend found no working backend, in a few words, or
+// "" when it found one (or has not been asked). It is what a refusal quotes, so
+// the person reading it can tell a machine out of processes from one that
+// cannot run bubblewrap at all.
+func BackendProblem() string {
+	Backend()
+	return probeWhy
 }
 
 // ErrPIDIsolation is returned when a command would hold vault variables and the sandbox

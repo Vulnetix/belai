@@ -129,6 +129,12 @@ asks you rather than retrying blindly.
   path.
 - bubblewrap is probed once per run. If it is installed but cannot start
   (unprivileged user namespaces off), `auto` runs unsandboxed and
-  `required` refuses.
+  `required` refuses. A probe that fails because the machine was out of
+  processes or memory at that moment ("Resource temporarily unavailable",
+  "Cannot allocate memory") is tried up to four times, 250 ms apart and doubling,
+  before it counts; any other failure counts at once. When no backend is found
+  the refusal of an autonomous worker with Bash ends with why the probe failed,
+  so a machine out of processes reads differently from one that cannot run
+  bubblewrap.
 - Only a sandboxed `Bash` command that exits non-zero gets the sandbox note;
   a successful one looks exactly as it would unsandboxed.
