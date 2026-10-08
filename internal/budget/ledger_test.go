@@ -12,13 +12,23 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 )
 
+// setNow replaces the recorder's clock. The flusher goroutine Open starts reads
+// it under flushMu and mu, so a test must take both to change it.
+func setNow(r *Recorder, now func() time.Time) {
+	r.flushMu.Lock()
+	r.mu.Lock()
+	r.now = now
+	r.mu.Unlock()
+	r.flushMu.Unlock()
+}
+
 func openAt(t *testing.T, path, session string, now time.Time) *Recorder {
 	t.Helper()
 	r, err := Open(path, session, 28)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.now = func() time.Time { return now }
+	setNow(r, func() time.Time { return now })
 	t.Cleanup(func() { _ = r.Close() })
 	return r
 }
@@ -136,7 +146,7 @@ func TestBudgetEdge4_MonthTotalCountsOnlyThisMonth(t *testing.T) {
 	last := time.Date(2026, 8, 31, 23, 0, 0, 0, time.Local)
 	r := openAt(t, path, "s", last)
 	r.Add("p", "m", 400)
-	r.now = func() time.Time { return time.Date(2026, 9, 1, 0, 30, 0, 0, time.Local) }
+	setNow(r, func() time.Time { return time.Date(2026, 9, 1, 0, 30, 0, 0, time.Local) })
 	r.Add("p", "m", 25)
 	if got := r.Used(month(1)); got != 25 {
 		t.Fatalf("September total = %d, want 25 (August's 400 dropped out)", got)
