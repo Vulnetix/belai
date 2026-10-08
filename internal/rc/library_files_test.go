@@ -617,6 +617,42 @@ func TestCrewInstallReplacesOnlyTheSameCrewWhenTold(t *testing.T) {
 	}
 }
 
+func TestCrewInstallUpdatesADifferentCrewAndMemberInPlaceWhenTold(t *testing.T) {
+	const hostID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	h := newFullHarness(t, true)
+	// This host holds a member of that name under another id, and a crew of that name under another id.
+	if _, err := agentprofile.Save(worker("log", hostID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agentprofile.SaveCrew(agentprofile.Crew{ID: hostID, Name: "aws-infra", Description: "d", Members: []agentprofile.Member{{Profile: "log", Replicas: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.serveCrew("aws-infra", worker("log", libID))
+
+	status, why := h.run(sessionsync.Dispatch{Kind: "crew_install", Library: crewID, Version: crewVer})
+	if status != sessionsync.DispatchRefused || !strings.Contains(why, "replace turned on") {
+		t.Fatalf("without replace: %s %q", status, why)
+	}
+	if c, err := agentprofile.LoadCrew("aws-infra"); err != nil || c.ID != hostID {
+		t.Fatalf("a refused install changed the crew: %+v %v", c, err)
+	}
+
+	h.site.acks = map[string][3]string{}
+	status, report := h.run(sessionsync.Dispatch{Kind: "crew_install", Library: crewID, Version: crewVer, Overwrite: true})
+	if status != sessionsync.DispatchStarted || !strings.Contains(report, "installed log") {
+		t.Fatalf("with replace: %s %q", status, report)
+	}
+	if c, err := agentprofile.LoadCrew("aws-infra"); err != nil || c.ID != crewID {
+		t.Fatalf("the crew was not updated in place: %+v %v", c, err)
+	}
+	if p, err := agentprofile.Load("log"); err != nil || p.ID != libID {
+		t.Fatalf("the member was not updated in place: %+v %v", p, err)
+	}
+	if len(agentprofile.StoredCrews()) != 1 {
+		t.Fatalf("an in-place update left %d crews", len(agentprofile.StoredCrews()))
+	}
+}
+
 // ── Automatic sync ───────────────────────────────────────────────────────
 
 type fakeRemote struct {

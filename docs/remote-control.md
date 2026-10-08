@@ -458,10 +458,14 @@ uncommitted and unpushed code (see [teleport.md](teleport.md)):
     palette is refused, as import refuses it);
   - its `id` is the library profile's;
   - it does not take a built-in's name;
-  - no profile of that name exists here, or the request set replace and that
-    profile has the same `id`. A profile that holds the same `id` under another
-    name is never replaced, and a display name another profile here holds is
-    refused.
+  - no profile of that name exists here, or the request set replace. Replace
+    updates the profile of that name in place whatever its `id` (a copy the host
+    or a launch wrote has another one): it takes the library's `id` and
+    definition, and keeps the documents and shared files it lists when the library
+    copy lists none. Without replace a profile of that name is refused. A profile
+    that holds the same `id` under another name is never replaced (that is a
+    rename), and a display name another profile here holds is refused; the
+    profile being replaced does not count as holding its own.
 
   The acknowledgement says what was installed, or the reason it was refused:
   harness words with a short cleaned excerpt, never the profile.
@@ -527,10 +531,13 @@ does not make it another crew.
   when one is missing, naming it. The daemon installs the members this host lacks
   first, each exactly as a `profile_install` (files and index included), leaves a
   member it already has under the same `id` alone unless the request says replace,
-  and refuses the whole install when a member of that name here is a different
-  profile. The crew is written only after every member is a worker profile on this
-  host. A crew of the same name is replaced only with replace set and the same
-  `id`.
+  and refuses the whole install when a member of that name here has another `id`
+  and the request does not say replace. With replace, every member and the crew
+  are updated in place, whatever their `id`, and a member the host never had is
+  installed; nothing is removed. The crew is written only after every member is a
+  worker profile on this host. A crew of the same name is replaced only with
+  replace set; a crew that holds the same `id` under another name is never
+  replaced.
 
 A crew's definition is a few hundred bytes of JSON with no files, so the website
 can also build one in the crew editor and save it to the library; `belai agent crew
