@@ -24,7 +24,14 @@ func Dir() (string, error) {
 // overwrite a built-in profile once sanitised. A profile saved without an id
 // keeps the id of the file it replaces, or is given a new one, and a display
 // name another profile on this host already holds is refused.
-func Save(p AgentProfile) (string, error) {
+func Save(p AgentProfile) (string, error) { return save(p, "") }
+
+// SaveReplacing is Save for a profile that takes over the one this host holds
+// under the same name, whatever its id: that profile's display name is not a
+// collision, because the save replaces it in place. Nothing else is touched.
+func SaveReplacing(p AgentProfile) (string, error) { return save(p, p.Name) }
+
+func save(p AgentProfile, replaces string) (string, error) {
 	if err := p.Validate(); err != nil {
 		return "", err
 	}
@@ -58,7 +65,7 @@ func Save(p AgentProfile) (string, error) {
 		}
 	}
 	if p.DisplayName != "" {
-		if holder, taken, err := DisplayNameTaken(DisplayNameKey(p.DisplayName), p.ID); err != nil {
+		if holder, taken, err := displayNameTaken(DisplayNameKey(p.DisplayName), p.ID, replaces); err != nil {
 			return "", err
 		} else if taken {
 			return "", fmt.Errorf("display name %q is already used by profile %q on this host", p.DisplayName, holder)
@@ -198,6 +205,12 @@ func ByID(id string) (AgentProfile, bool) {
 // store is per host, so this is the host half of the (display name, host)
 // uniqueness rule.
 func DisplayNameTaken(key, exceptID string) (holder string, taken bool, err error) {
+	return displayNameTaken(key, exceptID, "")
+}
+
+// displayNameTaken is DisplayNameTaken that also lets the profile named
+// exceptName hold the key, for a save that replaces it.
+func displayNameTaken(key, exceptID, exceptName string) (holder string, taken bool, err error) {
 	if key == "" {
 		return "", false, nil
 	}
@@ -206,7 +219,7 @@ func DisplayNameTaken(key, exceptID string) (holder string, taken bool, err erro
 		return "", false, err
 	}
 	for _, p := range list {
-		if p.DisplayName != "" && DisplayNameKey(p.DisplayName) == key && (exceptID == "" || p.ID != exceptID) {
+		if p.DisplayName != "" && DisplayNameKey(p.DisplayName) == key && (exceptID == "" || p.ID != exceptID) && (exceptName == "" || p.Name != exceptName) {
 			return p.Name, true, nil
 		}
 	}

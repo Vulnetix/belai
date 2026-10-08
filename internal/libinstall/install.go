@@ -113,7 +113,10 @@ func (i Installer) Profile(ctx context.Context, library, version string, overwri
 	if why != "" {
 		return p, "", why
 	}
-	if _, err := agentprofile.Save(p); err != nil {
+	// A replace updates the profile of that name in place, so a copy whose id
+	// differs (the host made it, or a launch wrote it) takes the library's id and
+	// its own display name is not a collision.
+	if _, err := agentprofile.SaveReplacing(p); err != nil {
 		return p, "", "could not save the profile: " + reason(err.Error())
 	}
 	if saved, err := agentprofile.Load(p.Name); err == nil {
@@ -161,9 +164,10 @@ func (i Installer) files(ctx context.Context, p agentprofile.AgentProfile, refs 
 }
 
 // Conflict refuses an install that would replace a profile it was not told to.
-// A profile of the same name is replaced only with overwrite set and only when
-// it has the same id; a profile that holds the same id under another name is
-// never replaced.
+// A profile of the same name is updated in place only with overwrite set, and
+// then whatever its id (the library copy is the one the request names, and the
+// host's copy of that name is the one it replaces); a profile that holds the
+// same id under another name is never replaced, because that is a rename.
 func Conflict(p agentprofile.AgentProfile, overwrite bool) string {
 	if agentprofile.IsBuiltin(p.Name) {
 		return "refused: that name is reserved for a built-in profile"
@@ -178,11 +182,11 @@ func Conflict(p agentprofile.AgentProfile, overwrite bool) string {
 		}
 		return "could not check the existing profile: " + reason(err.Error())
 	}
-	switch {
-	case !overwrite:
+	if !overwrite {
+		if existing.ID != p.ID {
+			return "this host already has a different profile named " + sanitize.Line(p.Name, 64) + " (its id differs); install it again with replace turned on to update it in place"
+		}
 		return "this host already has a profile named " + sanitize.Line(p.Name, 64) + "; install it again with replace turned on to overwrite it"
-	case existing.ID != p.ID:
-		return "refused: the profile of that name here is a different profile (its id differs), so it is not replaced"
 	}
 	return ""
 }
@@ -290,7 +294,8 @@ type crewMember struct {
 // crewMembers checks the member profiles a request lists against the crew and
 // this host, before anything is written. A member must be one the crew names; one
 // this host already has under the same id is left alone (or replaced, when asked);
-// one it has under another id is a different profile and refuses the install.
+// one it has under another id is a different profile and refuses the install
+// unless the request says to replace, which updates it in place.
 func crewMembers(c agentprofile.Crew, refs []sessionsync.CrewMemberRef, overwrite bool) ([]crewMember, string) {
 	if len(refs) > agentprofile.MaxCrewMembers {
 		return nil, "the request lists more members than a crew has"
@@ -310,10 +315,10 @@ func crewMembers(c agentprofile.Crew, refs []sessionsync.CrewMemberRef, overwrit
 		switch {
 		case err != nil:
 			out = append(out, crewMember{ref: ref, install: true})
-		case existing.ID != ref.Library:
-			return nil, "this host's profile " + sanitize.Line(ref.Profile, 64) + " is a different profile (its id differs) from the crew's member, so the crew was not installed"
 		case overwrite:
 			out = append(out, crewMember{ref: ref, install: true, overwrite: true})
+		case existing.ID != ref.Library:
+			return nil, "this host's profile " + sanitize.Line(ref.Profile, 64) + " is a different profile (its id differs) from the crew's member, so the crew was not installed; install it again with replace turned on to update it in place"
 		default:
 			out = append(out, crewMember{ref: ref})
 		}
@@ -322,9 +327,9 @@ func crewMembers(c agentprofile.Crew, refs []sessionsync.CrewMemberRef, overwrit
 }
 
 // CrewConflict refuses an install that would replace a crew it was not told to,
-// the way Conflict does for a profile: the same name is replaced only with
-// overwrite set and only when it has the same id, and a crew that holds the same
-// id under another name is never replaced.
+// the way Conflict does for a profile: the same name is updated in place only
+// with overwrite set, whatever its id, and a crew that holds the same id under
+// another name is never replaced.
 func CrewConflict(c agentprofile.Crew, overwrite bool) string {
 	if agentprofile.IsBuiltin(c.Name) {
 		return "refused: that name is reserved for a built-in crew"
@@ -333,13 +338,11 @@ func CrewConflict(c agentprofile.Crew, overwrite bool) string {
 		return "refused: this host already has a crew with that id under the name " + sanitize.Line(holder.Name, 64)
 	}
 	existing, ok := StoredCrew(c.Name)
-	switch {
-	case !ok:
-		return ""
-	case !overwrite:
+	if ok && !overwrite {
+		if existing.ID != c.ID {
+			return "this host already has a different crew named " + sanitize.Line(c.Name, 64) + " (its id differs); install it again with replace turned on to update it in place"
+		}
 		return "this host already has a crew named " + sanitize.Line(c.Name, 64) + "; install it again with replace turned on to overwrite it"
-	case existing.ID != c.ID:
-		return "refused: the crew of that name here is a different crew (its id differs), so it is not replaced"
 	}
 	return ""
 }

@@ -373,15 +373,6 @@ func TestInstallNeverReplacesWhatItWasNotToldTo(t *testing.T) {
 	if got, _ := agentprofile.Load("dep-reviewer"); got.Description != "from the library" || got.ID != libID {
 		t.Fatalf("replace = %+v", got)
 	}
-	// A profile of that name with another id is a different profile, replaced never.
-	other := installable("dep-reviewer", libID2)
-	other.DisplayName = "Third"
-	if status, why := h.install(other, true); status != sessionsync.DispatchRefused || !strings.Contains(why, "id differs") && !strings.Contains(why, "already has a profile with that id") {
-		t.Fatalf("a different profile of the same name: %s %q", status, why)
-	}
-	if got, _ := agentprofile.Load("dep-reviewer"); got.ID != libID {
-		t.Fatalf("the profile was replaced by another: %+v", got)
-	}
 	// The same id under another name is the same profile renamed: not installed beside it.
 	renamed := installable("renamed", libID)
 	renamed.DisplayName = "Renamed"
@@ -396,6 +387,29 @@ func TestInstallNeverReplacesWhatItWasNotToldTo(t *testing.T) {
 	}
 	if names := h.stored(); len(names) != 1 {
 		t.Fatalf("stored = %v", names)
+	}
+	// A profile of that name with another id is not replaced unless told to,
+	// and when told it is updated in place, taking the library's id.
+	other := installable("dep-reviewer", libID2)
+	other.DisplayName = "Third"
+	if status, why := h.install(other, false); status != sessionsync.DispatchRefused || !strings.Contains(why, "id differs") {
+		t.Fatalf("a different profile of the same name without replace: %s %q", status, why)
+	}
+	if got, _ := agentprofile.Load("dep-reviewer"); got.ID != libID {
+		t.Fatalf("a refused install changed the profile: %+v", got)
+	}
+	if status, why := h.install(other, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("a different profile of the same name with replace: %s %q", status, why)
+	}
+	if got, _ := agentprofile.Load("dep-reviewer"); got.ID != libID2 || got.DisplayName != "Third" {
+		t.Fatalf("the profile was not updated in place: %+v", got)
+	}
+	if names := h.stored(); len(names) != 1 {
+		t.Fatalf("an in-place update left %v", names)
+	}
+	// Its own display name is not a collision when the same profile is updated again.
+	if status, why := h.install(other, true); status != sessionsync.DispatchStarted {
+		t.Fatalf("updating again: %s %q", status, why)
 	}
 }
 
