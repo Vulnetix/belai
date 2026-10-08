@@ -20,7 +20,7 @@
     "lists": ["backlog"],
     "labels": ["vuln"],
     "on_success": {"list": "review", "labels": ["needs-verify"], "drop_labels": ["vuln"]},
-    "security": {"reconcile": true, "rounds": 3, "verdicts": ["fixed", "false_positive", "no_fix", "needs_human"]},
+    "security": {"reconcile": true, "rounds": 3, "salvage": true, "verdicts": ["fixed", "false_positive", "no_fix", "needs_human"]},
     "max_attempts": 3,
     "lease": "30m"
   },

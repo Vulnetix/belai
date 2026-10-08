@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,5 +200,66 @@ func TestRemoveScanArtefactsNeverFollowsALink(t *testing.T) {
 	removeScanArtefacts(real)
 	if _, err := os.Lstat(real); !os.IsNotExist(err) {
 		t.Fatal("the scan directory was not removed")
+	}
+}
+
+// A patcher whose budget ends after it committed a fix the scanner confirms is
+// not a failed attempt: the harness sends it to the verifier.
+func salvageWorker(t *testing.T, salvage bool, stop run.StopReason) (*kanban.Store, *Worker, kanban.Item) {
+	t.Helper()
+	store, reg := testEnv(t)
+	p := roundsPatcher(1)
+	p.Kanban.Security.Salvage = salvage
+	w := newWorker(t, store, reg, p, func(_ context.Context, tt Turn) (run.Result, error) {
+		if err := os.WriteFile(filepath.Join(tt.Workdir, "go.mod"), []byte("module x\n\nrequire golang.org/x/text v0.42.0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		return run.Result{StopReason: stop, Passes: 8}, nil
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+
+	return store, w, it
+}
+
+func TestSalvageSendsAFixTheScannerConfirmsToTheVerifierWhenTheBudgetEnds(t *testing.T) {
+	store, w, it := salvageWorker(t, true, run.StopMaxPasses)
+	scan, calls := scanScript(false) // the finding is gone
+	w.Scan = scan
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if *calls != 1 || got.List != kanban.Review || got.Verdict != kanban.VerdictFixed || got.Attempts != 0 {
+		t.Fatalf("%d scans, card %+v (%q)", *calls, got, got.LastNote())
+	}
+	if !strings.Contains(got.LastNote(), "the scanner confirms") || !strings.Contains(got.LastNote(), "max_passes") || !slices.Contains(got.Labels, "needs-verify") {
+		t.Fatalf("note %q, labels %v", got.LastNote(), got.Labels)
+	}
+}
+
+func TestSalvageLeavesTheAttemptFailedWhileTheScannerStillReportsTheFinding(t *testing.T) {
+	store, w, it := salvageWorker(t, true, run.StopMaxPasses)
+	w.Scan, _ = scanScript(true)
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Backlog || got.Attempts != 1 || got.Verdict != "" {
+		t.Fatalf("an unproven fix was sent on: %+v (%q)", got, got.LastNote())
+	}
+}
+
+func TestSalvageIsOffUnlessTheProfileAsksForIt(t *testing.T) {
+	store, w, it := salvageWorker(t, false, run.StopMaxPasses)
+	scan, calls := scanScript(false)
+	w.Scan = scan
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if *calls != 0 || got.List != kanban.Backlog || got.Attempts != 1 {
+		t.Fatalf("%d scans, card %+v", *calls, got)
 	}
 }

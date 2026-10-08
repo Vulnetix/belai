@@ -79,7 +79,7 @@
     {
       "name": "belai:patcher",
       "path": "internal/agentprofile/builtin/patcher.json",
-      "sha256": "5d6d862344db1651be713c268effdd40dc00a218f15471724cbdbc69a1bf17f7"
+      "sha256": "de015b336c0bbe65daf3d8ffeb0f98e0b622426762cd08ca964911db613cb5a3"
     },
     {
       "name": "belai:plan-handoff",
