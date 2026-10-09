@@ -244,3 +244,16 @@ func TestCustomTempDirIsWritable(t *testing.T) {
 		t.Errorf("the strict policy must keep only the roots: %v", p.Writable)
 	}
 }
+
+// bubblewrap binds only what exists, so the Go caches must exist before a
+// command runs, or they are read-only on a fresh machine.
+func TestTheGoCacheDirectoriesExistBeforeTheyAreBound(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	FromSettings(nil, []string{"/work"}, posture.Defaults())
+	for _, d := range []string{"go", ".cache"} {
+		if fi, err := os.Stat(filepath.Join(home, d)); err != nil || !fi.IsDir() {
+			t.Errorf("%s was not made: %v", d, err)
+		}
+	}
+}

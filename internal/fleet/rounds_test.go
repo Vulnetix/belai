@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -254,5 +255,33 @@ func TestAProviderOutageLeavesAVerifierCardInReview(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if got.List != kanban.Review || got.Attempts != 0 || !slices.Contains(got.Labels, kanban.LabelNeedsVerify) || slices.Contains(got.Labels, kanban.LabelVuln) {
 		t.Fatalf("an outage moved the verifier's card: %+v (%q)", got, got.LastNote())
+	}
+}
+
+// A cache left in the worktree is not work: the harness refuses to commit it and
+// the attempt fails with a note that says why.
+func TestTheHarnessDoesNotCommitACacheLeftInTheWorktree(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, tt Turn) (run.Result, error) {
+		dir := filepath.Join(tt.Workdir, ".gomodcache")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i <= MaxHarnessCommitPaths; i++ {
+			if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(i)), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		return run.Result{StopReason: run.StopComplete, GoalSentinel: "GOAL_COMPLETE", Passes: 1}, nil
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List == kanban.Review || !strings.Contains(got.LastNote(), "looks like a cache or build output") {
+		t.Fatalf("a cache was committed and sent on: %+v (%q)", got, got.LastNote())
 	}
 }
