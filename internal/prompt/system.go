@@ -56,6 +56,10 @@ type Options struct {
 	// CodeMode adds the code-mode section (docs/code-mode.md). It is set only
 	// on an explicit code-mode turn, so no other mode's system text changes.
 	CodeMode bool
+	// DecisionTools adds the decision-tools section (docs/mcp.md "The decision
+	// server"): when to ask the mcp__clef__ tools rather than reason to a pick. It
+	// is set only when those tools are on the session's surface.
+	DecisionTools bool
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -203,6 +207,9 @@ func System(opts Options) (string, error) {
 	}
 	if opts.CodeMode && !opts.Explore {
 		b.WriteString(codeContract())
+	}
+	if opts.DecisionTools && !opts.Explore {
+		b.WriteString(decisionContract())
 	}
 	if opts.Caveman {
 		b.WriteString(CavemanVoice)
