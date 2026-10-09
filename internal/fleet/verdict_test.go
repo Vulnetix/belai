@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -243,5 +244,58 @@ func TestRoutesToDone(t *testing.T) {
 	}
 	if (&Worker{}).routesToDone(outcome{}) {
 		t.Error("no kanban spec reported as routed to done")
+	}
+}
+
+// A verifier that recorded its verdict and then ran out of passes has still
+// decided: the verdict stands and the card closes, instead of going round again.
+func verdictThenStop(store *kanban.Store, args map[string]any, stop run.StopReason, err error) TurnRunner {
+	return func(ctx context.Context, tt Turn) (run.Result, error) {
+		tool := tools.KanbanVerdict{KanbanBase: tools.KanbanBase{Store: store, Claim: tt.Claim}}
+		if _, e := tool.Execute(ctx, args); e != nil {
+			return run.Result{}, e
+		}
+
+		return run.Result{StopReason: stop, Passes: 4}, err
+	}
+}
+
+// The wall budget ends the item's context with an error, which is how a slow
+// model's overrun actually arrives. The recorded verdict still stands.
+func TestVerifierVerdictStandsWhenTheWallBudgetEndsAfterIt(t *testing.T) {
+	store, reg := testEnv(t)
+	p := verifierProfile()
+	p.Budget = &agentprofile.BudgetSpec{MaxWallPerItem: "300ms"}
+	args := map[string]any{"verdict": "fixed", "justification": "the scan is clean on this checkout"}
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		tool := tools.KanbanVerdict{KanbanBase: tools.KanbanBase{Store: store, Claim: tt.Claim}}
+		if _, err := tool.Execute(ctx, args); err != nil {
+			return run.Result{}, err
+		}
+		<-ctx.Done() // keeps re-checking until the wall budget ends the turn
+
+		return run.Result{StopReason: run.StopCancelled, Passes: 4}, ctx.Err()
+	})
+	it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Done || got.Verdict != kanban.VerdictFixed || got.Attempts != 0 || got.VEX == "" {
+		t.Fatalf("the verdict was discarded for the overrun: %+v (%q)", got, got.LastNote())
+	}
+}
+
+func TestVerifierVerdictDoesNotStandAfterAnError(t *testing.T) {
+	store, reg := testEnv(t)
+	args := map[string]any{"verdict": "fixed", "justification": "the scan is clean on this checkout"}
+	w := newWorker(t, store, reg, verifierProfile(), verdictThenStop(store, args, run.StopError, errors.New("boom")))
+	it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List == kanban.Done || got.VEX != "" {
+		t.Fatalf("a verdict closed the card after a failed turn: %+v", got)
 	}
 }
