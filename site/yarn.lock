@@ -3359,9 +3359,9 @@ __metadata:
   linkType: hard
 
 "smol-toml@npm:^1.6.0":
-  version: 1.8.0
-  resolution: "smol-toml@npm:1.8.0"
-  checksum: 10c0/4e01dbfb7c7af142176b037ebedaccccafb8229cc873feaa47c184ee31073d86e30b4b1b0fe9a5a6d083ed3ce21615eda9e81d1f5d779ad8b2e2e9459b900aea
+  version: 1.9.0
+  resolution: "smol-toml@npm:1.9.0"
+  checksum: 10c0/aca0e407f2f4999b83b2e3a786faf50e404ff0f22e94aee2b8bdda31811f5a9d27695d56804f26ac0d9d0c102883a11fb6f67a0c2a9807a30e66bd2777661a1b
   languageName: node
   linkType: hard
 
