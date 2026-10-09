@@ -182,6 +182,16 @@ options with the model's confidence; the model then decides what to do with them
   from numbers and your model's own option text; the backend's own text never
   reaches it. See [where tools are offered](#where-tools-are-offered).
 - It is not a Jev job and does not use `jev.jobs`.
+- **What the model is told.** While the tools are on the session's surface, the system
+  prompt carries a short "Decision tools" section (`internal/prompt/decisiontools.go`):
+  what the decision model is (numbers back, never prose; it sees only what is sent),
+  when to reach for it instead of reasoning to a pick (a yes/no gate, one pick from a
+  list, how close the options are, an order or shortlist, several questions about the
+  same facts), why (faster and steadier, and it reports how sure it is), how to read
+  the answer (act on a high confidence; on a low one or an "uncertain" gate, gather
+  facts or ask), and what not to use it for (anything reading or running a command
+  settles, or a safety call a rule already answers). The section is absent when the
+  tools are not offered and for an explore subagent.
 
 The tools, their limits and the definitions the model sees are in
 [Pix Sandbox](pix-sandbox.md#the-decider-mcp).
