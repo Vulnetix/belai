@@ -1022,7 +1022,15 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		out.To = kanban.Blocked
 	case !o.failed:
 		route = k.OnSuccess
-	case !o.transient && it.Attempts+1 >= p.MaxAttemptsOr():
+	case o.transient:
+		// Nothing was tried, so the item goes back exactly where it was
+		// claimed from with its labels untouched: the failure route is for
+		// work that failed, and would hand a verifier's card back to a patcher.
+		out.To = it.ClaimFrom
+		if !out.To.Valid() {
+			out.To = kanban.Backlog
+		}
+	case it.Attempts+1 >= p.MaxAttemptsOr():
 		out.To = kanban.Blocked
 		out.Note += fmt.Sprintf("; blocked after %d failed attempts", it.Attempts+1)
 	default:
