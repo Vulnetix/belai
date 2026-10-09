@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // BranchPrefix starts every branch a worker creates or accepts from an item.
@@ -64,6 +66,9 @@ type Workspace struct {
 	dotgit    []byte
 	run       forge.Runner // pinned to this worktree
 	repoRun   forge.Runner // the main repository
+	// ident is the commit identity env the worktree's runner was built with, so a
+	// runner for publishing can be built the same way with a credential added.
+	ident []string
 }
 
 func randHex(n int) string {
@@ -197,6 +202,7 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 		gitDir: filepath.Clean(gitDir), commonDir: commonDir, dotgit: dotgit,
 		run:     hardenedGit(gitDir, dir, ident...),
 		repoRun: repoRun,
+		ident:   ident,
 	}, nil
 }
 
@@ -491,19 +497,53 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if w.FilesChanged(ctx) == 0 {
 		return "", w.nothingToPublish(ctx)
 	}
-	p, reason := forge.For(rem, w.run, exec.LookPath)
+	// Publishing is the one step that needs a forge credential. The scrubbed
+	// environment a worker's git runs in has none, so a GitHub token the vault
+	// holds for this machine (held in memory, never shown to the model) is handed
+	// to this push and to gh, and to nothing else.
+	run, credArgs := w.run, []string(nil)
+	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
+		run = hardenedGit(w.gitDir, w.Dir, append(slices.Clone(w.ident), env...)...)
+		credArgs = helper
+	}
+	p, reason := forge.For(rem, run, exec.LookPath)
 	if p == nil {
 		return "", errors.New(reason)
 	}
 	// An explicit refspec: exactly this branch, to the same name.
 	ref := "refs/heads/" + w.Branch
-	if _, err := git(ctx, w.run, w.Dir, "push", "--set-upstream", "origin", ref+":"+ref); err != nil {
+	pushArgs := append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)
+	if _, err := git(ctx, run, w.Dir, pushArgs...); err != nil {
 		return "", err
 	}
 	if pr, err := p.PRForBranch(ctx, w.Dir, w.Branch); err == nil && pr != nil && pr.URL != "" && pr.State != "closed" && pr.State != "merged" {
 		return pr.URL, nil
 	}
 	return p.CreatePR(ctx, w.Dir, forge.CreatePRArgs{Branch: w.Branch, Title: title, Body: body, Draft: true})
+}
+
+// publishAuth returns the environment and git arguments that let a push and the
+// GitHub CLI act with the GITHUB_TOKEN (or GH_TOKEN) the secrets vault granted
+// this machine: the token for the child process only, and a credential helper
+// for that one host that reads it through gh. It returns nothing for a remote
+// that is not on GitHub, or when the vault holds no such token, and then the
+// push behaves as it always did.
+func publishAuth(rem forge.Remote, now time.Time) (env, gitArgs []string) {
+	if rem.Kind != forge.KindGitHub || rem.Host == "" {
+		return nil, nil
+	}
+	token := ""
+	for _, kv := range vaultenv.Default.Environ(now) {
+		if name, val, ok := strings.Cut(kv, "="); ok && val != "" && (name == "GH_TOKEN" || (name == "GITHUB_TOKEN" && token == "")) {
+			token = val
+		}
+	}
+	if token == "" {
+		return nil, nil
+	}
+
+	return []string{"GH_TOKEN=" + token, "GITHUB_TOKEN=" + token},
+		[]string{"-c", "credential.https://" + rem.Host + ".helper=", "-c", "credential.https://" + rem.Host + ".helper=!gh auth git-credential"}
 }
 
 // nothingToPublish explains an empty branch. Uncommitted edits only need a
