@@ -901,8 +901,9 @@ type outcome struct {
 	failed  bool
 	blocked bool
 	// transient marks a failure that was the model provider's (rate limit, quota,
-	// outage) before the agent did any work: the item goes back where it came from
-	// and the attempt is not counted, because nothing was tried.
+	// outage): the item goes back where it came from and the attempt is not
+	// counted, because the item was not what failed. Anything committed stays on
+	// the branch for the next attempt.
 	transient bool
 	note      string
 	branch    string
@@ -936,7 +937,7 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 		return o
 	}
 	o.failed = true
-	if runErr != nil && res.Passes == 0 && transientProviderError(runErr) {
+	if runErr != nil && transientProviderError(runErr) {
 		o.transient = true
 	}
 	why := string(res.StopReason)
@@ -976,7 +977,7 @@ func verdictSettled(res run.Result, runErr, cause error) bool {
 }
 
 // providerOutage matches the error a worker turn ends with when the provider
-// refused the very first call: rate limit or quota (429) or a server error.
+// refused a call: rate limit or quota (429) or a server error.
 var providerOutage = regexp.MustCompile(`provider returned (429|50[0-9])\b`)
 
 // transientProviderError reports whether err is the model provider refusing the

@@ -222,7 +222,9 @@ func TestAProviderOutageBeforeAnyWorkIsNotAnAttempt(t *testing.T) {
 	}
 }
 
-func TestAnErrorAfterWorkStillCountsAsAnAttempt(t *testing.T) {
+// An outage part way through is no more the card's fault than one at the start:
+// the card goes back uncounted, and what was committed stays on the branch.
+func TestAProviderOutageAfterSomeWorkIsNotAnAttemptEither(t *testing.T) {
 	store, reg := testEnv(t)
 	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, _ Turn) (run.Result, error) {
 		return run.Result{StopReason: run.StopError, Passes: 3}, errors.New(`provider returned 503: unavailable`)
@@ -233,8 +235,8 @@ func TestAnErrorAfterWorkStillCountsAsAnAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := store.Get(it.ID)
-	if got.Attempts != 1 {
-		t.Fatalf("attempts = %d, want 1 (%q)", got.Attempts, got.LastNote())
+	if got.Attempts != 0 || got.List != kanban.Backlog {
+		t.Fatalf("attempts = %d, list %s, want 0 and backlog (%q)", got.Attempts, got.List, got.LastNote())
 	}
 }
 
