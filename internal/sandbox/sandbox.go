@@ -141,6 +141,13 @@ func FromSettings(s *config.SandboxSettings, roots []string, pol posture.Policy)
 	}
 	p.Writable = append(p.Writable, roots...)
 	if home, err := os.UserHomeDir(); err == nil && s.CachesOr() {
+		// bubblewrap binds only what exists, so on a fresh machine the Go caches
+		// (GOPATH ~/go, GOCACHE ~/.cache/go-build) stayed read-only and a worker put
+		// them inside its worktree instead. These two are the conventional defaults,
+		// present on most machines, so making them is not clutter.
+		for _, d := range []string{"go", ".cache"} {
+			_ = os.MkdirAll(filepath.Join(home, d), 0o755)
+		}
 		for _, d := range cacheDirs {
 			p.Writable = append(p.Writable, filepath.Join(home, d))
 		}

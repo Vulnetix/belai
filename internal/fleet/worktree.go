@@ -262,6 +262,9 @@ func (w *Workspace) changedPaths(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
+// MaxHarnessCommitPaths caps what the harness commits on a worker's behalf.
+const MaxHarnessCommitPaths = 1000
+
 // Commit commits every change in the worktree to its branch and reports how
 // many paths it committed (0 when there was nothing left to commit).
 // The model may already have committed; this catches what it left.
@@ -281,6 +284,12 @@ func (w *Workspace) Commit(ctx context.Context, msg string) (int, error) {
 	}
 	if len(paths) == 0 {
 		return 0, nil
+	}
+	// A change no agent writes by hand: a module or build cache, a vendored tree
+	// or an install directory left in the worktree. Committing it would bury the
+	// work in a pull request nobody can review, so the attempt fails instead.
+	if len(paths) > MaxHarnessCommitPaths {
+		return 0, fmt.Errorf("the worktree holds %d uncommitted paths, more than %d, which looks like a cache or build output left in the repository; it was not committed", len(paths), MaxHarnessCommitPaths)
 	}
 	sha, err := forge.CommitPaths(ctx, w.run, w.Dir, paths, msg)
 	if err != nil || sha == "" {
