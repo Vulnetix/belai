@@ -534,3 +534,40 @@ func TestClaimMatchesTypedAssignees(t *testing.T) {
 		t.Fatalf("a person item was claimed: %v", err)
 	}
 }
+
+// A handoff assigned to the builder must reach review unassigned, or the
+// reviewer, which claims only unassigned items or its own, never takes it.
+func TestReleaseOnwardClearsTheReleasersOwnAssignment(t *testing.T) {
+	s := testStore(t)
+	it := addItem(t, s, ItemInput{Title: "fix the help text", Labels: []string{"build"}, Assignee: "belai:builder"})
+	req := claimReq("w1")
+	req.Profile = "belai:builder"
+	if _, err := s.Claim(req); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Release(it.ID, "w1", Outcome{To: Review, AddLabels: []string{"needs-review"}, Releaser: "belai:builder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Assignee != "" || got.List != Review {
+		t.Fatalf("assignee %q on %s, want none on review", got.Assignee, got.List)
+	}
+}
+
+// Going back where it came from (a failed attempt), the assignment stays.
+func TestReleaseBackKeepsTheAssignment(t *testing.T) {
+	s := testStore(t)
+	it := addItem(t, s, ItemInput{Title: "fix the help text", Labels: []string{"build"}, Assignee: "belai:builder"})
+	req := claimReq("w1")
+	req.Profile = "belai:builder"
+	if _, err := s.Claim(req); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Release(it.ID, "w1", Outcome{To: Backlog, Failed: true, Releaser: "belai:builder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Assignee != "belai:builder" {
+		t.Fatalf("assignee %q, want belai:builder kept", got.Assignee)
+	}
+}
