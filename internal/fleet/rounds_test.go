@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -234,5 +235,22 @@ func TestAnErrorAfterWorkStillCountsAsAnAttempt(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if got.Attempts != 1 {
 		t.Fatalf("attempts = %d, want 1 (%q)", got.Attempts, got.LastNote())
+	}
+}
+
+// An outage before any work leaves a verifier's card where it was claimed from
+// with its labels as they were: the failure route would hand it back to a patcher.
+func TestAProviderOutageLeavesAVerifierCardInReview(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, verifierProfile(), func(_ context.Context, _ Turn) (run.Result, error) {
+		return run.Result{StopReason: run.StopError, Passes: 0}, errors.New(`provider returned 503: {"errors":[{"code":503,"message":"unavailable"}]}`)
+	})
+	it := findingCardOn(t, store, w, kanban.Review, "needs-verify")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Review || got.Attempts != 0 || !slices.Contains(got.Labels, kanban.LabelNeedsVerify) || slices.Contains(got.Labels, kanban.LabelVuln) {
+		t.Fatalf("an outage moved the verifier's card: %+v (%q)", got, got.LastNote())
 	}
 }
