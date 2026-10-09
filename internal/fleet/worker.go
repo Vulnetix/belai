@@ -629,7 +629,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	defer cancel(nil)
 	if d := p.WallBudget(); d > 0 {
 		var stop context.CancelFunc
-		itemCtx, stop = context.WithTimeoutCause(itemCtx, d, errors.New("budget.max_wall_per_item reached"))
+		itemCtx, stop = context.WithTimeoutCause(itemCtx, d, errWallBudget)
 		defer stop()
 	}
 
@@ -759,7 +759,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	cause := context.Cause(itemCtx)
 
 	o := w.judge(it, res, runErr, cause)
-	o = w.applyVerdict(ctx, o, it, claim, runErr == nil && cause == nil)
+	o = w.applyVerdict(ctx, o, it, claim, verdictSettled(res, runErr, cause))
 	o = w.applyRounds(o, rr, it)
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
@@ -962,6 +962,26 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 		o.note += "; the model provider was unavailable, so this is not counted as an attempt"
 	}
 	return o
+}
+
+// errWallBudget is the cause an item's context ends with when its wall budget does.
+var errWallBudget = errors.New("budget.max_wall_per_item reached")
+
+// verdictSettled reports whether a turn ended in a way that leaves a recorded
+// verdict standing. A turn that finished cleanly does. So does one that only ran
+// out of budget (its wall time or its passes) after the verdict was recorded: a
+// verifier that recorded its verdict with evidence and then kept re-checking has
+// still decided, and discarding the verdict for the overrun sends the card round
+// again for nothing. An error or a cancellation does not settle it.
+func verdictSettled(res run.Result, runErr, cause error) bool {
+	if runErr == nil && cause == nil {
+		return true
+	}
+	if errors.Is(cause, errWallBudget) {
+		return true
+	}
+
+	return cause == nil && res.StopReason == run.StopMaxPasses
 }
 
 // providerOutage matches the error a worker turn ends with when the provider
