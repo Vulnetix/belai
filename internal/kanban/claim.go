@@ -422,6 +422,11 @@ type Outcome struct {
 	// path of the VEX written for it.
 	Verdict Verdict
 	VEX     string
+	// Releaser is the releasing worker's profile. When the item moves to
+	// another list and is assigned to that profile, the assignment is cleared:
+	// it was for this stage, and the next stage claims only unassigned items or
+	// its own.
+	Releaser string
 }
 
 // Release ends the worker's claim and moves the item. ErrLeaseLost means the
@@ -439,6 +444,9 @@ func (s *Store) Release(ref, worker string, o Outcome) (Item, error) {
 		it := &b.Items[i]
 		if it.ClaimedBy != worker || worker == "" {
 			return ErrLeaseLost
+		}
+		if o.Releaser != "" && it.Assignee == o.Releaser && o.To != it.claimSource() {
+			it.Assignee = ""
 		}
 		releaseLocked(it, o.To, o.Note, o.SessionID, s.nowMs(), o.Failed)
 		labels := slices.DeleteFunc(slices.Clone(it.Labels), func(l string) bool {

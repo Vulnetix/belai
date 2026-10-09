@@ -1007,7 +1007,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	if k == nil {
 		k = &agentprofile.KanbanSpec{}
 	}
-	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient, Branch: o.branch}
+	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient, Branch: o.branch, Releaser: p.Name}
 	if o.files > 0 {
 		out.Note += fmt.Sprintf("; %d files changed on %s", o.files, o.branch)
 	} else if o.branch != "" && !o.failed {
