@@ -121,13 +121,6 @@ type SecuritySpec struct {
 	// finding, runs another turn with the result attached. 0 or 1: one turn.
 	// Needs isolation: worktree.
 	Rounds int `json:"rounds,omitempty"`
-	// Salvage keeps a fix that the model did not get to finish. When an attempt
-	// ends without completing (its budget, a stall, an error) but the branch
-	// holds committed changes, the harness scans the worktree itself; if the
-	// scanner no longer reports the card's finding it opens the draft pull
-	// request and routes the card as a completed fix, for the verifier to check.
-	// Needs isolation: worktree and an SCA finding.
-	Salvage bool `json:"salvage,omitempty"`
 }
 
 // SurveyLabel marks an item a worker filed for itself under kanban.survey.
@@ -440,9 +433,6 @@ func (p AgentProfile) validateWorker() error {
 	if s := k.Security; s != nil {
 		if err := s.validate(p.Tools); err != nil {
 			return err
-		}
-		if s.Salvage && p.IsolationMode() != IsolationWorktree {
-			return fmt.Errorf("kanban.security.salvage needs workspace.isolation worktree")
 		}
 		if s.Rounds > 1 && p.IsolationMode() != IsolationWorktree {
 			return errors.New("kanban.security.rounds needs workspace.isolation: worktree (a tree to scan after each round)")

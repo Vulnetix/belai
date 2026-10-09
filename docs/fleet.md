@@ -890,12 +890,7 @@ it after the last round, the attempt fails whatever the model said, and the
 usual attempt limit applies. A scan that gives no answer (no Vulnetix CLI, a
 failed scan) leaves a single turn. The scan's `.vulnetix` directory is removed
 from the worktree, so scan output is never committed, and the rounds share the
-item's token and wall budgets. A verdict a worker recorded with `KanbanVerdict` stands when the turn then runs out of wall time: the verifier that recorded `fixed` with its evidence and kept re-checking has decided, and the card closes with the VEX instead of going round again. An error or a cancellation does not settle a verdict. A turn that ends because the model provider refused its very first call (a 429 rate limit or quota, or a 5xx) before any pass ran is not an attempt: the card goes back to where it was claimed from with a note, and the attempt count stays, so an outage or an exhausted allowance cannot block cards. With `salvage` (on for the built-in patcher), an attempt that ends
-without completing, with committed changes on its branch, gets one more scan from the harness: if the
-scanner no longer reports the finding, the harness opens the draft pull request itself and the card goes
-to the verifier as a fix, with a note saying the agent ended without finishing. A slow model that applied a
-correct fix but never reached the publish step is not thrown away; the verifier still checks the branch
-independently. The patcher can also
+item's token and wall budgets. A verdict a worker recorded with `KanbanVerdict` stands when the turn then runs out of wall time: the verifier that recorded `fixed` with its evidence and kept re-checking has decided, and the card closes with the VEX instead of going round again. An error or a cancellation does not settle a verdict. A turn that ends because the model provider refused its very first call (a 429 rate limit or quota, or a 5xx) before any pass ran is not an attempt: the card goes back to where it was claimed from with a note, and the attempt count stays, so an outage or an exhausted allowance cannot block cards. The patcher can also
 record a verdict with `KanbanVerdict` instead of a fix, which ends the rounds. The verifier checks
 every claim itself: it re-runs the scanner, repeats a false positive's
 evidence, looks again for a fix, and for a gone card works out why the finding
