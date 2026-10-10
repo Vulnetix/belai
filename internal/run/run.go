@@ -2651,6 +2651,9 @@ const (
 	StopCancelled  StopReason = "cancelled"  // the context ended
 	StopError      StopReason = "error"      // any other failure
 	StopIncomplete StopReason = "incomplete" // ended with a verdict short of complete
+	// StopCoordinated is a fleet worker's goal that ended because the forge
+	// coordinator took over publishing its branch (internal/agent/coordfact.go).
+	StopCoordinated StopReason = "coordinated"
 )
 
 // Result captures what the noninteractive pipeline decided and produced.

@@ -23,6 +23,25 @@ type Publisher interface {
 	PublishBranch(ctx context.Context, title, body string) (string, error)
 }
 
+// PublishHandoff is the error a Publisher returns when it could not publish
+// for a reason that is the machine's or the forge's (a refused credential, a
+// rate limit) and handed the branch to the forge coordinator instead.
+// HandoffRequest is the coordinator request id, 16 hex characters. The tool
+// answers with a harness sentence naming it, never the failure's text.
+type PublishHandoff interface {
+	error
+	HandoffRequest() string
+}
+
+// handoffResult is the tool's answer to a handoff, or false when the request
+// id is not 16 hex characters.
+func handoffResult(id string) (string, bool) {
+	if len(id) != 16 || strings.Trim(id, "0123456789abcdef") != "" {
+		return "", false
+	}
+	return "publishing handed to the coordinator (request " + id + ")", true
+}
+
 // PublishBranch is the fleet worker's only way to push.
 type PublishBranch struct {
 	P Publisher
@@ -69,6 +88,12 @@ func (t PublishBranch) Execute(ctx context.Context, args map[string]any) (Result
 		body = body[:16<<10]
 	}
 	url, err := t.P.PublishBranch(ctx, title, body)
+	var handoff PublishHandoff
+	if errors.As(err, &handoff) {
+		if text, ok := handoffResult(handoff.HandoffRequest()); ok {
+			return Result{Kind: KindPublish, Content: text, Meta: map[string]any{"forge_request": handoff.HandoffRequest()}}, nil
+		}
+	}
 	if err != nil {
 		return Result{}, err
 	}

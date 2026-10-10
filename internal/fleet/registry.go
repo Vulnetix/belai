@@ -213,6 +213,7 @@ func (r *Registry) Remove(id string) error {
 		return fmt.Errorf("fleet: invalid worker id %q", id)
 	}
 	_ = os.Remove(r.pausePath(id))
+	_ = os.Remove(r.coordPath(id))
 	err := os.Remove(r.path(id))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

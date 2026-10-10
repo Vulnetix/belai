@@ -109,6 +109,12 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 				if fillFinding(local, r) {
 					changed++
 				}
+				// A newer local change keeps its fields, and still takes a pull
+				// request it has none for (keepAgent).
+				if local.PR == "" && r.PR != "" {
+					local.PR = r.PR
+					changed++
+				}
 				continue
 			}
 			r.History = hist
@@ -145,7 +151,13 @@ func keepAgent(r *Item, local Item) {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
 		r.ClaimedBy, r.ClaimHost, r.ClaimFrom = local.ClaimedBy, local.ClaimHost, local.ClaimFrom
-		r.LeaseUntil, r.Attempts, r.Branch, r.PR = local.LeaseUntil, local.Attempts, local.Branch, local.PR
+		r.LeaseUntil, r.Attempts, r.Branch = local.LeaseUntil, local.Attempts, local.Branch
+		// The pull request is fill-only: a pulled one stands when this host has
+		// none, so one the forge coordinator opened and recorded on the card
+		// survives a host that never pushed the branch itself.
+		if local.PR != "" {
+			r.PR = local.PR
+		}
 		return
 	}
 	if r.ClaimedBy != "" && r.ClaimedBy == local.ClaimedBy && local.LeaseUntil > r.LeaseUntil {

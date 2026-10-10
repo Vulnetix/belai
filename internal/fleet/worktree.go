@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
@@ -74,6 +75,13 @@ type Workspace struct {
 	// kept is the pull request kept when this branch's own was closed as its
 	// duplicate: the item continues on kept.Branch.
 	kept forge.PR
+	// coord, when set, lets a push that fails for an infrastructure reason be
+	// handed to the forge coordinator (escalate.go); pending is the last
+	// request filed and filed every request id this workspace filed.
+	coord   *Coordinator
+	pending *pendingRequest
+	filedMu sync.Mutex
+	filed   map[string]bool
 }
 
 func randHex(n int) string {
@@ -512,15 +520,19 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if w.FilesChanged(ctx) == 0 {
 		return "", w.nothingToPublish(ctx)
 	}
+	// A failure that is the machine's or the forge's (a refused or missing
+	// credential, a rate limit, a server error, no gh) hands the branch to the
+	// forge coordinator when one is set; a failure that is the branch's never
+	// does (escalate.go).
 	p, run, credArgs, err := w.forgeAuthed(ctx)
 	if err != nil {
-		return "", err
+		return "", w.handOff(ctx, ForgeKindPullRequest, err)
 	}
 	// An explicit refspec: exactly this branch, to the same name.
 	ref := "refs/heads/" + w.Branch
 	pushArgs := append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)
 	if _, err := git(ctx, run, w.Dir, pushArgs...); err != nil {
-		return "", err
+		return "", w.handOff(ctx, ForgeKindPullRequest, err)
 	}
 	head, _ := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
 	if pr, err := p.PRForBranch(ctx, w.Dir, w.Branch); err == nil && pr != nil && pr.URL != "" && pr.State != "closed" && pr.State != "merged" {
@@ -528,10 +540,11 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 		return pr.URL, nil
 	}
 	url, err := p.CreatePR(ctx, w.Dir, forge.CreatePRArgs{Branch: w.Branch, Title: title, Body: body, Draft: true})
-	if err == nil {
-		w.published = strings.TrimSpace(head)
+	if err != nil {
+		return "", w.handOff(ctx, ForgeKindPullRequest, err)
 	}
-	return url, err
+	w.published = strings.TrimSpace(head)
+	return url, nil
 }
 
 // forgeAuthed returns the forge provider for the repository's origin, the
@@ -607,8 +620,10 @@ func (w *Workspace) PushBranch(ctx context.Context) error {
 		credArgs = helper
 	}
 	ref := "refs/heads/" + w.Branch
-	_, err = git(ctx, run, w.Dir, append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)...)
-	return err
+	if _, err := git(ctx, run, w.Dir, append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)...); err != nil {
+		return w.handOff(ctx, ForgeKindPush, err)
+	}
+	return nil
 }
 
 // originRemote is the repository's GitHub or GitLab origin.

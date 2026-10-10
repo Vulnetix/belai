@@ -494,9 +494,67 @@ type Dispatch struct {
 	// A "teleport_backup" request names the profile the teleported session ran
 	// under in Profiles (the host also backs up the crews that list it and their
 	// members) and the teleport it serves in Teleport. Identifiers only.
-	Teleport  string   `json:"teleport,omitempty"`
-	Profiles  []string `json:"profiles,omitempty"`
-	CreatedAt int64    `json:"createdAt"`
+	Teleport string   `json:"teleport,omitempty"`
+	Profiles []string `json:"profiles,omitempty"`
+	// A "steer" request is the forge coordinator's answer to a request a worker
+	// filed (FileForgeRequest): the worker in Worker, the card in Item, the
+	// request in Request, and Event (took_over, waiting, failed) with the pull
+	// request number and link, the time a rate limit lifts (ms epoch) and a
+	// reason word. Ids, enums, integers and one https link: the daemon checks
+	// every one before the worker sees it (fleet.CoordSpec).
+	Item      string `json:"item,omitempty"`
+	Request   string `json:"request,omitempty"`
+	Event     string `json:"event,omitempty"`
+	PR        int    `json:"pr,omitempty"`
+	PRURL     string `json:"prUrl,omitempty"`
+	Until     int64  `json:"until,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// ForgeRequest is what a worker files when it cannot publish its branch itself
+// for a reason that is the machine's or the forge's, not the work's: the forge
+// coordinator (the Pix sandbox's Durable Object) then pushes the bundle it left
+// in Belai's state directory with its own credential. Harness facts only: ids,
+// shas, enums and integers, plus the item title cleaned for the pull request.
+type ForgeRequest struct {
+	RequestID    string `json:"requestId"`
+	ItemID       string `json:"itemId"`
+	WorkerID     string `json:"workerId"`
+	Kind         string `json:"kind"`
+	RepoOwner    string `json:"repoOwner"`
+	RepoName     string `json:"repoName"`
+	Branch       string `json:"branch"`
+	BaseSHA      string `json:"baseSha"`
+	HeadSHA      string `json:"headSha"`
+	BundleSHA256 string `json:"bundleSha256"`
+	BundleBytes  int64  `json:"bundleBytes"`
+	Title        string `json:"title"`
+	Failure      string `json:"failure"`
+}
+
+// ForgeFiled is the server's answer to a filed forge request.
+type ForgeFiled struct {
+	UUID   string `json:"uuid"`
+	Status string `json:"status"`
+}
+
+// FileForgeRequest files a forge request for hostID. It returns the HTTP status
+// beside the answer so the caller can tell a refusal (4xx: the request will
+// never be taken, drop it) from a failure worth retrying; err is a transport
+// failure or an unreadable answer.
+func (c *Client) FileForgeRequest(ctx context.Context, hostID string, r ForgeRequest) (int, ForgeFiled, error) {
+	var out ForgeFiled
+	status, data, err := c.roundTrip(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/forge-requests", r, requestTimeout, false, 64<<10)
+	if err != nil {
+		return 0, out, err
+	}
+	if status >= 200 && status <= 299 && len(data) > 0 {
+		if err := json.Unmarshal(data, &out); err != nil {
+			return status, out, err
+		}
+	}
+	return status, out, nil
 }
 
 // CrewMemberRef is one member profile a crew_install request puts on the host:

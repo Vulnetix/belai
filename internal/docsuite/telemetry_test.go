@@ -113,7 +113,7 @@ func TestTelemetryOutcomesMatchTheCode(t *testing.T) {
 		}
 	}
 	row := regexp.MustCompile("(?m)^\\| `belai.worker.items` \\|.*$").FindString(doc)
-	for _, r := range []run.StopReason{run.StopComplete, run.StopStalled, run.StopWithheld, run.StopMaxPasses, run.StopEvaluator, run.StopCancelled, run.StopError, run.StopIncomplete} {
+	for _, r := range []run.StopReason{run.StopComplete, run.StopStalled, run.StopWithheld, run.StopMaxPasses, run.StopEvaluator, run.StopCancelled, run.StopError, run.StopIncomplete, run.StopCoordinated} {
 		if !strings.Contains(row, "`"+string(r)+"`") {
 			t.Errorf("the belai.worker.items row does not list the stop reason %q", r)
 		}

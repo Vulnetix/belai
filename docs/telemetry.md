@@ -37,7 +37,7 @@ Metrics (cumulative):
 | `belai.role_decisions` | counter | `belai.role` (the role-manager decision, such as `security_sentinel` or `mode_classify`), `belai.verdict` |
 | `belai.hook_runs`, `belai.hook_failures` | counter | `belai.hook.event`, `belai.decision` |
 | `belai.turn.duration` | histogram, seconds | `belai.mode`, `belai.outcome` |
-| `belai.worker.items` | counter | `belai.agent.profile` (a [fleet](fleet.md) worker's profile), `belai.outcome` (the list the item went to), `belai.stop_reason` (how its goal loop ended: `complete`, `stalled`, `withheld`, `max_passes`, `evaluator`, `cancelled`, `error`, `incomplete`) |
+| `belai.worker.items` | counter | `belai.agent.profile` (a [fleet](fleet.md) worker's profile), `belai.outcome` (the list the item went to), `belai.stop_reason` (how its goal loop ended: `complete`, `stalled`, `withheld`, `max_passes`, `evaluator`, `cancelled`, `error`, `incomplete`, `coordinated`) |
 
 Resource attributes: `service.name=belai`, `service.version`, and
 `belai.project`, a hash of the project path.

@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rc"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
@@ -415,6 +416,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
 		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
+		// A push handed to the forge coordinator is filed by belai rc, so only
+		// while one runs on this host.
+		Coordinator: func() bool { _, live := rc.ReadRecord(); return live },
 	}
 	if *webControls {
 		// The model, effort, guardrails and caveman of the next turn, from the

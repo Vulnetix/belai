@@ -70,7 +70,7 @@ const path = [
 const audit = [
   ['host.first_seen · version_changed', 'this machine reported for the first time, or with a new Belai version'],
   ['host.rc_online · rc_offline', 'belai rc started or stopped'],
-  ['host.dispatch', 'a request from the website (start, stop, worker, crew, pause, resume, profile_backup, profile_install, crew_backup, crew_install, avatar, item_backup, item_install, provider_keys_install, provider_keys_remove, mcp_secrets_install, mcp_secrets_remove, library_sync, library_scan, library_import, project_prefs, teleport_backup, teleport_code) and whether the host carried it out'],
+  ['host.dispatch', 'a request from the website (start, stop, worker, crew, pause, resume, profile_backup, profile_install, crew_backup, crew_install, avatar, item_backup, item_install, provider_keys_install, provider_keys_remove, mcp_secrets_install, mcp_secrets_remove, library_sync, library_scan, library_import, project_prefs, teleport_backup, teleport_code, steer) and whether the host carried it out'],
   ['host.teleport', 'this host opened a session teleported in from another, naming the new session and the origin'],
   ['host.schedule', 'belai rc fired a stored schedule, skipped or was refused a run, or turned a schedule off'],
   ['worker.started · state · stopped', 'a worker started, was paused or resumed, and stopped'],

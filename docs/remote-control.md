@@ -331,6 +331,18 @@ predict what will happen to them:
   this host's own fleet registry. Otherwise it sets or clears the worker's
   pause marker and acknowledges. The worker finishes the card it holds, then
   reports `paused` until resumed (see [fleet.md](fleet.md#pausing-a-worker)).
+- **Forge coordinator.** A worker that cannot push for the machine's or the
+  forge's reason spools a forge request beside its registry record
+  (`<worker>.forge/<requestId>.json`); the daemon files each one with the
+  website every 5 seconds (`POST /v1/belai/hosts/{hostId}/forge-requests`),
+  after checking every field again, and deletes it once the website took it
+  (2xx) or refused it (4xx, with a log line). The coordinator's answer comes back
+  as a `steer` request: the worker id, the card, the request id, the event
+  (`took_over`, `waiting`, `failed`), a pull request number and https link, the
+  time a rate limit lifts and a reason word. The daemon refuses anything out of
+  shape and a worker that is not live here, and otherwise leaves the answer as
+  `<worker>.coord.json` for the worker (see
+  [fleet.md](fleet.md#the-forge-coordinator)). It never carries text.
 - **Crew messages.** A fleet worker's session takes web prompts when
   `sync.remote_prompts` is on, the same switch as any session. The Agents page
   sends a crew message as one prompt per live worker (no new request kind, so

@@ -155,6 +155,19 @@ func ProcessLogsDir() (string, error) {
 	return filepath.Join(dir, "logs"), nil
 }
 
+// ForgeDir returns <GlobalDir>/forge, where a worker leaves the git bundle of a
+// branch it handed to the forge coordinator. The Pix sandbox's coordinator
+// reads <requestId>.bundle from exactly $HOME/.vulnetix/belai/forge, so this is
+// GlobalDir's default location there; the model's OS sandbox hides it like the
+// rest of the state directory.
+func ForgeDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "forge"), nil
+}
+
 // ScreenshotsDir returns <GlobalDir>/screenshots, where the Screenshot tool
 // keeps its newest captures for the user.
 func ScreenshotsDir() (string, error) {

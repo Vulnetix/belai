@@ -336,7 +336,10 @@ type Session struct {
 	asked      map[string]bool
 	toolMethod run.ToolMethod
 	steer      chan string
-	trace      *trace.Writer
+	// facts carries forge coordinator facts to the goal loop (coordfact.go).
+	// They are harness facts, never steering: nothing typed reaches them.
+	facts chan CoordFact
+	trace *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
@@ -747,6 +750,7 @@ func NewSession(o Options) (*Session, error) {
 		hookSet:              hookSet,
 		toolMethod:           method,
 		steer:                make(chan string, steerBuffer),
+		facts:                make(chan CoordFact, factBuffer),
 		trace:                trace.Env(),
 		diffs:                filediff.NewRecorder(o.Workdir),
 		diag:                 o.Diagnostics,
