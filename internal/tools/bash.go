@@ -270,7 +270,7 @@ func NativeResult(content string) Result {
 // ran inside the OS sandbox, so it asks the user rather than retrying blindly.
 func sandboxNote(p sandbox.Policy) string {
 	note := "(ran inside the Belai sandbox: writes outside the workspace roots, /tmp and tool caches fail"
-	if p.DenyNetwork {
+	if p.DenyNetwork && sandbox.NetworkDenyEnforced() {
 		note += ", and the network is off"
 	}
 	return note + "; if the command needs more, ask the user to adjust sandbox settings)"

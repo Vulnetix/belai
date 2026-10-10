@@ -13,11 +13,13 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/creack/pty v1.1.24
+	github.com/dop251/goja v0.0.0-20261004200024-481fdb442bb4
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/muesli/termenv v0.16.0
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/net v0.59.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
@@ -33,7 +35,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dlclark/regexp2/v2 v2.8.1 // indirect
-	github.com/dop251/goja v0.0.0-20261004200024-481fdb442bb4 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
@@ -52,5 +53,4 @@ require (
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sys v0.48.0 // indirect
 )

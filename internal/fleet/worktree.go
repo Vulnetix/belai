@@ -361,8 +361,8 @@ func (w *Workspace) privateObjects() string { return filepath.Join(w.gitDir, "ob
 //
 // The mounts are layered:
 //
-//  1. the git common dir, writable, so git can create its lock files there
-//     (git takes packed-refs.lock on every ref update);
+//  1. the git common dir, writable, so git can create lock files there
+//     (packed-refs.lock when a ref is deleted or packed, gc's own files);
 //  2. every entry already in it, read-only — config, HEAD, index, hooks,
 //     info, refs, logs, objects, the other worktrees, and any in-progress
 //     state of the main checkout. A read-only mount cannot be written or
@@ -371,6 +371,17 @@ func (w *Workspace) privateObjects() string { return filepath.Join(w.gitDir, "ob
 //     removed by Settle after the turn;
 //  3. writable again, only this item's ref directory and its reflogs, and
 //     this worktree's own admin dir (its HEAD, index and private objects).
+//
+// Under bubblewrap and sandbox-exec the layers apply as written. Landlock
+// cannot take rights away beneath a grant, so there the common dir's top is
+// read-only and only the paths of step 3 are writable: tighter, and enough,
+// because a loose ref update, the index, HEAD and the private objects all
+// live in those paths. One wart: git commit ends by deleting the
+// CHERRY_PICK_HEAD and REVERT_HEAD pseudo-refs, and that takes
+// packed-refs.lock at the top first, so under Landlock every commit prints
+// "error: Unable to create '.../packed-refs.lock': Permission denied" and
+// stands all the same. gc.auto is off for the model's git either way, so it
+// never tries to write gc.log or gc.pid at the top.
 //
 // The environment points git at the private object store, with the shared
 // store as a read-only alternate; Settle copies new objects across.
@@ -405,6 +416,7 @@ func (w *Workspace) Sandbox() (mounts []sandbox.Mount, env []string) {
 	env = []string{
 		"GIT_OBJECT_DIRECTORY=" + w.privateObjects(),
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + filepath.Join(w.commonDir, "objects"),
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
 	}
 	return mounts, env
 }

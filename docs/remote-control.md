@@ -246,7 +246,7 @@ Two surfaces send one, and they differ only in what happens to the output:
   can answer one on the host. With no matching rule it runs, as a typed `!cmd`
   does.
 - **Same sandbox.** The line runs through the Bash tool under the OS sandbox
-  profile from `sandbox` in settings (bubblewrap on Linux), with a 10 minute
+  profile from `sandbox` in settings (bubblewrap or Landlock on Linux), with a 10 minute
   limit (the Bash tool's ceiling; a line that hits it exits 124). The page shows
   the output as it is produced, so a long build or a sign-in that waits for a
   browser is usable. Each line is a fresh process, so a `cd` is resolved by the host

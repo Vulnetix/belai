@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -106,7 +107,7 @@ func TestRequiredWithoutBackendRefuses(t *testing.T) {
 	if name, _ := Backend(); name != "" {
 		t.Skip("a backend exists here")
 	}
-	if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeRequired}); err != ErrUnavailable {
+	if _, err := Wrap(exec.Command("true"), Policy{Mode: ModeRequired}); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
 }

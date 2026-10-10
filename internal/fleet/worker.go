@@ -235,7 +235,7 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 			return errors.New("an autonomous worker with Bash needs the OS sandbox on (sandbox.mode); guardrails off or sandbox off leave its commands unconfined")
 		}
 		if name, _ := sandbox.Backend(); name == "" {
-			msg := "an autonomous worker with Bash needs a working OS sandbox backend (bubblewrap on Linux, sandbox-exec on macOS)"
+			msg := "an autonomous worker with Bash needs a working OS sandbox backend (bubblewrap or Landlock on Linux, sandbox-exec on macOS)"
 			if why := sandbox.BackendProblem(); why != "" {
 				msg += ": " + why
 			}

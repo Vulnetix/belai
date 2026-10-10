@@ -41,7 +41,7 @@ var topCommands = []topCommand{
 }
 
 // hiddenCommands are dispatched in main but not listed.
-var hiddenCommands = []string{"rc-session", "help"}
+var hiddenCommands = []string{"rc-session", "help", "__landlock-exec"}
 
 // helpExamples are real invocations, one per line.
 var helpExamples = []struct{ cmd, note string }{

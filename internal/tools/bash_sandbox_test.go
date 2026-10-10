@@ -13,8 +13,8 @@ import (
 // Bash honours the sandbox policy on its context: a write outside the roots
 // fails and the result carries the harness's sandbox note.
 func TestBashRunsInsideSandbox(t *testing.T) {
-	if name, _ := sandbox.Backend(); name != "bwrap" {
-		t.Skip("bwrap not usable here")
+	if name, _ := sandbox.Backend(); name != "bwrap" && name != "landlock" {
+		t.Skip("no Linux sandbox backend usable here")
 	}
 	root, outside := t.TempDir(), t.TempDir()
 	b := &Bash{Root: root, Timeout: BashDefaultTimeout}
@@ -26,7 +26,7 @@ func TestBashRunsInsideSandbox(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outside, "f")); err == nil {
 		t.Fatal("sandboxed Bash wrote outside the roots")
 	}
-	if !strings.Contains(res.Content, "ran inside the Belai sandbox") || !strings.Contains(res.Content, "network is off") {
+	if !strings.Contains(res.Content, "ran inside the Belai sandbox") || strings.Contains(res.Content, "network is off") != sandbox.NetworkDenyEnforced() {
 		t.Fatalf("result = %q", res.Content)
 	}
 	if _, err := b.Execute(ctx, map[string]any{"command": "echo ok > inside"}); err != nil {

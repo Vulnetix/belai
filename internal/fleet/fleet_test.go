@@ -488,6 +488,17 @@ func TestPublishNeedsAForgeOrigin(t *testing.T) {
 	}
 }
 
+// errorLineOtherThan reports an "error:" line in out that does not name
+// tolerated (an empty tolerated accepts none).
+func errorLineOtherThan(out, tolerated string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "error:") && (tolerated == "" || !strings.Contains(line, tolerated)) {
+			return true
+		}
+	}
+	return false
+}
+
 // The model's own git must work inside the OS sandbox — status, diff, log,
 // commit on its branch — while the repository's config, hooks and every
 // other ref stay out of its reach. The repository lives under /tmp, which
@@ -497,6 +508,53 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	if name, _ := sandbox.Backend(); name == "" {
 		t.Skip("no sandbox backend")
 	}
+	worktreeGitInsideTheSandbox(t, nil, "")
+}
+
+// The same under Landlock, which has no mount layering: the common dir ends
+// read-only at its top with this item's paths writable beneath, and git must
+// still commit, log and diff there. A bubblewrap that cannot work goes first
+// on PATH so the probe falls through to Landlock. The repository is made
+// outside /tmp, as a real one is: Landlock has no private /tmp, and a
+// read-only path beneath the host's /tmp would make its top read-only, which
+// a commit signed by the developer's own git config needs (its signing buffer
+// is a temporary file).
+func TestWorktreeGitInsideTheSandboxUnderLandlock(t *testing.T) {
+	// Before the first t.TempDir, which fixes where every later one goes.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	outside, err := os.MkdirTemp(home, ".belai-landlock-test-")
+	if err != nil {
+		t.Skipf("the home directory is not writable: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(outside) })
+	t.Setenv("TMPDIR", outside)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bwrap"), []byte("#!/bin/sh\necho 'bwrap: No permissions to create new namespace' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	sandbox.ResetProbeForTests()
+	t.Cleanup(sandbox.ResetProbeForTests)
+	if name, _ := sandbox.Backend(); name != "landlock" {
+		t.Skipf("no Landlock here: %s", sandbox.BackendProblem())
+	}
+	// git commit ends by deleting CHERRY_PICK_HEAD and REVERT_HEAD through a
+	// ref transaction, and files_delete_refs takes packed-refs.lock at the top
+	// of the common dir first, which is read-only here. git reports that as a
+	// non-fatal error and the commit stands. Allowing the lock would mean
+	// create and remove rights at the top, which is what keeps config and
+	// HEAD safe, so the line is the price.
+	worktreeGitInsideTheSandbox(t, []string{"TMPDIR=/tmp"}, "packed-refs.lock")
+}
+
+// worktreeGitInsideTheSandbox is the body of both tests; extraEnv is added to
+// the sandboxed commands' environment, and an error line naming tolerated is
+// not a failure.
+func worktreeGitInsideTheSandbox(t *testing.T, extraEnv []string, tolerated string) {
+	t.Helper()
 	if sandbox.Nested() {
 		t.Skip("already inside a Belai sandbox: a nested sandbox cannot see the outer one's private /tmp")
 	}
@@ -513,7 +571,7 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	os.MkdirAll(other, 0o755)
 	os.WriteFile(filepath.Join(other, "a1"), []byte(ws.Base+"\n"), 0o644)
 	mounts, env := ws.Sandbox()
-	pol := sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}, Mounts: mounts, Env: env}
+	pol := sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}, Mounts: mounts, Env: append(env, extraEnv...)}
 	sh := func(script string) (string, error) {
 		cmd := exec.Command("sh", "-c", script)
 		cmd.Dir = ws.Dir
@@ -523,17 +581,20 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	// Without the git paths the model sees no repository at all.
-	bare := exec.Command("sh", "-c", "git status")
-	bare.Dir = ws.Dir
-	sandbox.Wrap(bare, sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}})
-	// Newer git words the same failure as an invalid gitfile.
-	if out, err := bare.CombinedOutput(); err == nil || !(strings.Contains(string(out), "not a git repository") || strings.Contains(string(out), "does not point to a valid repository")) {
-		t.Fatalf("expected the old failure without git paths: %v %s", err, out)
+	// Without the git paths the model sees no repository at all. Not under
+	// Landlock, which has no private /tmp: there the repository is readable.
+	if name, _ := sandbox.Backend(); name != "landlock" {
+		bare := exec.Command("sh", "-c", "git status")
+		bare.Dir = ws.Dir
+		sandbox.Wrap(bare, sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}})
+		// Newer git words the same failure as an invalid gitfile.
+		if out, err := bare.CombinedOutput(); err == nil || !(strings.Contains(string(out), "not a git repository") || strings.Contains(string(out), "does not point to a valid repository")) {
+			t.Fatalf("expected the old failure without git paths: %v %s", err, out)
+		}
 	}
 	before := ws.RootEntries()
 	os.WriteFile(filepath.Join(ws.Dir, "agent.txt"), []byte("by the agent\n"), 0o644)
-	if out, err := sh("git status --short && git add agent.txt && git commit -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "error:") || strings.Contains(out, "fatal:") {
+	if out, err := sh("git status --short && git add agent.txt && git commit -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "fatal:") || errorLineOtherThan(out, tolerated) {
 		t.Fatalf("git inside the sandbox: %v\n%s", err, out)
 	}
 	objects := filepath.Join(ws.commonDir, "objects")
@@ -552,12 +613,17 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(other, "a1")); err != nil {
 		t.Fatal("another item's branch was deleted")
 	}
-	// A file planted at the top of the common dir is removed by Settle.
+	// A file planted at the top of the common dir is removed by Settle. Under
+	// Landlock the top is read-only and nothing can be planted there at all.
+	planted := true
 	if out, err := sh("echo deadbeef > " + filepath.Join(ws.commonDir, "MERGE_HEAD")); err != nil {
-		t.Fatalf("planting MERGE_HEAD: %v %s", err, out)
+		if name, _ := sandbox.Backend(); name != "landlock" {
+			t.Fatalf("planting MERGE_HEAD: %v %s", err, out)
+		}
+		planted = false
 	}
 	removed, err := ws.Settle(before)
-	if err != nil || !slices.Contains(removed, "MERGE_HEAD") {
+	if err != nil || slices.Contains(removed, "MERGE_HEAD") != planted {
 		t.Fatalf("settle: %v %v", removed, err)
 	}
 	if _, err := os.Stat(filepath.Join(ws.commonDir, "MERGE_HEAD")); err == nil {

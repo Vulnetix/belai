@@ -40,7 +40,8 @@ flowchart LR
   process outside it (the user namespace bubblewrap always creates normally already
   prevents that) and leaves the flag off only when the check shows it. When neither holds,
   the command is not run and the error says why; vault variables are never handed to a
-  command that could read another process's environment.
+  command that could read another process's environment. Under the Landlock backend,
+  which has no pid namespace at all, such a command is refused outright.
 - **Process hardening.** On the first lease with values the process is marked
   non-dumpable (`PR_SET_DUMPABLE 0`), so a same-user command cannot read its memory.
 - **Names to the model.** The Bash tool description lists the variable names, never a

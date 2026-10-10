@@ -654,8 +654,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   install, enable or propose one, and the manifest has no key for providers,
   credentials, settings or permissions.
 - **The OS sandbox only tightens from a repository.** `internal/sandbox`
-  wraps `Bash`, inline `!cmd` and supervised processes (bubblewrap on Linux,
-  sandbox-exec on macOS). The policy is built per call by
+  wraps `Bash`, inline `!cmd` and supervised processes (bubblewrap, then
+  Landlock, on Linux; sandbox-exec on macOS). The policy is built per call by
   `sandbox.FromSettings` from the settings, the current workspace roots and
   the effective posture, and rides on the call's context; guardrails off
   turns it off. Belai's state directory is always hidden inside it. The
@@ -1070,7 +1070,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     - a worker cannot turn guardrails off;
     - an autonomous worker needs a pass budget;
     - a writing worker needs isolation;
-    - an autonomous worker with Bash needs a working OS sandbox.
+    - an autonomous worker with Bash needs a working OS sandbox (bubblewrap
+      or Landlock).
   - **Asks.** A worker that cannot ask blocks the item with the tool names;
     it never widens.
   - **Setup failures.** A workspace that cannot be prepared gets one
