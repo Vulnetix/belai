@@ -327,7 +327,7 @@ func (w *Worker) applyManualGates(o outcome, it kanban.Item) outcome {
 		o.note = "HANDOFF REQUIRED: manual gate " + strings.Join(abandoned, ", ") + " was abandoned as impossible; a person must decide, and the card is not done"
 	case len(unmet) > 0:
 		o.failed = true
-		o.note = fmt.Sprintf("agent %s completed it, but manual gate %s is not met: the reviewer records each manual gate with KanbanGate", w.Profile.Name, strings.Join(unmet, ", "))
+		o.note = fmt.Sprintf("agent %s completed it, but manual gate %s is not met: each manual gate is recorded with KanbanGate", w.Profile.Name, strings.Join(unmet, ", "))
 	}
 	return o
 }

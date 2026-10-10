@@ -1188,7 +1188,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 // publish pushes the item's branch and opens a draft pull request.
 func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item, files int) {
 	title := "belai: " + it.Title
-	body := fmt.Sprintf("Kanban item %s, worked by Belai agents and approved by agent %s.\n\nOpened as a draft by Belai: review before merging.", it.Short(), w.Profile.Name)
+	body := fmt.Sprintf("Kanban item %s, worked by Belai agents and released to done by agent %s.\n\nOpened as a draft by Belai: review before merging.", it.Short(), w.Profile.Name)
 	if report := w.deliveryReport(ctx, ws, it, files); report != "" {
 		body += "\n\n" + report
 	}

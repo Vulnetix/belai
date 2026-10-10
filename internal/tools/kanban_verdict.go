@@ -11,7 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/vex"
 )
 
-// KanbanVerdictName is the security crew's verdict tool.
+// KanbanVerdictName is the verdict tool for findings.
 const KanbanVerdictName = "KanbanVerdict"
 
 // Limits on what a verdict carries. Each string is cleaned to one line and
@@ -92,7 +92,7 @@ func (KanbanVerdict) Kind() Kind { return KindKanbanWrite }
 func (t KanbanVerdict) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	c := t.Claim
 	if c == nil || len(c.Verdicts) == 0 {
-		return Result{}, errors.New("KanbanVerdict is only available to a security worker holding a claim")
+		return Result{}, errors.New("KanbanVerdict is only available to a worker that holds a claim and lists kanban.security.verdicts")
 	}
 	raw, _ := argString(args, "verdict")
 	v := kanban.Verdict(strings.TrimSpace(raw))

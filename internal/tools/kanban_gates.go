@@ -27,7 +27,7 @@ func gateProperty(suites []GateSuite) Property {
 	}
 	props := map[string]Property{
 		"title": {Type: "string", Description: "The observable outcome, as a statement that is true when the task is done (at most 120 characters)."},
-		"kind":  {Type: "string", Enum: []string{string(kanban.GateRunnable), string(kanban.GateManual)}, Description: "runnable: a detected test suite decides it. manual: a reviewer decides it, for what no suite can observe."},
+		"kind":  {Type: "string", Enum: []string{string(kanban.GateRunnable), string(kanban.GateManual)}, Description: "runnable: a detected test suite decides it. manual: the reviewing agent decides it, for what no suite can observe."},
 		"dir":   {Type: "string", Description: "Optional, Go suites only: the package directory, relative to the repository root, that narrows the suite."},
 		"test":  {Type: "string", Description: "Optional, Go suites only: one test function name that narrows the suite."},
 	}
@@ -37,7 +37,7 @@ func gateProperty(suites []GateSuite) Property {
 	return Property{Type: "object", Properties: props, Required: []string{"title", "kind"}}
 }
 
-const gatesHelp = "Acceptance gates: each names an outcome the harness or a reviewer decides after the work. " +
+const gatesHelp = "Acceptance gates: each names an outcome the harness or the reviewing agent decides after the work. " +
 	"A runnable gate references a detected test suite (never a command; the harness runs the suite and reads its exit code), " +
 	"and for a Go suite may narrow it to a package dir and one test. Give a manual gate only for what no test can observe. " +
 	"At most 8. The harness always adds the checks that the detected suites pass and that nothing regressed."
@@ -159,7 +159,7 @@ func renderGate(g kanban.Gate) string {
 			ref += " " + g.Test
 		}
 	default:
-		ref = "manual, decided by a reviewer"
+		ref = "manual, decided by the reviewing agent"
 	}
 	line := fmt.Sprintf("- %s [%s] %s: %s", g.ID, ref, g.State, g.Title)
 	if g.Note != "" {

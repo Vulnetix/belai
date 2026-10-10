@@ -109,7 +109,7 @@ func (w *Worker) reconcileCoverage(ctx context.Context, o outcome, it kanban.Ite
 	}
 	for _, id := range gaps {
 		file(id, fmt.Sprintf("Part %s of request %s is not covered by any task", id, cur.Short()),
-			fmt.Sprintf("The scout worked request %s and no handed-off task covers its clause %s. Read the clause on that card, then plan it, file it as a task, or drop it.", cur.Short(), id))
+			fmt.Sprintf("The agent that planned request %s handed off no task covering its clause %s. Read the clause on that card, then plan it, file it as a task, or drop it.", cur.Short(), id))
 	}
 	// A clause a task claims to cover, that the decision model doubts the tasks
 	// do, is filed the same way. It is never marked covered or uncovered by the

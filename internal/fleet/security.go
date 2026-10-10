@@ -372,7 +372,7 @@ const (
 // enrichmentBody is the harness-composed brief for the scout's model turn. It
 // names no card: the harness derives them from board facts (enrichmentTargets).
 const enrichmentBody = "The harness ran the review on this commit and filed one card per new finding. " +
-	"Plan the fixes so a patcher starts with the answer. For each manifest the new cards name, run the Vulnetix fix dry run " +
+	"Plan the fixes so the agent that fixes them starts with the answer. For each manifest the new cards name, run the Vulnetix fix dry run " +
 	"(fix --dry-run --manifest FILE). Then add one note to each card the KanbanUpdate tool accepts, giving the fixed version, " +
 	"the exact edit and the command that regenerates the lockfile, or saying that no fix exists. " +
 	"You may only add notes to those cards; do not edit or move them, and do not file new ones for these findings. " +
@@ -394,7 +394,7 @@ func (w *Worker) fileEnrichment(prov kanban.Provenance, head string) {
 		return
 	}
 	if ch == kanban.FindingCreated {
-		w.logf("security sweep: filed an enrichment item for the scout at %s", head[:12])
+		w.logf("security sweep: filed an enrichment item for the planning agent at %s", head[:12])
 	}
 }
 
