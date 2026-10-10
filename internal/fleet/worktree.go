@@ -712,15 +712,47 @@ func (w *Workspace) Kept() forge.PR {
 // PublishedCurrent reports whether the branch is exactly what the last
 // PublishBranch pushed: the same commit, and nothing uncommitted beside it.
 func (w *Workspace) PublishedCurrent(ctx context.Context) bool {
-	if w == nil || w.published == "" {
+	if w == nil || !w.Worktree {
 		return false
 	}
 	head, err := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
-	if err != nil || strings.TrimSpace(head) != w.published {
+	if err != nil {
+		return false
+	}
+	head = strings.TrimSpace(head)
+	// Published by this turn, or already on origin: a retry that resumed a
+	// branch whose pull request is open has nothing new to push, and a worker
+	// re-checking that work has not failed it.
+	if head != w.published && head != w.originHead(ctx) {
 		return false
 	}
 	paths, err := w.changedPaths(ctx)
 	return err == nil && len(paths) == 0
+}
+
+// originHead is the commit origin's copy of the worktree's branch points at,
+// read with the forge credential the vault grants this machine; "" when the
+// branch is not on origin or origin cannot be read.
+func (w *Workspace) originHead(ctx context.Context) string {
+	rem, err := w.originRemote(ctx)
+	if err != nil {
+		return ""
+	}
+	run, credArgs := w.run, []string(nil)
+	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
+		run = hardenedGit(w.gitDir, w.Dir, append(slices.Clone(w.ident), env...)...)
+		credArgs = helper
+	}
+	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := git(lctx, run, w.Dir, append(slices.Clone(credArgs), "ls-remote", "origin", "refs/heads/"+w.Branch)...)
+	if err != nil {
+		return ""
+	}
+	if f := strings.Fields(out); len(f) > 0 && len(f[0]) == 40 {
+		return f[0]
+	}
+	return ""
 }
 
 // publishAuth returns the environment and git arguments that let a push and the
