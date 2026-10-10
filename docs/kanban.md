@@ -320,8 +320,8 @@ and a `belai:<list>` label), priority (a `priority:N` label), labels, and notes
 The vdb-site server does this; Belai needs no setting and no token for it, and
 its own sync is unchanged. A change the mirror makes shows on a host's next
 pull like any other website edit, with history entries from session
-`github-sync` (a move) or `github` (a comment). See vdb-site
-`docs/belai-github-sync.md`.
+`github-sync` (a move) or `github` (a comment). The vdb-site repository
+documents the mirror in its `belai-github-sync.md`.
 
 ## Setting
 
