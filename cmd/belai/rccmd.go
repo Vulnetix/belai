@@ -784,6 +784,11 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			}
 			c = nc
 		}
+		// code.model follows the controls: re-resolve it against the model
+		// this build runs on.
+		if withCode, err := run.WithCode(c.Routing, c, s.Code, resolver); err == nil {
+			c.Routing = withCode
+		}
 		config.SetActiveJevThresholds(s.JevThresholds())
 		// Language servers run only when the web turned them on, in this
 		// directory the host trusts (internal/lsp scrubs their environment,

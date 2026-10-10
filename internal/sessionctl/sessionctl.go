@@ -78,7 +78,7 @@ var (
 // Controls is the catalogue, in the order the website shows it.
 var Controls = []Control{
 	{ID: CtlMode, Command: "/mode", Usage: "/mode agent|plan|goal|code|auto", Keys: []string{"shift+tab", "f5"}, Values: Modes, Kind: KindChoice},
-	{ID: CtlModel, Command: "/model", Usage: "/model <provider> <model> [effort]", Keys: []string{"ctrl+q"}, Kind: KindModel, Rebuild: true},
+	{ID: CtlModel, Command: "/model", Usage: "/model <provider> <model> [effort] · /model code smart|fast|<provider> <model>", Keys: []string{"ctrl+q"}, Kind: KindModel, Rebuild: true},
 	{ID: CtlEffort, Command: "/effort", Usage: "/effort default|<level>", Keys: []string{"f6"}, Kind: KindChoice, Rebuild: true},
 	{ID: CtlGuardrails, Command: "/guardrails", Usage: "/guardrails on|off", Keys: []string{"f3"}, Values: onOff, Kind: KindToggle, Rebuild: true},
 	{ID: CtlAsk, Command: "/ask", Usage: "/ask on|off", Keys: []string{"f4"}, Values: onOff, Kind: KindToggle, Rebuild: true},
@@ -134,10 +134,16 @@ func Keys() []string {
 
 // State is a session's control values.
 type State struct {
-	Mode          string             `json:"mode"`
-	Provider      string             `json:"provider,omitempty"`
-	Model         string             `json:"model,omitempty"`
-	Effort        string             `json:"effort,omitempty"`
+	Mode     string `json:"mode"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	// CodeTier is "smart" or "fast"; CodeProvider and CodeModel name an
+	// explicit code-mode model instead. All empty leaves code.model as the
+	// settings have it.
+	CodeTier      string             `json:"codeTier,omitempty"`
+	CodeProvider  string             `json:"codeProvider,omitempty"`
+	CodeModel     string             `json:"codeModel,omitempty"`
 	Guardrails    bool               `json:"guardrails"`
 	Ask           bool               `json:"ask"`
 	Caveman       bool               `json:"caveman"`
@@ -172,6 +178,9 @@ func FromSettings(s config.Settings, mode, provider, model, effort string) State
 		TestsPostEnd: s.TestsPostEnd(),
 		TestsOnFail:  s.TestsOnFail(),
 		LSP:          s.LSPEnabled(),
+	}
+	if m := codeModelOf(s); m != nil {
+		st.CodeTier, st.CodeProvider, st.CodeModel = m.Tier, m.Provider, m.Model
 	}
 	if s.LSP != nil && len(s.LSP.Languages) > 0 {
 		st.LSPLanguages = maps.Clone(s.LSP.Languages)
@@ -212,6 +221,14 @@ func (st State) Apply(s config.Settings) config.Settings {
 	s.AutoCommitPerTask = b(st.AutoCommit)
 	if st.Effort != "" {
 		s.Effort = st.Effort
+	}
+	if st.CodeTier != "" || st.CodeProvider != "" || st.CodeModel != "" {
+		code := config.CodeSettings{}
+		if s.Code != nil {
+			code = *s.Code
+		}
+		code.Model = &config.CodeModel{Tier: st.CodeTier, Provider: st.CodeProvider, Model: st.CodeModel}
+		s.Code = &code
 	}
 	ui := config.UISettings{}
 	if s.UI != nil {
@@ -441,7 +458,38 @@ func choice(args []string, vals []string, dst *string, label string) (string, er
 	return label + ": " + args[0], nil
 }
 
+func codeModelOf(s config.Settings) *config.CodeModel {
+	if s.Code == nil {
+		return nil
+	}
+	return s.Code.Model
+}
+
+// setCodeModel handles /model code smart|fast|<provider> <model>.
+func setCodeModel(args []string, st *State, env Env) (string, error) {
+	usage := errors.New("usage: /model code smart|fast|<provider> <model>")
+	switch {
+	case len(args) == 1 && (args[0] == config.CodeTierSmart || args[0] == config.CodeTierFast):
+		st.CodeTier, st.CodeProvider, st.CodeModel = args[0], "", ""
+		return "code mode model: " + args[0], nil
+	case len(args) == 2:
+		if env.CheckModel == nil {
+			return "", errors.New("the model cannot be changed here")
+		}
+		prov, model := strings.ToLower(args[0]), args[1]
+		if why := env.CheckModel(prov, model, ""); why != "" {
+			return "", errors.New(why)
+		}
+		st.CodeTier, st.CodeProvider, st.CodeModel = "", prov, model
+		return "code mode model: " + prov + "/" + model, nil
+	}
+	return "", usage
+}
+
 func setModel(args []string, st *State, env Env) (string, error) {
+	if len(args) > 0 && args[0] == "code" {
+		return setCodeModel(args[1:], st, env)
+	}
 	if env.CheckModel == nil {
 		return "", errors.New("the model cannot be changed here")
 	}

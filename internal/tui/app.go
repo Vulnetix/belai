@@ -985,6 +985,9 @@ func New(opts Options) *App {
 	}
 	initial.Security = run.ResolveSecurityClassifier(eff.Settings.Classifier)
 	if rc, err := run.ResolveRouting(initial, eff.Settings.Routing, run.EnvSource(os.Getenv)); err == nil {
+		if withCode, err := run.WithCode(rc, initial, eff.Settings.Code, run.EnvSource(os.Getenv)); err == nil {
+			rc = withCode
+		}
 		initial.Routing = rc
 	}
 
@@ -5291,6 +5294,9 @@ func (a *App) resolveCredentialsCmd() tea.Cmd {
 		}
 		cfg.Security = run.ResolveSecurityClassifier(cls)
 		if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+			if withCode, err := run.WithCode(rc, cfg, a.settings.Code, src); err == nil {
+				rc = withCode
+			}
 			cfg.Routing = rc
 		}
 		return credentialsResolvedMsg{cfg: cfg, status: status}
@@ -5378,6 +5384,9 @@ func (a *App) refreshProvider() tea.Cmd {
 	}
 	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
 	if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+		if withCode, err := run.WithCode(rc, cfg, a.settings.Code, src); err == nil {
+			rc = withCode
+		}
 		cfg.Routing = rc
 	}
 	a.cfg = cfg
@@ -5433,6 +5442,9 @@ func (a *App) reResolveCredentials() bool {
 	}
 	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
 	if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+		if withCode, err := run.WithCode(rc, cfg, a.settings.Code, src); err == nil {
+			rc = withCode
+		}
 		cfg.Routing = rc
 	}
 	a.cfg = cfg

@@ -2475,3 +2475,24 @@ func TestDefaultModelTableOnThePageMatchesEveryBuiltin(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveCode(t *testing.T) {
+	main := Config{Provider: "openai", Model: "big", APIKey: "k"}
+	fast := &Config{Provider: "openai", Model: "small", APIKey: "k"}
+	if c, err := ResolveCode(main, nil, fast, nil); c != nil || err != nil {
+		t.Fatalf("unset: %v %v", c, err)
+	}
+	smart := &config.CodeSettings{Model: &config.CodeModel{Tier: config.CodeTierSmart}}
+	if c, _ := ResolveCode(main, smart, fast, nil); c != nil {
+		t.Fatalf("smart must be the main model, got %+v", c)
+	}
+	f := &config.CodeSettings{Model: &config.CodeModel{Tier: config.CodeTierFast}}
+	if c, _ := ResolveCode(main, f, fast, nil); c != fast {
+		t.Fatalf("fast must be the fast tier, got %+v", c)
+	}
+	same := &config.CodeSettings{Model: &config.CodeModel{Model: "mid"}}
+	c, err := ResolveCode(main, same, fast, nil)
+	if err != nil || c == nil || c.Provider != "openai" || c.Model != "mid" {
+		t.Fatalf("same-provider pick: %+v %v", c, err)
+	}
+}

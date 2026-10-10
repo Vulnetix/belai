@@ -96,6 +96,9 @@ func (a *App) chooseProvider(role modelRole, name string) tea.Cmd {
 	case roleAgent:
 		a.setPendingProvider(roleAgent, name)
 		return a.openAgentModelPicker()
+	case roleCode:
+		a.setPendingProvider(roleCode, name)
+		return a.openCodeModelPicker()
 	case roleFast:
 		a.setPendingProvider(roleFast, name)
 		return a.openFastModelPicker()

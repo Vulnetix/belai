@@ -173,7 +173,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 // settings it is about to save.
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
-		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateJev, ValidateVoice,
+		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
 		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 	} {
 		if err := v(s); err != nil {
