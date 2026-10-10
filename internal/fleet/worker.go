@@ -733,6 +733,11 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	w.Record.Branch = ws.Branch
 	w.save()
+	if ws.Worktree && ws.Branch != it.Branch {
+		if err := w.Store.SetBranch(it.ID, w.Record.ID, ws.Branch); err != nil {
+			w.logf("%s: record the branch: %v", it.Short(), err)
+		}
+	}
 	keep := p.Workspace != nil && p.Workspace.Keep
 	discarded := false
 	defer func() {
@@ -863,6 +868,19 @@ func (w *Worker) stopped(ctx, itemCtx context.Context, it kanban.Item, ws *Works
 				out.Note += fmt.Sprintf("; %d files of work in progress on %s", n, ws.Branch)
 				out.Branch = ws.Branch
 				w.auditCommit(bg, it, ws, n, "wip")
+			}
+			// The machine may be going with its disk (a sandbox stop or
+			// relaunch): push the branch so the next claim resumes it from
+			// origin. Only for a worker allowed to push at all.
+			if ws.Worktree && w.publishes() && ws.FilesChanged(bg) > 0 {
+				pctx, cancel := context.WithTimeout(bg, 30*time.Second)
+				if err := ws.PushBranch(pctx); err != nil {
+					w.logf("%s: push the work in progress: %v", it.Short(), err)
+				} else {
+					out.Branch = ws.Branch
+					out.Note += "; pushed " + ws.Branch + " to origin"
+				}
+				cancel()
 			}
 		}
 		if released, err := w.Store.Release(it.ID, w.Record.ID, out); err != nil {

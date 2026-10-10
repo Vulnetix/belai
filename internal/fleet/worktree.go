@@ -124,6 +124,12 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 		if err := forge.ValidBranchName(ctx, repoRun, repo, branch); err != nil {
 			return nil, err
 		}
+		if !forge.BranchExists(ctx, repoRun, repo, branch) && ownAttemptBranch(it, branch) {
+			// The machine that worked it may be gone with its disk (a sandbox
+			// stop and start), having pushed the branch before it went: resume
+			// from origin rather than start over.
+			fetchOwnBranch(ctx, repo, ident, branch)
+		}
 		if !forge.BranchExists(ctx, repoRun, repo, branch) {
 			// One of this item's own attempt branches that was deleted (a
 			// failed attempt, or cleaned up after its pull request) starts
@@ -551,6 +557,58 @@ func (w *Workspace) forgeAuthed(ctx context.Context) (forge.Provider, forge.Runn
 		return nil, nil, nil, errors.New(reason)
 	}
 	return p, run, credArgs, nil
+}
+
+// fetchOwnBranch fetches one of the item's own attempt branches from origin into
+// the local branch of the same name, with the forge credential the vault grants
+// this machine. It is best effort: when the branch is not on origin, or origin
+// cannot be reached, the item starts fresh as before.
+func fetchOwnBranch(ctx context.Context, repo string, ident []string, branch string) {
+	repoRun := hardenedGit("", "", ident...)
+	origin, _ := git(ctx, repoRun, repo, "remote", "get-url", "origin")
+	rem, ok := forge.ParseRemote(origin)
+	if !ok {
+		return
+	}
+	run, credArgs := repoRun, []string(nil)
+	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
+		run = hardenedGit("", "", append(slices.Clone(ident), env...)...)
+		credArgs = helper
+	}
+	fctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	ref := "refs/heads/" + branch
+	_, _ = git(fctx, run, repo, append(credArgs, "fetch", "--no-tags", "origin", ref+":"+ref)...)
+}
+
+// PushBranch pushes the worktree's branch to origin without opening a pull
+// request: the work in progress of a worker that is being stopped, so a machine
+// that goes with its disk loses none of it.
+func (w *Workspace) PushBranch(ctx context.Context) error {
+	if !w.Worktree {
+		return errors.New("pushing needs a worktree branch")
+	}
+	if err := w.intact(); err != nil {
+		return err
+	}
+	rem, err := w.originRemote(ctx)
+	if err != nil {
+		return err
+	}
+	if err := w.absorbObjects(); err != nil {
+		return err
+	}
+	if w.FilesChanged(ctx) == 0 {
+		return nil
+	}
+	run, credArgs := w.run, []string(nil)
+	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
+		run = hardenedGit(w.gitDir, w.Dir, append(slices.Clone(w.ident), env...)...)
+		credArgs = helper
+	}
+	ref := "refs/heads/" + w.Branch
+	_, err = git(ctx, run, w.Dir, append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)...)
+	return err
 }
 
 // originRemote is the repository's GitHub or GitLab origin.

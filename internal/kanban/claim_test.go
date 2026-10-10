@@ -571,3 +571,26 @@ func TestReleaseBackKeepsTheAssignment(t *testing.T) {
 		t.Fatalf("assignee %q, want belai:builder kept", got.Assignee)
 	}
 }
+
+// The branch is recorded while the item is worked, and only by the worker that
+// holds it.
+func TestSetBranchRecordsTheHoldersBranch(t *testing.T) {
+	s := testStore(t)
+	it := addItem(t, s, ItemInput{Title: "fix", Labels: []string{"build"}})
+	if _, err := s.Claim(claimReq("w1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetBranch(it.ID, "w2", "belai/K-x/a1"); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("another worker set the branch: %v", err)
+	}
+	if err := s.SetBranch(it.ID, "w1", "belai/K-x/a1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetBranch(it.ID, "w1", "belai/K-x/a1"); err != nil {
+		t.Fatalf("an unchanged branch: %v", err)
+	}
+	got, _ := s.Get(it.ID)
+	if got.Branch != "belai/K-x/a1" || got.List != InProgress {
+		t.Fatalf("%+v", got)
+	}
+}

@@ -403,6 +403,32 @@ func (s *Store) Renew(ref, worker string, lease time.Duration) error {
 	})
 }
 
+// SetBranch records the branch the claiming worker works the item on, as soon
+// as its worktree exists: a machine that dies mid-item then still names the
+// branch its work was pushed to, so the next claim resumes it.
+func (s *Store) SetBranch(ref, worker, branch string) error {
+	err := s.mutate(true, func(b *Board) error {
+		i, err := find(b, ref)
+		if err != nil {
+			return err
+		}
+		it := &b.Items[i]
+		if it.ClaimedBy != worker || worker == "" {
+			return ErrLeaseLost
+		}
+		if it.Branch == CleanTitle(branch) {
+			return errNoWrite
+		}
+		it.Branch = CleanTitle(branch)
+		it.Updated, it.Dirty = s.nowMs(), true
+		return nil
+	})
+	if errors.Is(err, errNoWrite) {
+		return nil
+	}
+	return err
+}
+
 // Outcome is how a worker hands an item back.
 type Outcome struct {
 	// To is the list the item goes to.
