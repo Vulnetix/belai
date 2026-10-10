@@ -753,6 +753,12 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	if ws.Worktree && ws.Branch != it.Branch {
 		if err := w.Store.SetBranch(it.ID, w.Record.ID, ws.Branch); err != nil {
 			w.logf("%s: record the branch: %v", it.Short(), err)
+		} else {
+			// A worker pushes the board only around a claim and a release, so
+			// the branch would otherwise reach the website only when the item
+			// ends: too late for a machine that dies mid-item, whose card the
+			// website then hands back without the branch to resume from.
+			headless.FlushKanban(w.Settings, w.Repo)
 		}
 	}
 	keep := p.Workspace != nil && p.Workspace.Keep
