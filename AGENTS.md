@@ -1047,6 +1047,23 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     worker's Bash denies `git push`, `gh`/`glab` PR creation and merging,
     `git switch`, `git checkout -b`, `git worktree`, `git config` and
     `git remote` (`fleet.workerGitDeny`).
+  - **The forge coordinator.** A push or pull request that fails for an
+    infrastructure reason (`forge.ClassifyPushError`: a refused or missing
+    credential, a rate limit, a 5xx, no `gh`; never a work fault such as a
+    non-fast-forward) is handed over only under `belai rc` with sync on
+    (`fleet.Workspace.Escalate`). The harness writes the bundle of
+    `<base>..refs/heads/<branch>` to `config.ForgeDir` (the state directory,
+    hidden from the sandbox, 16 MiB at most) and spools a request of ids, shas,
+    enums and the cleaned item title (`<worker>.forge/<requestId>.json`, 0600,
+    atomic), which rc re-checks (`fleet.ValidForgeRequest`) before filing. The
+    coordinator's answer is a `steer` dispatch that rc checks field by field
+    (`fleet.CoordSpec`) and leaves as `<worker>.coord.json` for a live worker;
+    the worker takes it only for the item it holds and a request it filed. It
+    reaches the model only through `agent.CoordFact`, three fixed templates
+    filled with an enum, integers, a time and a checked https link, as a
+    sealed directive at a pass boundary (`Session.Fact`, never `Session.Steer`);
+    no coordinator, forge or web text crosses. The release notes stay harness
+    facts.
   - **Workspace note.** The per-turn workspace directive carries harness
     facts only: branch, base commit and the publishing rule.
   - **Preflight.** It fails closed:

@@ -1099,6 +1099,52 @@ attempt counted and without gate verification on the abandoned branch, so the
 next claim works on the kept branch. Which one to keep is the profile's
 judgement: the built-in reviewer and verifier compare them against the item.
 
+### The forge coordinator
+
+A push or pull request can fail for a reason that is not the work's: the
+machine's GitHub credential is refused or missing (401, 403, no `gh`, a git
+credential prompt), GitHub rate-limits it (429, a secondary rate limit) or
+answers with a 5xx. Under `belai rc`, with sync on, such a failure is handed to
+the forge coordinator (the Pix sandbox), which holds a GitHub App token for the
+repository. `forge.ClassifyPushError` sorts the failure from the error text into
+a fixed word; a failure that is the branch's (a rejected non-fast-forward,
+nothing to publish, a hook that declined it) or one it does not recognise is
+never handed over and reads as before. Only a GitHub `origin` and an item
+attempt branch (`belai/K-xxxxxx/a<n>`) are handed over.
+
+To hand it over, the worker writes the git bundle of
+`<base>..refs/heads/<branch>` to `~/.vulnetix/belai/forge/<requestId>.bundle`
+(the state directory, which the model's sandbox cannot read or write; at most
+16 MiB, and a bigger branch gets a note on the item instead) and spools the
+request, ids, shas, the cleaned item title and the failure word only, as
+`<worker>.forge/<requestId>.json` beside its registry record. `belai rc` files
+it (see [remote-control.md](remote-control.md)). `PublishBranch` answers the
+model with `publishing handed to the coordinator (request R)`; the harness's
+publish at `done` and a stopping worker's push write the same fact as a note.
+A second hand-over of the same commit reuses the request.
+
+The coordinator's answer arrives as `<worker>.coord.json`. The worker reads it
+every few seconds while it holds an item and accepts it only for that item and
+a request it filed, then deletes it. It reaches the model as a harness fact
+from one of three fixed templates, never as steering and never with the
+coordinator's text:
+
+| Event | The model reads | The goal loop |
+|---|---|---|
+| `took_over` | `coordinator took over publishing: draft pull request #<n> is open (<url>)` | ends, stop reason `coordinated` |
+| `waiting` | `coordinator is waiting for the GitHub rate limit until <time>; stay paused, do not retry publishing` | waits until then, or until the item's wall budget ends; the wait is not a pass and arms no stall counter |
+| `failed` | `coordinator could not publish: <reason>` | goes on |
+
+The release follows the answer. A pull request the coordinator opened completes
+the item and is recorded on it (the harness does not publish again at `done`).
+A wait that the wall budget ends is not an attempt. A failure that is the
+branch's (`non_fast_forward`, `branch_mismatch`, `empty_bundle`) fails the
+attempt, and one a person must fix (`app_not_installed`, `token_denied`,
+`expired`, `repo_not_attached`, `bundle_missing`) blocks the item without
+counting one, unless the worker published the branch itself afterwards. A pulled
+card's pull request only fills an empty one on this host, so the one the
+coordinator recorded survives a host that never pushed.
+
 ## Memory
 
 A profile with `memory.enabled` keeps a short lessons file

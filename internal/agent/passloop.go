@@ -652,12 +652,28 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	}
 	turns = append(turns, directiveTurns(s.goalAckDirective())...)
 	emitGoalState(emit, gs)
+	lastText := ""
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:
 		// a deliberate esc returns the partial result, never raw
 		// context.Canceled.
 		if err := ctx.Err(); err != nil {
 			return run.Result{Passes: l.passes}, ErrPassLoopCancelled
+		}
+
+		// A fleet worker that handed its push to the forge coordinator hears
+		// back here, before the pass is counted: a wait for a rate limit is
+		// neither a pass nor a stall, and a coordinator that opened the pull
+		// request ends the goal.
+		var coordStop bool
+		var coordErr error
+		turns, coordStop, coordErr = s.coordBoundary(ctx, turns, emit)
+		if coordErr != nil {
+			return run.Result{Reply: lastText, Passes: l.passes, GoalSentinel: rolemanager.GoalPartial}, ErrPassLoopCancelled
+		}
+		if coordStop {
+			s.turnStop = run.StopCoordinated
+			return run.Result{Reply: lastText, Passes: l.passes, GoalSentinel: rolemanager.GoalPartial}, nil
 		}
 
 		if maxPasses > 0 && l.passes >= maxPasses {
@@ -710,6 +726,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			l.verificationPasses++
 			l.verificationArmed = false
 		}
+		lastText = out.lastText
 
 		// Record what the pass did to disk before anything else looks at it:
 		// the write ledger is what the directives and the verification gate

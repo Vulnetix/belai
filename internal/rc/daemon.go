@@ -75,6 +75,15 @@ type Options struct {
 	// (setWorkerPaused unless a test replaces it). The error text is the
 	// refusal reason.
 	PauseWorker func(id string, pause bool) error
+	// SteerWorker leaves a checked forge coordinator answer for a live worker
+	// of this host (steerWorker unless a test replaces it). The error text is
+	// the refusal reason.
+	SteerWorker func(spec fleet.CoordSpec) error
+	// ForgeSpool is the fleet registry directory whose <worker>.forge spools
+	// the daemon files with the forge coordinator (the host's registry unless a
+	// test replaces it); ForgeRelayEvery is how often it looks (5s).
+	ForgeSpool      string
+	ForgeRelayEvery time.Duration
 
 	// Schedules is the host's stored schedules (internal/schedule). nil means
 	// this daemon fires none and syncs none.
@@ -279,6 +288,12 @@ func New(o Options) (*Daemon, error) {
 	if o.PauseWorker == nil {
 		o.PauseWorker = setWorkerPaused
 	}
+	if o.SteerWorker == nil {
+		o.SteerWorker = steerWorker
+	}
+	if o.ForgeRelayEvery <= 0 {
+		o.ForgeRelayEvery = DefaultForgeRelayEvery
+	}
 	if o.StartWorkers == nil {
 		o.StartWorkers = runAgentStart
 	}
@@ -348,6 +363,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	d.wg.Add(1)
 	go d.librarySync(ctx)
+	d.wg.Add(1)
+	go d.forgeRelay(ctx)
 	d.poll(ctx)
 
 	d.shutdown()
@@ -468,7 +485,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
 			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "mcp_secrets_install", "mcp_secrets_remove", "library_sync", "library_scan", "library_import",
-			"project_prefs", "teleport_backup", "teleport_code":
+			"project_prefs", "teleport_backup", "teleport_code", "steer":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -512,6 +529,22 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+	case "steer":
+		// The forge coordinator's answer to a request a worker filed: checked
+		// field by field here and again by the worker, which takes it only for
+		// the item it holds and a request it filed.
+		spec := fleet.CoordSpec{Worker: r.Worker, Item: r.Item, Request: r.Request, Event: r.Event, PR: r.PR, PRURL: r.PRURL, Until: r.Until, Reason: r.Reason}
+		if err := spec.Validate(); err != nil {
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			return
+		}
+		if err := d.o.SteerWorker(spec); err != nil {
+			d.logf("refused steer %s: %v", r.Worker, err)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			return
+		}
+		d.logf("steer %s: coordinator %s (request %s)", r.Worker, spec.Event, spec.Request)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" told "+spec.Event)
 	case "avatar":
 		// Answered in the background, so a slow model never holds the queue.
 		d.startAvatar(ctx, r, ack)

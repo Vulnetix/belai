@@ -156,6 +156,10 @@ type Worker struct {
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
+	// Coordinator reports whether belai rc runs on this host to file what the
+	// worker spools for the forge coordinator (coordworker.go). nil, or false,
+	// hands nothing over: a push that fails fails as it always did.
+	Coordinator func() bool
 
 	now        func() time.Time
 	surveyed   bool   // kanban.survey already considered this start
@@ -166,6 +170,8 @@ type Worker struct {
 	fastOnce   sync.Once
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
+	coordMu    sync.Mutex
+	coord      coordState // the forge coordinator's answer for the item in hand
 }
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
@@ -384,6 +390,9 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			w.logf("resumed")
 			w.auditWorker(audit.WorkerState, "resumed")
 		}
+		// No item is in hand here, so a coordinator answer is for one this
+		// worker already released.
+		w.dropCoord()
 		w.Record.State = StateIdle
 		w.save()
 		if now := w.clock(); now.Sub(lastPull) >= idle {
@@ -733,6 +742,14 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	w.Record.Branch = ws.Branch
 	w.save()
+	// A push that fails for the machine's or the forge's reason is handed to the
+	// forge coordinator, whose answer is read until the item is released.
+	w.beginCoord(it, ws)
+	coordCtx, stopCoord := context.WithCancel(ctx)
+	var coordWG sync.WaitGroup
+	coordWG.Go(func() { w.watchCoord(coordCtx, it, ws) })
+	stopWatch := sync.OnceFunc(func() { stopCoord(); coordWG.Wait() })
+	defer stopWatch()
 	if ws.Worktree && ws.Branch != it.Branch {
 		if err := w.Store.SetBranch(it.ID, w.Record.ID, ws.Branch); err != nil {
 			w.logf("%s: record the branch: %v", it.Short(), err)
@@ -762,20 +779,27 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	addTokens()
 	cause := context.Cause(itemCtx)
+	// The turn is over: one last look for the coordinator's answer, which the
+	// release below settles by.
+	stopWatch()
+	w.takeCoord(it, ws)
 
 	o := w.judge(it, res, runErr, cause)
 	// The wall budget can end after the work was decided, while the model was
-	// only re-checking it: a branch that is exactly what was published, or a
-	// review whose every manual gate the reviewer recorded as met. Either is
-	// finished work, so the overrun does not cost an attempt; its gates are
-	// still verified below, under a short grace period of their own. The lease
-	// renewal ended with the budget, so the grace period holds the lease itself.
+	// only re-checking it: a branch that is exactly what was published (by the
+	// worker, or by the forge coordinator it handed the push to), or a review
+	// whose every manual gate the reviewer recorded as met. Either is finished
+	// work, so the overrun does not cost an attempt; its gates are still
+	// verified below, under a short grace period of their own. The lease renewal
+	// ended with the budget, so the grace period holds the lease itself.
 	vctx := itemCtx
 	decided := ""
 	if o.failed && !o.transient && errors.Is(cause, errWallBudget) {
 		switch {
 		case ws.PublishedCurrent(context.WithoutCancel(ctx)):
 			decided = "published its work"
+		case w.coordTookOver(it.ID):
+			decided = "handed its work to the coordinator, which published it,"
 		case w.reviewDecided(it):
 			decided = "recorded every manual gate as met"
 		}
@@ -788,6 +812,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	o = w.applyVerdict(ctx, o, it, claim, verdictSettled(res, runErr, cause))
 	o = w.applyRounds(o, rr, it)
+	o = w.applyCoord(ctx, o, it, ws, cause)
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
 	}
@@ -843,8 +868,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	released := w.release(ctx, it, o)
 	// An empty branch has nothing to push; PublishBranch would only refuse
-	// and leave a "not opened" note beside the release note above.
-	if !o.failed && o.files > 0 && released.List == kanban.Done && w.publishes() && ws.Worktree {
+	// and leave a "not opened" note beside the release note above. A branch the
+	// coordinator already published has its pull request.
+	if !o.failed && o.files > 0 && released.List == kanban.Done && w.publishes() && ws.Worktree && !w.coordTookOver(it.ID) {
 		w.publish(ctx, ws, released, o.files)
 	}
 	w.reflect(ctx, it, res, runErr)
@@ -874,7 +900,12 @@ func (w *Worker) stopped(ctx, itemCtx context.Context, it kanban.Item, ws *Works
 			// origin. Only for a worker allowed to push at all.
 			if ws.Worktree && w.publishes() && ws.FilesChanged(bg) > 0 {
 				pctx, cancel := context.WithTimeout(bg, 30*time.Second)
-				if err := ws.PushBranch(pctx); err != nil {
+				var esc *EscalatedError
+				if err := ws.PushBranch(pctx); errors.As(err, &esc) {
+					// The forge coordinator pushes it from the bundle instead.
+					out.Branch = ws.Branch
+					out.Note += fmt.Sprintf("; the push of %s was handed to the forge coordinator (request %s, failure %s)", ws.Branch, esc.RequestID, esc.Failure)
+				} else if err != nil {
 					w.logf("%s: push the work in progress: %v", it.Short(), err)
 				} else {
 					out.Branch = ws.Branch
@@ -1156,6 +1187,13 @@ func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item, fil
 		body += "\n\n" + report
 	}
 	url, err := ws.PublishBranch(context.WithoutCancel(ctx), title, body)
+	var esc *EscalatedError
+	if errors.As(err, &esc) {
+		// The coordinator opens the pull request and records it on the card.
+		w.logf("%s: publish handed to the forge coordinator (request %s, %s)", it.Short(), esc.RequestID, esc.Failure)
+		_, _ = w.Store.Update(it.ID, kanban.Patch{Note: fmt.Sprintf("draft pull request handed to the forge coordinator (request %s, failure %s)", esc.RequestID, esc.Failure)}, w.Record.Session)
+		return
+	}
 	if err != nil {
 		w.logf("%s: publish: %v", it.Short(), err)
 		_, _ = w.Store.Update(it.ID, kanban.Patch{Note: "draft pull request not opened: " + sanitize.Sanitize(err.Error())}, w.Record.Session)
@@ -1375,6 +1413,9 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		w.web.begin(sess, tr)
 		defer w.web.end()
 	}
+	// The forge coordinator's answers reach the goal loop as harness facts,
+	// never as steering.
+	defer w.attachCoord(sess.Fact)()
 	res, err := sess.RunInputObserved(ctx, nil, in, emit)
 	tr.finish(res, err)
 	if syncState != nil {
