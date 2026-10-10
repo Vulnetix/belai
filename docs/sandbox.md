@@ -47,11 +47,29 @@ Inside the sandbox:
 | Platform | Backend | Notes |
 | --- | --- | --- |
 | Linux | `bwrap` (bubblewrap) | needs unprivileged user namespaces; Belai checks once per run that it works |
+| Linux without a working `bwrap` | `landlock` (kernel LSM, 5.13+) | no namespaces: host `/tmp`, no pid namespace; network deny needs ABI 4 (Linux 6.7+); applied by the hidden helper `belai __landlock-exec` |
 | macOS | `sandbox-exec` | generated profile |
-| Windows, or Linux without a working `bwrap` | none | `auto` runs unsandboxed, `required` refuses |
+| Windows, or Linux with neither | none | `auto` runs unsandboxed, `required` refuses |
 
-`/sandbox` in the TUI shows whether commands are sandboxed here, the backend,
-the network setting, and every writable and hidden path.
+`/sandbox` in the TUI shows whether commands are sandboxed here, the backend
+(for Landlock, its ABI and whether it can cut the network off), the network
+setting, every writable and hidden path, and the backend's limits.
+
+### Keeping bubblewrap
+
+bubblewrap gives the fuller sandbox (a private `/tmp`, a pid namespace, the
+network off for every protocol), so where it only needs a switch, flip the
+switch:
+
+- Ubuntu 24.04 and later restrict unprivileged user namespaces with AppArmor.
+  `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0` lifts it for
+  the session (`/etc/sysctl.d/` makes it stay), or give `bwrap` its own
+  AppArmor profile with the `userns` permission.
+- A Docker container needs a seccomp profile that allows `unshare` and
+  `clone` with new namespaces: `--security-opt seccomp=unconfined`, or
+  `--userns` remapping.
+
+Otherwise Belai falls back to Landlock on its own, and `/sandbox` says so.
 
 ## Settings
 
@@ -112,6 +130,31 @@ asks you rather than retrying blindly.
 - The sandbox is a boundary for the commands Belai runs. It is not a
   substitute for running Belai itself in a container.
 
+Under Landlock, which has no mount or network namespaces:
+
+- There is no private `/tmp`: commands share the host's, and what they write
+  there stays.
+- A hidden directory can be listed, though nothing in it can be read, written
+  or run.
+- `network: deny` cuts off TCP only (binding and connecting), from ABI 4
+  (Linux 6.7+). UDP, so DNS, and unix sockets still pass; a supervised dev
+  server cannot bind at all. On an older kernel the network stays open:
+  `auto` runs and says so in `/sandbox`, `required` refuses.
+- There is no pid namespace, so a command that would hold vault variables is
+  refused rather than run where it could read another process's environment
+  (see [vault variables](vault-env.md)).
+- Writes under `/proc` are denied; bubblewrap's fresh `/proc` allowed a few.
+- A directory on the way to a hidden path, or to a read-only path inside a
+  writable one, takes no new entries at its top. A fleet worker's git common
+  dir is read-only at its top, with the item's own ref, reflog and worktree
+  directories writable beneath. Its commits stand, but each one ends with
+  `error: Unable to create '.../packed-refs.lock': Permission denied`: git
+  takes that lock to clear its cherry-pick and revert state, and a top the
+  model could create and remove files in would also let it replace `config`
+  and `HEAD`.
+- A kernel at ABI 1 cannot move a file between directories inside the
+  sandbox (that needs ABI 2).
+
 ## Edge cases
 
 - A cache directory that does not exist is skipped; bubblewrap binds only
@@ -127,13 +170,17 @@ asks you rather than retrying blindly.
   `network` value other than `allow` means `deny`.
 - Belai's state directory stays hidden even when it sits under a writable
   path.
-- bubblewrap is probed once per run. If it is installed but cannot start
-  (unprivileged user namespaces off), `auto` runs unsandboxed and
-  `required` refuses. A probe that fails because the machine was out of
-  processes or memory at that moment ("Resource temporarily unavailable",
-  "Cannot allocate memory") is tried up to four times, 250 ms apart and doubling,
-  before it counts; any other failure counts at once. When no backend is found
-  the refusal of an autonomous worker with Bash ends with why the probe failed,
+- The backends are probed once per run, bubblewrap first. If it is installed
+  but cannot start (unprivileged user namespaces off), the kernel is asked
+  for Landlock; with neither, `auto` runs unsandboxed and `required` refuses.
+  A probe that fails because the machine was out of processes or memory at
+  that moment ("Resource temporarily unavailable", "Cannot allocate memory")
+  is tried up to four times, 250 ms apart and doubling, before it counts; any
+  other failure counts at once. A result reached through such a failure is
+  not kept for the life of the process: after a five second cooldown the next
+  command probes again, so a `belai rc` that was asked during one busy minute
+  gets bubblewrap back once the machine is quiet. When no backend is found the
+  refusal of an autonomous worker with Bash ends with why each probe failed,
   so a machine out of processes reads differently from one that cannot run
   bubblewrap.
 - Only a sandboxed `Bash` command that exits non-zero gets the sandbox note;

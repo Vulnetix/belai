@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/docparity"
 )
@@ -58,5 +59,34 @@ func TestSandboxPageStatesTheSettingValues(t *testing.T) {
 	}
 	if ModeOff != "off" || ModeAuto != "auto" || ModeRequired != "required" || NetworkDeny != "deny" {
 		t.Errorf("mode and network constants disagree with the page")
+	}
+}
+
+// TestSandboxPageNamesBothLinuxBackends pins the backend table and what the
+// page says about Landlock: its limits, the kernel it needs, the helper, and
+// how to keep bubblewrap where only a switch is in the way.
+func TestSandboxPageNamesBothLinuxBackends(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/sandbox.md")), " ")
+	for _, want := range []string{
+		"| Linux | `bwrap` (bubblewrap) |",
+		"| Linux without a working `bwrap` | `landlock` (kernel LSM, 5.13+) |",
+		"ABI 4",
+		"Linux 6.7",
+		"kernel.apparmor_restrict_unprivileged_userns",
+		"--security-opt seccomp=unconfined",
+		"no private `/tmp`",
+		"pid namespace",
+		"`belai " + LandlockCommand + "`",
+		"five second cooldown",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/sandbox.md does not say %q", want)
+		}
+	}
+	if landlockNetABI != 4 {
+		t.Errorf("the network ABI is %d, the page says 4", landlockNetABI)
+	}
+	if probeRetryAfter != 5*time.Second {
+		t.Errorf("the cooldown is %v, the page says five seconds", probeRetryAfter)
 	}
 }

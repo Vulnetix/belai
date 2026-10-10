@@ -23,19 +23,33 @@ func (a *App) sandboxReport() string {
 		}
 		return b.String()
 	case "n/a":
-		if a.settings.Sandbox.ModeOr() == sandbox.ModeRequired {
-			return "sandbox: required but no backend is available here · commands are refused (install bubblewrap on Linux)"
+		why := sandbox.BackendProblem()
+		if why != "" {
+			why = " (" + why + ")"
 		}
-		return "sandbox: n/a · no backend is available here, so commands run unsandboxed (install bubblewrap on Linux)"
+		if a.settings.Sandbox.ModeOr() == sandbox.ModeRequired {
+			return "sandbox: required but no backend is available here · commands are refused" + why
+		}
+		return "sandbox: n/a · no backend is available here, so commands run unsandboxed" + why
 	}
 	network := "allowed"
 	if p.DenyNetwork {
 		network = "denied"
+		if name == "landlock" && sandbox.NetworkDenyEnforced() {
+			network = "denied (TCP only)"
+		}
 	}
-	fmt.Fprintf(&b, "sandbox: on (%s, mode %s) · network %s", name, p.Mode, network)
-	b.WriteString("\n  writable: " + strings.Join(p.Writable, ", ") + ", a private /tmp")
+	fmt.Fprintf(&b, "sandbox: on (%s, mode %s) · network %s", sandbox.Describe(), p.Mode, network)
+	tmp, hidden := ", a private /tmp", ""
+	if name == "landlock" {
+		tmp, hidden = ", /tmp (shared with the host)", " (listable, unreadable under Landlock)"
+	}
+	b.WriteString("\n  writable: " + strings.Join(p.Writable, ", ") + tmp)
 	if len(p.Hidden) > 0 {
-		b.WriteString("\n  hidden: " + strings.Join(p.Hidden, ", "))
+		b.WriteString("\n  hidden: " + strings.Join(p.Hidden, ", ") + hidden)
+	}
+	for _, l := range sandbox.Limits() {
+		b.WriteString("\n  limits: " + l)
 	}
 	return b.String()
 }

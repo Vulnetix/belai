@@ -1,14 +1,16 @@
 // Package sandbox runs the commands Belai executes for the model (Bash,
 // inline !cmd, supervised processes) under an operating-system boundary:
-// bubblewrap on Linux, sandbox-exec on macOS. Inside it the filesystem is
-// read-only except for the workspace roots, a private /tmp and (by default)
-// the usual tool caches; Belai's own state directory is hidden; and the
-// network can be cut off. The policy is computed per call from the settings
+// bubblewrap on Linux, the kernel's Landlock where bubblewrap cannot run,
+// sandbox-exec on macOS. Inside it the filesystem is read-only except for the
+// workspace roots, a private /tmp (bubblewrap and sandbox-exec) and (by
+// default) the usual tool caches; Belai's own state directory is hidden; and
+// the network can be cut off. The policy is computed per call from the settings
 // and the live guardrails switch, and rides on the call's context.
 package sandbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -72,7 +74,15 @@ const EnvMarker = "BELAI_SANDBOXED"
 func Nested() bool { return os.Getenv(EnvMarker) != "" }
 
 // ErrUnavailable is returned in required mode when no backend works here.
-var ErrUnavailable = errors.New("sandbox required but no sandbox backend is available (install bubblewrap on Linux)")
+var ErrUnavailable = errors.New("sandbox required but no sandbox backend is available (Linux: install bubblewrap, or a kernel with Landlock, 5.13+)")
+
+// ErrLandlockVault is returned when a command would hold vault variables and the
+// backend is Landlock, which has no pid namespace. The command is not run.
+var ErrLandlockVault = errors.New("a command holding vault variables needs its own pid namespace; the Landlock sandbox has none and cannot keep a command from reading other processes' /proc/PID/environ, so the command was not run (install bubblewrap for commands that hold vault variables)")
+
+// ErrNetworkDeny is returned in required mode with network deny when the
+// kernel's Landlock cannot cut the network off. The command is not run.
+var ErrNetworkDeny = errors.New("sandbox required with network deny, but Landlock on this kernel cannot cut the network off (needs ABI 4, Linux 6.7+), so the command was not run")
 
 type ctxKey struct{}
 
@@ -173,23 +183,45 @@ func FromSettings(s *config.SandboxSettings, roots []string, pol posture.Policy)
 	return p
 }
 
+// backendState is what the probe found: the backend to use, or why none works.
+type backendState struct {
+	// name is "bwrap", "landlock", "sandbox-exec" or "" for none; path is the
+	// binary to run (for landlock, this executable).
+	name, path string
+	// abi is the Landlock ABI the kernel offers, for landlock only.
+	abi int
+	// why says what failed when name is "", or what bwrap said when landlock
+	// stands in for it: "bwrap: ...; landlock: ...".
+	why string
+	// retry marks a result reached through a transient failure (the machine
+	// was out of processes or memory): it is probed again after a cooldown,
+	// so a busy minute does not decide the rest of a long-lived process.
+	retry bool
+	at    time.Time
+}
+
 var (
-	probeOnce sync.Once
-	probeName string
-	probePath string
-	probeWhy  string
+	probeMu    sync.Mutex
+	probeDone  bool
+	probeState backendState
 )
 
 // Probe tunables, shortened by tests.
 var (
 	probeTries   = 4
 	probeBackoff = 250 * time.Millisecond
+	// probeRetryAfter is how long a result reached through a transient failure
+	// stands before the next call probes again.
+	probeRetryAfter = 5 * time.Second
 	// runBwrapProbe runs the one command that proves bubblewrap works here and
 	// returns what it printed with its error.
 	runBwrapProbe = func(path string) (string, error) {
 		out, err := exec.Command(path, "--ro-bind", "/", "/", "--dev", "/dev", "--", "true").CombinedOutput()
 		return string(out), err
 	}
+	// runLandlockProbe asks this executable, as the helper, which Landlock ABI
+	// the kernel offers; the error says why it offers none.
+	runLandlockProbe = landlockProbe
 )
 
 // transientProbeFailure reports a failure that says the machine was out of
@@ -203,51 +235,149 @@ func transientProbeFailure(msg string) bool {
 	return strings.Contains(m, "resource temporarily unavailable") || strings.Contains(m, "cannot allocate memory") || strings.Contains(m, "eagain")
 }
 
-// Backend returns the working backend's name ("bwrap", "sandbox-exec") and
-// path, or "" when none works here. It is probed once per process: bwrap
-// can be installed yet unusable when unprivileged user namespaces are off.
-// A probe that fails because the machine is out of processes or memory is tried
-// again a few times before it counts, and BackendProblem says why it failed.
-func Backend() (name, path string) {
-	probeOnce.Do(func() {
-		switch runtime.GOOS {
-		case "linux":
-			p, err := exec.LookPath("bwrap")
-			if err != nil {
-				probeWhy = "bwrap is not installed"
-				return
-			}
-			for try := 0; try < probeTries; try++ {
-				out, err := runBwrapProbe(p)
-				if err == nil {
-					probeName, probePath, probeWhy = "bwrap", p, ""
-					return
-				}
-				probeWhy = strings.TrimSpace(strings.Join(strings.Fields(out+" "+err.Error()), " "))
-				if len(probeWhy) > 200 {
-					probeWhy = probeWhy[:200]
-				}
-				if !transientProbeFailure(probeWhy) {
-					return
-				}
-				time.Sleep(probeBackoff << try)
-			}
-		case "darwin":
-			if p, err := exec.LookPath("sandbox-exec"); err == nil {
-				probeName, probePath = "sandbox-exec", p
-			}
+// shortReason flattens a probe's output and error into one line.
+func shortReason(out string, err error) string {
+	why := strings.TrimSpace(strings.Join(strings.Fields(out+" "+err.Error()), " "))
+	if len(why) > 200 {
+		why = why[:200]
+	}
+	return why
+}
+
+// probeBwrap tries bubblewrap: path and ok when it works, else why and whether
+// the failure was transient.
+func probeBwrap() (path string, ok bool, why string, transient bool) {
+	p, err := exec.LookPath("bwrap")
+	if err != nil {
+		return "", false, "not installed", false
+	}
+	for try := 0; try < probeTries; try++ {
+		out, err := runBwrapProbe(p)
+		if err == nil {
+			return p, true, "", false
 		}
-	})
-	return probeName, probePath
+		why = shortReason(out, err)
+		if !transientProbeFailure(why) {
+			return p, false, why, false
+		}
+		time.Sleep(probeBackoff << try)
+	}
+	return p, false, why, true
+}
+
+// runProbes finds the backend for this platform. On Linux bubblewrap comes
+// first; a kernel with Landlock stands in when bubblewrap is absent or cannot
+// start, and when bubblewrap only failed for want of processes the result is
+// marked for another look, so bubblewrap wins back once the machine is quiet.
+func runProbes() backendState {
+	switch runtime.GOOS {
+	case "linux":
+		bpath, ok, bwhy, btransient := probeBwrap()
+		if ok {
+			return backendState{name: "bwrap", path: bpath}
+		}
+		exe, err := os.Executable()
+		var abi int
+		var lwhy string
+		ltransient := false
+		if err != nil {
+			lwhy = err.Error()
+		} else if abi, err = runLandlockProbe(exe); err != nil {
+			lwhy = shortReason("", err)
+			ltransient = transientProbeFailure(lwhy)
+		}
+		if err == nil {
+			return backendState{name: "landlock", path: exe, abi: abi, why: "bwrap: " + bwhy, retry: btransient}
+		}
+		return backendState{why: "bwrap: " + bwhy + "; landlock: " + lwhy, retry: btransient || ltransient}
+	case "darwin":
+		if p, err := exec.LookPath("sandbox-exec"); err == nil {
+			return backendState{name: "sandbox-exec", path: p}
+		}
+	}
+	return backendState{}
+}
+
+// backend returns the probe's result, probing on the first call and again
+// after the cooldown when the last result went through a transient failure.
+func backend() backendState {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if probeDone && (!probeState.retry || time.Since(probeState.at) < probeRetryAfter) {
+		return probeState
+	}
+	probeState = runProbes()
+	probeState.at = time.Now()
+	probeDone = true
+	return probeState
+}
+
+// Backend returns the working backend's name ("bwrap", "landlock",
+// "sandbox-exec") and path, or "" when none works here. It is probed once per
+// process: bwrap can be installed yet unusable when unprivileged user
+// namespaces are off, and then a kernel with Landlock is used instead. A probe
+// that fails because the machine is out of processes or memory is tried again
+// a few times before it counts, and such a result is probed again after a
+// cooldown; BackendProblem says why a probe failed.
+func Backend() (name, path string) {
+	s := backend()
+	return s.name, s.path
 }
 
 // BackendProblem is why Backend found no working backend, in a few words, or
 // "" when it found one (or has not been asked). It is what a refusal quotes, so
 // the person reading it can tell a machine out of processes from one that
-// cannot run bubblewrap at all.
+// cannot run bubblewrap at all. With Landlock standing in for bubblewrap it
+// says what bubblewrap said.
 func BackendProblem() string {
-	Backend()
-	return probeWhy
+	return backend().why
+}
+
+// Describe names the backend in use with what it can do: "bwrap",
+// "sandbox-exec", "landlock (ABI 4, network deny supported)", or "" for none.
+func Describe() string {
+	s := backend()
+	if s.name != "landlock" {
+		return s.name
+	}
+	if s.abi >= landlockNetABI {
+		return fmt.Sprintf("landlock (ABI %d, network deny supported)", s.abi)
+	}
+	return fmt.Sprintf("landlock (ABI %d, network deny needs ABI %d: Linux 6.7+)", s.abi, landlockNetABI)
+}
+
+// Limits lists what the backend in use cannot do that bubblewrap can, one line
+// each, for /sandbox. Empty for bubblewrap and sandbox-exec.
+func Limits() []string {
+	s := backend()
+	if s.name != "landlock" {
+		return nil
+	}
+	out := []string{
+		"no private /tmp: commands share the host's /tmp",
+		"no pid namespace: commands holding vault variables are refused",
+		"a hidden directory can be listed, though nothing in it can be read",
+	}
+	if s.abi < landlockNetABI {
+		out = append(out, fmt.Sprintf("network deny is not enforced: Landlock ABI %d cannot cut the network off (needs ABI %d, Linux 6.7+)", s.abi, landlockNetABI))
+	}
+	return out
+}
+
+// NetworkDenyEnforced reports whether a policy's DenyNetwork is really applied
+// by the backend in use: always for bubblewrap and sandbox-exec, and for
+// Landlock only from ABI 4 (TCP only).
+func NetworkDenyEnforced() bool {
+	s := backend()
+	return s.name != "" && (s.name != "landlock" || s.abi >= landlockNetABI)
+}
+
+// ResetProbeForTests forgets the probe's result, so the next call probes
+// again. For tests that change PATH or the probes.
+func ResetProbeForTests() {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	probeDone, probeState = false, backendState{}
 }
 
 // ErrPIDIsolation is returned when a command would hold vault variables and the sandbox
@@ -318,15 +448,39 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 	if p.Mode == "" || p.Mode == ModeOff {
 		return false, nil
 	}
-	name, path := Backend()
+	st := backend()
+	name, path := st.name, st.path
 	if name == "" {
 		if p.Mode == ModeRequired {
+			if st.why != "" {
+				return false, fmt.Errorf("%w: %s", ErrUnavailable, st.why)
+			}
 			return false, ErrUnavailable
 		}
 		return false, nil
 	}
 	if name == "bwrap" && vaultenv.Default.HasActive(time.Now()) && pidModeFn() == pidNone {
 		return false, ErrPIDIsolation
+	}
+	var landlockEnv string
+	if name == "landlock" {
+		// Landlock has no pid namespace and no way to keep /proc/PID/environ
+		// private short of denying /proc, so a vault command never runs under it.
+		if vaultenv.Default.HasActive(time.Now()) {
+			return false, ErrLandlockVault
+		}
+		if p.DenyNetwork && st.abi < landlockNetABI && p.Mode == ModeRequired {
+			return false, fmt.Errorf("%w (this kernel offers ABI %d)", ErrNetworkDeny, st.abi)
+		}
+		pol := landlockPolicyFrom(p)
+		if err := landlockPolicyProblem(pol); err != nil {
+			return false, err
+		}
+		js, err := json.Marshal(pol)
+		if err != nil {
+			return false, err
+		}
+		landlockEnv = landlockPolicyEnv + "=" + string(js)
 	}
 	// Mark the command as sandboxed, so a test that would nest a second
 	// sandbox inside this one (bubblewrap cannot reliably see the outer
@@ -350,6 +504,11 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 	switch name {
 	case "bwrap":
 		args = BwrapArgs(p, cmd.Dir, argv)
+	case "landlock":
+		// The helper reads the policy from its environment and takes it out
+		// before it execs the command.
+		cmd.Env = append(cmd.Env, landlockEnv)
+		args = append([]string{LandlockCommand, "--"}, argv...)
 	case "sandbox-exec":
 		args = append([]string{"-p", SeatbeltProfile(p), "--"}, argv...)
 	}

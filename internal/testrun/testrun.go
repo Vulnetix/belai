@@ -162,6 +162,8 @@ func errClass(err error) string {
 		return "command not found"
 	case errors.Is(err, sandbox.ErrUnavailable):
 		return "required but unavailable"
+	case errors.Is(err, sandbox.ErrLandlockVault), errors.Is(err, sandbox.ErrNetworkDeny):
+		return "refused"
 	}
 	return "start failed"
 }

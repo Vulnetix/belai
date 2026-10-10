@@ -43,6 +43,11 @@ import (
 )
 
 func main() {
+	// `belai __landlock-exec -- command` is the Landlock sandbox helper: it
+	// restricts itself and execs the command, so nothing else may run first.
+	if len(os.Args) > 1 && os.Args[1] == "__landlock-exec" {
+		os.Exit(sandbox.LandlockExecMain(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// Stop any local decision server this process launched, on every exit.
 	defer decisionserver.StopAll()
 	defer deciderserver.StopAll()
