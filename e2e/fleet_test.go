@@ -16,27 +16,72 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
-// fleetMock answers every call a worker makes: the security classifier,
-// the goal evaluator (always GOAL_COMPLETE; the verification gate makes it
-// ask twice), the reflection turn, and the main model, which writes
-// hello.txt on its first pass and reads it on every later one.
-func fleetMock(t *testing.T) *httptest.Server {
-	t.Helper()
+// fleetAnswer is what the scripted model says to one request: plain text, or a
+// tool call with text beside it.
+type fleetAnswer struct {
+	text string
+	tool string
+	args map[string]any
+}
+
+// fleetRoute is the scripted model, independent of the wire format a provider
+// speaks. It answers every call a worker makes: the security classifier, the goal
+// evaluator (always GOAL_COMPLETE; the verification gate makes it ask twice), the
+// reflection turn, and the main model, which writes hello.txt on its first pass
+// and reads it on every later one. wrote is true once a tool result is in the
+// conversation, and call counts the main model's calls.
+func fleetRoute(system, lastUser string, wrote bool, call int) fleetAnswer {
+	switch {
+	case strings.Contains(system, "security classifier"):
+		return fleetAnswer{text: "SAFE"}
+	case strings.Contains(system, "goal-progress evaluator"):
+		return fleetAnswer{text: "GOAL_COMPLETE"}
+	case strings.Contains(lastUser, "reviewing a coding agent"):
+		return fleetAnswer{text: "- hello.txt lives at the repository root"}
+	case strings.Contains(lastUser, "final report") || strings.Contains(lastUser, "Write a report"):
+		return fleetAnswer{text: "Added hello.txt and read it back."}
+	case !wrote && strings.Contains(system, "REJECTER-PERSONA"):
+		// Records its decision on the board; the evaluator above would call this
+		// goal complete, so only the record can reject.
+		return fleetAnswer{text: "Rejecting the branch.\n", tool: "KanbanOutcome", args: map[string]any{"outcome": "failure", "reason": "hello.txt has no trailing newline"}}
+	case !wrote && strings.Contains(system, "WRITER-PERSONA"):
+		return fleetAnswer{text: "Plan:\n1. Add hello.txt\n[DONE:1]\n", tool: "Write", args: map[string]any{"file_path": "hello.txt", "content": "hello\n"}}
+	}
+	return fleetAnswer{text: "Plan:\n1. Check hello.txt\n[DONE:1]\n", tool: "Read", args: map[string]any{"file_path": "hello.txt", "limit": 10 + call}}
+}
+
+// fleetServer serves fleetRoute in one wire format: decode reads the request,
+// reply writes the answer.
+func fleetServer(decode func(*http.Request) (system, lastUser string, wrote bool, err error), reply func(http.ResponseWriter, fleetAnswer)) *httptest.Server {
 	var mu sync.Mutex
 	calls := 0
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		system, lastUser, wrote, err := decode(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		reply(w, fleetRoute(system, lastUser, wrote, n))
+	}))
+}
+
+// fleetMock is the scripted model in the OpenAI chat shape.
+func fleetMock(t *testing.T) *httptest.Server {
+	t.Helper()
+	return fleetServer(func(r *http.Request) (system, lastUser string, wrote bool, err error) {
 		var req struct {
 			Messages []struct {
 				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 			return
 		}
-		var system, lastUser string
-		wrote := false
 		for _, m := range req.Messages {
 			switch m.Role {
 			case "system":
@@ -47,33 +92,14 @@ func fleetMock(t *testing.T) *httptest.Server {
 				wrote = true
 			}
 		}
-		switch {
-		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
-		case strings.Contains(system, "goal-progress evaluator"):
-			writeChat(w, "GOAL_COMPLETE")
-		case strings.Contains(lastUser, "reviewing a coding agent"):
-			writeChat(w, "- hello.txt lives at the repository root")
-		case strings.Contains(lastUser, "final report") || strings.Contains(lastUser, "Write a report"):
-			writeChat(w, "Added hello.txt and read it back.")
-		default:
-			mu.Lock()
-			calls++
-			n := calls
-			mu.Unlock()
-			if !wrote && strings.Contains(system, "REJECTER-PERSONA") {
-				// Records its decision on the board; the evaluator above would
-				// call this goal complete, so only the record can reject.
-				writeToolCallChat(w, "KanbanOutcome", map[string]any{"outcome": "failure", "reason": "hello.txt has no trailing newline"}, "Rejecting the branch.\n")
-				return
-			}
-			if !wrote && strings.Contains(system, "WRITER-PERSONA") {
-				writeToolCallChat(w, "Write", map[string]any{"file_path": "hello.txt", "content": "hello\n"}, "Plan:\n1. Add hello.txt\n[DONE:1]\n")
-				return
-			}
-			writeToolCallChat(w, "Read", map[string]any{"file_path": "hello.txt", "limit": 10 + n}, "Plan:\n1. Check hello.txt\n[DONE:1]\n")
+		return
+	}, func(w http.ResponseWriter, a fleetAnswer) {
+		if a.tool == "" {
+			writeChat(w, a.text)
+			return
 		}
-	}))
+		writeToolCallChat(w, a.tool, a.args, a.text)
+	})
 }
 
 const fleetBuilderMD = `---
@@ -120,6 +146,8 @@ type fleetEnv struct {
 	wt    string
 	url   string
 	store *kanban.Store
+	// keyEnv is the API key variable the surface under test reads.
+	keyEnv string
 }
 
 func newFleetEnv(t *testing.T) *fleetEnv {
@@ -129,7 +157,7 @@ func newFleetEnv(t *testing.T) *fleetEnv {
 	}
 	srv := fleetMock(t)
 	t.Cleanup(srv.Close)
-	e := &fleetEnv{t: t, repo: t.TempDir(), home: t.TempDir(), wt: t.TempDir(), url: srv.URL}
+	e := &fleetEnv{t: t, repo: t.TempDir(), home: t.TempDir(), wt: t.TempDir(), url: srv.URL, keyEnv: "OPENAI_API_KEY"}
 	e.store = kanban.Open(filepath.Join(e.home, "kanban"))
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "main"},
@@ -160,7 +188,7 @@ func (e *fleetEnv) belai(args ...string) (string, string, int) {
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, args...)
 	cmd.Dir = e.repo
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+e.url, "OPENAI_API_KEY=test",
+	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+e.url, e.keyEnv+"=test",
 		"BELAI_HOME="+e.home, "BELAI_WORKTREES_DIR="+e.wt)
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	code := 0
