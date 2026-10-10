@@ -151,7 +151,7 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-guardrails` | posture guardrails (default on); `-guardrails=false` turns every gate off for this run |
 | `-ask-permission` | the permission-ask gate (default on); `-ask-permission=false` resolves asks to allow |
 | `-firewall` | route LLM traffic through the active AI Firewall (see `/firewall`) |
-| `-tools` | enable tool execution for this run |
+| `-tools` | enable tool execution (default on); `-tools=false` disables |
 | `-defer-tools` | advertise core tools in full and load the rest on demand with `ToolSearch` (default on); `-defer-tools=false` sends every tool definition on every request |
 | `-dangerously-yolo-everything` | ignore every posture gate |
 | `-allow-unsafe-tool-result` | ignore unsafe tool results |
