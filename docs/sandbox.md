@@ -146,12 +146,13 @@ Under Landlock, which has no mount or network namespaces:
 - Writes under `/proc` are denied; bubblewrap's fresh `/proc` allowed a few.
 - A directory on the way to a hidden path, or to a read-only path inside a
   writable one, takes no new entries at its top. A fleet worker's git common
-  dir is read-only at its top, with the item's own ref, reflog and worktree
-  directories writable beneath. Its commits stand, but each one ends with
-  `error: Unable to create '.../packed-refs.lock': Permission denied`: git
-  takes that lock to clear its cherry-pick and revert state, and a top the
-  model could create and remove files in would also let it replace `config`
-  and `HEAD`.
+  dir is read-only, with the item's own ref and reflog directories writable
+  beneath. The worker's git runs on a private copy of the admin and common
+  directories (see [fleet](fleet.md#git-in-the-worktree)), so the lock git
+  takes on `packed-refs` at the end of every commit (it deletes `AUTO_MERGE`
+  through a ref transaction, and git 2.56 locks `packed-refs` for any
+  deletion; git's development branch no longer does for such refs) is taken in a directory the worker may write, and a commit prints
+  nothing.
 - A kernel at ABI 1 cannot move a file between directories inside the
   sandbox (that needs ABI 2).
 

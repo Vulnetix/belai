@@ -1000,15 +1000,22 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     - an explicit `--git-dir`/`--work-tree`, with the worktree's `.git`
       pointer checked unchanged before each call.
   - **The model's own git.** It may commit on the item's branch inside the
-    OS sandbox (`fleet.Workspace.Sandbox`, layered mounts):
-    - every existing entry of the git common dir is read-only, including
-      config, hooks, refs, objects and the main checkout's index;
+    OS sandbox (`fleet.Workspace.Sandbox`), on a private admin dir and a
+    private common dir built beside the worktree (`GIT_DIR`):
+    - the shared common dir and the worktree's admin dir are read-only,
+      including config, hooks, refs, objects, the other worktrees and the admin
+      dir's `commondir` (the harness's git reads it to find the config it
+      trusts, so a model that could write it would redirect that git);
+    - the private common dir links to the shared entries, but `packed-refs` is
+      a private copy, so the lock git takes there on every commit never touches
+      the shared one;
     - new objects go to a private store (`GIT_OBJECT_DIRECTORY`) that the
       harness copies in, never overwriting, before any push;
     - only the item's own `refs/heads/belai/K-xxxxxx/` and reflogs, and the
-      worktree's admin dir, are writable;
-    - `Settle` removes anything the model created at the top of the common
-      dir after each turn.
+      private dir, are writable;
+    - `Settle` copies the objects, drops the private admin dir, rebuilds the
+      worktree's index from the branch, and removes anything found at the top of
+      the common dir that was not there before.
     The harness commits what is left, after checking HEAD is still the
     item's branch.
   - **Files are placed by the harness and permitted by the profile.** A

@@ -511,9 +511,9 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	worktreeGitInsideTheSandbox(t, nil, "")
 }
 
-// The same under Landlock, which has no mount layering: the common dir ends
-// read-only at its top with this item's paths writable beneath, and git must
-// still commit, log and diff there. A bubblewrap that cannot work goes first
+// The same under Landlock, which has no mount layering and no per-name
+// rights: git must still commit, log and diff there, and commit must print
+// nothing on stderr. A bubblewrap that cannot work goes first
 // on PATH so the probe falls through to Landlock. The repository is made
 // outside /tmp, as a real one is: Landlock has no private /tmp, and a
 // read-only path beneath the host's /tmp would make its top read-only, which
@@ -541,13 +541,11 @@ func TestWorktreeGitInsideTheSandboxUnderLandlock(t *testing.T) {
 	if name, _ := sandbox.Backend(); name != "landlock" {
 		t.Skipf("no Landlock here: %s", sandbox.BackendProblem())
 	}
-	// git commit ends by deleting CHERRY_PICK_HEAD and REVERT_HEAD through a
-	// ref transaction, and files_delete_refs takes packed-refs.lock at the top
-	// of the common dir first, which is read-only here. git reports that as a
-	// non-fatal error and the commit stands. Allowing the lock would mean
-	// create and remove rights at the top, which is what keeps config and
-	// HEAD safe, so the line is the price.
-	worktreeGitInsideTheSandbox(t, []string{"TMPDIR=/tmp"}, "packed-refs.lock")
+	// git commit ends by deleting AUTO_MERGE through a ref transaction, and
+	// git 2.56 locks packed-refs for any deletion. The model's git runs
+	// on a private common dir with its own packed-refs, so the lock is taken
+	// where it may write and commit says nothing.
+	worktreeGitInsideTheSandbox(t, []string{"TMPDIR=/tmp"}, "")
 }
 
 // worktreeGitInsideTheSandbox is the body of both tests; extraEnv is added to
@@ -593,10 +591,21 @@ func worktreeGitInsideTheSandbox(t *testing.T, extraEnv []string, tolerated stri
 		}
 	}
 	before := ws.RootEntries()
+	packedBefore, _ := os.ReadFile(filepath.Join(ws.commonDir, "packed-refs"))
 	os.WriteFile(filepath.Join(ws.Dir, "agent.txt"), []byte("by the agent\n"), 0o644)
 	if out, err := sh("git status --short && git add agent.txt && git commit -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "fatal:") || errorLineOtherThan(out, tolerated) {
 		t.Fatalf("git inside the sandbox: %v\n%s", err, out)
 	}
+	// From a subdirectory of the worktree, as a shell often is, git still finds
+	// its repository and knows where in the tree it stands.
+	sub := filepath.Join(ws.Dir, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := sh("cd sub && git rev-parse --show-prefix && git rev-parse --is-inside-work-tree"); err != nil || !strings.Contains(out, "sub/") || !strings.Contains(out, "true") {
+		t.Fatalf("git from a subdirectory: %v\n%s", err, out)
+	}
+	os.RemoveAll(sub)
 	objects := filepath.Join(ws.commonDir, "objects")
 	for name, script := range map[string]string{
 		"move main":          "git update-ref refs/heads/main HEAD",
@@ -613,21 +622,63 @@ func worktreeGitInsideTheSandbox(t *testing.T, extraEnv []string, tolerated stri
 	if _, err := os.Stat(filepath.Join(other, "a1")); err != nil {
 		t.Fatal("another item's branch was deleted")
 	}
-	// A file planted at the top of the common dir is removed by Settle. Under
-	// Landlock the top is read-only and nothing can be planted there at all.
-	planted := true
-	if out, err := sh("echo deadbeef > " + filepath.Join(ws.commonDir, "MERGE_HEAD")); err != nil {
-		if name, _ := sandbox.Backend(); name != "landlock" {
-			t.Fatalf("planting MERGE_HEAD: %v %s", err, out)
+	// Nothing can be created at the top of the shared git dir, under any backend:
+	// the model's git runs on a private copy of it.
+	if out, err := sh("echo deadbeef > " + filepath.Join(ws.commonDir, "MERGE_HEAD")); err == nil {
+		t.Fatalf("planted MERGE_HEAD at the top of the shared git dir: %s", out)
+	}
+	// The worktree's admin dir is what the harness's own git is pinned to, and
+	// its commondir file decides which config that git trusts: the model must
+	// not be able to write any of it.
+	for name, script := range map[string]string{
+		"rewrite commondir":     "echo " + ws.Dir + " > " + filepath.Join(ws.gitDir, "commondir"),
+		"rewrite gitdir":        "echo " + ws.Dir + " > " + filepath.Join(ws.gitDir, "gitdir"),
+		"rewrite HEAD":          "echo 'ref: refs/heads/other' > " + filepath.Join(ws.gitDir, "HEAD"),
+		"add a worktree config": "echo '[core]' > " + filepath.Join(ws.gitDir, "config.worktree"),
+		"rewrite the index":     "echo x > " + filepath.Join(ws.gitDir, "index"),
+	} {
+		if out, err := sh(script); err == nil {
+			t.Errorf("%s succeeded inside the sandbox: %s", name, out)
 		}
-		planted = false
+	}
+	if got, err := git(ctx, ws.run, ws.Dir, "rev-parse", "--git-common-dir"); err != nil {
+		t.Fatalf("harness git: %v", err)
+	} else {
+		if !filepath.IsAbs(got) {
+			got = filepath.Join(ws.Dir, got)
+		}
+		gotReal, _ := filepath.EvalSymlinks(got)
+		wantReal, _ := filepath.EvalSymlinks(ws.commonDir)
+		if gotReal != wantReal {
+			t.Fatalf("the harness's git was redirected to %s, want %s", gotReal, wantReal)
+		}
+	}
+	// A stray at the top of the shared dir (from anything other than the
+	// sandboxed model) is still removed by Settle.
+	if err := os.WriteFile(filepath.Join(ws.commonDir, "MERGE_HEAD"), []byte("deadbeef\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	removed, err := ws.Settle(before)
-	if err != nil || slices.Contains(removed, "MERGE_HEAD") != planted {
+	if err != nil || !slices.Contains(removed, "MERGE_HEAD") {
 		t.Fatalf("settle: %v %v", removed, err)
 	}
 	if _, err := os.Stat(filepath.Join(ws.commonDir, "MERGE_HEAD")); err == nil {
 		t.Fatal("MERGE_HEAD survived")
+	}
+	// The shared packed-refs is the model's to read, never to change, and no
+	// lock was left at the top of the shared dir.
+	if packedAfter, _ := os.ReadFile(filepath.Join(ws.commonDir, "packed-refs")); !bytes.Equal(packedBefore, packedAfter) {
+		t.Fatalf("the shared packed-refs changed:\n%s\n--\n%s", packedBefore, packedAfter)
+	}
+	for name := range ws.RootEntries() {
+		if strings.HasSuffix(name, ".lock") {
+			t.Fatalf("a lock was left at the top of the shared git dir: %s", name)
+		}
+	}
+	// The harness's own index was rebuilt from the branch the model moved: what
+	// the model committed is not reported as a change.
+	if out, err := git(ctx, ws.run, ws.Dir, "status", "--short"); err != nil || out != "" {
+		t.Fatalf("status after settle: %q %v", out, err)
 	}
 	// Settled, the model's commit is in the shared store: the harness sees it.
 	if n := ws.FilesChanged(ctx); n != 1 {
@@ -870,5 +921,124 @@ func TestSetPausedRefusesAnUnsafeID(t *testing.T) {
 	}
 	if !ValidID("a-1") || reg.Paused("a-1") {
 		t.Fatal("a fresh worker is paused")
+	}
+}
+
+// The model's git runs on a private admin dir and a private common dir built
+// beside the worktree; the shared ones are only linked to.
+func TestPrivateGitLayout(t *testing.T) {
+	testEnv(t)
+	repo := gitRepo(t)
+	ctx := context.Background()
+	ws, err := PrepareWorktree(ctx, repo, kanban.Item{ID: "6f9a2c00-0000-4000-8000-000000000000", Title: "t"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Remove(ctx)
+	// A shared packed-refs with a ref in it, as a clone leaves.
+	packed := "# pack-refs with: peeled fully-peeled sorted \n" + ws.Base + " refs/heads/packed-only\n"
+	if err := os.WriteFile(filepath.Join(ws.commonDir, "packed-refs"), []byte(packed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mounts, env := ws.Sandbox()
+	priv := ws.privateGit()
+	if filepath.Dir(priv) != filepath.Dir(ws.Dir) || strings.HasPrefix(priv, ws.Dir+string(os.PathSeparator)) {
+		t.Fatalf("the private git dir must sit beside the worktree, not in it: %s", priv)
+	}
+	for _, want := range []string{"GIT_DIR=" + filepath.Join(priv, "admin"), "GIT_WORK_TREE=" + ws.Dir, "GIT_OBJECT_DIRECTORY=" + ws.privateObjects()} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env lacks %s: %v", want, env)
+		}
+	}
+	// Only the item's refs and reflogs and the private dir are writable.
+	var writable []string
+	for _, m := range mounts {
+		if m.Writable {
+			writable = append(writable, m.Path)
+		}
+	}
+	slices.Sort(writable)
+	want := []string{
+		filepath.Join(ws.commonDir, "logs", "refs", "heads", filepath.FromSlash(ws.branchDir())),
+		priv,
+		filepath.Join(ws.commonDir, "refs", "heads", filepath.FromSlash(ws.branchDir())),
+	}
+	slices.Sort(want)
+	if !slices.Equal(writable, want) {
+		t.Fatalf("writable mounts: %v, want %v", writable, want)
+	}
+	for _, m := range mounts {
+		if m.Path == ws.gitDir || m.Path == ws.commonDir && m.Writable {
+			t.Fatalf("the shared git dir must never be writable: %+v", m)
+		}
+	}
+
+	common := filepath.Join(priv, "common")
+	top, _ := os.ReadDir(ws.commonDir)
+	for _, e := range top {
+		p := filepath.Join(common, e.Name())
+		fi, err := os.Lstat(p)
+		if err != nil {
+			t.Fatalf("private common lacks %s", e.Name())
+		}
+		if e.Name() == "packed-refs" {
+			if !fi.Mode().IsRegular() {
+				t.Errorf("packed-refs must be a private copy, not a link")
+			}
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("%s must be a link to the shared entry", e.Name())
+		}
+		if dest, _ := os.Readlink(p); dest != filepath.Join(ws.commonDir, e.Name()) {
+			t.Errorf("%s points at %s", e.Name(), dest)
+		}
+	}
+	if got, _ := os.ReadFile(filepath.Join(common, "packed-refs")); string(got) != packed {
+		t.Errorf("the private packed-refs must hold the shared refs, got %q", got)
+	}
+	admin := filepath.Join(priv, "admin")
+	if fi, err := os.Lstat(filepath.Join(admin, "HEAD")); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("HEAD must be a regular file, a symlink HEAD is refused by git: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(admin, "commondir")); strings.TrimSpace(string(b)) != "../common" {
+		t.Errorf("commondir: %q", b)
+	}
+
+	// The rounds of one turn share the model's admin dir (its index carries the
+	// work); the common dir follows the shared one.
+	marker := filepath.Join(admin, "ORIG_HEAD")
+	if err := os.WriteFile(marker, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.commonDir, "packed-refs"), []byte(packed+ws.Base+" refs/heads/added-later\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws.Sandbox()
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("the admin dir must survive the next round: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(common, "packed-refs")); !strings.Contains(string(got), "added-later") {
+		t.Errorf("the private packed-refs must follow the shared one each round: %q", got)
+	}
+
+	// Settle ends the turn: the admin dir goes, so the next turn starts from the worktree's.
+	if _, err := ws.Settle(ws.RootEntries()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(admin); err == nil {
+		t.Error("Settle must drop the model's admin dir")
+	}
+	ws.Sandbox()
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the next turn must get a fresh admin dir")
+	}
+
+	if err := ws.Remove(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(priv); err == nil {
+		t.Error("Remove must delete the private git dir")
 	}
 }
