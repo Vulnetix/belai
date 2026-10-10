@@ -352,39 +352,49 @@ func (w *Workspace) branchDir() string {
 	return rel
 }
 
-// privateObjects is where the model's own git writes new objects: this
-// worktree's admin dir, never the shared store.
-func (w *Workspace) privateObjects() string { return filepath.Join(w.gitDir, "objects") }
+// privateGit is where everything the model's own git may write lives: a
+// private admin dir, a private common dir and a private object store. It
+// sits beside the worktree, outside the checkout and outside the repository,
+// so `git status` never sees it and the harness never reads from it except to
+// copy objects (absorbObjects).
+func (w *Workspace) privateGit() string { return w.Dir + ".belai-git" }
 
-// Sandbox is what the model's own git needs inside the OS sandbox: ordered
-// mounts, and environment for its git.
+// privateObjects is where the model's own git writes new objects: never the
+// shared store.
+func (w *Workspace) privateObjects() string { return filepath.Join(w.privateGit(), "objects") }
+
+// Sandbox is what the model's own git needs inside the OS sandbox: mounts,
+// and environment for its git.
 //
-// The mounts are layered:
+// The model's git does not run on the repository's own admin and common
+// dirs. It runs on private ones (GIT_DIR) that the harness builds beside the
+// worktree, and the real ones stay read-only under the sandbox's read-only
+// root:
 //
-//  1. the git common dir, writable, so git can create lock files there
-//     (packed-refs.lock when a ref is deleted or packed, gc's own files);
-//  2. every entry already in it, read-only — config, HEAD, index, hooks,
-//     info, refs, logs, objects, the other worktrees, and any in-progress
-//     state of the main checkout. A read-only mount cannot be written or
-//     renamed over, so a model cannot plant a hook or config, move main,
-//     or corrupt the object store. Anything it creates alongside them is
-//     removed by Settle after the turn;
-//  3. writable again, only this item's ref directory and its reflogs, and
-//     this worktree's own admin dir (its HEAD, index and private objects).
+//   - the private admin dir has its own HEAD, index and reflog, copied from the
+//     worktree's at the start and dropped by Settle, and a commondir file that
+//     names the private common dir;
+//   - the private common dir is a symlink to every entry at the top of the real
+//     common dir (config, hooks, refs, logs, objects, other worktrees...), so
+//     reads see the real repository, except packed-refs, which is a private
+//     copy. git takes packed-refs.lock at the top of the common dir on every
+//     commit (it deletes AUTO_MERGE through a ref transaction, and git 2.56 locks
+//     packed-refs for any deletion; its development branch no longer does for
+//     root refs), so the lock lands in a directory the model may write and the
+//     shared packed-refs is never touched;
+//   - the only shared paths that are writable are the item's own ref directory
+//     and its reflogs, which is where a commit on its branch lands.
 //
-// Under bubblewrap and sandbox-exec the layers apply as written. Landlock
-// cannot take rights away beneath a grant, so there the common dir's top is
-// read-only and only the paths of step 3 are writable: tighter, and enough,
-// because a loose ref update, the index, HEAD and the private objects all
-// live in those paths. One wart: git commit ends by deleting the
-// CHERRY_PICK_HEAD and REVERT_HEAD pseudo-refs, and that takes
-// packed-refs.lock at the top first, so under Landlock every commit prints
-// "error: Unable to create '.../packed-refs.lock': Permission denied" and
-// stands all the same. gc.auto is off for the model's git either way, so it
-// never tries to write gc.log or gc.pid at the top.
+// The model cannot change anything the harness's own git reads: the worktree's
+// admin dir, with its commondir file that decides which config the harness's git
+// trusts, is read-only like the rest of the common dir. A hook, a config key or a
+// filter driver planted by the model reaches only the model's own git, which runs
+// inside the sandbox. This works the same under every backend: there is no
+// layering to apply, so Landlock needs no special case.
 //
-// The environment points git at the private object store, with the shared
-// store as a read-only alternate; Settle copies new objects across.
+// The environment points git at the private object store, with the shared store
+// as a read-only alternate; Settle copies new objects across and rebuilds the
+// worktree's index from the branch the model may have moved.
 func (w *Workspace) Sandbox() (mounts []sandbox.Mount, env []string) {
 	if !w.Worktree || w.commonDir == "" {
 		return nil, nil
@@ -394,31 +404,99 @@ func (w *Workspace) Sandbox() (mounts []sandbox.Mount, env []string) {
 	// A mount needs its target to exist.
 	_ = os.MkdirAll(refs, 0o755)
 	_ = os.MkdirAll(logs, 0o755)
-	for _, d := range []string{"pack", "info"} {
-		_ = os.MkdirAll(filepath.Join(w.privateObjects(), d), 0o755)
+	if err := w.preparePrivateGit(); err != nil {
+		// Without a private repository the model gets none: the worktree's own
+		// read-only one still answers status, diff and log.
+		return nil, nil
 	}
-	packed := filepath.Join(w.commonDir, "packed-refs")
-	if _, err := os.Stat(packed); errors.Is(err, os.ErrNotExist) {
-		// An empty packed-refs is valid; with it present and read-only, a
-		// model cannot create one listing a ref of its choosing.
-		_ = os.WriteFile(packed, nil, 0o644)
+	priv := w.privateGit()
+	// The common dir (the worktree's admin dir is inside it) is listed read-only
+	// first: where the sandbox hides a directory such as /tmp, that puts the real
+	// repository back, still read-only, before the writable paths beneath it.
+	mounts = []sandbox.Mount{
+		{Path: w.commonDir},
+		{Path: refs, Writable: true},
+		{Path: logs, Writable: true},
+		{Path: priv, Writable: true},
 	}
-	mounts = []sandbox.Mount{{Path: w.commonDir, Writable: true}}
-	entries, _ := os.ReadDir(w.commonDir)
-	for _, e := range entries {
-		mounts = append(mounts, sandbox.Mount{Path: filepath.Join(w.commonDir, e.Name())})
-	}
-	mounts = append(mounts,
-		sandbox.Mount{Path: refs, Writable: true},
-		sandbox.Mount{Path: logs, Writable: true},
-		sandbox.Mount{Path: w.gitDir, Writable: true},
-	)
 	env = []string{
+		"GIT_DIR=" + filepath.Join(priv, "admin"),
+		"GIT_WORK_TREE=" + w.Dir,
 		"GIT_OBJECT_DIRECTORY=" + w.privateObjects(),
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES=" + filepath.Join(w.commonDir, "objects"),
 		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
 	}
 	return mounts, env
+}
+
+// preparePrivateGit builds what Sandbox describes. The object store is kept
+// between calls, and so is the admin dir (the rounds of one turn share the
+// model's index); the common dir is rebuilt each time so entries added to the
+// shared one, and its packed-refs, are current.
+func (w *Workspace) preparePrivateGit() error {
+	priv := w.privateGit()
+	admin := filepath.Join(priv, "admin")
+	common := filepath.Join(priv, "common")
+	for _, d := range []string{"pack", "info"} {
+		if err := os.MkdirAll(filepath.Join(w.privateObjects(), d), 0o755); err != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(common); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(common, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(w.commonDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == "packed-refs" {
+			continue
+		}
+		if err := os.Symlink(filepath.Join(w.commonDir, e.Name()), filepath.Join(common, e.Name())); err != nil {
+			return err
+		}
+	}
+	// A copy, not an empty file: after a clone most refs, the main branch
+	// included, live only in packed-refs. An absent one is an empty one.
+	packed, err := os.ReadFile(filepath.Join(w.commonDir, "packed-refs"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(common, "packed-refs"), packed, 0o644); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(admin); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Join(admin, "refs"), 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(admin, "logs"), 0o755); err != nil {
+		return err
+	}
+	// A symlink as HEAD is read as the legacy symlink form and refused, so HEAD
+	// is a copy. A commit moves the branch's ref, never the HEAD file.
+	for _, name := range []string{"HEAD", "index", "gitdir"} {
+		data, err := os.ReadFile(filepath.Join(w.gitDir, name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(admin, name), data, 0o644); err != nil {
+			return err
+		}
+	}
+	if err := os.Symlink(w.privateObjects(), filepath.Join(admin, "objects")); err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(admin, "commondir"), []byte("../common\n"), 0o644)
 }
 
 // RootEntries lists the git common dir's top level, for Settle.
@@ -475,11 +553,14 @@ func (w *Workspace) absorbObjects() error {
 }
 
 // Settle runs after the model's turn, before the harness touches git: it
-// copies the objects the model's git wrote into the shared store, and
-// removes anything the model created at the top of the git common dir
-// (before is RootEntries from before the turn) — a MERGE_HEAD or shallow
-// file there would change the user's main checkout. It returns the names it
-// removed.
+// copies the objects the model's git wrote into the shared store, drops the
+// model's private admin dir and rebuilds the worktree's own index from the
+// branch (the model's commits moved the branch, not the index the harness's git
+// reads), and removes anything found at the top of the git common dir that was
+// not there before (before is RootEntries from before the turn). The top is
+// read-only inside the sandbox, so that last step is a safeguard, not the
+// protection: a MERGE_HEAD or shallow file there would change the user's main
+// checkout. It returns the names it removed.
 func (w *Workspace) Settle(before map[string]bool) ([]string, error) {
 	if !w.Worktree || w.commonDir == "" {
 		return nil, nil
@@ -494,6 +575,17 @@ func (w *Workspace) Settle(before map[string]bool) ([]string, error) {
 		}
 	}
 	sort.Strings(removed)
+	// The model's HEAD, index and reflog were its own; the next turn starts from
+	// the worktree's, as the harness left them.
+	_ = os.RemoveAll(filepath.Join(w.privateGit(), "admin"))
+	if w.run != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if _, rerr := w.run(ctx, w.Dir, "git", "reset", "-q"); rerr != nil && err == nil {
+			err = fmt.Errorf("rebuilding the worktree's index: %w", rerr)
+		}
+	}
+
 	return removed, err
 }
 
@@ -841,6 +933,7 @@ func (w *Workspace) Remove(ctx context.Context) error {
 	if !w.Worktree {
 		return nil
 	}
+	_ = os.RemoveAll(w.privateGit())
 	if _, err := git(ctx, w.repoRun, w.repo, "worktree", "remove", "--force", w.Dir); err != nil {
 		// A worktree whose .git was tampered with may not remove cleanly:
 		// drop the directory and let git prune its record.

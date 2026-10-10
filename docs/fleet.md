@@ -1072,23 +1072,33 @@ beside `-prompt` is refused.
 
 A worker's working directory is a git worktree on its item's branch. Inside
 the OS sandbox the agent can use git normally there: `status`, `diff`, `log`,
-`show`, `add` and `commit`. The sandbox layers the repository's `.git`:
+`show`, `add` and `commit`. The agent's git does not run on the repository's
+own `.git`; it runs on a private copy built beside the worktree
+(`<worktree>.belai-git`, outside the checkout, so `git status` never lists it):
 
-- git may create files at the top of `.git` (it takes `packed-refs.lock` on
-  every commit), but every entry already there is read-only: `config`,
-  `HEAD`, the main checkout's `index`, `hooks`, `info`, `refs`, `logs`,
-  `objects` and the other worktrees. A read-only entry cannot be written or
-  renamed over. After each turn the harness removes anything the agent
-  created there, such as a `MERGE_HEAD` or `shallow` that would change your
-  main checkout.
-- The agent's git writes new objects to a private store in its worktree's
-  admin directory, reading the shared store as a read-only alternate. After
-  the turn, and before any push, the harness copies the new objects in,
-  never overwriting one. An agent cannot delete or rewrite your objects.
+- The repository's `.git`, including the worktree's own admin directory, is
+  read-only: `config`, `HEAD`, `hooks`, `info`, `refs`, `logs`, `objects`, the
+  other worktrees and the admin directory's `commondir`, `gitdir`, `HEAD` and
+  index. The harness's own git is pinned to that admin directory and reads its
+  `commondir` to find the config it trusts, so an agent that could rewrite it
+  would make the harness run the agent's config outside the sandbox.
+- The agent's git sees a private admin directory (its own `HEAD`, index and
+  reflog, copied from the worktree's at the start of the turn) and a private
+  common directory that links to every entry of the shared one, except
+  `packed-refs`, which is a copy taken at the start of each round. git takes
+  `packed-refs.lock` at the top of the common directory on every commit, and
+  the lock lands in the private copy, so a commit prints nothing and the shared
+  file is never touched. Because the agent works from a copy, its view of
+  packed refs is as of the start of the round.
+- The agent's git writes new objects to a private store in the same place,
+  reading the shared store as a read-only alternate. After the turn, and before
+  any push, the harness copies the new objects in, never overwriting one, drops
+  the agent's private admin directory and rebuilds the worktree's index from
+  the branch the agent moved. An agent cannot delete or rewrite your objects.
 - Writable are only the item's own branch directory
-  (`refs/heads/belai/K-xxxxxx/` and its reflogs), the worktree's admin
-  directory (its `HEAD` and index), and the worktree itself. No agent can
-  touch `main`, another branch, or another item's branch.
+  (`refs/heads/belai/K-xxxxxx/` and its reflogs), the private directory, and
+  the worktree itself. No agent can touch `main`, another branch, or another
+  item's branch.
 
 Each turn carries a workspace note (harness facts only) with:
 
