@@ -138,9 +138,12 @@ func fetchMetadata(ctx context.Context) (map[string]any, error) {
 }
 
 var (
-	identPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-	versionPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[A-Za-z0-9.]{1,20})?$`)
-	consolePattern = regexp.MustCompile(`^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.vulnetix\.com$`)
+	identPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	// An extension reads as its name, or registry:name@version when it is not the
+	// image's pinned nixpkgs: nixhub:jq@1.7.1, flakehub:org/flake#cli@0.1.5.
+	extensionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/#+-]{0,127}$`)
+	versionPattern   = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[A-Za-z0-9.]{1,20})?$`)
+	consolePattern   = regexp.MustCompile(`^https://[a-z0-9-]+(\.[a-z0-9-]+)*\.vulnetix\.com$`)
 )
 
 // section is one object of the tree, or nil.
@@ -175,11 +178,14 @@ func count(v any, max int) (int, bool) {
 }
 
 // idents keeps the identifiers of a list, sorted, at most 40.
-func idents(v any) []string {
+func idents(v any) []string { return listed(v, identPattern) }
+
+// listed reads a list of strings that each match the pattern, sorted and capped.
+func listed(v any, pattern *regexp.Regexp) []string {
 	list, _ := v.([]any)
 	var out []string
 	for _, e := range list {
-		if s := matching(e, identPattern); s != "" {
+		if s := matching(e, pattern); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -289,7 +295,7 @@ func renderEnvironment(v1 map[string]any) string {
 		if p := idents(st["packs"]); len(p) > 0 {
 			parts = append(parts, "packs "+strings.Join(p, ", "))
 		}
-		if x := idents(st["extensions"]); len(x) > 0 {
+		if x := listed(st["extensions"], extensionPattern); len(x) > 0 {
 			parts = append(parts, "extensions "+strings.Join(x, ", "))
 		}
 		if len(parts) > 0 {

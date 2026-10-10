@@ -169,7 +169,8 @@ returns this (a mocked sandbox):
       "node"
     ],
     "extensions": [
-      "ripgrep"
+      "ripgrep",
+      "nixhub:jq@1.7.1"
     ],
     "reserve-percent": 20
   }
@@ -190,7 +191,7 @@ Environment (facts the harness read from the Pix Sandbox this session runs on; t
 - Sessions: up to 4 web sessions, up to 28 fleet workers, web controls on.
 - Code mode model: unset, so code mode runs on the main model (Pix Smart unless the launch config says otherwise); the launch config may set `code.model` in `settings.json` to Smart, Fast or a provider and model.
 - Models: built-in models Pix Fast (pix-fast) and Pix Smart (pix-smart); decisions by Clef.
-- Settings: egress allow_all_logged; packs go, node; extensions ripgrep.
+- Settings: egress allow_all_logged; packs go, node; extensions nixhub:jq@1.7.1, ripgrep.
 Live values (launch state, monthly token use) are readable with a GET to http://169.254.169.254/pix/v1/
 ```
 
