@@ -36,20 +36,20 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	// 20 fixed rows (the built-in MCP group's two among them: the Vulnetix row
-	// needs credentials), then one routing row per role-manager use case, so a
+	// 23 fixed rows (the code-mode group's three, and the built-in MCP group's
+	// two among them: the Vulnetix row needs credentials), then one routing row per role-manager use case, so a
 	// new use case adds a row without this count being edited by hand.
-	if want := 20 + len(routingUseCaseKeys()); len(rows) != want {
-		t.Fatalf("len(rows) = %d, want %d (20 fixed + %d use cases)", len(rows), want, len(routingUseCaseKeys()))
+	if want := 23 + len(routingUseCaseKeys()); len(rows) != want {
+		t.Fatalf("len(rows) = %d, want %d (23 fixed + %d use cases)", len(rows), want, len(routingUseCaseKeys()))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])
 	}
-	if rows[6].role != roleClassifier || rows[6].key != "kind" {
-		t.Fatalf("classifier kind row = %+v", rows[6])
+	if rows[9].role != roleClassifier || rows[9].key != "kind" {
+		t.Fatalf("classifier kind row = %+v", rows[9])
 	}
-	if rows[13].role != roleRouting || rows[13].key != "kind" {
-		t.Fatalf("routing kind row = %+v", rows[13])
+	if rows[16].role != roleRouting || rows[16].key != "kind" {
+		t.Fatalf("routing kind row = %+v", rows[16])
 	}
 	if last := rows[len(rows)-1]; last.role != roleMCP || last.key != "mcp_skip_ask" {
 		t.Fatalf("last row = %+v, want the built-in MCP group", last)

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/sessionctl"
@@ -100,6 +101,16 @@ func (a *App) runControl(line string) tea.Cmd {
 		return a.setOperatingMode(next.Mode)
 	case sessionctl.CtlModel:
 		a.addSystem(ch.Summary + " (this session)")
+		if next.CodeTier != cur.CodeTier || next.CodeProvider != cur.CodeProvider || next.CodeModel != cur.CodeModel {
+			code := config.CodeSettings{}
+			if a.settings.Code != nil {
+				code = *a.settings.Code
+			}
+			code.Model = &config.CodeModel{Tier: next.CodeTier, Provider: next.CodeProvider, Model: next.CodeModel}
+			a.settings.Code = &code
+			a.invalidateAgentSession()
+			return a.refreshProvider()
+		}
 		return a.applyModelProvider(next.Provider, next.Model, next.Effort)
 	case sessionctl.CtlEffort:
 		a.settings.Effort = next.Effort

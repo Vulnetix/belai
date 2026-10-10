@@ -130,9 +130,28 @@ The `code` key in settings:
 | `code.timeout_ms` | `120000` | wall-clock limit for one script (ceiling 600000) |
 | `code.max_calls` | `50` | nested tool calls per script (ceiling 500) |
 | `code.max_output_bytes` | `16384` | what one script may print (ceiling 262144) |
+| `code.model` | unset (Smart) | the model code-mode turns run on: `{"tier": "smart"}` (the main model), `{"tier": "fast"}` (the fast tier, `routing.fast_model`), or `{"provider": "...", "model": "..."}` from any available provider |
 
 A project settings file may turn `code.enabled` off and lower a limit, never
 turn code mode on or raise a limit.
+
+## Choosing the code-mode model
+
+By default code mode runs on the session's main model (Smart). Pick another in
+the `/model` screen's **Code mode** group: `use` cycles `smart`, `fast` and
+`custom`, and `custom` opens the provider and model pickers over every
+available provider. A pick is tested before it is saved, like the other groups,
+and saves with the routing group's scope (session, global or project).
+
+For one session, `/model code smart|fast|<provider> <model>` sets it without
+writing settings. The same command is a web control, so a `belai rc` session
+started with `--web-controls` takes it too.
+
+A web session on a self-hosted `belai rc` inherits `code.model` from the host's
+settings. A model chosen when starting the web session replaces the main model
+only; code-mode turns keep the code model. In a Pix Sandbox the launch config's
+Models section writes `code.model` into the sandbox's `settings.json`
+([pix-sandbox.md](pix-sandbox.md)).
 
 ## Limitations
 

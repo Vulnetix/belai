@@ -179,3 +179,26 @@ func TestModelChecksTheHost(t *testing.T) {
 		t.Fatal("model change without a checker")
 	}
 }
+
+func TestModelCodeControl(t *testing.T) {
+	env := Env{CheckModel: func(p, m, e string) string { return "" }}
+	st := State{Mode: "agent"}
+	ch, err := Parse("/model code fast", st, env)
+	if err != nil || ch.State.CodeTier != "fast" {
+		t.Fatalf("/model code fast: %+v, %v", ch.State, err)
+	}
+	ch, err = Parse("/model code openai gpt-x", ch.State, env)
+	if err != nil || ch.State.CodeTier != "" || ch.State.CodeProvider != "openai" || ch.State.CodeModel != "gpt-x" {
+		t.Fatalf("/model code openai gpt-x: %+v, %v", ch.State, err)
+	}
+	if ch.State.Provider != "" || ch.State.Model != "" {
+		t.Fatalf("the main model must not change: %+v", ch.State)
+	}
+	if _, err := Parse("/model code", st, env); err == nil {
+		t.Fatal("/model code needs an argument")
+	}
+	s := ch.State.Apply(config.Settings{})
+	if s.Code == nil || s.Code.Model == nil || s.Code.Model.Provider != "openai" {
+		t.Fatalf("Apply must overlay code.model: %+v", s.Code)
+	}
+}

@@ -10,7 +10,7 @@ because both are parsed by one table (`internal/sessionctl`).
 | Control | Command | Key | Values |
 | --- | --- | --- | --- |
 | Mode | `/mode agent\|plan\|goal\|code\|auto` | `shift+tab`, `f5` | cycles agent, plan, goal, code, auto ([code-mode.md](code-mode.md)) |
-| Model | `/model <provider> <model> [effort]` | `ctrl+q` | `ctrl+q` swaps between the main model and the fast tier |
+| Model | `/model <provider> <model> [effort]`, `/model code smart\|fast\|<provider> <model>` | `ctrl+q` | `ctrl+q` swaps between the main model and the fast tier; `/model code` sets the code-mode model ([code-mode.md](code-mode.md)) |
 | Reasoning effort | `/effort default\|<level>` | `f6` | the levels the model takes |
 | Guardrails | `/guardrails on\|off` | `f3` | on, off |
 | Ask | `/ask on\|off` | `f4` | on, off |

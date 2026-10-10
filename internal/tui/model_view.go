@@ -35,6 +35,8 @@ const (
 	// roleFast edits routing.fast_model: the fast tier that answers the
 	// one-token sentinel roles.
 	roleFast modelRole = "fast"
+	// roleCode edits code.model: the model code-mode turns run on.
+	roleCode modelRole = "code"
 	// rolePosture groups the session posture toggles (guardrails, ask,
 	// firewall, caveman). They always persist to the per-project preference
 	// file, so the group carries a fixed save target, not the agent's.
@@ -425,6 +427,7 @@ func (a *App) modelRows() []modelRow {
 	}})
 
 	rows = append(rows, a.fastRows()...)
+	rows = append(rows, a.codeRows()...)
 
 	// Classifier role.
 	cls := a.settings.Classifier
@@ -637,7 +640,7 @@ func (a *App) roleScope(role modelRole) string {
 		if a.modelState.classifierScope != "" {
 			return a.modelState.classifierScope
 		}
-	case roleRouting, roleFast:
+	case roleRouting, roleFast, roleCode:
 		if a.modelState.routingScope != "" {
 			return a.modelState.routingScope
 		}
@@ -741,6 +744,8 @@ func (a *App) modelGroupHeader(g modelGroup, w int) string {
 	switch g.role {
 	case roleFast:
 		name = "FAST TIER"
+	case roleCode:
+		name = "CODE MODE"
 	case rolePosture:
 		name = "SESSION POSTURE"
 	case roleMCP:
@@ -949,7 +954,7 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	// never offer a decision model (Jev, Clef), which cannot chat. Stored
 	// Jev routing targets still load, but resolve to the main model at
 	// runtime.
-	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast || a.modelState.pickingRole == roleAgent {
+	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast || a.modelState.pickingRole == roleCode || a.modelState.pickingRole == roleAgent {
 		catalog = filterOutDecisionsModels(name, catalog)
 	}
 	return name, filterModels(catalog, a.modelState.filter)
@@ -1239,6 +1244,8 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 					s.Model = id
 				},
 				func() { a.cfg.Provider, a.cfg.Model = prov, id })
+		case roleCode:
+			return a, a.setCodePick(prov, id)
 		case roleFast:
 			return a, a.stageRouting(roleFast, "model", "fast = "+prov+" · "+id, func(r *config.RoutingSettings) {
 				t := config.RoutingTarget{Model: id}
@@ -1292,6 +1299,8 @@ func (a *App) pickerProvider(role modelRole) string {
 		return a.cfg.Provider
 	case roleFast:
 		return a.fastProvider()
+	case roleCode:
+		return a.codeProvider()
 	case roleClassifier:
 		return a.classifierProvider()
 	case roleRouting:
@@ -1328,7 +1337,7 @@ func (a *App) cycleScope() tea.Cmd {
 	case roleClassifier:
 		opts = classifierScopeOptions
 		cur = a.modelState.classifierScope
-	case roleRouting, roleFast:
+	case roleRouting, roleFast, roleCode:
 		opts = classifierScopeOptions
 		cur = a.modelState.routingScope
 	default:
@@ -1341,7 +1350,7 @@ func (a *App) cycleScope() tea.Cmd {
 		a.modelState.agentScope = next
 	case roleClassifier:
 		a.modelState.classifierScope = next
-	case roleRouting, roleFast:
+	case roleRouting, roleFast, roleCode:
 		a.modelState.routingScope = next
 	}
 	return nil
@@ -1354,6 +1363,17 @@ func (a *App) changeModelRow() tea.Cmd {
 	}
 	if row.role == roleMCP {
 		return a.changeMCPRow(row.key)
+	}
+	if row.role == roleCode {
+		switch row.key {
+		case "use":
+			return a.cycleCodeUse(row.opts)
+		case "provider":
+			return a.openProviderPicker(roleCode, row.opts, a.codeProvider())
+		case "model":
+			return a.openCodeModelPicker()
+		}
+		return nil
 	}
 	if row.role == roleFast {
 		switch row.key {
@@ -1470,6 +1490,8 @@ func (a *App) unsetModelRow() tea.Cmd {
 		}
 	case roleFast:
 		return a.unsetFastRow(row.key)
+	case roleCode:
+		return a.unsetCodeRow()
 	case roleClassifier:
 		return a.unsetClassifierRow(row.key)
 	case roleRouting:
