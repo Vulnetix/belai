@@ -121,7 +121,7 @@ func main() {
 	noGitSync := flag.Bool("no-git-sync", false, "do not rebase the branch onto origin's default branch before a turn (git.sync in settings; /gitsync in the TUI)")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
-	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, or a custom name from settings.json")
+	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, groq, deepseek, fireworks, mistral, together, xai, moonshot, minimax, alibaba, or a custom name from settings.json")
 	detectMode := flag.Bool("detect-mode", false, "run the operating-mode classifier and report the decision")
 	verbose := flag.Bool("verbose", false, "print role-manager decisions to stderr")
 
