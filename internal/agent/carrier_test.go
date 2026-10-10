@@ -180,3 +180,29 @@ func TestBackgroundDefinitionCarriesItsFacts(t *testing.T) {
 		t.Fatalf("a hidden fact reached the carrier:\n%s", opts.ProfileText)
 	}
 }
+
+// A profile that fails to load drops its carrier block and nothing else: the
+// session still runs, and the options that do not depend on the profile (the
+// voice setting) survive the fallback.
+func TestMissingProfileKeepsTheOtherPromptOptions(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	on := true
+	d := rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "no-such-profile", AppendCarrier: true}
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{Caveman: &on})
+	if err != nil {
+		t.Fatalf("CarrierOptions: %v", err)
+	}
+	if opts.Carrier != prompt.CarrierNone || opts.ProfileText != "" {
+		t.Fatalf("carrier = %q text = %q, want none after a failed load", opts.Carrier, opts.ProfileText)
+	}
+	if !opts.Caveman {
+		t.Fatal("the caveman setting was dropped with the failed profile")
+	}
+	sys, err := prompt.System(opts)
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+	if !strings.Contains(sys, prompt.CavemanVoice) || strings.Contains(sys, "Active profile:") {
+		t.Fatalf("want the voice line and no carrier block:\n%s", sys)
+	}
+}

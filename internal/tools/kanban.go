@@ -507,7 +507,7 @@ func (t KanbanHandoff) Definition() Definition {
 		props["covers"] = Property{Type: "array", Items: &Property{Type: "string"}, Description: "The clause ids (C1, C2, ...) of the request this task covers. Required: every task must cover at least one."}
 	}
 	if t.Claim != nil && t.Claim.HandoffAuto {
-		props["clarity"] = Property{Type: "string", Enum: []string{ClarityClear, ClarityUnclear, ClaritySplit}, Description: "Your own view of the task. needs_clarification: a person should confirm what is meant. needs_split: it hides several independent changes. Either sends it to review. A clear, concise task with a runnable gate goes to the backlog for a builder."}
+		props["clarity"] = Property{Type: "string", Enum: []string{ClarityClear, ClarityUnclear, ClaritySplit}, Description: "Your own view of the task. needs_clarification: a person should confirm what is meant. needs_split: it hides several independent changes. Either sends it to review. A clear, concise task with a runnable gate goes to the backlog for whichever agent takes it."}
 	}
 	if t.Claim != nil && (t.Claim.GatesRequired || len(t.Claim.GateSuites) > 0) {
 		gate := gateProperty(t.Claim.GateSuites)

@@ -180,7 +180,7 @@ func TestASingleCardShowsItsGatesToTheWorker(t *testing.T) {
 	for _, want := range []string{
 		"acceptance gates:",
 		"- G1 [runnable go internal/parse TestLast] unmet: parser keeps the last record (exit 1: TestLast)",
-		"- G2 [manual, decided by a reviewer] met: wording reviewed",
+		"- G2 [manual, decided by the reviewing agent] met: wording reviewed",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("render lacks %q:\n%s", want, out)

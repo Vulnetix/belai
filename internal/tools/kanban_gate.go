@@ -46,7 +46,7 @@ func (KanbanGate) Kind() Kind { return KindKanbanWrite }
 func (t KanbanGate) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	c := t.Claim
 	if c == nil || !c.GateReview {
-		return Result{}, errors.New("KanbanGate is only available to a reviewer holding a claim")
+		return Result{}, errors.New("KanbanGate is only available to a worker that holds a claim and decides manual gates")
 	}
 	id, _ := argString(args, "gate")
 	id = strings.ToUpper(strings.TrimSpace(id))

@@ -86,7 +86,9 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, executePlan bool
 	opts.Caveman = set.Caveman != nil && *set.Caveman
 
 	if loadErr != nil {
-		return prompt.Options{}, nil
+		// The named profile, plan or goal did not load: carry on without a
+		// carrier block, but keep the options that do not depend on it.
+		return prompt.Options{Caveman: opts.Caveman}, nil
 	}
 	return opts, nil
 }
