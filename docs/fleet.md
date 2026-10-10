@@ -922,7 +922,11 @@ card and writes a VEX for it:
 | `false_positive`, `no_fix`, `needs_human` | patcher | `review` for the verifier, no branch to publish |
 | `fixed`, `false_positive` | verifier | `done`, VEX `fixed` or `not_affected` |
 | `no_fix`, `needs_human` | verifier | `blocked`, VEX `affected` or `under_investigation` |
-| `rejected` | verifier | back to `backlog` labelled `vuln`, one failed attempt, no VEX |
+| `rejected` | verifier | back to `backlog` labelled `vuln`, counted as a return, no VEX |
+
+The lists and labels are the built-in profiles' own `on_success` and `on_failure`
+routes: a profile that routes differently sends the card there instead. Only a
+card that needs a person is always `blocked`.
 
 A false positive needs evidence anyone can check independently and one of the
 five OpenVEX justifications; `no_fix` needs the list of what was tried. A

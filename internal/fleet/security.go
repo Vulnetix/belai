@@ -259,11 +259,11 @@ func (w *Worker) applyVerdict(ctx context.Context, o outcome, it kanban.Item, cl
 				o.verdict = kanban.VerdictFixed
 			}
 		case clean:
+			// Another verdict than fixed goes where the profile sends its success
+			// (the built-in patcher: review for the verifier, without a branch to
+			// publish), so what comes next is the profile's to decide.
 			o.failed = false
 			o.verdict = rec.Verdict
-			o.to = kanban.Review
-			o.addLabels = []string{kanban.LabelNeedsVerify}
-			o.dropLabels = []string{kanban.LabelVuln}
 			o.note = fmt.Sprintf("agent %s recorded verdict %s for verification (%d passes)", w.Profile.Name, rec.Verdict, o.passes)
 		}
 		return o
@@ -293,8 +293,13 @@ func (w *Worker) applyVerdict(ctx context.Context, o outcome, it kanban.Item, cl
 	o.note = fmt.Sprintf("agent %s verified it: verdict %s, VEX %s (%d passes)", w.Profile.Name, rec.Verdict, rel, o.passes)
 	switch rec.Verdict {
 	case kanban.VerdictNoFix, kanban.VerdictNeedsHuman:
+		// A person has to decide, whatever the profile does with a closed card:
+		// it is blocked, and sheds the labels the profile's success route drops.
 		o.to = kanban.Blocked
-		o.dropLabels = []string{kanban.LabelNeedsVerify}
+		o.dropLabels = slices.Clone(k.OnSuccess.DropLabels)
+		if len(o.dropLabels) == 0 {
+			o.dropLabels = []string{kanban.LabelNeedsVerify}
+		}
 	}
 	return o
 }
