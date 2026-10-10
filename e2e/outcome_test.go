@@ -51,8 +51,8 @@ func TestFleetReviewerRejectsWithARecordedOutcome(t *testing.T) {
 	if it.List != kanban.Backlog || !slices.Contains(it.Labels, "build") || slices.Contains(it.Labels, "needs-review") {
 		t.Fatalf("after the rejecting reviewer the item is %s with labels %v, want backlog labelled build", it.List, it.Labels)
 	}
-	if it.Attempts != 1 || it.ClaimedBy != "" {
-		t.Fatalf("attempts %d claimed by %q", it.Attempts, it.ClaimedBy)
+	if it.Attempts != 0 || it.Bounces != 1 || it.ClaimedBy != "" {
+		t.Fatalf("a rejection is a return, not an attempt: attempts %d bounces %d claimed by %q", it.Attempts, it.Bounces, it.ClaimedBy)
 	}
 	var notes []string
 	for _, h := range it.History {

@@ -187,7 +187,7 @@ func TestVerifierRejectionSendsTheCardBackAsAFailedAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := store.Get(it.ID)
-	if got.List != kanban.Backlog || got.Attempts != 1 || !slices.Contains(got.Labels, kanban.LabelVuln) || slices.Contains(got.Labels, kanban.LabelNeedsVerify) {
+	if got.List != kanban.Backlog || got.Attempts != 0 || got.Bounces != 1 || !slices.Contains(got.Labels, kanban.LabelVuln) || slices.Contains(got.Labels, kanban.LabelNeedsVerify) {
 		t.Fatalf("card %+v", got)
 	}
 	if got.VEX != "" {
@@ -206,7 +206,7 @@ func TestVerifierMustRecordAVerdictToCloseACard(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := store.Get(it.ID)
-	if got.List == kanban.Done || got.Attempts != 1 || !strings.Contains(got.LastNote(), "without recording a verdict") {
+	if got.List == kanban.Done || got.Bounces != 1 || !strings.Contains(got.LastNote(), "without recording a verdict") {
 		t.Fatalf("a verifier closed a card with no verdict: %+v (%q)", got, got.LastNote())
 	}
 }

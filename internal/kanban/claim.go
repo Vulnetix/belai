@@ -248,12 +248,45 @@ func (it Item) claimSource() List {
 	return Backlog
 }
 
+// StageRank orders the lists an item moves through: backlog, review, done.
+// The lists work happens in (in progress) and waits in (blocked) have no rank,
+// so they are never a step forward or back.
+func StageRank(l List) int {
+	switch l {
+	case Backlog:
+		return 0
+	case Review:
+		return 1
+	case Done:
+		return 2
+	}
+	return -1
+}
+
+// MovesBack reports whether a release from list from to list to sends the item
+// to an earlier stage: a review that rejects a branch goes back to the backlog.
+func MovesBack(from, to List) bool {
+	f, t := StageRank(from), StageRank(to)
+	return f >= 0 && t >= 0 && t < f
+}
+
+// releaseLocked puts a claimed item in list to. Attempts are counted per stage:
+// a failure that retries the stage counts one, a failure that sends the item back
+// to an earlier stage counts a bounce and starts that stage's attempts afresh,
+// and a success that moves the item on starts the next stage's attempts afresh.
 func releaseLocked(it *Item, to List, note, sid string, now int64, failed bool) {
+	from := it.claimSource()
 	appendHistory(it, Move{ID: session.MustID(), From: it.List, To: to, At: now, SessionID: sid, Note: CleanBody(note, MaxNoteBytes)})
 	it.List = to
 	it.ClaimedBy, it.ClaimHost, it.ClaimFrom, it.LeaseUntil = "", "", "", 0
-	if failed {
+	switch {
+	case failed && MovesBack(from, to):
+		it.Bounces++
+		it.Attempts = 0
+	case failed:
 		it.Attempts++
+	case StageRank(to) > StageRank(from) && StageRank(from) >= 0:
+		it.Attempts = 0
 	}
 	it.Updated, it.Dirty = now, true
 }

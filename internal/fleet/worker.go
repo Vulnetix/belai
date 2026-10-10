@@ -1133,6 +1133,26 @@ func (w *Worker) routesToDone(o outcome) bool {
 }
 
 // release hands the item back per the profile's routes.
+// failureRoute is where a failed item goes: the profile's on_failure, or back to
+// the list it was claimed from.
+func failureRoute(k *agentprofile.KanbanSpec, it kanban.Item) agentprofile.Route {
+	route := k.OnFailure
+	if route.List == "" {
+		route.List = string(it.ClaimFrom)
+		if route.List == "" {
+			route.List = string(kanban.Backlog)
+		}
+	}
+	return route
+}
+
+// sentBackOut reports whether failing it by route would be the max'th time it
+// is sent back to an earlier stage.
+func sentBackOut(it kanban.Item, route agentprofile.Route, max int) bool {
+	to, ok := kanban.ParseList(route.List)
+	return ok && kanban.MovesBack(it.ClaimFrom, to) && it.Bounces+1 >= max
+}
+
 func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.Item {
 	p := w.Profile
 	k := p.Kanban
@@ -1168,14 +1188,14 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	case it.Attempts+1 >= p.MaxAttemptsOr():
 		out.To = kanban.Blocked
 		out.Note += fmt.Sprintf("; blocked after %d failed attempts", it.Attempts+1)
+	case sentBackOut(it, failureRoute(k, it), p.MaxAttemptsOr()):
+		// Attempts are counted per stage, so a card passed back and forth between
+		// two stages (a rejected branch rebuilt, rejected again) is bounded by the
+		// returns instead.
+		out.To = kanban.Blocked
+		out.Note += fmt.Sprintf("; blocked after %d returns to an earlier stage", it.Bounces+1)
 	default:
-		route = k.OnFailure
-		if route.List == "" {
-			route.List = string(it.ClaimFrom)
-			if route.List == "" {
-				route.List = string(kanban.Backlog)
-			}
-		}
+		route = failureRoute(k, it)
 	}
 	if out.To == "" {
 		out.To, _ = kanban.ParseList(route.List)

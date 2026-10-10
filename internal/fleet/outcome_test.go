@@ -29,6 +29,7 @@ func recording(store *kanban.Store, outcome, reason string, stop run.StopReason)
 func reviewerLikeProfile() agentprofile.AgentProfile {
 	p := builderProfile()
 	p.Name = "t-reviewer"
+	p.Kanban.Lists = []string{"review"}
 	p.Kanban.Labels = []string{"needs-review"}
 	p.Kanban.OnSuccess = agentprofile.Route{List: "done", DropLabels: []string{"needs-review"}}
 	p.Kanban.OnFailure = agentprofile.Route{List: "backlog", Labels: []string{"build"}, DropLabels: []string{"needs-review"}}
@@ -43,28 +44,30 @@ func TestRecordedOutcomeRoutesTheCard(t *testing.T) {
 		name     string
 		profile  agentprofile.AgentProfile
 		labels   []string
+		list     kanban.List
 		outcome  string
 		stop     run.StopReason
 		wantList kanban.List
 		attempts int
+		bounces  int
 		note     string
 	}{
-		{"success", builderProfile(), []string{"build"}, "success", run.StopDecided, kanban.Review, 0, "recorded success"},
-		{"success then out of passes", builderProfile(), []string{"build"}, "success", run.StopMaxPasses, kanban.Review, 0, "recorded success"},
-		{"failure goes back with the profile's labels", reviewerLikeProfile(), []string{"needs-review"}, "failure", run.StopDecided, kanban.Backlog, 1, "recorded failure"},
-		{"approval", reviewerLikeProfile(), []string{"needs-review"}, "success", run.StopDecided, kanban.Done, 0, "recorded success"},
-		{"blocked", builderProfile(), []string{"build"}, "blocked", run.StopDecided, kanban.Blocked, 1, "cannot continue"},
+		{"success", builderProfile(), []string{"build"}, kanban.Backlog, "success", run.StopDecided, kanban.Review, 0, 0, "recorded success"},
+		{"success then out of passes", builderProfile(), []string{"build"}, kanban.Backlog, "success", run.StopMaxPasses, kanban.Review, 0, 0, "recorded success"},
+		{"failure goes back with the profile's labels", reviewerLikeProfile(), []string{"needs-review"}, kanban.Review, "failure", run.StopDecided, kanban.Backlog, 0, 1, "recorded failure"},
+		{"approval", reviewerLikeProfile(), []string{"needs-review"}, kanban.Review, "success", run.StopDecided, kanban.Done, 0, 0, "recorded success"},
+		{"blocked", builderProfile(), []string{"build"}, kanban.Backlog, "blocked", run.StopDecided, kanban.Blocked, 1, 0, "cannot continue"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			store, reg := testEnv(t)
-			it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: c.labels}, kanban.Provenance{})
+			it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: c.labels, List: c.list}, kanban.Provenance{})
 			w := newWorker(t, store, reg, c.profile, recording(store, c.outcome, "because", c.stop))
 			if err := w.Run(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			after, _ := store.Get(it.ID)
-			if after.List != c.wantList || after.Attempts != c.attempts || after.ClaimedBy != "" {
-				t.Fatalf("released %s attempts %d claimed %q, want %s attempts %d", after.List, after.Attempts, after.ClaimedBy, c.wantList, c.attempts)
+			if after.List != c.wantList || after.Attempts != c.attempts || after.Bounces != c.bounces || after.ClaimedBy != "" {
+				t.Fatalf("released %s attempts %d bounces %d claimed %q, want %s attempts %d bounces %d", after.List, after.Attempts, after.Bounces, after.ClaimedBy, c.wantList, c.attempts, c.bounces)
 			}
 			var notes []string
 			for _, h := range after.History {
@@ -146,5 +149,50 @@ func TestJudgeHonoursARecordedOutcomeOnlyWhenTheTurnSettled(t *testing.T) {
 				t.Fatalf("failed %v blocked %v (%q), want failed %v blocked %v", o.failed, o.blocked, o.note, c.wantFailed, c.wantBlock)
 			}
 		})
+	}
+}
+
+// A card passed between two stages is bounded by its returns, not by one attempt
+// counter shared across both: a rebuilt branch gets the builder a fresh set of
+// tries, and a reviewer that keeps rejecting stops the card at the profile's limit.
+func TestRejectedCardIsBlockedAfterTheLimitOfReturns(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: []string{"build"}}, kanban.Provenance{})
+	build := func() {
+		t.Helper()
+		if err := newWorker(t, store, reg, builderProfile(), complete).Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reject := func() {
+		t.Helper()
+		if err := newWorker(t, store, reg, reviewerLikeProfile(), recording(store, "failure", "needs work", run.StopDecided)).Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	build()
+	if got, _ := store.Get(it.ID); got.List != kanban.Review || got.Attempts != 0 || got.Bounces != 0 {
+		t.Fatalf("after the first build: %s attempts %d bounces %d", got.List, got.Attempts, got.Bounces)
+	}
+	reject()
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Backlog || got.Attempts != 0 || got.Bounces != 1 || !slices.Contains(got.Labels, "build") {
+		t.Fatalf("after the first rejection: %s attempts %d bounces %d labels %v", got.List, got.Attempts, got.Bounces, got.Labels)
+	}
+	build()
+	if got, _ := store.Get(it.ID); got.List != kanban.Review || got.Attempts != 0 || got.Bounces != 1 {
+		t.Fatalf("a rebuilt branch starts the review afresh: %s attempts %d bounces %d", got.List, got.Attempts, got.Bounces)
+	}
+
+	// builderProfile allows 2 attempts, reviewerLikeProfile inherits it: the second
+	// rejection is the second return, so the card stops here instead of looping.
+	reject()
+	got, _ = store.Get(it.ID)
+	if got.List != kanban.Blocked {
+		t.Fatalf("after the second rejection: %s note %q", got.List, got.LastNote())
+	}
+	if !strings.Contains(got.LastNote(), "blocked after 2 returns to an earlier stage") {
+		t.Fatalf("note %q", got.LastNote())
 	}
 }

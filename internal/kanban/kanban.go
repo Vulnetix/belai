@@ -130,8 +130,14 @@ type Item struct {
 	ClaimHost  string
 	ClaimFrom  List
 	LeaseUntil int64
-	// Attempts counts claims that ended without success.
+	// Attempts counts claims that ended without success at the stage the item is
+	// in: it starts again at zero when the item moves on to a later list, so a
+	// builder's tries are not charged to the reviewer after it, nor the reverse.
 	Attempts int
+	// Bounces counts the times a failed claim sent the item back to an earlier
+	// list (a review that rejected a branch). It is what bounds a card passing
+	// between two stages, which Attempts, reset at each stage, no longer does.
+	Bounces int
 	// Branch is the git branch holding the item's work; PR the draft pull
 	// request opened for it. Both are harness-set.
 	Branch string
