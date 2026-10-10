@@ -758,6 +758,19 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	cause := context.Cause(itemCtx)
 
 	o := w.judge(it, res, runErr, cause)
+	// The wall budget can end after the work was published, while the model was
+	// only re-checking it. A branch that is exactly what was published is
+	// finished work, so the overrun does not cost an attempt; its gates are
+	// still verified below, under a short grace period of their own. The lease
+	// renewal ended with the budget, so the grace period holds the lease itself.
+	vctx := itemCtx
+	if o.failed && !o.transient && errors.Is(cause, errWallBudget) && ws.PublishedCurrent(context.WithoutCancel(ctx)) &&
+		w.Store.Renew(it.ID, w.Record.ID, publishedGrace+p.LeaseDuration()) == nil {
+		o = outcome{stop: res.StopReason, passes: res.Passes, note: fmt.Sprintf("agent %s published its work before %s (%d passes)", p.Name, errWallBudget, res.Passes)}
+		var stopGrace context.CancelFunc
+		vctx, stopGrace = context.WithTimeout(context.WithoutCancel(ctx), publishedGrace)
+		defer stopGrace()
+	}
 	o = w.applyVerdict(ctx, o, it, claim, verdictSettled(res, runErr, cause))
 	o = w.applyRounds(o, rr, it)
 	if w.stopped(ctx, itemCtx, it, ws) {
@@ -779,12 +792,12 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the branch commits a crew file the harness keeps out of branches: " + sanitize.Line(strings.Join(bad, ", "), 200)}
 		}
 	}
-	if mode := w.gatesMode(); mode != "off" && !o.failed && ws.Worktree && itemCtx.Err() == nil {
-		v := w.verifyBranch(itemCtx, it, ws)
-		if w.stopped(ctx, itemCtx, it, ws) {
+	if mode := w.gatesMode(); mode != "off" && !o.failed && ws.Worktree && vctx.Err() == nil {
+		v := w.verifyBranch(vctx, it, ws)
+		if w.stopped(ctx, vctx, it, ws) {
 			return
 		}
-		if c := context.Cause(itemCtx); c != nil {
+		if c := context.Cause(vctx); c != nil {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the item's budget ended while its gates were verified: " + c.Error()}
 		} else {
 			o = w.applyVerification(o, v, mode)
@@ -955,6 +968,10 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 	}
 	return o
 }
+
+// publishedGrace bounds the gate verification of work that was published before
+// the item's wall budget ended.
+const publishedGrace = 10 * time.Minute
 
 // errWallBudget is the cause an item's context ends with when its wall budget does.
 var errWallBudget = errors.New("budget.max_wall_per_item reached")

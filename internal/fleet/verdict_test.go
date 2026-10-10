@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -297,5 +298,65 @@ func TestVerifierVerdictDoesNotStandAfterAnError(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if got.List == kanban.Done || got.VEX != "" {
 		t.Fatalf("a verdict closed the card after a failed turn: %+v", got)
+	}
+}
+
+// publishedThenOverrun commits a change, marks it published as PublishBranch
+// does, optionally leaves more work uncommitted, then keeps re-checking until the
+// wall budget ends the turn.
+func publishedThenOverrun(t *testing.T, more bool) TurnRunner {
+	return func(ctx context.Context, tt Turn) (run.Result, error) {
+		gitIn := func(args ...string) string {
+			out, err := exec.Command("git", append([]string{"-C", tt.Workdir}, args...)...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		if err := os.WriteFile(filepath.Join(tt.Workdir, "README"), []byte("fixed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn("commit", "-q", "-am", "fix the README")
+		tt.Workspace.published = gitIn("rev-parse", "HEAD")
+		if more {
+			if err := os.WriteFile(filepath.Join(tt.Workdir, "NOTES"), []byte("unpublished\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		<-ctx.Done()
+
+		return run.Result{StopReason: run.StopCancelled, Passes: 4}, ctx.Err()
+	}
+}
+
+func overrunBuilder(t *testing.T, more bool) (*kanban.Store, kanban.Item) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "fix the README", Labels: []string{"build"}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree}
+	p.Budget = &agentprofile.BudgetSpec{MaxWallPerItem: "300ms"}
+	w := newWorker(t, store, reg, p, publishedThenOverrun(t, more))
+	w.Repo = gitRepo(t)
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	return store, got
+}
+
+// A builder that published its work and then ran out of wall time re-checking it
+// has finished: the card moves on and no attempt is counted.
+func TestWorkPublishedBeforeTheWallBudgetEndsStillCounts(t *testing.T) {
+	_, got := overrunBuilder(t, false)
+	if got.List != kanban.Review || got.Attempts != 0 || !strings.Contains(got.LastNote(), "published its work before") {
+		t.Fatalf("published work was failed for the overrun: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	}
+}
+
+// Work left beside what was published is not finished, so the overrun fails it.
+func TestUnpublishedWorkAtTheWallBudgetStillFails(t *testing.T) {
+	_, got := overrunBuilder(t, true)
+	if got.List == kanban.Review || got.Attempts != 1 {
+		t.Fatalf("unpublished work moved on: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
 	}
 }

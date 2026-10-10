@@ -69,6 +69,8 @@ type Workspace struct {
 	// ident is the commit identity env the worktree's runner was built with, so a
 	// runner for publishing can be built the same way with a credential added.
 	ident []string
+	// published is the commit the last successful PublishBranch pushed.
+	published string
 }
 
 func randHex(n int) string {
@@ -525,10 +527,30 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if _, err := git(ctx, run, w.Dir, pushArgs...); err != nil {
 		return "", err
 	}
+	head, _ := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
 	if pr, err := p.PRForBranch(ctx, w.Dir, w.Branch); err == nil && pr != nil && pr.URL != "" && pr.State != "closed" && pr.State != "merged" {
+		w.published = strings.TrimSpace(head)
 		return pr.URL, nil
 	}
-	return p.CreatePR(ctx, w.Dir, forge.CreatePRArgs{Branch: w.Branch, Title: title, Body: body, Draft: true})
+	url, err := p.CreatePR(ctx, w.Dir, forge.CreatePRArgs{Branch: w.Branch, Title: title, Body: body, Draft: true})
+	if err == nil {
+		w.published = strings.TrimSpace(head)
+	}
+	return url, err
+}
+
+// PublishedCurrent reports whether the branch is exactly what the last
+// PublishBranch pushed: the same commit, and nothing uncommitted beside it.
+func (w *Workspace) PublishedCurrent(ctx context.Context) bool {
+	if w == nil || w.published == "" {
+		return false
+	}
+	head, err := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
+	if err != nil || strings.TrimSpace(head) != w.published {
+		return false
+	}
+	paths, err := w.changedPaths(ctx)
+	return err == nil && len(paths) == 0
 }
 
 // publishAuth returns the environment and git arguments that let a push and the
