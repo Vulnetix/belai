@@ -131,6 +131,18 @@ const (
 	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call Todo once with the todos you will do, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark todos complete with a [DONE:n] marker in the text of the response that carries your next tool calls — that updates the list without a round of its own; call Todo again only when the todos themselves change. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
+// Directives for a decision turn (TurnInput.Decision): the deliverable is a
+// recorded decision or a report, not a change to the files. They stand where the
+// edit-oriented directives above would tell a reviewer to make an edit.
+const (
+	decisionAckDirective         = "Start the work in this pass. Batch the reads you need in parallel and run the checks the work calls for. Your deliverable is a decision, not a change: record it with the board tools your directive names, or give it in your report, and do not edit the files under review. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	decisionPlanDirective        = "No decision has been recorded yet. Read what the item needs and run the checks it calls for, then record your decision with the board tools your directive names, or end with your report. Do not edit the files under review."
+	decisionNoWriteDirective     = "You have read and checked enough. Decide now from what you have: record your decision with the board tools your directive names, or state it in your report. Do not edit the files under review, and do not re-read what you have already read in full. If a real blocker prevents a decision, state it in one line and say what you need."
+	decisionReadStreakDirective  = "You have spent several rounds reading. Stop surveying: decide from what you have, record the decision with the board tools your directive names or state it in your report, and read more only for the exact lines the decision depends on. Do not edit the files under review."
+	decisionPartialDirective     = "Continue towards the decision. Name what is still unchecked, check it, then record the decision or state it in your report. Do not edit the files under review."
+	decisionProgressionDirective = "Progress has stalled. Decide from what you have checked: record the decision with the board tools your directive names or state it in your report. If you are blocked, state the blocker explicitly."
+)
+
 // goalAckDirective returns the first-pass goal directive, naming the detected
 // test commands as the default verification surface when the repo map knows
 // them. Test commands from added workspace directories are unioned in so the
@@ -140,12 +152,18 @@ func (s *Session) goalAckDirective() string {
 		return goalSimpleDirective
 	}
 	directive := goalAckDirective
+	if s.turnDecision && !s.turnExecutePlan {
+		directive = decisionAckDirective
+	}
 	if s.turnExecutePlan {
 		directive = planExecuteDirective + " " + directive
 	}
 	cmds := s.allTestCommands()
 	if len(cmds) == 0 {
 		return directive
+	}
+	if s.turnDecision && !s.turnExecutePlan {
+		return directive + " The project's checks are: " + strings.Join(cmds, "; ") + ". Run the ones the decision depends on."
 	}
 	return directive + " The default verification surface is: " + strings.Join(cmds, "; ") + ". It applies when you change code; a request that only runs commands (git, a build, a listing) needs no test run unless it asks for one."
 }
@@ -192,6 +210,11 @@ type passLedger struct {
 	// verification pass gates completion and a run without a file write is
 	// not a stall.
 	simple bool
+	// decision: the turn's deliverable is a recorded decision (TurnInput.
+	// Decision), so a run without a file write is not a stall, the directives
+	// ask for the decision rather than an edit, and no read-only verification
+	// pass gates completion: the harness checks the decision's gates itself.
+	decision bool
 
 	// todo list shared by goal mode, plan pursual and the TUI panel.
 	list          todos.List
@@ -433,8 +456,8 @@ func passPrint(passTurns []run.Turn, reply string) string {
 // file change to stop asking politely. It is deliberately independent of the
 // todo list: a model can keep a checklist moving with prose alone.
 func (l *passLedger) stalledOnWrites() bool {
-	if l.simple {
-		return false // a simple request may change no file at all
+	if l.simple || l.decision {
+		return false // a simple request, or one that decides, may change no file at all
 	}
 	return l.passesSinceWrite >= goalNoWritePasses
 }
@@ -465,6 +488,9 @@ func (l *passLedger) nextStep() string {
 func (l *passLedger) noWriteDirective() string {
 	if l.executePlan {
 		return l.planNoWriteDirective()
+	}
+	if l.decision {
+		return decisionNoWriteDirective
 	}
 	var b strings.Builder
 	if l.writes == 0 {
@@ -561,7 +587,9 @@ func (l *passLedger) partialDirectiveTurn() (body string, arm bool) {
 // not verified by re-reading a repository it never touched, so that case gets
 // the no-write directive instead.
 func (l *passLedger) gateDirective() string {
-	if l.writes == 0 {
+	// A decision turn writes nothing by design; only a pass whose tool results
+	// were withheld is worth repairing.
+	if l.writes == 0 && !(l.decision && l.passWithheld == 0) {
 		return l.noWriteOrRepairDirective()
 	}
 	if l.jevUnsure {
@@ -634,7 +662,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	// for anyone who wants a hard bound on spend.
 	maxPasses := s.settings.Resilience.MaxPassesOr()
 
-	l := passLedger{goalText: goalText, executePlan: s.turnExecutePlan, simple: s.turnSimple}
+	l := passLedger{goalText: goalText, executePlan: s.turnExecutePlan, simple: s.turnSimple, decision: s.turnDecision && !s.turnExecutePlan}
 	verdictBase := s.verdictWithheld.Load()
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
@@ -814,7 +842,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 			}
 			if sentinel == rolemanager.GoalComplete {
-				if l.verificationPasses == 0 && !l.simple {
+				if l.verificationPasses == 0 && !l.simple && !l.decision {
 					l.verificationArmed = true
 					turns = append(turns, l.directive(l.gateDirective())...)
 					continue
@@ -925,7 +953,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				}
 				l.surveyedOnce = true
 			}
-			turns = append(turns, l.directive(planDirective)...)
+			if l.decision {
+				turns = append(turns, l.directive(decisionPlanDirective)...)
+			} else {
+				turns = append(turns, l.directive(planDirective)...)
+			}
 
 		case rolemanager.GoalPartial:
 			if l.notePartial() {
@@ -943,7 +975,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			turns = append(turns, l.directive(body)...)
 
 		case rolemanager.GoalComplete:
-			if l.verificationPasses == 0 && !l.simple {
+			if l.verificationPasses == 0 && !l.simple && !l.decision {
 				// Verification gate: GOAL_COMPLETE is only accepted after at
 				// least one verification pass ran in this prompt. This is
 				// harness logic, not model logic — the model cannot talk its
@@ -1158,6 +1190,9 @@ func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeli
 // the current list state when one exists, otherwise the instruction to start
 // tracking one.
 func (l *passLedger) partialDirective() string {
+	if l.decision {
+		return decisionPartialDirective
+	}
 	if l.hasList {
 		body := "Continue."
 		if step := l.nextStep(); step != "" {
@@ -1175,6 +1210,9 @@ func (l *passLedger) partialDirective() string {
 // session context and asks the model to identify the single most concrete next
 // step, creating a new agentic evaluation loop rather than aborting.
 func (l *passLedger) progressionDirective() string {
+	if l.decision {
+		return decisionProgressionDirective
+	}
 	if l.hasList {
 		return "Progress has stalled — the todo list has not advanced for several passes. Execute the single most concrete next todo now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly."
 	}
