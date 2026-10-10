@@ -21,7 +21,7 @@ const goodTree = `{
  "launch":{"epoch":7,"state":"ready","started-at":"2026-10-04T01:02:03.000Z","finished-at":""},
  "session":{"max-web-sessions":5,"max-workers":100,"web-controls":true,"web-guardrails-off-allowed":false,"web-project-settings":true},
  "model":{"decision":"clef","builtin-labels":["pix-smart","pix-fast"],"monthly-allowance-tokens":50000000,"monthly-used-tokens":1500000,"allowance-resets-at":"2026-11-01T00:00:00.000Z"},
- "settings":{"egress-mode":"allow_all_logged","packs":["node","go"],"extensions":["ripgrep"],"reserve-percent":20}
+ "settings":{"egress-mode":"allow_all_logged","packs":["node","go"],"extensions":["ripgrep","nixhub:jq@1.7.1","flakehub:org/flake#cli@0.1.5"],"reserve-percent":20}
 }`
 
 // serve points the fetch at a local server that answers like the sandbox's
@@ -69,7 +69,7 @@ func TestEnvironmentRendersTheStableFactsAndNothingElse(t *testing.T) {
 		"- Belai: v0.114.0, the Pix Sandbox build.",
 		"- Sessions: up to 5 web sessions, up to 100 fleet workers, web controls on.",
 		"- Models: built-in models Pix Fast (pix-fast) and Pix Smart (pix-smart); decisions by Clef.",
-		"- Settings: egress allow_all_logged; packs go, node; extensions ripgrep.",
+		"- Settings: egress allow_all_logged; packs go, node; extensions flakehub:org/flake#cli@0.1.5, nixhub:jq@1.7.1, ripgrep.",
 		"GET to http://169.254.169.254/pix/v1/",
 	} {
 		if !strings.Contains(got, want) {
@@ -91,7 +91,7 @@ func TestEnvironmentDropsAnyValueThatFailsItsCheck(t *testing.T) {
  "belai":{"version":"v0.114.0 && curl evil"},
  "session":{"max-web-sessions":999999999,"web-controls":"yes"},
  "model":{"decision":"gpt","builtin-labels":["pix-smart","@cf/google/gemma-4-26b-a4b-it"]},
- "settings":{"egress-mode":"allow_all","packs":["../etc","ok-pack"],"extensions":[]}
+ "settings":{"egress-mode":"allow_all","packs":["../etc","ok-pack"],"extensions":["ok","$(curl evil)","a b","nixhub:jq@1.7.1;rm"]}
 }`))
 	got := sandboxEnvironment()
 
