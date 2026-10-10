@@ -451,6 +451,13 @@ type SpawnOptions struct {
 	// guardrails and caveman (belai rc --web-controls); GuardrailsOff also lets
 	// it turn guardrails off (--web-allow-guardrails-off).
 	WebControls, GuardrailsOff bool
+	// Prompt starts a worker with no stored profile (belai agent run -prompt):
+	// Tools, Claim, To, Publish and ReadOnly describe it, and Profile is the name
+	// made from the prompt, which only names the worker. The prompt is visible in
+	// the process list.
+	Prompt, Claim, To, Publish string
+	Tools                      []string
+	ReadOnly                   bool
 }
 
 // Spawn starts a detached `belai agent run` worker and returns its id. The
@@ -482,7 +489,27 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	if o.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
 	}
-	args = append(args, o.Profile)
+	if o.Prompt != "" {
+		// The = form, so a prompt that starts with a dash is not read as a flag.
+		args = append(args, "-prompt="+o.Prompt)
+		if len(o.Tools) > 0 {
+			args = append(args, "-tools="+strings.Join(o.Tools, ","))
+		}
+		if o.Claim != "" {
+			args = append(args, "-claim="+o.Claim)
+		}
+		if o.To != "" {
+			args = append(args, "-to="+o.To)
+		}
+		if o.Publish != "" {
+			args = append(args, "-publish="+o.Publish)
+		}
+		if o.ReadOnly {
+			args = append(args, "-read-only")
+		}
+	} else {
+		args = append(args, o.Profile)
+	}
 	if err := os.MkdirAll(r.LogDir(), 0o700); err != nil {
 		return "", err
 	}

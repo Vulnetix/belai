@@ -60,7 +60,10 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
   knowledge [-index] [-json] [NAME]  the retrieval indexes: this project's
                                  .vulnetix output and NAME's listed documents;
                                  -index brings them up to date first
-  run [flags] NAME               run a worker in the foreground
+  run [flags] NAME | -prompt TEXT  run a worker in the foreground
+      -prompt TEXT               a worker made from this prompt, no stored
+                                 profile; with -tools T,T, -claim LIST[:LABEL],
+                                 -to LIST, -publish MODE and -read-only
       -once                      work one item (or find none) and exit
       -item K-xxxxxx             work this item
       -trust-dir                 trust the repository first
@@ -69,8 +72,9 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
                                  once nothing is left to claim
       -drain                     exit once nothing is left to claim even
                                  with a cron schedule (not with -stay)
-  start [flags] NAME | -crew C   start detached workers; prints their ids
-      -replicas N                workers of NAME (default 1)
+  start [flags] NAME | -crew C | -prompt TEXT
+                                 start detached workers; prints their ids
+      -replicas N                workers of NAME or of the prompt (default 1)
       -trust-dir, -provider, -model, -stay, -drain as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
@@ -324,13 +328,21 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
 	webControls := fs.Bool("web-controls", false, "take session controls from the website (set by `agent start`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, guardrails may be turned off from the website (set by `agent start`)")
-	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME")
+	adhoc := addAdhocFlags(fs)
+	const runUsage = "usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME | -prompt TEXT [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
+	if err := parseInterleaved(fs, rest); err != nil {
+		return 2, errors.New(runUsage)
+	}
+	adhocProfile, err := adhoc.profile()
+	if err != nil {
+		return 2, err
+	}
+	if (fs.NArg() == 1) == (adhocProfile != nil) {
+		return 2, errors.New(runUsage)
 	}
 	if *stay && *drain {
 		return 2, errors.New("-stay and -drain contradict each other")
 	}
-	name := fs.Arg(0)
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
 	if err := trustRepo(repo, *trust); err != nil {
@@ -340,8 +352,10 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	if err != nil {
 		return 1, err
 	}
-	profile, err := agentprofile.Load(name)
-	if err != nil {
+	var profile agentprofile.AgentProfile
+	if adhocProfile != nil {
+		profile = *adhocProfile
+	} else if profile, err = agentprofile.Load(fs.Arg(0)); err != nil {
 		return 1, err
 	}
 	if err := fleet.Preflight(profile, settings, pol); err != nil {
@@ -507,8 +521,23 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	fill := fs.Bool("fill", false, "with -crew, start only the replicas the crew lacks in this repository")
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
-	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
-		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW [-fill]")
+	adhoc := addAdhocFlags(fs)
+	const startUsage = "usage: belai agent start NAME [-replicas N] | -crew CREW [-fill] | -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
+	if err := parseInterleaved(fs, rest); err != nil {
+		return 2, errors.New(startUsage)
+	}
+	adhocProfile, err := adhoc.profile()
+	if err != nil {
+		return 2, err
+	}
+	forms := 0
+	for _, given := range []bool{fs.NArg() == 1, *crewName != "", adhocProfile != nil} {
+		if given {
+			forms++
+		}
+	}
+	if forms != 1 || (adhocProfile != nil && fs.NArg() != 0) {
+		return 2, errors.New(startUsage)
 	}
 	if *stay && *drain {
 		return 2, errors.New("-stay and -drain contradict each other")
@@ -543,15 +572,21 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		if *replicas < 1 || *replicas > agentprofile.MaxReplicas {
 			return 2, fmt.Errorf("-replicas runs 1 to %d", agentprofile.MaxReplicas)
 		}
+		name := fs.Arg(0)
+		if adhocProfile != nil {
+			name = adhocProfile.Name
+		}
 		for range *replicas {
-			launches = append(launches, launch{fs.Arg(0), ""})
+			launches = append(launches, launch{name, ""})
 		}
 	}
 	// Check every profile before starting any, so a crew starts whole or not
 	// at all.
 	for _, l := range launches {
-		p, err := agentprofile.Load(l.profile)
-		if err != nil {
+		var p agentprofile.AgentProfile
+		if adhocProfile != nil {
+			p = *adhocProfile
+		} else if p, err = agentprofile.Load(l.profile); err != nil {
 			return 1, err
 		}
 		if err := fleet.Preflight(p, settings, pol); err != nil {
@@ -606,8 +641,12 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 		}
 		for _, l := range launches {
-			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
-				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff})
+			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
+				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff}
+			if adhocProfile != nil {
+				so.Prompt, so.Tools, so.Claim, so.To, so.Publish, so.ReadOnly = *adhoc.prompt, splitList(*adhoc.tools), *adhoc.claim, *adhoc.to, *adhoc.publish, *adhoc.readOnly
+			}
+			id, err := reg.Spawn(so)
 			if err != nil {
 				return err
 			}
