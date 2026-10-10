@@ -610,6 +610,9 @@ type RoutingConfig struct {
 	// routing candidate does, and the security guard under classifier.tier
 	// "fast". Nil when there is no fast tier, or when it is the main model.
 	Fast *Config
+	// Code is the model code-mode turns run on (code.model). Nil means the
+	// main model: unset, tier "smart", or a pick equal to the main model.
+	Code *Config
 }
 
 // fastUseCases are the role-manager activities that default to the fast tier.
@@ -687,6 +690,63 @@ func resolveFast(main Config, rs *config.RoutingSettings, src CredentialSource) 
 		return nil, nil
 	}
 	return &c, nil
+}
+
+// ResolveCode resolves code.model against the main config and the already
+// resolved fast tier. It returns nil when code mode runs on the main model. An
+// explicit pick that cannot be configured is an error, so a broken pick never
+// silently falls back to a different model.
+func ResolveCode(main Config, cs *config.CodeSettings, fast *Config, src CredentialSource) (*Config, error) {
+	if cs == nil || cs.Model == nil {
+		return nil, nil
+	}
+	m := cs.Model
+	switch {
+	case m.Tier == config.CodeTierFast:
+		return fast, nil
+	case !m.Explicit():
+		return nil, nil
+	}
+	if src == nil {
+		src = EnvSource(os.Getenv)
+	}
+	providerName := m.Provider
+	if providerName == "" {
+		providerName = main.Provider
+	}
+	model := m.Model
+	if model == "" {
+		if d, ok := provider.Lookup(providerName); ok {
+			model = d.DefaultModel
+		}
+	}
+	if model == "" {
+		return nil, fmt.Errorf("code.model: provider %q has no default model; name one", providerName)
+	}
+	if providerName == main.Provider && model == main.Model {
+		return nil, nil
+	}
+	if providerName == main.Provider {
+		c := main
+		c.Model = model
+		return &c, nil
+	}
+	c, err := ResolveWithSource(model, providerName, os.Getenv, src)
+	if err != nil {
+		return nil, fmt.Errorf("code.model: %w", err)
+	}
+	return &c, nil
+}
+
+// WithCode resolves code.model into rc.Code. Callers that hold both the
+// routing and the code settings call it after ResolveRouting.
+func WithCode(rc RoutingConfig, main Config, cs *config.CodeSettings, src CredentialSource) (RoutingConfig, error) {
+	c, err := ResolveCode(main, cs, rc.Fast, src)
+	if err != nil {
+		return rc, err
+	}
+	rc.Code = c
+	return rc, nil
 }
 
 // ResolveRouting resolves the routing settings into a RoutingConfig. A nil or

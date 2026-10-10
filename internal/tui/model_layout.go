@@ -68,6 +68,8 @@ func modelRoleTitle(role modelRole) string {
 		return "Agent"
 	case roleFast:
 		return "Fast tier"
+	case roleCode:
+		return "Code mode"
 	case roleClassifier:
 		return "Classifier"
 	case roleRouting:
@@ -98,6 +100,8 @@ func (a *App) modelRoleValue(role modelRole) string {
 		return a.cfg.Model
 	case roleFast:
 		return a.resolvedFastLabel()
+	case roleCode:
+		return a.resolvedCodeLabel()
 	case roleClassifier:
 		return a.securityLabel()
 	case roleRouting:

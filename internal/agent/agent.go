@@ -1246,6 +1246,20 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	savedCode := s.turnCode
 	s.turnCode = turnCode && !s.turnReadOnly && !in.ExecutePlan && in.ForceAgent == "" && s.codeRegistry != nil
 	defer func() { s.turnCode = savedCode }()
+	// A code-mode turn runs on code.model when one is set: the main config
+	// with the code pick swapped in. Routing and the classifier stay the session's own.
+	if s.turnCode && s.cfg.Routing.Code != nil {
+		savedCfg := s.cfg
+		codeCfg := *s.cfg.Routing.Code
+		codeCfg.Routing = savedCfg.Routing
+		codeCfg.Classifier = savedCfg.Classifier
+		codeCfg.Security = savedCfg.Security
+		if codeCfg.Provider != savedCfg.Provider {
+			codeCfg.Effort = ""
+		}
+		s.cfg = codeCfg
+		defer func() { s.cfg = savedCfg }()
+	}
 	// The remediation contract rides the turn as a sealed directive and arms
 	// the pass loop's edit pressure. It applies only where the turn can edit:
 	// plan mode, a read-only turn and a profile without Edit keep their surface.

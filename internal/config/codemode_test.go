@@ -35,3 +35,34 @@ func TestCodeProjectLayerOnlyTightens(t *testing.T) {
 		t.Fatal("code mode must be off")
 	}
 }
+
+func TestValidateCodeModel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		m    *CodeModel
+		ok   bool
+	}{
+		{"unset", nil, true},
+		{"smart", &CodeModel{Tier: CodeTierSmart}, true},
+		{"fast", &CodeModel{Tier: CodeTierFast}, true},
+		{"explicit", &CodeModel{Provider: "openai", Model: "x"}, true},
+		{"model only", &CodeModel{Model: "x"}, true},
+		{"empty", &CodeModel{}, false},
+		{"bad tier", &CodeModel{Tier: "slow"}, false},
+		{"tier and model", &CodeModel{Tier: CodeTierFast, Model: "x"}, false},
+		{"bad provider", &CodeModel{Provider: "Bad Name!", Model: "x"}, false},
+	} {
+		err := ValidateCodeModel(Settings{Code: &CodeSettings{Model: tc.m}})
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: err = %v, want ok=%v", tc.name, err, tc.ok)
+		}
+	}
+}
+
+func TestMergeCodeModelFromProjectLayer(t *testing.T) {
+	cur := &CodeSettings{Model: &CodeModel{Tier: CodeTierSmart}}
+	out := mergeCode(cur, &CodeSettings{Model: &CodeModel{Tier: CodeTierFast}}, true)
+	if out.Model == nil || out.Model.Tier != CodeTierFast {
+		t.Fatalf("project layer must be able to set code.model: %+v", out.Model)
+	}
+}

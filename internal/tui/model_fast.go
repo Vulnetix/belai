@@ -140,6 +140,8 @@ func (a *App) modelRoleBlurb(role modelRole) string {
 	switch role {
 	case roleAgent:
 		return "does the work: every turn, tool call, compaction, goal contract, clarify and final report"
+	case roleCode:
+		return "runs code-mode turns (/mode code): smart is the agent model, fast the fast tier, custom any available provider"
 	case roleFast:
 		return "answers one-token verdicts (mode select, session name, goal/plan/agent evaluator) and drafts the goal contract"
 	case roleClassifier:

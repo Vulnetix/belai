@@ -540,6 +540,9 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 		securityFallbackOnce.Do(func() { fmt.Fprintln(os.Stderr, "belai: "+n) })
 	}
 	if rc, err := run.ResolveRouting(cfg, settings.Routing, src); err == nil {
+		if withCode, err := run.WithCode(rc, cfg, settings.Code, src); err == nil {
+			rc = withCode
+		}
 		cfg.Routing = rc
 	}
 	return cfg, nil
