@@ -24,5 +24,8 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "tailwindcss": "^4.3.3"
+  },
+  "resolutions": {
+    "smol-toml@npm:^1.6.0": "npm:1.9.0"
   }
 }
