@@ -956,6 +956,13 @@ func New(opts Options) *App {
 	if mode == "auto" {
 		mode = "agent"
 	}
+	// -plan starts the session in plan mode, whatever mode was saved for the
+	// project. It used to mark the mode sticky and leave the mode itself as saved
+	// (agent by default), so the first prompt ran with every tool.
+	if opts.PlanMode {
+		mode = "plan"
+		restoredMode = true
+	}
 	if modeAuto {
 		restoredMode = false
 	}

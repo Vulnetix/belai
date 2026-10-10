@@ -87,7 +87,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-agent-create` | create an agent profile from a description and save to disk |
 | `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
 | `-no-transcript` | with `-prompt` (and `belai acp`), keep no session transcript of the run |
-| `-plan` | start in plan mode: read-only tools only, no mutation |
+| `-plan` | start in plan mode: read-only tools only, no mutation. With `-prompt` the run ends on a plan file and prints `plan written: <path>` to stderr with the commands that approve it (`belai -allow-ask-without-tty -prompt "@<path>"`, because a headless run has no terminal to approve each change on) or refine it; leaving it changes nothing |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |
 | `-teleport` | continue a session of your account from another host, sandbox or the web: the transcript and any agent profile it needs are fetched and the session opens here under a new id; rejected with `-resume`, `-continue` or `-prompt` ([teleport](teleport.md)) |

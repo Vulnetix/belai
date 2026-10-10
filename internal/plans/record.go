@@ -46,6 +46,28 @@ func RecordName(prompt string, at time.Time, revision int) string {
 
 var recordSlugRE = regexp.MustCompile(`[^a-z0-9]+`)
 
+// maxTitleWords bounds the harness-composed plan title.
+const maxTitleWords = 12
+
+// TitleFromPrompt composes a plan title from the user's request: its first
+// words, sanitised and flattened to one line, with a "Plan: " prefix so the
+// file reads as a plan for that request rather than as the request itself.
+func TitleFromPrompt(prompt string) string {
+	words := strings.Fields(sanitize.Sanitize(prompt))
+	if len(words) == 0 {
+		return "Plan"
+	}
+	trimmed := len(words) > maxTitleWords
+	if trimmed {
+		words = words[:maxTitleWords]
+	}
+	title := strings.Join(words, " ")
+	if trimmed {
+		title += "…"
+	}
+	return "Plan: " + title
+}
+
 // NextRevision returns the next available revision number for a plan record
 // whose base name (without -rN) matches the prompt slug. It counts files
 // in the project's plans directory that share the same timestamp-less stem.
@@ -82,6 +104,12 @@ func Record(workdir, prompt, reply string, at time.Time, revision int) (Plan, st
 	name := RecordName(prompt, at, revision)
 	content := sanitize.Sanitize(reply)
 	if doc, err := ParseDoc(content); err == nil {
+		if doc.Title == "" {
+			// Every recorded plan opens with a title, as a reviewer expects
+			// of a plan document. The harness composes it from the user's
+			// own request when the model wrote none.
+			doc.Title = TitleFromPrompt(prompt)
+		}
 		content = doc.Render()
 	}
 	path, err := Save(workdir, Plan{Name: name, Content: content})

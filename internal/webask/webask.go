@@ -197,3 +197,63 @@ func Truncate(s string, max int) string {
 	}
 	return s[:cut]
 }
+
+// Plan-review choices, shared with the website. The TUI offers all four; a
+// `belai rc` session has no second session to fork into, so it offers
+// PlanApproveHere, PlanRefine and PlanStay.
+const (
+	PlanApproveHere = "approve_here"
+	PlanApproveNew  = "approve_new"
+	PlanRefine      = "refine"
+	PlanStay        = "stay"
+)
+
+// MaxPlanBytes caps the plan text a plan-review ask carries.
+const MaxPlanBytes = 64 << 10
+
+// PlanReviewAsk is the content and metadata of a plan-review ask entry: the
+// plan's name and path, the choices on offer and the plan text itself, so the
+// website can show what it is approving. body is the recorded plan file.
+func PlanReviewAsk(name, path, body string, options []string) (string, map[string]any) {
+	meta := map[string]any{
+		"plan_name": name,
+		"plan_path": path,
+		"options":   options,
+	}
+	if body != "" {
+		if len(body) > MaxPlanBytes {
+			body = Truncate(body, MaxPlanBytes)
+			meta["plan_truncated"] = true
+		}
+		meta["plan"] = body
+	}
+	return "plan written: " + path, meta
+}
+
+// ParsePlanChoice reads a web plan-review answer: one of the fixed choices
+// and, for a refinement, the notes. The notes are untrusted web text, so they
+// are cleaned like a web prompt and capped; a refinement with no notes left
+// is refused.
+func ParsePlanChoice(raw json.RawMessage) (choice, notes string, err error) {
+	var p struct {
+		Choice string `json:"choice"`
+		Notes  string `json:"notes"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return "", "", fmt.Errorf("the answer could not be read")
+	}
+	switch p.Choice {
+	case PlanApproveHere, PlanApproveNew, PlanStay:
+		return p.Choice, "", nil
+	case PlanRefine:
+		notes = sessionsync.CleanPrompt(p.Notes)
+		if notes == "" {
+			return "", "", fmt.Errorf("refinement notes were empty after cleaning")
+		}
+		if len(notes) > MaxNoteBytes*4 {
+			notes = Truncate(notes, MaxNoteBytes*4)
+		}
+		return p.Choice, notes, nil
+	}
+	return "", "", fmt.Errorf("unknown plan choice; expected approve_here, refine or stay")
+}

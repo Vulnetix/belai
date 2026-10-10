@@ -62,3 +62,39 @@ func TestParseClarifyValidatesAgainstTheOpenQuestions(t *testing.T) {
 		t.Fatal("decline")
 	}
 }
+
+func TestParsePlanChoice(t *testing.T) {
+	for _, c := range []struct {
+		in        string
+		choice    string
+		notes     string
+		wantError bool
+	}{
+		{`{"choice":"approve_here"}`, PlanApproveHere, "", false},
+		{`{"choice":"approve_new"}`, PlanApproveNew, "", false},
+		{`{"choice":"stay","notes":"ignored"}`, PlanStay, "", false},
+		{`{"choice":"refine","notes":"  add tests  "}`, PlanRefine, "add tests", false},
+		{`{"choice":"refine","notes":"  "}`, "", "", true},
+		{`{"choice":"refine"}`, "", "", true},
+		{`{"choice":"rm -rf"}`, "", "", true},
+		{`not json`, "", "", true},
+	} {
+		choice, notes, err := ParsePlanChoice(json.RawMessage(c.in))
+		if (err != nil) != c.wantError || choice != c.choice || notes != c.notes {
+			t.Errorf("ParsePlanChoice(%s) = %q, %q, %v; want %q, %q, error=%v", c.in, choice, notes, err, c.choice, c.notes, c.wantError)
+		}
+	}
+}
+
+func TestPlanReviewAskCapsThePlanText(t *testing.T) {
+	content, meta := PlanReviewAsk("p", "/x/p.md", strings.Repeat("a", MaxPlanBytes+10), []string{PlanApproveHere})
+	if content != "plan written: /x/p.md" {
+		t.Fatalf("content = %q", content)
+	}
+	if got := meta["plan"].(string); len(got) != MaxPlanBytes || meta["plan_truncated"] != true {
+		t.Fatalf("plan len = %d, truncated = %v", len(got), meta["plan_truncated"])
+	}
+	if _, meta := PlanReviewAsk("p", "/x/p.md", "", nil); meta["plan"] != nil {
+		t.Fatalf("an unreadable plan must carry no text: %v", meta)
+	}
+}

@@ -679,9 +679,11 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		Client: client, HostID: headless.HostID(),
 		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		RemotePrompts: settings.SyncRemotePromptsEnabled(),
-		// Without session controls nobody answers asks in a remote session:
-		// they are off. With them, the ask control turns web answers on.
-		RemoteAnswers:  false,
+		// Without session controls the only question a remote session puts to
+		// the web is the review of a plan it wrote (permission asks are off), so
+		// answers are taken whenever the sync setting allows them. With
+		// controls, the ask control turns web answers on.
+		RemoteAnswers:  settings.SyncRemoteAnswersEnabled(),
 		RemoteCommands: pick.Controls,
 		RemoteShell:    pick.Shell,
 		Git:            gs.Raw,
@@ -744,6 +746,21 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			return err
 		}
 		opts.Agent = sess
+		if settings.SyncRemoteAnswersEnabled() {
+			// The web can review a plan this session writes. An approved plan
+			// runs on a session that resolves asks to allow: the person
+			// approved it, and nobody could answer each edit's ask.
+			opts.Answers = syncer
+			opts.Executor = func() (rc.Runner, error) {
+				allow := true
+				return headless.NewSession(ctx, headless.Params{
+					Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
+					WorkspaceDirs: pick.Dirs, SessionID: sessionID, AllowAsk: false, AskDisabled: &allow,
+					MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
+					Narrow: rcProfileNarrow(pick.Profile),
+				})
+			}
+		}
 		if pick.Shell {
 			// Shell lines arrive on the commands channel; there are no
 			// controls to take, so the settings and posture are fixed.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/turnlog"
+	"github.com/vulnetix/belai/internal/webask"
 )
 
 // Runner is the part of agent.Session a remote session drives.
@@ -74,6 +76,13 @@ type SessionOptions struct {
 	// custom slash command by name only then (RemoteCommand.Command).
 	Workdir       string
 	SlashCommands bool
+	// Executor, when set, builds the agent session that carries out an approved
+	// plan in a session without web controls. Such a session has asks off and no
+	// terminal, so its own agent would refuse every edit the plan needs; the
+	// executor's session resolves asks to allow because the person approved the
+	// plan. Deny rules, the posture and the sandbox still apply to it. With web
+	// controls the controlled session runs the plan and asks the web as usual.
+	Executor func() (Runner, error)
 	// AfterTurn runs after each turn that ended cleanly, with the prompt, the
 	// turn's result and the paths its tools changed: the post-end test pass
 	// and auto-commit, each when its control is on.
@@ -146,21 +155,66 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		o.Changed(o.Controls.StateJSON(), st.Ask && bridge != nil)
 	}
 
+	// open is the plan review the web has not answered yet. It outlives the
+	// turn that wrote it and is answered while the session is idle.
+	var open *planReview
 	for {
 		if ctx.Err() != nil {
+			bridge.closePlanReview(open, "the session stopped")
 			return nil
 		}
 		var p sessionsync.RemotePrompt
+		var tp turnPlan
+		var planAnswers <-chan sessionsync.RemoteAnswer
+		if bridge != nil && open != nil {
+			planAnswers = o.Answers.Answers()
+		}
 		if len(queue) > 0 {
 			p, queue = queue[0], queue[1:]
 		} else {
 			select {
 			case <-ctx.Done():
+				bridge.closePlanReview(open, "the session stopped")
 				return nil
 			case <-idle.C:
+				bridge.closePlanReview(open, "the session ended without an answer")
 				o.Log.System(fmt.Sprintf("remote session ended after %s without a prompt", o.Idle))
 				o.Mirror.Nudge()
 				return nil
+			case ans, ok := <-planAnswers:
+				if !ok {
+					planAnswers = nil
+					continue
+				}
+				choice, notes, accepted := bridge.answerPlanReview(open, ans)
+				if !accepted {
+					continue
+				}
+				review := open
+				open = nil
+				resetIdle()
+				switch choice {
+				case webask.PlanApproveHere:
+					// Approval leaves plan mode, as it does in the TUI: the
+					// session's mode follows, so later prompts are not planned.
+					if o.Controls != nil {
+						if summary, err := o.Controls.Apply(sessionsync.RemoteCommand{Line: "/mode agent"}, true); err != nil {
+							o.Log.System("web: the mode could not be set to agent: " + err.Error())
+						} else {
+							o.Log.System("web: " + summary)
+						}
+					}
+					o.Log.System("plan approved: " + review.path + " — executing")
+					tp = turnPlan{execute: review.name}
+					p = sessionsync.RemotePrompt{Content: executePlanPrompt, Origin: "plan_review"}
+				case webask.PlanRefine:
+					tp = turnPlan{refine: true}
+					p = sessionsync.RemotePrompt{Content: notes, Origin: "plan_review"}
+				default:
+					// Leave it: the plan file stays and the session stays in plan mode.
+					o.Mirror.Nudge()
+					continue
+				}
 			case q, ok := <-prompts:
 				if !ok {
 					prompts = nil
@@ -213,9 +267,9 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		// Output of the composer's shell lines since the last turn rides on this
 		// one, exactly once. The console's lines never get here.
 		attachments := shells.drain()
-		done := make(chan run.Turn, 1)
+		done := make(chan turnResult, 1)
 		go func() {
-			done <- runTurn(ctx, o, history, text, bridge, attachments)
+			done <- runTurn(ctx, o, history, text, bridge, attachments, tp)
 		}()
 		// While the turn runs, later prompts wait their turn (FIFO) and the
 		// website shows them queued.
@@ -223,7 +277,16 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 	wait:
 		for {
 			select {
-			case reply = <-done:
+			case res := <-done:
+				reply = res.turn
+				if res.plan != nil {
+					// The turn wrote a plan and offered it for review. An
+					// older review that is still open is superseded by it.
+					if open != nil && open.askID != res.plan.askID {
+						bridge.closePlanReview(open, "a newer plan replaced it")
+					}
+					open = res.plan
+				}
 				break wait
 			case q, ok := <-prompts:
 				if !ok {
@@ -392,9 +455,29 @@ func turnFacts(o SessionOptions) map[string]any {
 	return f
 }
 
-// runTurn runs one turn between its turn_state lines and returns the
-// assistant turn for the history ("" Role when it failed).
-func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text string, bridge *askBridge, attachments []run.Attachment) run.Turn {
+// planRefineDirective rides a refinement turn so the planner revises the plan
+// it just wrote instead of starting over, as the TUI's review pane does.
+const planRefineDirective = "Revise the approved plan above, incorporating the user's notes."
+
+// executePlanPrompt is the prompt of the turn that carries out an approved plan.
+const executePlanPrompt = "Execute the approved plan."
+
+// turnPlan says a turn follows a plan review: execute the approved plan, or
+// refine it with the web's notes. The zero value is an ordinary turn.
+type turnPlan struct {
+	execute string // the approved plan's name
+	refine  bool
+}
+
+// turnResult is what a finished turn hands the session loop: the assistant turn
+// for the history ("" Role when it failed) and the plan review it opened.
+type turnResult struct {
+	turn run.Turn
+	plan *planReview
+}
+
+// runTurn runs one turn between its turn_state lines.
+func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text string, bridge *askBridge, attachments []run.Attachment, tp turnPlan) turnResult {
 	facts := turnFacts(o)
 	agentRunner, mode := o.Agent, o.Mode
 	asks := false
@@ -405,8 +488,29 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 	o.Mirror.Nudge()
 	var paths []string
 	seen := map[string]bool{}
+	var review *planReview
+	var reviewMu sync.Mutex
 	emit := func(e agent.Event) {
 		switch e.Kind {
+		case agent.EventPlanFileKind:
+			// A plan turn ends with a plan file. When the web can answer, it
+			// is offered for review (approve, refine or leave it); otherwise
+			// the path is recorded so the transcript says where the plan is.
+			reviewMu.Lock()
+			// The review is a question about the plan, not a permission ask, so
+			// it does not wait for the ask switch; it needs only a way to take
+			// the answer. With web controls and ask off nothing takes one.
+			if bridge != nil && (o.Controls == nil || o.Controls.Asks()) {
+				if review != nil {
+					bridge.closePlanReview(review, "a newer plan replaced it")
+				}
+				review = bridge.recordPlanReview(e.PlanName, e.PlanPath)
+			}
+			recorded := review != nil
+			reviewMu.Unlock()
+			if !recorded {
+				o.Log.System("plan written: " + e.PlanPath)
+			}
 		case agent.EventToolDiffKind:
 			// The changed paths, for auto-commit. Render-only facts: the diff
 			// itself never reaches a model.
@@ -459,6 +563,21 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 	if o.Profile != "" && mode == modes.ModeAgent {
 		in.ForceAgent = o.Profile
 	}
+	if tp.execute != "" && o.Controls == nil && o.Executor != nil {
+		if r, err := o.Executor(); err != nil {
+			o.Log.System("web: the plan could not be executed: " + err.Error())
+		} else {
+			agentRunner = r
+		}
+	}
+	switch {
+	case tp.execute != "":
+		// An approved plan runs autonomously on the full tool surface
+		// whatever mode the session was planning in.
+		in.ExecutePlan, in.PlanName, in.ForceMode = true, tp.execute, modes.ModeAgent
+	case tp.refine:
+		in.ForceMode, in.Directive = modes.ModePlan, planRefineDirective
+	}
 	res, err := agentRunner.RunInputObserved(ctx, history, in, emit)
 	state := "ended"
 	switch {
@@ -471,11 +590,14 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 	}
 	o.Log.TurnEnded(state, facts)
 	o.Mirror.Nudge()
+	reviewMu.Lock()
+	opened := review
+	reviewMu.Unlock()
 	if err != nil {
-		return run.Turn{}
+		return turnResult{plan: opened}
 	}
 	if o.AfterTurn != nil && ctx.Err() == nil {
 		o.AfterTurn(ctx, text, res, paths)
 	}
-	return run.Turn{Role: "assistant", Content: res.Reply}
+	return turnResult{turn: run.Turn{Role: "assistant", Content: res.Reply}, plan: opened}
 }

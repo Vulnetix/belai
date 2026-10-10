@@ -30,10 +30,11 @@ const ExitPlanModeSentinel = "PLAN_EXIT"
 func (ExitPlanMode) Definition() Definition {
 	return Definition{
 		Name: "ExitPlanMode",
-		Description: "Declare the plan finished and hand it to the user for review. " +
-			"The full plan goes in the plan argument as markdown with the sections " +
-			"## Summary, ## Steps (numbered, with optional - Files: and - Verify: sub-bullets), " +
-			"## Test Plan, ## Assumptions, and ## Risks. Your reply text is NOT the plan.",
+		Description: "Finish the planning turn: the harness writes the plan to a file and shows it to the user to approve, refine or cancel. " +
+			"The whole plan goes in the plan argument as markdown: a # title line, ## Summary, ## Key Changes " +
+			"(numbered steps in execution order, each with - Files: and - Verify: sub-bullets), " +
+			"## Test Plan, ## Assumptions, and ## Risks when any. Your reply text is NOT the plan; " +
+			"a plan without numbered steps is rejected. This is the last call of the turn.",
 		Properties: map[string]Property{
 			"plan": {Type: "string", Description: "The full plan in markdown. Required."},
 		},
