@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
@@ -358,5 +359,31 @@ func TestUnpublishedWorkAtTheWallBudgetStillFails(t *testing.T) {
 	_, got := overrunBuilder(t, true)
 	if got.List == kanban.Review || got.Attempts != 1 {
 		t.Fatalf("unpublished work moved on: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	}
+}
+
+// A reviewer that closed its own branch's pull request as a duplicate of an
+// earlier attempt's sends the item back to review on the kept branch, without
+// counting an attempt or verifying gates on a branch the item no longer tracks.
+func TestClosingThisBranchsPRAsADuplicateMovesTheItemToTheKeptBranch(t *testing.T) {
+	store, reg := testEnv(t)
+	p := builderProfile()
+	p.Name = "t-reviewer"
+	p.Kanban.Labels = []string{"needs-review"}
+	p.Kanban.Lists = []string{"review"}
+	p.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree}
+	it, _, _ := store.Add(kanban.ItemInput{Title: "fix the README", Labels: []string{"needs-review"}, List: kanban.Review}, kanban.Provenance{})
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		tt.Workspace.kept = forge.PR{Number: 32, Branch: "belai/K-x/a2", URL: "https://example.invalid/pull/32"}
+
+		return run.Result{StopReason: run.StopIncomplete, Passes: 2}, nil
+	})
+	w.Repo = gitRepo(t)
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	if got.List != kanban.Review || got.Branch != "belai/K-x/a2" || got.Attempts != 0 || !strings.Contains(got.LastNote(), "duplicate of #32") {
+		t.Fatalf("%s branch=%q attempts=%d (%q)", got.List, got.Branch, got.Attempts, got.LastNote())
 	}
 }

@@ -274,6 +274,31 @@ func (w *Worker) resetManualGates(it kanban.Item) {
 // manual gate is unmet, and the card is blocked for a person while one is
 // abandoned: abandonment is terminal and never success. The note names gate
 // ids only; a gate's own evidence stays on the gate.
+// reviewDecided reports whether a reviewing profile has recorded every manual
+// gate on the item as met: its approval, given gate by gate, which a later
+// overrun does not undo.
+func (w *Worker) reviewDecided(it kanban.Item) bool {
+	k := w.Profile.Kanban
+	if k == nil || k.Gates == nil || !k.Gates.Review || w.gatesMode() != agentprofile.VerifyEnforce {
+		return false
+	}
+	cur, err := w.Store.Get(it.ID)
+	if err != nil {
+		return false
+	}
+	manual := 0
+	for _, g := range cur.Gates {
+		if g.Kind != kanban.GateManual {
+			continue
+		}
+		if g.State != kanban.GateMet {
+			return false
+		}
+		manual++
+	}
+	return manual > 0
+}
+
 func (w *Worker) applyManualGates(o outcome, it kanban.Item) outcome {
 	k := w.Profile.Kanban
 	if o.failed || k == nil || k.Gates == nil || !k.Gates.Review || w.gatesMode() != agentprofile.VerifyEnforce {

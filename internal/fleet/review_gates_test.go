@@ -39,14 +39,29 @@ var reviewGates = []kanban.Gate{
 // is decide.
 func reviewHarness(t *testing.T, results map[string]testrun.Result, decide func(t Turn, gate tools.KanbanGate)) (kanban.Item, *kanban.Store) {
 	t.Helper()
+	return reviewHarnessOverrun(t, results, decide, false)
+}
+
+// reviewHarnessOverrun is reviewHarness whose reviewer, when overrun is set,
+// keeps re-checking after deciding until a short wall budget ends its turn.
+func reviewHarnessOverrun(t *testing.T, results map[string]testrun.Result, decide func(t Turn, gate tools.KanbanGate), overrun bool) (kanban.Item, *kanban.Store) {
+	t.Helper()
 	store, reg := testEnv(t)
 	it, _, err := store.Add(kanban.ItemInput{Title: "review me", Labels: []string{"needs-review"}, List: kanban.Review, Gates: reviewGates}, kanban.Provenance{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := newWorker(t, store, reg, gatedReviewer(), func(ctx context.Context, tt Turn) (run.Result, error) {
+	p := gatedReviewer()
+	if overrun {
+		p.Budget.MaxWallPerItem = "300ms"
+	}
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
 		if decide != nil {
 			decide(tt, tools.KanbanGate{KanbanBase: tools.KanbanBase{Store: store, Claim: tt.Claim}})
+		}
+		if overrun {
+			<-ctx.Done()
+			return run.Result{StopReason: run.StopCancelled, Passes: 3}, ctx.Err()
 		}
 		return complete(ctx, tt)
 	})
@@ -171,4 +186,30 @@ func slicesContains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// A reviewer that recorded every manual gate as met has approved; running out of
+// wall time while it re-checks does not undo that, and the harness still
+// verifies the runnable gates before the card closes.
+func TestReviewerApprovalStandsWhenTheWallBudgetEndsAfterIt(t *testing.T) {
+	got, _ := reviewHarnessOverrun(t, nil, decide("G2", "met"), true)
+	if got.List != kanban.Done || got.Attempts != 0 || !strings.Contains(got.LastNote(), "recorded every manual gate as met") {
+		t.Fatalf("the approval was discarded for the overrun: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	}
+}
+
+// Undecided gates at the deadline are not an approval.
+func TestReviewerOverrunWithAnUndecidedGateStillFails(t *testing.T) {
+	got, _ := reviewHarnessOverrun(t, nil, nil, true)
+	if got.List == kanban.Done || got.Attempts != 1 {
+		t.Fatalf("an undecided review closed the card: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	}
+}
+
+// A runnable gate that fails is still caught after an overrun approval.
+func TestReviewerOverrunApprovalIsStillOverruledByAFailingGate(t *testing.T) {
+	got, _ := reviewHarnessOverrun(t, map[string]testrun.Result{"gate:G1": {Status: testrun.Failed, ExitCode: 1, Output: "--- FAIL: TestA\n"}}, decide("G2", "met"), true)
+	if got.List == kanban.Done {
+		t.Fatalf("a failing gate was waved through after an overrun: %s %q", got.List, got.LastNote())
+	}
 }

@@ -71,6 +71,9 @@ type Workspace struct {
 	ident []string
 	// published is the commit the last successful PublishBranch pushed.
 	published string
+	// kept is the pull request kept when this branch's own was closed as its
+	// duplicate: the item continues on kept.Branch.
+	kept forge.PR
 }
 
 func randHex(n int) string {
@@ -493,13 +496,8 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if err := w.onBranch(ctx); err != nil {
 		return "", err
 	}
-	// Check the remote before pushing: with no origin, git reads "origin" as
-	// a local path, and the hardened runner refuses file transport with an
-	// error that says nothing useful.
-	origin, _ := git(ctx, w.repoRun, w.repo, "remote", "get-url", "origin")
-	rem, ok := forge.ParseRemote(origin)
-	if !ok {
-		return "", errors.New("the repository has no GitHub or GitLab origin remote to publish to")
+	if _, err := w.originRemote(ctx); err != nil {
+		return "", err
 	}
 	// The model's commits live in its private object store until settled.
 	if err := w.absorbObjects(); err != nil {
@@ -508,18 +506,9 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if w.FilesChanged(ctx) == 0 {
 		return "", w.nothingToPublish(ctx)
 	}
-	// Publishing is the one step that needs a forge credential. The scrubbed
-	// environment a worker's git runs in has none, so a GitHub token the vault
-	// holds for this machine (held in memory, never shown to the model) is handed
-	// to this push and to gh, and to nothing else.
-	run, credArgs := w.run, []string(nil)
-	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
-		run = hardenedGit(w.gitDir, w.Dir, append(slices.Clone(w.ident), env...)...)
-		credArgs = helper
-	}
-	p, reason := forge.For(rem, run, exec.LookPath)
-	if p == nil {
-		return "", errors.New(reason)
+	p, run, credArgs, err := w.forgeAuthed(ctx)
+	if err != nil {
+		return "", err
 	}
 	// An explicit refspec: exactly this branch, to the same name.
 	ref := "refs/heads/" + w.Branch
@@ -537,6 +526,114 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 		w.published = strings.TrimSpace(head)
 	}
 	return url, err
+}
+
+// forgeAuthed returns the forge provider for the repository's origin, the
+// runner and git arguments that carry the forge credential. Check the remote
+// first: with no origin, git reads "origin" as a local path, and the hardened
+// runner refuses file transport with an error that says nothing useful.
+// Publishing is the one step that needs a forge credential. The scrubbed
+// environment a worker's git runs in has none, so a GitHub token the vault holds
+// for this machine (held in memory, never shown to the model) is handed to the
+// push and to gh, and to nothing else.
+func (w *Workspace) forgeAuthed(ctx context.Context) (forge.Provider, forge.Runner, []string, error) {
+	rem, err := w.originRemote(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	run, credArgs := w.run, []string(nil)
+	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
+		run = hardenedGit(w.gitDir, w.Dir, append(slices.Clone(w.ident), env...)...)
+		credArgs = helper
+	}
+	p, reason := forge.For(rem, run, exec.LookPath)
+	if p == nil {
+		return nil, nil, nil, errors.New(reason)
+	}
+	return p, run, credArgs, nil
+}
+
+// originRemote is the repository's GitHub or GitLab origin.
+func (w *Workspace) originRemote(ctx context.Context) (forge.Remote, error) {
+	origin, _ := git(ctx, w.repoRun, w.repo, "remote", "get-url", "origin")
+	rem, ok := forge.ParseRemote(origin)
+	if !ok {
+		return rem, errors.New("the repository has no GitHub or GitLab origin remote to publish to")
+	}
+	return rem, nil
+}
+
+// cardBranchPrefix is the part of an item branch that every attempt shares:
+// belai/K-3588f2/ for belai/K-3588f2/a3.
+func cardBranchPrefix(branch string) string {
+	if i := strings.LastIndex(branch, "/"); i > 0 {
+		return branch[:i+1]
+	}
+	return ""
+}
+
+// CardPRs lists the open pull requests from every attempt branch of this
+// item: a retry pushes a new branch, so an earlier attempt's pull request can
+// still be open beside this one.
+func (w *Workspace) CardPRs(ctx context.Context) ([]forge.PR, error) {
+	if !w.Worktree {
+		return nil, nil
+	}
+	prefix := cardBranchPrefix(w.Branch)
+	if prefix == "" {
+		return nil, nil
+	}
+	p, _, _, err := w.forgeAuthed(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.OpenPRsWithPrefix(ctx, w.Dir, prefix)
+}
+
+// CloseDuplicatePR closes the item's open pull request number as a duplicate
+// of keep, another of the item's open pull requests, with reason as the
+// comment. Nothing outside the item's own pull requests can be closed.
+func (w *Workspace) CloseDuplicatePR(ctx context.Context, number, keep int, reason string) (closed, kept forge.PR, err error) {
+	if number == keep {
+		return closed, kept, errors.New("a pull request cannot be a duplicate of itself")
+	}
+	prs, err := w.CardPRs(ctx)
+	if err != nil {
+		return closed, kept, err
+	}
+	var okClose, okKeep bool
+	for _, pr := range prs {
+		switch pr.Number {
+		case number:
+			closed, okClose = pr, true
+		case keep:
+			kept, okKeep = pr, true
+		}
+	}
+	if !okClose || !okKeep {
+		return closed, kept, fmt.Errorf("both pull requests must be open ones from this item's branches (%s*)", cardBranchPrefix(w.Branch))
+	}
+	p, _, _, err := w.forgeAuthed(ctx)
+	if err != nil {
+		return closed, kept, err
+	}
+	comment := fmt.Sprintf("Closed as a duplicate of #%d. %s", keep, reason)
+	if err := p.ClosePR(ctx, w.Dir, number, strings.TrimSpace(comment)); err != nil {
+		return closed, kept, err
+	}
+	if closed.Branch == w.Branch {
+		w.kept = kept
+	}
+	return closed, kept, nil
+}
+
+// Kept is the pull request kept over this branch's own, when that one was
+// closed as its duplicate; the zero PR otherwise.
+func (w *Workspace) Kept() forge.PR {
+	if w == nil {
+		return forge.PR{}
+	}
+	return w.kept
 }
 
 // PublishedCurrent reports whether the branch is exactly what the last

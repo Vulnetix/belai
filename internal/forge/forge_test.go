@@ -344,3 +344,26 @@ func TestClean(t *testing.T) {
 		t.Errorf("cap: %d runes", n)
 	}
 }
+
+// Only our own branches with the item's prefix: a fork's PR can carry any
+// branch name, so it is never listed.
+func TestOpenPRListingsKeepOnlyTheItemsOwnBranches(t *testing.T) {
+	gh := `[{"number":32,"title":"a2","state":"OPEN","url":"u32","isDraft":true,"headRefName":"belai/K-3588f2/a2","isCrossRepository":false},
+	{"number":33,"title":"a3","state":"OPEN","url":"u33","isDraft":true,"headRefName":"belai/K-3588f2/a3","isCrossRepository":false},
+	{"number":34,"title":"fork","state":"OPEN","url":"u34","headRefName":"belai/K-3588f2/x","isCrossRepository":true},
+	{"number":35,"title":"other","state":"OPEN","url":"u35","headRefName":"belai/K-1f03f7/a1","isCrossRepository":false}]`
+	prs, err := parseGitHubPRList(gh, "belai/K-3588f2/")
+	if err != nil || len(prs) != 2 || prs[0].Number != 32 || prs[1].Number != 33 || prs[1].Branch != "belai/K-3588f2/a3" {
+		t.Fatalf("github listing %+v %v", prs, err)
+	}
+	gl := `[{"iid":7,"title":"a1","state":"opened","web_url":"w7","source_branch":"belai/K-3588f2/a1","source_project_id":1,"target_project_id":1},
+	{"iid":8,"title":"fork","state":"opened","web_url":"w8","source_branch":"belai/K-3588f2/a2","source_project_id":9,"target_project_id":1},
+	{"iid":9,"title":"merged","state":"merged","web_url":"w9","source_branch":"belai/K-3588f2/a3","source_project_id":1,"target_project_id":1}]`
+	mrs, err := parseGitLabMRList(gl, "belai/K-3588f2/")
+	if err != nil || len(mrs) != 1 || mrs[0].Number != 7 {
+		t.Fatalf("gitlab listing %+v %v", mrs, err)
+	}
+	if got := withPrefix(prs, ""); len(got) != 0 {
+		t.Fatalf("an empty prefix matched %+v", got)
+	}
+}

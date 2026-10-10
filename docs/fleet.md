@@ -890,7 +890,7 @@ it after the last round, the attempt fails whatever the model said, and the
 usual attempt limit applies. A scan that gives no answer (no Vulnetix CLI, a
 failed scan) leaves a single turn. The scan's `.vulnetix` directory is removed
 from the worktree, so scan output is never committed, and the rounds share the
-item's token and wall budgets. A verdict a worker recorded with `KanbanVerdict` stands when the turn then runs out of wall time: the verifier that recorded `fixed` with its evidence and kept re-checking has decided, and the card closes with the VEX instead of going round again. An error or a cancellation does not settle a verdict. Published work stands the same way: when the wall budget ends while the branch is exactly what `PublishBranch` last pushed (the same commit, nothing uncommitted beside it), the turn counts as complete and the card moves on with no attempt counted. Its gates are still verified, under a 10-minute grace period that holds the lease. Work left beside what was published is not finished, and the overrun fails it as before. A turn that ends because the model provider refused a call (a 429 rate limit or quota, or a 5xx), at the start or part way through, is not an attempt: the card goes back to the list it was claimed from with its labels untouched and a note, the attempt count stays, and anything committed stays on the branch. An outage or an exhausted allowance cannot block cards. The patcher can also
+item's token and wall budgets. A verdict a worker recorded with `KanbanVerdict` stands when the turn then runs out of wall time: the verifier that recorded `fixed` with its evidence and kept re-checking has decided, and the card closes with the VEX instead of going round again. An error or a cancellation does not settle a verdict. Published work stands the same way: when the wall budget ends while the branch is exactly what `PublishBranch` last pushed (the same commit, nothing uncommitted beside it), the turn counts as complete and the card moves on with no attempt counted. Its gates are still verified, under a 10-minute grace period that holds the lease. Work left beside what was published is not finished, and the overrun fails it as before. A review stands the same way: a reviewer with `gates.review` that recorded every manual gate as met with `KanbanGate` has approved, so an overrun after that closes the card instead of failing it, once the harness has verified the runnable gates under the same grace period. A gate left undecided at the deadline is not an approval. A turn that ends because the model provider refused a call (a 429 rate limit or quota, or a 5xx), at the start or part way through, is not an attempt: the card goes back to the list it was claimed from with its labels untouched and a note, the attempt count stays, and anything committed stays on the branch. An outage or an exhausted allowance cannot block cards. The patcher can also
 record a verdict with `KanbanVerdict` instead of a fix, which ends the rounds. The verifier checks
 every claim itself: it re-runs the scanner, repeats a false positive's
 evidence, looks again for a fix, and for a gone card works out why the finding
@@ -1076,6 +1076,20 @@ The built-in builders and patchers use `agent`; the reviewer and verifier use
 `draft_pr`, which finds the builder's pull request rather than opening a
 second one. `agents.publish: false` turns publishing off everywhere: the
 workers still run, and nothing is pushed.
+
+Every attempt works on its own branch (`belai/K-3588f2/a1`, `a2`, …), so a
+retry can leave an earlier attempt's pull request open beside the new one.
+When a publishing worker claims an item with more than one open pull request
+from its branches, the harness attaches the list (number, branch, title) and
+offers the `CloseDuplicatePR` tool: it closes one of them, with a comment
+naming the one kept, and refuses any pull request outside that list. Only
+pull requests from the repository itself count, never a fork's, since a fork
+can name its branch anything. When the worker closes the pull request of its
+own worktree's branch, the kept one becomes the item's pull request and
+branch, and the item goes back to the list it was claimed from, without an
+attempt counted and without gate verification on the abandoned branch, so the
+next claim works on the kept branch. Which one to keep is the profile's
+judgement: the built-in reviewer and verifier compare them against the item.
 
 ## Memory
 
