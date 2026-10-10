@@ -36,9 +36,7 @@ const fleetRejecterJSON = `{
 func TestFleetReviewerRejectsWithARecordedOutcome(t *testing.T) {
 	e := newFleetEnv(t)
 	e.importProfiles()
-	js := filepath.Join(t.TempDir(), "t-rejecter.json")
-	os.WriteFile(js, []byte(fleetRejecterJSON), 0o600)
-	e.mustBelai("agent", "import", js)
+	e.importRejecter()
 	short := strings.TrimSpace(e.mustBelai("kanban", "add", "Add hello.txt", "-label", "build"))
 
 	e.mustBelai("agent", "run", "-trust-dir", "-once", "-provider", "openai", "-model", "test", "t-builder")
@@ -64,4 +62,12 @@ func TestFleetReviewerRejectsWithARecordedOutcome(t *testing.T) {
 			t.Fatalf("history lacks %q:\n%s", want, joined)
 		}
 	}
+}
+
+// importRejecter stores the reviewer that rejects.
+func (e *fleetEnv) importRejecter() {
+	e.t.Helper()
+	js := filepath.Join(e.t.TempDir(), "t-rejecter.json")
+	os.WriteFile(js, []byte(fleetRejecterJSON), 0o600)
+	e.mustBelai("agent", "import", js)
 }

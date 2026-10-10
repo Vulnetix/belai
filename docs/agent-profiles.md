@@ -441,6 +441,33 @@ validates it and saves it as JSON. Definitions written for some other agent
 harnesses can be brought in with `belai agent import --from`; see
 [agent-import.md](agent-import.md).
 
+### What the prompt says and what the harness says
+
+A worker's `system_prompt` and `identity` are its persona and its judgement: who it
+is, how it investigates, what makes a change correct, what to prefer when two
+pull requests do the same job. The mechanics of the run are the harness's. It
+writes them to the model each turn from the claim, the workspace and the blocks the
+profile declares, so a prompt that never names them still gets them, and a prompt
+that does name them cannot make them mean something else:
+
+| The harness tells the worker | From |
+| --- | --- |
+| which board tools it holds and when to use each (`KanbanOutcome` always; `KanbanHandoff` with the handoff targets and labels; `KanbanVerdict` with the verdicts, and that it writes the VEX; `KanbanGate`; `KanbanContract`) | the claim |
+| where it works, what git may do there, and how to publish | `workspace` |
+| which crew files are shared, that it may edit the ones with write access, how to treat teammates' lines, and that they stay out of the branch | `workspace.sync` |
+| which reference documents it was given and where the scanner's review artifacts are | `knowledge.paths` |
+| that a duplicate pull request can be closed, and what happens next | the item's open pull requests |
+
+So a prompt can say "keep two sections, a scratchpad and long-term facts" (how the
+crew organises its own notes) or "prefer the pull request that does it most
+simply", but not which tool records a verdict or where the notes file lives. A lint
+test (`TestBuiltinPromptsCarryNoMechanics`) keeps the built-in prompts that way. A
+worker with no read-write file tool, or a read-only workspace, or manual-gate review
+is asked for a decision rather than an edit, and the harness does not send it back
+for another pass because it wrote nothing. A worker can also be started from a prompt
+alone ([a worker made from a prompt](fleet.md#a-worker-made-from-a-prompt)); it
+reaches the same board outcome as a stored profile with the same declarations.
+
 ### Built-in workers and crews
 
 | Profile | Claims | Hands on to |

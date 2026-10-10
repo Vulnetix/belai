@@ -177,9 +177,11 @@ Limits:
 After the survey the worker is idle again. It exits after the quiet window
 unless `-stay` or a `schedule` keeps it.
 
-The built-in `belai:scout` surveys every 24 hours into `review`. It runs the
-project's tests, build and lint to find failures. It compares specs, PRDs,
-design notes, READMEs, `docs/` and the static site's prose with the code, to
+The built-in `belai:scout` has no `survey` block: it works the requests and
+`quality` cards the board gives it (see
+[The delivery crew](#the-delivery-crew)). Given a request or a measured focus, it
+runs the project's tests, build and lint to find failures. It compares specs,
+PRDs, design notes, READMEs, `docs/` and the static site's prose with the code, to
 find flags, defaults, limits, commands and behaviours that disagree. It also
 looks for untested business rules, missing or stale docs, and site prose to
 add or update. It files at most five `build` handoffs, discrepancies before
