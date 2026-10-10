@@ -1392,7 +1392,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	}
 	in := agent.TurnInput{
 		Prompt: prompt, HarnessPrompt: prompt, ForceMode: modes.ModeGoal,
-		KanbanItem: t.Item.ID, NoGoalDraft: true,
+		KanbanItem: t.Item.ID, NoGoalDraft: true, Decision: p.Decides(),
 		Directive: w.directive(t.Workspace, publish, openPRs != ""),
 	}
 	if t.Memory != "" {

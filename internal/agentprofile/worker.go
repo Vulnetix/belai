@@ -263,6 +263,33 @@ func (p AgentProfile) Writes() bool {
 	return false
 }
 
+// editingTools are the file tools. Bash is not among them here: a worker that
+// only runs checks has Bash and still changes nothing it is judging.
+var editingTools = []string{"Write", "Edit"}
+
+// Decides reports whether the worker's deliverable is a recorded decision
+// rather than a change to the code: its workspace is read-only, it decides
+// manual gates, or its allowlist has no file tool. The goal loop then asks it
+// for the decision and never tells it to make an edit. An empty allowlist is
+// the full surface, which edits.
+func (p AgentProfile) Decides() bool {
+	if p.ReadOnlyWorkspace() {
+		return true
+	}
+	if p.Kanban != nil && p.Kanban.Gates != nil && p.Kanban.Gates.Review {
+		return true
+	}
+	if len(p.Tools) == 0 {
+		return false
+	}
+	for _, t := range p.Tools {
+		if slices.Contains(editingTools, t) {
+			return false
+		}
+	}
+	return true
+}
+
 // HasTool reports whether the allowlist grants name (an empty allowlist
 // grants everything).
 func (p AgentProfile) HasTool(name string) bool {

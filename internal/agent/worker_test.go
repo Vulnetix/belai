@@ -137,22 +137,21 @@ func TestWorkerDirectiveNamesOnlyTheToolsTheClaimHolds(t *testing.T) {
 	optional := []string{tools.KanbanContractName, tools.KanbanVerdictName, tools.KanbanGateName, tools.KanbanHandoffName}
 	cases := []struct {
 		name  string
-		claim tools.WorkerClaim
+		claim *tools.WorkerClaim
 		names []string
 		extra []string
 	}{
-		{"bare", tools.WorkerClaim{Item: item}, nil, nil},
-		{"handoff", tools.WorkerClaim{Item: item, HandoffLabels: []string{"build"}}, []string{tools.KanbanHandoffName}, []string{"labels: build"}},
-		{"verdict", tools.WorkerClaim{Item: item, Verdicts: []string{"fixed", "no_fix"}}, []string{tools.KanbanVerdictName}, []string{"fixed, no_fix", "routes the card"}},
-		{"verdict with vex", tools.WorkerClaim{Item: item, Verdicts: []string{"fixed"}, VEX: true}, []string{tools.KanbanVerdictName}, []string{"writes the VEX"}},
-		{"gate review", tools.WorkerClaim{Item: item, GateReview: true}, []string{tools.KanbanGateName}, []string{"met, unmet or abandoned"}},
-		{"coverage", tools.WorkerClaim{Item: item, Coverage: true}, []string{tools.KanbanContractName}, []string{"which clauses it covers"}},
-		{"notable", tools.WorkerClaim{Item: item, Notable: []string{"7b1d4e00-0000-4000-8000-000000000000"}}, nil, []string{"K-7b1d4e"}},
+		{"bare", &tools.WorkerClaim{Item: item}, nil, nil},
+		{"handoff", &tools.WorkerClaim{Item: item, HandoffLabels: []string{"build"}}, []string{tools.KanbanHandoffName}, []string{"labels: build"}},
+		{"verdict", &tools.WorkerClaim{Item: item, Verdicts: []string{"fixed", "no_fix"}}, []string{tools.KanbanVerdictName}, []string{"fixed, no_fix", "routes the card"}},
+		{"verdict with vex", &tools.WorkerClaim{Item: item, Verdicts: []string{"fixed"}, VEX: true}, []string{tools.KanbanVerdictName}, []string{"writes the VEX"}},
+		{"gate review", &tools.WorkerClaim{Item: item, GateReview: true}, []string{tools.KanbanGateName}, []string{"met, unmet or abandoned"}},
+		{"coverage", &tools.WorkerClaim{Item: item, Coverage: true}, []string{tools.KanbanContractName}, []string{"which clauses it covers"}},
+		{"notable", &tools.WorkerClaim{Item: item, Notable: []string{"7b1d4e00-0000-4000-8000-000000000000"}}, nil, []string{"K-7b1d4e"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			claim := c.claim
-			d := workerDirective(&claim)
+			d := workerDirective(c.claim)
 			for _, n := range optional {
 				want := false
 				for _, h := range c.names {

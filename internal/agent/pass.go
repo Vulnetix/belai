@@ -182,6 +182,9 @@ func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive b
 			// a change.
 			return planReadStreakDirective
 		}
+		if s.turnDecision {
+			return decisionReadStreakDirective
+		}
 		return readStreakDirective
 	case modes.ModeAgent:
 		return agentEditNudge

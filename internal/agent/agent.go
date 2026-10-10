@@ -288,6 +288,8 @@ type Session struct {
 	// tool and allows several read-only subagents to run concurrently.
 	turnFanOut bool
 	// fanOutRegistry is the full registry plus a Task tool whose runner
+	// turnDecision is TurnInput.Decision for this turn.
+	turnDecision bool
 	// executes a read-only subagent for this session.
 	fanOutRegistry       *tools.Registry
 	fanOutOpenAITools    []wire.OpenAITool
@@ -862,6 +864,12 @@ type TurnInput struct {
 
 // ItemWithheldError ends a worker turn whose claimed item the security
 // classifier withheld.
+	// Decision marks a turn whose deliverable is a recorded decision, not a
+	// change to the files (a reviewer, a verifier, a read-only scout). The goal
+	// loop then asks for the decision, never tells the model to edit, does not
+	// treat a run without file writes as a stall and skips the read-only
+	// verification pass.
+	Decision bool
 type ItemWithheldError struct {
 	Item     string
 	Sentinel rolemanager.Sentinel
@@ -1317,6 +1325,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	defer func() {
 		if draft != nil {
 			draft.cancel(nil)
+	s.turnDecision = in.Decision
 		}
 	}()
 	switch {
