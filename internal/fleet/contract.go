@@ -44,7 +44,7 @@ func (w *Worker) directive(ws *Workspace, publish, openPRs bool) string {
 
 // duplicatePRDirective explains the open-pull-request attachment and the one
 // tool that acts on it. It does not say who decides: that is the profile's task.
-const duplicatePRDirective = "Pull requests: this item has more than one open pull request, one per attempt branch (an attachment lists them). CloseDuplicatePR closes one you have judged a duplicate, with the reason; use it only when deciding between them is part of your task. If you close your own branch's pull request in favour of an earlier attempt's, end the turn without completing the goal: the harness returns the item on the kept branch."
+const duplicatePRDirective = "Pull requests: this item has more than one open pull request, one per attempt branch (an attachment lists them). CloseDuplicatePR closes one you have judged a duplicate, with the reason; use it only when deciding between them is part of your task. If you close your own branch's pull request in favour of an earlier attempt's, stop there: the harness returns the item on the kept branch whatever outcome you record."
 
 // knowledgeDirective tells a worker about the reference documents placed in its
 // worktree and, for the scanner's review artifacts, what they hold. Harness

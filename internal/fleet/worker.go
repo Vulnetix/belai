@@ -790,7 +790,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	stopWatch()
 	w.takeCoord(it, ws)
 
-	o := w.judge(it, res, runErr, cause)
+	o := w.judge(it, res, runErr, cause, claim)
 	// The wall budget can end after the work was decided, while the model was
 	// only re-checking it: a branch that is exactly what was published (by the
 	// worker, or by the forge coordinator it handed the push to), or a review
@@ -800,8 +800,14 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	// ended with the budget, so the grace period holds the lease itself.
 	vctx := itemCtx
 	decided := ""
-	if o.failed && !o.transient && errors.Is(cause, errWallBudget) {
+	// A recorded failure or block stands whatever else holds at the deadline; a
+	// recorded success is finished work like a published branch, so its gates
+	// are verified under the grace period too (the item's context has ended).
+	recd := recordedOutcome(claim, res, runErr, cause)
+	if errors.Is(cause, errWallBudget) && recd != tools.OutcomeFailure && recd != tools.OutcomeBlocked && ((o.failed && !o.transient) || recd == tools.OutcomeSuccess) {
 		switch {
+		case recd == tools.OutcomeSuccess:
+			decided = "recorded its outcome"
 		case ws.PublishedCurrent(context.WithoutCancel(ctx)):
 			decided = "published its work"
 		case w.coordTookOver(it.ID):
@@ -816,7 +822,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		vctx, stopGrace = context.WithTimeout(context.WithoutCancel(ctx), publishedGrace)
 		defer stopGrace()
 	}
-	o = w.applyVerdict(ctx, o, it, claim, verdictSettled(res, runErr, cause))
+	o = w.applyVerdict(ctx, o, it, claim, recordSettled(res, runErr, cause))
 	o = w.applyRounds(o, rr, it)
 	o = w.applyCoord(ctx, o, it, ws, cause)
 	if w.stopped(ctx, itemCtx, it, ws) {
@@ -1016,9 +1022,10 @@ type outcome struct {
 // judge turns the goal loop's result into an outcome. Notes are harness
 // facts — the stop reason, pass and file counts, tool names — never model
 // text.
-func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outcome {
+func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error, claim *tools.WorkerClaim) outcome {
 	o := outcome{stop: res.StopReason, passes: res.Passes}
 	var withheld *agent.ItemWithheldError
+	rec := recordedOutcome(claim, res, runErr, cause)
 	switch {
 	case errors.As(runErr, &withheld):
 		return outcome{failed: true, blocked: true, note: "item text withheld by the security classifier: " + withheld.Sentinel.Label() + "; a human must review it"}
@@ -1028,6 +1035,21 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error) outc
 	case len(res.AsksWithheld) > 0:
 		o.failed, o.blocked = true, true
 		o.note = "needs permission: " + strings.Join(res.AsksWithheld, ", ") + " (agent " + w.Profile.Name + " cannot ask; add a permission rule or do this step by hand, then move the item back)"
+		return o
+	case rec != "":
+		// The worker said how the item ends. Its reason is in the item's notes;
+		// the release note here stays a harness fact. The checks that follow
+		// (gates, verdicts) can still overrule a success, never a failure.
+		switch rec {
+		case tools.OutcomeSuccess:
+			o.note = fmt.Sprintf("agent %s recorded success (%d passes)", w.Profile.Name, res.Passes)
+		case tools.OutcomeBlocked:
+			o.failed, o.blocked = true, true
+			o.note = fmt.Sprintf("agent %s recorded that it cannot continue (%d passes); the reason is in the notes", w.Profile.Name, res.Passes)
+		default:
+			o.failed = true
+			o.note = fmt.Sprintf("agent %s recorded failure (%d passes); the reason is in the notes", w.Profile.Name, res.Passes)
+		}
 		return o
 	}
 	o.failed = true
@@ -1057,13 +1079,25 @@ const publishedGrace = 10 * time.Minute
 // errWallBudget is the cause an item's context ends with when its wall budget does.
 var errWallBudget = errors.New("budget.max_wall_per_item reached")
 
-// verdictSettled reports whether a turn ended in a way that leaves a recorded
-// verdict standing. A turn that finished cleanly does. So does one that only ran
-// out of budget (its wall time or its passes) after the verdict was recorded: a
-// verifier that recorded its verdict with evidence and then kept re-checking has
-// still decided, and discarding the verdict for the overrun sends the card round
-// again for nothing. An error or a cancellation does not settle it.
-func verdictSettled(res run.Result, runErr, cause error) bool {
+// recordedOutcome is the outcome the worker recorded with KanbanOutcome, or ""
+// when it recorded none or the turn ended in a way that does not leave it
+// standing (an error, a cancellation).
+func recordedOutcome(claim *tools.WorkerClaim, res run.Result, runErr, cause error) tools.Outcome {
+	rec, ok := claim.RecordedOutcome()
+	if !ok || !recordSettled(res, runErr, cause) {
+		return ""
+	}
+	return rec.Outcome
+}
+
+// recordSettled reports whether a turn ended in a way that leaves what the
+// worker recorded (a verdict, or how its item ends) standing. A turn that
+// finished cleanly does. So does one that only ran out of budget (its wall time
+// or its passes) after the record was made: a verifier that recorded its verdict
+// with evidence and then kept re-checking has still decided, and discarding the
+// verdict for the overrun sends the card round again for nothing. An error or a
+// cancellation does not settle it.
+func recordSettled(res run.Result, runErr, cause error) bool {
 	if runErr == nil && cause == nil {
 		return true
 	}

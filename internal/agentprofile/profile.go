@@ -152,6 +152,7 @@ var extraToolNames = map[string]bool{
 	"KanbanVerdict":  true,
 	"KanbanGate":     true,
 	"KanbanContract": true,
+	"KanbanOutcome":  true,
 	"Vulnetix":       true,
 	"ToolSearch":     true,
 	"SearchFetched":  true,

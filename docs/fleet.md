@@ -73,12 +73,23 @@ One pass of the worker loop:
 4. **Lease.** While the turn runs, the harness renews the lease. A worker
    that crashes stops renewing; when the lease expires the item returns to the
    list it was claimed from and another worker may take it.
-5. **Outcome.** The goal verdict decides. On `GOAL_COMPLETE` the harness
-   commits the worktree's changes to the branch and releases the item to
-   `on_success`. On a stall, a budget stop or an error the item goes back to
-   its source list until `max_attempts`, then to `on_failure`. The release
-   note is harness-composed: counts, the verdict and the stop reason, never
-   model text. The worker that failed an item leaves it to other workers
+5. **Outcome.** What the worker recorded decides, and where it recorded
+   nothing the goal verdict does. Every worker has `KanbanOutcome`, which
+   records `success`, `failure` or `blocked` with a one-line reason (the reason
+   is written to the item's notes). The turn ends when it is called, without
+   asking the goal evaluator, so a reviewer can reject a branch by recording a
+   `failure` instead of hoping its closing words read as unfinished. A recorded
+   outcome stands when the turn then runs out of passes or wall time; an error or
+   a cancellation does not settle it. Without a record, `GOAL_COMPLETE` is a
+   success. On a success the harness commits the worktree's changes to the
+   branch and releases the item to `on_success`. A `failure`, a stall, a budget
+   stop or an error sends the item back to its source list until
+   `max_attempts`, then to `on_failure`; `blocked` goes to `blocked`. The checks
+   that follow can overrule a success, never a failure: unmet gates, a
+   verification that fails, or a verdict the profile requires and the worker
+   did not record all fail the item, and a verdict the worker did record routes
+   the card as before. The release note is harness-composed: counts, the
+   verdict and the stop reason, never model text. The worker that failed an item leaves it to other workers
    until someone touches it. Moving it back, assigning it or editing it
    counts as a deliberate retry, and that worker may take it again.
 6. **Memory.** An optional reflection turn distils a few lessons into the
@@ -321,6 +332,7 @@ worker's own project, as before.
 |---|---|
 | `KanbanSearch` | yes |
 | `KanbanUpdate` | a note on the claimed item only |
+| `KanbanOutcome` | records how the claimed item ends (`success`, `failure` or `blocked`, with a reason); the turn ends and the harness routes the card |
 | `KanbanHandoff` | files a new item with this item as its parent, to a profile in `handoff_to`; under a `survey` item always to the survey's list |
 | `KanbanMove`, `KanbanAdd` | not offered; the harness moves the claimed item |
 

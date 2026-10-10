@@ -59,6 +59,11 @@ Belai offers the model different kanban tools at different points in a turn:
   clauses of the request card it holds, before its first handoff. Each handoff then
   names the clauses it covers, and the harness files a gap card for one nothing
   covers. See [request coverage](fleet.md#request-coverage).
+- **`KanbanOutcome`** (every fleet worker) records how the item it holds ends:
+  `success`, `failure` or `blocked`, with a one-line reason that is written to the
+  item's notes. It takes no item id and moves nothing. The turn ends when it is
+  called and the harness routes the card from the record, after its own checks: they
+  can overrule a success, never a failure. See [the outcome step](fleet.md#workers).
 
 In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
 worker has claimed. `KanbanMove` is also a compare-and-set: it refuses the

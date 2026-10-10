@@ -164,6 +164,9 @@ func TestWorkerDirectiveNamesOnlyTheToolsTheClaimHolds(t *testing.T) {
 			if !strings.Contains(d, "K-3f9a2c") || !strings.Contains(d, "do not try to move it") {
 				t.Errorf("the claimed item and the no-move rule are always stated:\n%s", d)
 			}
+			if !strings.Contains(d, tools.KanbanOutcomeName) {
+				t.Errorf("every claim holds %s, so every directive names it:\n%s", tools.KanbanOutcomeName, d)
+			}
 			for _, s := range c.extra {
 				if !strings.Contains(d, s) {
 					t.Errorf("missing %q:\n%s", s, d)
