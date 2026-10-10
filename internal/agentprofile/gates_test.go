@@ -1,9 +1,6 @@
 package agentprofile
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestGatesSpecValidation(t *testing.T) {
 	ok := worker()
@@ -138,8 +135,10 @@ func TestBuiltinScoutPlansRequestsForCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Kanban.Gates.Coverage || !strings.Contains(p.SystemPrompt, "KanbanContract") || !strings.Contains(p.SystemPrompt, "covers") {
-		t.Fatalf("the scout records clauses and covers them: %+v", p.Kanban.Gates)
+	// The tool that records clauses, and the rule that each handoff covers some,
+	// come from the claim (agent.workerDirective), not from the instructions.
+	if !p.Kanban.Gates.Coverage {
+		t.Fatalf("the scout plans requests for coverage: %+v", p.Kanban.Gates)
 	}
 }
 
