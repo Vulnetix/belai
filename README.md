@@ -138,18 +138,49 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, `kiro`, a custom name from `settings.json`, or a configured display label |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, `kiro`, `groq`, `deepseek`, `fireworks`, `mistral`, `together`, `xai`, `moonshot`, `minimax`, `alibaba`, a custom name from `settings.json`, or a configured display label |
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
+| `-mode` | operating mode for `-prompt`: `agent`, `plan`, `goal` or `code` (default: classified from the prompt) |
+| `-plan` | start in plan mode (read-only) |
+| `-detect-mode` | report which operating mode the prompt selects |
+| `-agent` | start a background agent by name in foreground mode |
+| `-agent-create` | create an agent profile from a description and save to disk |
+| `-export` | export a session by id or unique id prefix as Markdown and exit |
 | `-caveman` | enable caveman voice rewrite for this run |
 | `-guardrails` | posture guardrails (default on); `-guardrails=false` turns every gate off for this run |
 | `-ask-permission` | the permission-ask gate (default on); `-ask-permission=false` resolves asks to allow |
+| `-firewall` | route LLM traffic through the active AI Firewall (see `/firewall`) |
 | `-tools` | enable tool execution for this run |
+| `-defer-tools` | advertise core tools in full and load the rest on demand with `ToolSearch` (default on); `-defer-tools=false` sends every tool definition on every request |
+| `-dangerously-yolo-everything` | ignore every posture gate |
+| `-allow-unsafe-tool-result` | ignore unsafe tool results |
+| `-allow-malformed-tool-result` | ignore malformed tool results |
+| `-allow-unsafe-prompt` | ignore unsafe prompt classification |
+| `-allow-malformed-prompt` | ignore malformed prompt classification |
+| `-tool-call-mismatch` | `abort`\|`strip`\|`ignore` tool-call mismatches |
+| `-allow-unpermitted-tools` | allow tool calls matching no permission rule (default) |
+| `-allow-ask-without-tty` | ignore ask-without-tty blocks |
+| `-allow-invalid-skills` | ignore invalid skill validation |
+| `-allow-invalid-hooks` | ignore invalid hook validation |
+| `-classifier-provider` | security-classifier provider (default: the main provider) |
+| `-classifier-model` | security-classifier model (default: the main model) |
+| `-classifier-effort` | security-classifier thinking effort (default: none) |
+| `-classifier-kind` | security-classifier stack: `llm`, `models`, `openrouter-decisions` or `systemone` (`jev` is read as `systemone`); default: `models` when the binary embeds a model, else `llm` |
+| `-classifier-phase1-model` | phase-1 prompt-saturation model id |
+| `-classifier-phase1-source` | phase-1 source: `embedded` or `huggingface` |
+| `-classifier-phase1-threshold` | phase-1 attack threshold (default 0.75) |
+| `-classifier-phase2-model` | phase-2 jailbreak model id |
+| `-classifier-phase2-source` | phase-2 source: `embedded`, `huggingface`, or `disabled` |
+| `-classifier-phase2-threshold` | phase-2 attack threshold (default 0.75) |
 | `-session-retention-days` | idle session retention in days (default 28) |
-| `-detect-mode` | report which operating mode the prompt selects |
+| `-no-prune` | never prune idle sessions |
+| `-no-transcript` | with `-prompt`, do not keep a session transcript of the run |
+| `-no-git-sync` | do not rebase the branch onto origin's default branch before a turn (`git.sync` in settings; `/gitsync` in the TUI) |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project |
 | `-teleport` | continue a session of your account from another host, sandbox or the web: it opens here under a new id and the original keeps running (see [docs/teleport.md](docs/teleport.md)) |
+| `-teleport-push` | with `-teleport`, agree that the origin host may push the session's uncommitted and unpushed changes to the forge as one `belai/teleport/<id>` branch, which this host then fetches; without it they are sent as a patch and replayed here |
 | `-teleport-ref` | with `-teleport`, check out this ref or commit instead of the one the session was at |
 | `-verbose` | print mode and security decisions to stderr |
 | `-usage-json` | with `-prompt`, write a JSON summary of the run's token usage (per role, per model, cache reads and writes, request composition) to a file on exit — see [docs/benchmarks.md](docs/benchmarks.md) |
