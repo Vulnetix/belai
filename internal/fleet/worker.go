@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -758,15 +759,24 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	cause := context.Cause(itemCtx)
 
 	o := w.judge(it, res, runErr, cause)
-	// The wall budget can end after the work was published, while the model was
-	// only re-checking it. A branch that is exactly what was published is
+	// The wall budget can end after the work was decided, while the model was
+	// only re-checking it: a branch that is exactly what was published, or a
+	// review whose every manual gate the reviewer recorded as met. Either is
 	// finished work, so the overrun does not cost an attempt; its gates are
 	// still verified below, under a short grace period of their own. The lease
 	// renewal ended with the budget, so the grace period holds the lease itself.
 	vctx := itemCtx
-	if o.failed && !o.transient && errors.Is(cause, errWallBudget) && ws.PublishedCurrent(context.WithoutCancel(ctx)) &&
-		w.Store.Renew(it.ID, w.Record.ID, publishedGrace+p.LeaseDuration()) == nil {
-		o = outcome{stop: res.StopReason, passes: res.Passes, note: fmt.Sprintf("agent %s published its work before %s (%d passes)", p.Name, errWallBudget, res.Passes)}
+	decided := ""
+	if o.failed && !o.transient && errors.Is(cause, errWallBudget) {
+		switch {
+		case ws.PublishedCurrent(context.WithoutCancel(ctx)):
+			decided = "published its work"
+		case w.reviewDecided(it):
+			decided = "recorded every manual gate as met"
+		}
+	}
+	if decided != "" && w.Store.Renew(it.ID, w.Record.ID, publishedGrace+p.LeaseDuration()) == nil {
+		o = outcome{stop: res.StopReason, passes: res.Passes, note: fmt.Sprintf("agent %s %s before %s (%d passes)", p.Name, decided, errWallBudget, res.Passes)}
 		var stopGrace context.CancelFunc
 		vctx, stopGrace = context.WithTimeout(context.WithoutCancel(ctx), publishedGrace)
 		defer stopGrace()
@@ -792,7 +802,20 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the branch commits a crew file the harness keeps out of branches: " + sanitize.Line(strings.Join(bad, ", "), 200)}
 		}
 	}
-	if mode := w.gatesMode(); mode != "off" && !o.failed && ws.Worktree && vctx.Err() == nil {
+	// The worker closed this branch's pull request as a duplicate of an earlier
+	// attempt's: the item now tracks the kept one, and goes back to its list so
+	// the work continues on that branch. However the turn ended, its pull
+	// request is closed, so the item must follow the kept one. Not an attempt,
+	// and no gates are verified on a branch the item no longer tracks.
+	if kept := ws.Kept(); kept.Branch != "" {
+		back := it.ClaimFrom
+		if !back.Valid() {
+			back = kanban.Backlog
+		}
+		o = outcome{to: back, branch: kept.Branch, switched: true, stop: o.stop, passes: o.passes,
+			note: fmt.Sprintf("agent %s closed this branch's pull request as a duplicate of #%d; the item continues on %s", p.Name, kept.Number, kept.Branch)}
+	}
+	if mode := w.gatesMode(); mode != "off" && !o.failed && !o.switched && ws.Worktree && vctx.Err() == nil {
 		v := w.verifyBranch(vctx, it, ws)
 		if w.stopped(ctx, vctx, it, ws) {
 			return
@@ -918,11 +941,14 @@ type outcome struct {
 	// counted, because the item was not what failed. Anything committed stays on
 	// the branch for the next attempt.
 	transient bool
-	note      string
-	branch    string
-	files     int
-	stop      run.StopReason
-	passes    int
+	// switched marks an item moved to an earlier attempt's branch whose pull
+	// request was kept over this one's: nothing of this branch is reported.
+	switched bool
+	note     string
+	branch   string
+	files    int
+	stop     run.StopReason
+	passes   int
 	// The security verdict routes the item and names its VEX. to, when set,
 	// replaces the profile's route with these label edits.
 	verdict    kanban.Verdict
@@ -1025,7 +1051,9 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		k = &agentprofile.KanbanSpec{}
 	}
 	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient, Branch: o.branch, Releaser: p.Name}
-	if o.files > 0 {
+	if o.switched {
+		// The note already names the branch the item continues on.
+	} else if o.files > 0 {
 		out.Note += fmt.Sprintf("; %d files changed on %s", o.files, o.branch)
 	} else if o.branch != "" && !o.failed {
 		// Nothing to review or publish: the base already had it, or the
@@ -1253,13 +1281,22 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		params.KnowledgeProfile = &knowledge.Profile{ID: p.ID, Name: p.Name, Paths: paths}
 	}
 	publish := false
+	openPRs := ""
 	if ws := t.Workspace; ws != nil && ws.Worktree {
 		params.SandboxMounts, params.SandboxEnv = ws.Sandbox()
 		if w.publishes() && ws.ForgeOrigin(ctx) {
 			publish = true
-			params.Extra = append(params.Extra, tools.PublishBranch{
-				P: &itemPublisher{ws: ws, store: w.Store, item: t.Item.ID, session: t.SessionID}, Branch: ws.Branch,
-			})
+			pub := &itemPublisher{ws: ws, store: w.Store, item: t.Item.ID, session: t.SessionID}
+			params.Extra = append(params.Extra, tools.PublishBranch{P: pub, Branch: ws.Branch})
+			// A retry pushes a new attempt branch, so an earlier attempt's pull
+			// request can still be open: say so, and let the worker close the one
+			// it judges the duplicate.
+			if prs, err := ws.CardPRs(ctx); err != nil {
+				w.logf("%s: list the item's pull requests: %v", t.Item.Short(), err)
+			} else if len(prs) > 1 {
+				openPRs = describePRs(prs, ws.Branch)
+				params.Extra = append(params.Extra, tools.CloseDuplicatePR{C: pub, Open: openPRs})
+			}
 		}
 	}
 	// What the profile names is placed in the worktree: the documents in its
@@ -1304,6 +1341,9 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	}
 	if t.Setup != "" {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "setup", Label: "workspace setup failure", Body: t.Setup})
+	}
+	if openPRs != "" {
+		in.Attachments = append(in.Attachments, run.Attachment{Kind: "pull_requests", Label: "this item's open pull requests, one per attempt branch", Body: openPRs})
 	}
 	tr := w.transcript(t)
 	emit := func(e agent.Event) {
@@ -1483,4 +1523,32 @@ func (p *itemPublisher) PublishBranch(ctx context.Context, title, body string) (
 		_, _ = p.store.SetPR(p.item, url, p.session)
 	}
 	return url, nil
+}
+
+// CloseDuplicatePR closes one of the item's open pull requests as a duplicate
+// of another. Closing this branch's own makes the kept one the item's.
+func (p *itemPublisher) CloseDuplicatePR(ctx context.Context, number, keep int, reason string) (string, error) {
+	closed, kept, err := p.ws.CloseDuplicatePR(ctx, number, keep, reason)
+	if err != nil {
+		return "", err
+	}
+	msg := fmt.Sprintf("closed #%d (%s) as a duplicate of #%d (%s)", closed.Number, closed.Branch, kept.Number, kept.Branch)
+	if p.ws.Kept().Number == kept.Number && kept.Number != 0 {
+		_, _ = p.store.SetPR(p.item, kept.URL, p.session)
+		msg += fmt.Sprintf("; this item's pull request is now #%d, and when this turn ends the item returns to its list so the work continues on %s", kept.Number, kept.Branch)
+	}
+	return msg, nil
+}
+
+// describePRs lists pull requests for the model: number, branch and title.
+func describePRs(prs []forge.PR, current string) string {
+	parts := make([]string, 0, len(prs))
+	for _, pr := range prs {
+		s := fmt.Sprintf("#%d on %s (%s)", pr.Number, pr.Branch, sanitize.Line(pr.Title, 120))
+		if pr.Branch == current {
+			s += ", this worktree's branch"
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "; ")
 }

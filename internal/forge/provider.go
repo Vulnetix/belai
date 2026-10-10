@@ -3,6 +3,7 @@ package forge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +16,8 @@ type PR struct {
 	State  string // lower-case provider state: open, closed, merged, opened, …
 	URL    string
 	Draft  bool
+	// Branch is the head (source) branch; only listings fill it.
+	Branch string
 }
 
 // Normalised check states.
@@ -57,6 +60,23 @@ type Provider interface {
 	CreatePR(ctx context.Context, dir string, args CreatePRArgs) (string, error)
 	// Checks lists the CI checks for pr on branch.
 	Checks(ctx context.Context, dir, branch string, pr PR) ([]Check, error)
+	// OpenPRsWithPrefix lists the open PRs/MRs whose head branch starts with
+	// prefix and lives in the same repository: a fork can name its branch
+	// anything, so a fork's PR is never one of ours.
+	OpenPRsWithPrefix(ctx context.Context, dir, prefix string) ([]PR, error)
+	// ClosePR closes the open PR/MR number, leaving comment on it first.
+	ClosePR(ctx context.Context, dir string, number int, comment string) error
+}
+
+// withPrefix keeps the PRs whose head branch starts with prefix.
+func withPrefix(prs []PR, prefix string) []PR {
+	var out []PR
+	for _, p := range prs {
+		if prefix != "" && strings.HasPrefix(p.Branch, prefix) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // For picks the provider for rem. When none applies, reason says why in a
@@ -131,6 +151,48 @@ func (g github) CreatePR(ctx context.Context, dir string, a CreatePRArgs) (strin
 		return "", err
 	}
 	return Clean(lastLine(out)), nil
+}
+
+func (g github) OpenPRsWithPrefix(ctx context.Context, dir, prefix string) ([]PR, error) {
+	if err := argSafe(prefix); err != nil {
+		return nil, err
+	}
+	out, err := run(ctx, g.r, WriteTimeout, dir, "gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,state,url,isDraft,headRefName,isCrossRepository")
+	if err != nil {
+		return nil, err
+	}
+	return parseGitHubPRList(out, prefix)
+}
+
+func parseGitHubPRList(out, prefix string) ([]PR, error) {
+	var rows []struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		State   string `json:"state"`
+		URL     string `json:"url"`
+		IsDraft bool   `json:"isDraft"`
+		Head    string `json:"headRefName"`
+		Fork    bool   `json:"isCrossRepository"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		return nil, fmt.Errorf("gh: unreadable pr list output")
+	}
+	prs := make([]PR, 0, len(rows))
+	for _, r := range rows {
+		if r.Fork {
+			continue
+		}
+		prs = append(prs, PR{Number: r.Number, Title: Clean(r.Title), State: strings.ToLower(Clean(r.State)), URL: Clean(r.URL), Draft: r.IsDraft, Branch: Clean(r.Head)})
+	}
+	return withPrefix(prs, prefix), nil
+}
+
+func (g github) ClosePR(ctx context.Context, dir string, number int, comment string) error {
+	if number <= 0 {
+		return errors.New("no pull request number")
+	}
+	_, err := run(ctx, g.r, WriteTimeout, dir, "gh", "pr", "close", strconv.Itoa(number), "--comment", comment)
+	return err
 }
 
 func (g github) Checks(ctx context.Context, dir, _ string, pr PR) ([]Check, error) {
@@ -221,6 +283,52 @@ func (g gitlab) CreatePR(ctx context.Context, dir string, a CreatePRArgs) (strin
 		return "", err
 	}
 	return Clean(lastLine(out)), nil
+}
+
+func (g gitlab) OpenPRsWithPrefix(ctx context.Context, dir, prefix string) ([]PR, error) {
+	if err := argSafe(prefix); err != nil {
+		return nil, err
+	}
+	out, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "list", "--per-page", "100", "-F", "json")
+	if err != nil {
+		return nil, err
+	}
+	return parseGitLabMRList(out, prefix)
+}
+
+func parseGitLabMRList(out, prefix string) ([]PR, error) {
+	var rows []struct {
+		IID    int    `json:"iid"`
+		Title  string `json:"title"`
+		State  string `json:"state"`
+		WebURL string `json:"web_url"`
+		Draft  bool   `json:"draft"`
+		Source string `json:"source_branch"`
+		From   int    `json:"source_project_id"`
+		To     int    `json:"target_project_id"`
+	}
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		return nil, fmt.Errorf("glab: unreadable mr list output")
+	}
+	prs := make([]PR, 0, len(rows))
+	for _, r := range rows {
+		if st := strings.ToLower(r.State); (st != "opened" && st != "open") || r.From != r.To {
+			continue
+		}
+		prs = append(prs, PR{Number: r.IID, Title: Clean(r.Title), State: strings.ToLower(Clean(r.State)), URL: Clean(r.WebURL), Draft: r.Draft, Branch: Clean(r.Source)})
+	}
+	return withPrefix(prs, prefix), nil
+}
+
+func (g gitlab) ClosePR(ctx context.Context, dir string, number int, comment string) error {
+	if number <= 0 {
+		return errors.New("no merge request number")
+	}
+	if _, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "note", strconv.Itoa(number), "-m", comment); err != nil {
+		return err
+	}
+	_, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "close", strconv.Itoa(number))
+	return err
 }
 
 func (g gitlab) Checks(ctx context.Context, dir, branch string, _ PR) ([]Check, error) {

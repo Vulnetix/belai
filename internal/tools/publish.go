@@ -76,3 +76,84 @@ func (t PublishBranch) Execute(ctx context.Context, args map[string]any) (Result
 }
 
 var _ Tool = PublishBranch{}
+
+// CloseDuplicatePRName is the tool's name. Like PublishBranch it has no trained
+// equivalent (models close pull requests with gh, which a worker cannot run):
+// it closes only one of the item's own open pull requests, as a duplicate of
+// another of them.
+const CloseDuplicatePRName = "CloseDuplicatePR"
+
+// DuplicateCloser closes one of the item's open pull requests as a duplicate of
+// another and returns what it did. The fleet implements it over the worker's
+// worktree.
+type DuplicateCloser interface {
+	CloseDuplicatePR(ctx context.Context, number, keep int, reason string) (string, error)
+}
+
+// CloseDuplicatePR is offered when the item has more than one open pull
+// request, one per attempt branch.
+type CloseDuplicatePR struct {
+	C DuplicateCloser
+	// Open lists the item's open pull requests for the description.
+	Open string
+}
+
+// Definition describes the tool.
+func (t CloseDuplicatePR) Definition() Definition {
+	return Definition{
+		Name: CloseDuplicatePRName,
+		Description: "Close one of this item's open pull requests as a duplicate of another of them, with a comment naming the one kept. " +
+			"Only the item's own pull requests can be named: " + t.Open + ". " +
+			"If you close the pull request of this worktree's branch, the item's pull request and branch become the kept one's, and the item returns to its list so the work continues there.",
+		Properties: map[string]Property{
+			"close":  {Type: "integer", Description: "The number of the pull request to close."},
+			"keep":   {Type: "integer", Description: "The number of the pull request it duplicates, which stays open."},
+			"reason": {Type: "string", Description: "Why the kept one is the right one, for the closing comment (at most 500 characters)."},
+		},
+		Required: []string{"close", "keep", "reason"},
+	}
+}
+
+// Kind is the harness-composed confirmation.
+func (CloseDuplicatePR) Kind() Kind { return KindPublish }
+
+// Subject is the pull request closed, for permission rules.
+func (CloseDuplicatePR) Subject(args map[string]any) string {
+	n, _ := argInt(args, "close")
+	return fmt.Sprintf("#%d", n)
+}
+
+// Execute closes.
+func (t CloseDuplicatePR) Execute(ctx context.Context, args map[string]any) (Result, error) {
+	if t.C == nil {
+		return Result{}, errors.New("closing pull requests is not available for this agent")
+	}
+	n, okN := argInt(args, "close")
+	keep, okK := argInt(args, "keep")
+	if !okN || !okK || n <= 0 || keep <= 0 {
+		return Result{}, errors.New("CloseDuplicatePR needs the close and keep pull request numbers")
+	}
+	reason, _ := argString(args, "reason")
+	reason = strings.TrimSpace(strings.Join(strings.Fields(reason), " "))
+	if reason == "" {
+		return Result{}, errors.New("CloseDuplicatePR needs a reason")
+	}
+	if r := []rune(reason); len(r) > 500 {
+		reason = string(r[:500])
+	}
+	msg, err := t.C.CloseDuplicatePR(ctx, n, keep, reason)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Kind: KindPublish, Content: msg}, nil
+}
+
+var _ Tool = CloseDuplicatePR{}
+
+func argInt(args map[string]any, key string) (int, bool) {
+	n, ok := argInt64(args, key)
+	if !ok || n > 1<<31-1 || n < 0 {
+		return 0, false
+	}
+	return int(n), true
+}
