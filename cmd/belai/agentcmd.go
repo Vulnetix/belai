@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -697,14 +698,27 @@ func agentStop(ref string, all bool, stdout io.Writer) (int, error) {
 	if len(recs) == 0 {
 		fmt.Fprintln(stdout, "no workers running")
 	}
-	for _, r := range recs {
-		if err := reg.Stop(r, 20*time.Second); err != nil {
-			return 1, err
+	// Every worker stops at once, each with time to commit and push its work in
+	// progress: a machine being stopped or relaunched waits for all of them, so
+	// one at a time would multiply the wait by the number of workers.
+	errs := make([]error, len(recs))
+	var wg sync.WaitGroup
+	for i, r := range recs {
+		wg.Go(func() { errs[i] = reg.Stop(r, agentStopGrace) })
+	}
+	wg.Wait()
+	for i, r := range recs {
+		if errs[i] != nil {
+			return 1, errs[i]
 		}
 		fmt.Fprintf(stdout, "%s stopped\n", r.ID)
 	}
 	return 0, nil
 }
+
+// agentStopGrace is how long a stopped worker has to commit, push its work in
+// progress and hand its card back before it is killed.
+const agentStopGrace = 45 * time.Second
 
 func agentLogs(ctx context.Context, ref string, lines int, follow bool, stdout io.Writer) (int, error) {
 	store, _ := kanban.OpenDefault()

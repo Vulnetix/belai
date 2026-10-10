@@ -387,3 +387,25 @@ func TestClosingThisBranchsPRAsADuplicateMovesTheItemToTheKeptBranch(t *testing.
 		t.Fatalf("%s branch=%q attempts=%d (%q)", got.List, got.Branch, got.Attempts, got.LastNote())
 	}
 }
+
+// The item names its branch while it is still being worked, so a machine that
+// dies mid-item leaves a card that says where its work went.
+func TestTheBranchIsRecordedOnTheItemAtClaim(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "fix the README", Labels: []string{"build"}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree}
+	var during kanban.Item
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		during, _ = store.Get(tt.Item.ID)
+		return complete(ctx, tt)
+	})
+	w.Repo = gitRepo(t)
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if during.List != kanban.InProgress || !strings.HasPrefix(during.Branch, BranchPrefix) {
+		t.Fatalf("while worked: %s branch=%q", during.List, during.Branch)
+	}
+	_ = it
+}

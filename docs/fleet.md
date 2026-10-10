@@ -954,7 +954,7 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai agent start NAME [-replicas N] \| -crew CREW [-fill] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME and `-crew` is required |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
-| `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |
+| `belai agent stop ID \| NAME \| -all` | stop workers, all at once, each with 45 seconds to commit its work in progress, push the branch (a worker that may publish) and hand its card back before it is killed; claims are released |
 | `belai agent pause ID \| NAME` | finish the card in hand, then claim nothing until resumed |
 | `belai agent resume ID \| NAME` | take cards again |
 | `belai kanban add TITLE [-body TEXT \| -body-file FILE] [-list backlog\|review] [-label L] [-priority N] [-assignee NAME] [-depends K-…] [-project NAME] [-json]` | file an item. `-body-file` reads the details from a file and replaces `-body`; `-list` is `backlog` (default) or `review`, and anything else is refused; `-priority` runs -2 to 3; `-label` and `-depends` repeat. A card is not filed twice: when an unfinished card in the same project has the same title (compared ignoring case and extra spaces), the command prints that card's id marked `(already on the board)` and files nothing |
@@ -966,6 +966,14 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai kanban delete ID` | delete an item. The delete is a tombstone that syncs, so the website and other hosts drop it too. A claimed item is deleted as well, and the worker that held it finds its lease lost at the next renewal |
 | `belai kanban assign ID PROFILE \| -crew CREW [-host this\|ID\|none] [-start]` | route an item to a profile or crew, optionally pinned |
 | `belai kanban import FILE.jsonl` | file many items |
+
+A stopped worker loses no work when its machine goes with its disk. The
+item records its branch as soon as the worktree exists, a stopped worker
+commits what it has and pushes the branch to `origin` (when it may publish),
+and the next claim of that item fetches the branch from `origin` when it is
+not in the local repository, so the new worker resumes in a worktree on it
+instead of starting over. A Pix sandbox runs `belai agent stop -all` before
+it stops, relaunches or restarts its machine.
 
 `agent run` and `agent start` refuse a directory you have not trusted; pass
 `-trust-dir` to trust it, as with `-prompt`. `-provider` and `-model`
