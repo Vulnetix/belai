@@ -234,6 +234,36 @@ func checklistFromArgs(args map[string]any) (todos.List, bool) {
 // Assumptions.
 const planPassIterations = 12
 
+// planNudgeRoundsLeft is how many tool rounds remain when a plan-mode pass
+// first tells the model to stop reading and write; planLastRoundNudge is the
+// wording of the last round. The planner only sees the budget as a number in
+// the contract; without a count at the point where it matters, every long
+// planning pass read to the last round (session d9292a3d, 25 reads, no plan).
+const planNudgeRoundsLeft = 4
+
+// planExtraRounds bounds the rounds a plan pass may give back: one for a plan
+// the lint sent back on the last round and one for a last round spent on a tool
+// the finishing surface withholds.
+const planExtraRounds = 2
+
+// planBudgetNudge returns the harness directive injected before tool round i
+// (0-based) of a plan-mode pass with the given budget, or "" when none is
+// due. The nudge rides a sealed directive like every other harness
+// instruction. It is fixed wording plus harness-counted numbers.
+func planBudgetNudge(mode modes.Mode, i, budget int) string {
+	if mode != modes.ModePlan || i == 0 {
+		return ""
+	}
+	left := budget - i
+	switch {
+	case left == 1:
+		return "This is the last tool round of this planning pass and reading is no longer offered: call ExitPlanMode now with the complete plan from what is already in the conversation. Put anything unverified under ## Assumptions with the default you chose."
+	case left == planNudgeRoundsLeft:
+		return fmt.Sprintf("Reading budget check: %d of %d tool rounds are spent and %d remain. You have read enough to name the files and the changes; stop exploring and call ExitPlanMode with the plan in this round or the next. Read again only for one specific fact the plan cannot be written without.", i, budget, left)
+	}
+	return ""
+}
+
 // passBudget is the tool-round budget of one pass in mode: the session's
 // iteration budget, capped at planPassIterations for a plan-mode pass.
 func (s *Session) passBudget(mode modes.Mode) int {
@@ -342,8 +372,26 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		o.spent = acc.spent
 		return o
 	}
-	for i := 0; i < s.passBudget(mode); i++ {
+	budget := s.passBudget(mode)
+	// The last round of a plan pass offers only the finishing tools, whatever
+	// the pass is (planFinalPass already narrows the loop's last pass). A pass
+	// that read to its last round used to spend that round reading and then
+	// cost a whole extra pass to write the plan; reproducing session d9292a3d
+	// on the website as it was then, five of six runs did exactly that.
+	finalBase := s.planFinalPass
+	defer func() { s.planFinalPass = finalBase }()
+	// extra counts the rounds given back (at most planExtraRounds): a plan sent
+	// back on the last round, or a last round spent on a tool the finishing
+	// surface withholds, is given one more round so the plan is still written in
+	// this pass.
+	extra := 0
+	for i := 0; i < budget; i++ {
+		round := i
 		updatePlan = nil
+		s.planFinalPass = finalBase || (mode == modes.ModePlan && budget > 1 && i == budget-1)
+		if nudge := planBudgetNudge(mode, i, budget); nudge != "" {
+			turns = append(turns, directiveTurns(nudge)...)
+		}
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		s.clearStaleToolResults(turns)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
@@ -567,6 +615,25 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				s.recordRead(u.readKey, u.call.ID, results[i])
 			}
 			toolResult := results[i]
+			if toolResult == tools.ExitPlanModeSentinel && mode == modes.ModePlan {
+				if back := s.lintPlanOnce(u.args, finalBase); back != "" {
+					toolResult = back
+					results[i] = back
+					// A plan sent back on the last round gets one more round, so
+					// the correction lands in this pass and not in a whole new one.
+					if round == budget-1 && extra < planExtraRounds {
+						budget++
+						extra++
+					}
+				}
+			}
+			// A last round spent on a tool the finishing surface withholds (the model
+			// reaches for update_plan out of habit) is given back once, so the plan
+			// is still written in this pass.
+			if mode == modes.ModePlan && round == budget-1 && extra < planExtraRounds && strings.Contains(toolResult, "unavailable on the final planning pass") {
+				budget++
+				extra++
+			}
 			if toolResult == tools.AskUserSentinel {
 				var planQ *clarify.Questionnaire
 				toolResult, planQ = s.handleAskUser(ctx, pipe, u.args, mode, emit)
@@ -642,6 +709,11 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		if planExited {
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}), turns, nil
 		}
+		if _, decided := s.recordedOutcome(); decided {
+			// The worker recorded how its item ends: the turn is over (the goal
+			// loop reads the record), so no further tool round is spent re-checking it.
+			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan}), turns, nil
+		}
 		if repair >= s.repairCap() {
 			return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, repairFailures: repair, updatePlan: updatePlan}), turns, nil
 		}
@@ -664,8 +736,3 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 
 	return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, repairFailures: repair, updatePlan: updatePlan}), turns, nil
 }
-		if _, decided := s.recordedOutcome(); decided {
-			// The worker recorded how its item ends: the turn is over (the goal
-			// loop reads the record), so no further tool round is spent re-checking it.
-			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan}), turns, nil
-		}

@@ -629,6 +629,13 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	if err != nil {
 		return err
 	}
+	// A plan-mode run's deliverable is the plan file; stdout carries the
+	// reply, so the path goes to stderr. A headless run cannot ask, so it
+	// says how to approve, refine or leave the plan, the three choices the
+	// TUI's review pane offers.
+	if res.PlanPath != "" {
+		fmt.Fprint(os.Stderr, planReviewHint(res.PlanPath, workdir))
+	}
 	if verbose {
 		fmt.Fprintf(os.Stderr, "security: %s\n", res.SecuritySentinel.Label())
 		if detectMode {

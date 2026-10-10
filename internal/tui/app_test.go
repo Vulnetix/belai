@@ -1904,20 +1904,25 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	}
 	// Plan mode presents its own evaluator verdict, not a goal evaluator.
 	var hasPlanEval bool
-	var hasPlanFile bool
+	// The scripted model answers "pong", which is not a plan: the turn must not
+	// record it as one (session d9292a3d), and must say why there is no file.
+	var hasNoPlanNote, hasPlanFile bool
 	for _, m := range a.messages {
 		if strings.Contains(m.Content, "plan evaluator: plan is complete") {
 			hasPlanEval = true
 		}
-		if strings.Contains(m.Content, ".vulnetix/plans/") {
+		if strings.Contains(m.Content, "no plan file recorded") {
+			hasNoPlanNote = true
+		}
+		if strings.Contains(m.Content, "plan written:") {
 			hasPlanFile = true
 		}
 	}
 	if !hasPlanEval {
 		t.Fatalf("expected a plan evaluator verdict, got %+v", a.messages)
 	}
-	if !hasPlanFile {
-		t.Fatalf("expected a plan file system message, got %+v", a.messages)
+	if hasPlanFile || !hasNoPlanNote {
+		t.Fatalf("a non-plan reply must not be recorded as a plan; want the no-plan note only, got %+v", a.messages)
 	}
 }
 
@@ -2712,5 +2717,23 @@ func TestPromptIsNotRecordedAsLocalInput(t *testing.T) {
 	path, _ := inputhistory.Path(workdir)
 	if items, _ := inputhistory.Load(path); len(items) != 0 {
 		t.Fatalf("history = %+v, want empty", items)
+	}
+}
+
+// -plan starts the session in plan mode, whatever mode the project last used.
+// It used to leave the mode as saved (agent by default) and only mark it
+// sticky, so the first prompt ran with every tool.
+func TestPlanFlagStartsInPlanMode(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir(), PlanMode: true})
+	if a.mode != "plan" {
+		t.Fatalf("mode = %q, want plan", a.mode)
+	}
+	if !a.modeSticky || !a.modeExplicit || a.modeAuto {
+		t.Fatalf("plan mode must be sticky and explicit, not auto: sticky=%v explicit=%v auto=%v", a.modeSticky, a.modeExplicit, a.modeAuto)
+	}
+	b := New(Options{Workdir: t.TempDir()})
+	if b.mode == "plan" {
+		t.Fatal("without -plan the saved mode applies")
 	}
 }

@@ -185,6 +185,26 @@ a control rather than a prompt, and the keys work while the page has focus.
   waiting for an answer that can no longer be given: web answers go off with
   ask. A call the running turn asks about after that is allowed the same way
   until the turn ends and the session is rebuilt with ask off.
+- **Plan review.** A plan-mode turn ends with a plan file, and with ask on (or in
+  a session without web controls) that plan is offered to the web as a `plan_review` ask that carries the plan text
+  (up to 64 KiB) and the choices `approve_here`, `refine` and `stay`; there is
+  no `approve_new`, because a remote session has no second session to fork
+  into. Unlike a permission ask it holds nothing: the plan outlives its turn and
+  is answered while the session is idle. *Approve* switches the session to agent
+  mode, as it does in the TUI, and runs the plan as an autonomous turn on the
+  full tool surface (`Execute the approved plan.`). *Refine* takes the notes
+  (cleaned like a web prompt; empty notes are refused) and sends them to the
+  planner in plan mode with the instruction to revise the plan it just wrote,
+  which opens a new review. *Stay* keeps the file and the mode. An answer for any
+  other ask, an unknown choice or a stale ask is refused with a reason and the
+  review stays open; a newer plan, the end of the session or the idle limit
+  closes it. With web controls and ask off nothing is offered; the transcript says
+  `plan written: <path>` and the plan is read from the file.
+  A session without web controls has no permission asks, but it still offers the
+  plan (web answers are taken when `sync.remote_answers` allows them), and an
+  approved plan runs on a second agent session built for it that resolves asks to
+  allow, because the person approved the plan and nobody could answer each edit.
+  Deny rules, the posture and the sandbox still apply to it.
 - **What the transcript shows.** Every applied control writes a harness line
   (`web: caveman: on`), and the turn facts carry the current mode, model,
   guardrails, ask and caveman.
@@ -740,6 +760,7 @@ avatar id, so the website can draw the agent. They are presentation only.
 | A web command expands the host's own installed file with its arguments and runs it as a turn; the project layer wins, an unknown or malformed name, `sync.commands` off, oversized arguments and a mixed command are refused, and a web prompt that starts with `/` stays plain text | `TestWebCommandExpandsTheHostsOwnFile`, `TestWebCommandProjectLayerWinsAndIsReadAtInvocation`, `TestWebCommandRefusals`, `TestWebPromptStartingWithASlashIsStillPlainText` |
 | The advertisement lists commands by name, description and argument hint only, never a template, and changes the catalogue hash when a command is added or `sync.commands` goes off | `TestInventoryAdvertisesCommandsWithoutTemplates`, `TestSlashCommandWireForm` |
 | The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
+| A plan turn is offered to the web as a `plan_review` ask with the plan text and the choices a remote session can honour; approving runs the plan on the full surface in agent mode, refining sends the notes to the planner in plan mode, staying runs nothing; a wrong ask, a fork, empty notes, an unknown choice or another kind is refused and leaves the review open; without ask only the path is recorded | `TestPlanTurnOffersTheReviewToTheWeb`, `TestApprovingThePlanExecutesItOnTheFullSurface`, `TestRefiningThePlanSendsTheNotesBackToThePlanner`, `TestLeavingThePlanRunsNothing`, `TestPlanReviewRefusesWhatDoesNotFit`, `TestPlanTurnWithoutAsksRecordsThePath`, `TestPlainRemoteSessionOffersAndExecutesThePlan`, `TestParsePlanChoice` |
 
 ## Files
 

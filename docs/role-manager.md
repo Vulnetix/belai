@@ -1783,7 +1783,7 @@ without drafting any plan makes the next pass the finishing pass. At the old
 pass for 20+ minutes each, had its oldest results cleared out of context as it
 grew, re-read them, and never wrote a plan in 99 minutes.
 **The last allowed pass is a finishing pass:** its tool surface is
-`update_plan`, `ExitPlanMode` and `AskUserQuestion` only (advertised *and* enforced —
+`ExitPlanMode` and `AskUserQuestion` only (advertised *and* enforced —
 `Session.planFinalPass` narrows `toolSurface`, and `execTool` refuses any
 other tool with *unavailable on the final planning pass*), and its directive
 says there is no more reading: write the complete plan from what is already in
@@ -1797,6 +1797,18 @@ the loop. The ceiling itself remains a turn boundary, not an error. Plan mode ne
 unbounded-by-default behaviour, and it has no verification gate: the goal
 loop's disk re-check exists because goal mode mutates files, while plan mode
 is read-only and the user reviews the plan before executing it.
+
+A planning pass is also told where it stands, by the harness rather than by the
+model's own sense of time. Four tool rounds before its budget ends, a sealed
+directive says how many rounds are spent and that the plan should be written in
+this round or the next; on the last round it says not to read anything else and
+to call `ExitPlanMode` now (`planBudgetNudge`, fixed wording plus counted
+numbers). Session `d9292a3d` read 25 files in ten rounds with only the contract's
+number to go on and never wrote a plan. The last round of every plan pass also offers only the finishing tools
+(`ExitPlanMode`, `AskUserQuestion`; `update_plan` is not offered, because models spent narrowed last rounds on it), so a pass that read to its
+last round writes the plan there instead of costing a whole extra pass: running
+the failing session's prompt against the website as it was then, five of six runs
+spent their first pass's whole read budget with no plan.
 
 The continuation directives injected after a `PLAN_PARTIAL` or
 `PLAN_NOT_STARTED` verdict first say **what is already known**: the model is
@@ -1821,7 +1833,7 @@ for the next pass.
 
 | Sentinel | Meaning | Loop response |
 | -------- | ------- | ------------- |
-| `PLAN_COMPLETE` | The plan is researched and ready to execute | Mark the plan list complete and return the reply |
+| `PLAN_COMPLETE` | The pass evidence contains the plan document itself (a summary and numbered steps naming files) and it covers the request; a finished research checklist is not a plan | Mark the plan list complete and return the reply, unless no plan text exists anywhere (see below) |
 | `PLAN_PARTIAL` | The plan advanced but is not ready | Grant another pass with the plan continuation directive, carrying the evaluator's reason |
 | `PLAN_NOT_STARTED` | No meaningful planning work yet | Inject the planning directive (the explore wave already ran, so there is no forced survey) |
 | _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; the TUI reports `plan evaluator: malformed reply (pass N)`; two consecutive malformed replies stop the loop |
@@ -1834,14 +1846,28 @@ affects the verdict. The TUI shows it (`plan evaluator: plan is partial
 (pass 1) — missing: …`) and the next pass is told it, so it knows what to
 add.
 
-There are two completion paths that do not consult the evaluator:
+There are three completion paths that do not consult the evaluator:
 
 1. The planning model calls the read-only `ExitPlanMode` tool. The harness
    treats this as a direct completion signal and returns immediately with
    `PLAN_COMPLETE`.
-2. A natural exit (no tool calls in the pass) produces a reply with
-   extractable numbered steps **and** every tracked step is already marked
-   done. The harness accepts `PLAN_COMPLETE` without an evaluator round-trip.
+2. A natural exit (no tool calls in the pass) produces a reply that is a plan
+   document: a summary and at least one numbered step in a steps section
+   (`plans.ExtractDoc`). The model wrote the deliverable where the tool argument
+   should have been, so the harness takes the document as the plan, drops any
+   narration before its first heading, and returns `PLAN_COMPLETE` without a
+   round-trip. The finishing pass applies the same rule to its last text.
+3. A natural exit produces a reply with extractable numbered steps **and**
+   every tracked step is already marked done.
+
+The converse is guarded too. An evaluator that answers `PLAN_COMPLETE` when no
+pass has produced plan text (the case in session `d9292a3d`, where a finished
+research checklist read as a finished plan and the last sentence of the pass
+was recorded as the plan) is not believed: the harness schedules the
+write-only finishing pass instead. After a pass that spent its whole read
+budget with no plan drafted, the finishing pass runs whatever the evaluator
+says; the evaluator is still asked, for the reason the finishing directive
+carries.
 
 ### Input, not goal
 
@@ -1855,18 +1881,77 @@ from an earlier session has no path into this payload.
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
 | Plan complete | `PLAN_COMPLETE` (evaluator or fast path) | Success; plan list marked complete; reply is the pass's last assistant text |
+| Plan-less complete | `PLAN_COMPLETE` with no plan text in any pass | Not accepted: the next pass is the finishing pass |
 | Finishing pass | The last allowed pass ends without `ExitPlanMode` | Return the best plan so far (latest plan-shaped text, else the tracked todo list, else the pass's text) with a system note — not an error |
 | Unproductive pass | A pass executed no non-withheld tool result | Return the best plan so far with a warning — plan mode must always produce a file |
 | Broken evaluator | 2 consecutive malformed evaluator replies | Error: *plan pass loop stopped: N consecutive malformed evaluator replies* |
 | Evaluator transport failure | `Classify` returns an error | Terminal |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPlanLoopCancelled` with the best plan so far recorded — never a raw `context.Canceled` |
 
+### Plan lint
+
+The first `ExitPlanMode` call of a turn is checked by `plans.Lint` before it is
+accepted. The check is pure and deterministic, reads only the plan, and finds
+the flaws that made measured plans hard to carry out:
+
+| Flaw | Issue sent back |
+| ---- | --------------- |
+| A step has no `Files:` line, or no `Verify:` line (a documentation step may say `Verify: none`) | *step N has no Files / Verify line* |
+| A `Verify:` offers a second command or a condition (`or` followed by a command, `(or …)`, *if it does not exist*) | *Verify offers alternatives or conditions; give exactly one command* |
+| A step's `Verify:` runs a test file that only a later step creates and no step at or before it lists | *Verify runs X, which step M creates* |
+| The Test Plan names new test cases (the name of a Go test function or of a Python test function, or a *name — asserts* line that is not about the existing suite) and no step has a test file in its `Files:` | *the Test Plan names new tests but no step has a test file* |
+| A step heading has an odd number of `**` | *unbalanced \*\* in its heading* |
+| A `Verify:` chains commands with `&&`, `||` or `;` (one leading `cd <dir> &&` and operators inside quotes are allowed) | *step N: Verify chains several commands* |
+| The plan text holds thinking-out-loud (*Wait…*, *Re-evaluate*, *Simpler final approach*, *Scratch that*) outside a code fence, or a run of letters from another script (CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai) that the request itself does not use | *the plan contains deliberation*, *stray non-English text* |
+| A `Files:` entry that is not marked `(new)` does not exist under the working directory or an added root | *step N lists X, which does not exist* |
+| A `Verify:` changes into a directory that does not exist, runs `npm` where no `package.json` is, runs an npm script `package.json` does not define, or passes a test path as a flag (`npm test --path`) | *step N: Verify changes into X, which does not exist*, *there is no package.json where it runs*, *package.json does not define it*, *write npm test -- <path>* |
+| A `Verify:` names a test file that does not exist and no step creates, or a Go package that does not exist | *Verify runs X, which does not exist and no step creates* |
+
+The last three rows read the repository, read-only, under the session's working
+directory and any added workspace roots (`plans.LintAt`); a `Verify` path is
+resolved both as written and under the directory it changes into. They exist
+because the judges' notes on the large-repository plans were mostly of this
+kind: an invented docs directory, sub-package tests run from the repository
+root, an npm script that is not defined.
+
+A plan with any of these is not accepted: the tool result lists up to six
+issues (a stray-script slip is put first), one line each, and asks for the whole corrected plan. The rejection is
+spent **once a turn** (`Session.planLinted`); the next `ExitPlanMode` is
+accepted whatever it holds, so the check costs at most one round and cannot
+loop. The plans of large prompts usually arrive on a pass's last round, so the
+check applies there too: a plan sent back on the last round gives the pass one
+more round for the correction, and so does a last round spent on a tool the
+finishing surface withholds (the model reaches for `update_plan` out of habit).
+A pass gives back at most two rounds (`planExtraRounds`), so the fix lands in
+the same pass. Only the loop's finishing pass, which has no pass after it,
+accepts a plan as written. A plan of five or more steps that has no mechanical
+flaw is sent back once with a fixed review checklist (every edited file listed,
+Verify one command that tests the step, the build kept working after every step,
+Test Plan tests scheduled, nothing speculative); a plan the lint already sent
+back is not reviewed again. If the correction never arrives, the plan that was sent back is the one the turn records, so a rejected plan is never lost. The issue lines are fixed wording plus step numbers and paths from the
+model's own plan, sanitised and flattened, and ride an ordinary tool result,
+never a sealed block. A Test Plan that only runs the existing suite is not
+flagged, because asking it for a test file made the planner invent one.
+
+The parser behind the lint and the plan file reads a step the way models write
+it: `Files:` and `Verify:` with their values on the line or as a bullet list
+nested under an empty line, `Files touched:`, `Verification:`, a bolded field
+name, two `Verify:` lines kept and joined, and every other line under a step
+kept with that step.
+
 ### Plan file
 
-Every plan-mode turn writes a file — on completion, partial, ceiling,
-cancelled, unproductive, or failed exit. The content is the model's latest
-reply (the plan text handed to `ExitPlanMode` when one was given), sanitized
-before it is written. A terminal error — a main-model turn failure, a
+Every plan-mode turn that produced a plan writes a file — on completion,
+partial, ceiling, cancelled, unproductive, or failed exit. The content is the
+plan text handed to `ExitPlanMode` when one was given, else the plan document
+in the reply, else the model's latest plan-shaped reply, sanitized before it
+is written. Text that is not a plan (no numbered steps) is never recorded as
+one: the turn says *no plan file recorded: the turn ended without a plan* and
+the reply stays in the transcript, so the review is never offered for a
+sentence. A recorded plan always opens with a title; when the model wrote none,
+the harness composes `# Plan: <the request's first words>`. Lines under a step
+(its detail, `Files`, `Verify`) stay with that step through the canonical
+render, and the CLI prints `plan written: <path>` to stderr. A terminal error — a main-model turn failure, a
 plan-evaluator transport failure, or a broken evaluator — still records the
 plan gathered so far before the error surfaces: the error stays terminal, but
 the artifact is not discarded. The file lives at
@@ -2103,7 +2188,7 @@ place it is attached, so no boundary can forget it:
 | Loop | Where the check rides |
 | ---- | --------------------- |
 | Goal | Every directive injected inside the loop (`passLedger.directive`): action, no-write, verification, gate, continuation, tool repair, progression, partial. The first-pass goal acknowledgement is exempt — it already asks for the first `update_plan` — and the final report is exempt because it forbids tools |
-| Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final pass limited to `update_plan`, `ExitPlanMode` and `AskUserQuestion` |
+| Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final pass limited to `ExitPlanMode` and `AskUserQuestion` |
 | Agent and code | Every budget-exhaustion continuation, and every send-back for open todos (below). Agent mode keeps no ledger, so the session's turn tracker (`internal/agent/todotrack.go`) holds the list the model reported with `Todo`, across every pass of the turn |
 
 The check's wording depends on the list state:

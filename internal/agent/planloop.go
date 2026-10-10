@@ -35,7 +35,7 @@ const defaultPlanContinuations = 3
 // wording is plan-mode, so a plan-mode turn never tells the model it is
 // pursuing a goal.
 const (
-	planPlanningDirective = "The plan has not started yet. Write a planning todo list under a 'Plan:' header (numbered steps), then begin researching the first step. Mark each step complete with [DONE:n] in your reply as you finish it. When the plan is decision complete, call ExitPlanMode with the full plan."
+	planPlanningDirective = "The plan has not started yet. Find the files the request touches (Glob, Grep), read only those, decide every open point, then call ExitPlanMode with the whole plan (# title, ## Summary, ## Key Changes with Files and Verify per step, ## Test Plan, ## Assumptions). Reading is bounded; the plan is the deliverable."
 	// planBudgetNote is prefixed to a plan continuation directive when the
 	// pass that just ended spent its whole tool budget. The counter has reset
 	// for the next pass, so the model must treat the boundary as a
@@ -255,11 +255,11 @@ func (l *planLedger) planStartDirective(exhausted bool) string {
 // planPlanFromWhatYouHave replaces the from-scratch planning directive after
 // the first pass: the research is already in context, so the next step is to
 // write the plan from it.
-const planPlanFromWhatYouHave = "Write the plan now from what you have already gathered: a 'Plan:' header with numbered steps naming the files and changes. Read further only for a specific gap the plan cannot be written without. When it is decision complete, call ExitPlanMode with the full plan."
+const planPlanFromWhatYouHave = "Write the plan now from what you have already gathered and call ExitPlanMode with it: # title, ## Summary, ## Key Changes (numbered steps naming the files and the exact changes, each with Files and Verify), ## Test Plan, ## Assumptions. Read further only for one specific fact the plan cannot be written without; anything else unverified goes under Assumptions."
 
 // planFinalDirective leads the plan loop's last pass, whose tool surface is
 // update_plan and ExitPlanMode only.
-const planFinalDirective = "This is the final planning pass. Only update_plan, ExitPlanMode and AskUserQuestion are available; there is no more reading. Write the complete plan from what is already in the conversation and call ExitPlanMode with it now. If a decision is genuinely the user's and nothing in the conversation or the code settles it, ask it with AskUserQuestion instead (never a question already asked or already answered); otherwise name any open question inside the plan rather than researching it."
+const planFinalDirective = "This is the final planning pass. Only ExitPlanMode and AskUserQuestion are available; there is no more reading. Write the complete plan from what is already in the conversation (# title, ## Summary, ## Key Changes with Files and Verify per step, ## Test Plan, ## Assumptions) and call ExitPlanMode with it now, in this response. If a decision is genuinely the user's and nothing in the conversation or the code settles it, ask it with AskUserQuestion instead (never a question already asked or already answered); otherwise choose a default and record it under Assumptions rather than researching it."
 
 // planPartialDirective builds the continuation instruction for a PLAN_PARTIAL
 // verdict: the current plan list state, a progress summary, and an escalating
@@ -372,7 +372,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		} else {
 			turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes)+"\n\n"+planChecklistOptional)...)
 		}
-		// The last allowed pass offers only update_plan and ExitPlanMode, so
+		// The last allowed pass offers only ExitPlanMode and AskUserQuestion, so
 		// the loop ends on a plan, never on one more round of reading.
 		final := l.passes >= maxPasses || l.writeNow
 		s.planFinalPass = final
@@ -381,6 +381,11 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		}
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		s.planFinalPass = false
+		// A plan the lint sent back is still a plan. If no corrected one arrives,
+		// it is what the turn records, not nothing.
+		if l.bestPlan == "" && s.lintRejected != "" && hasPlan(s.lintRejected) {
+			l.bestPlan = s.lintRejected
+		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				reply := out.lastText
@@ -447,6 +452,33 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				Usage:        out.usage,
 				PlanSentinel: rolemanager.PlanComplete,
 				PlanText:     out.planText,
+				Passes:       l.passes,
+			}, nil
+		}
+
+		// A pass that ends with a finished plan document as its reply, no
+		// tool call after it, is the plan: the model wrote the deliverable
+		// where ExitPlanMode's argument should have been (session v2-T1).
+		// The document is the evidence, so no evaluator call is spent on it,
+		// and only the document is recorded, without the narration before it.
+		// On the final pass an exhausted reply counts too.
+		candidate := ""
+		if !out.exhausted {
+			candidate = out.reply
+		} else if final {
+			candidate = out.lastText
+		}
+		if doc, ok := plans.ExtractDoc(candidate); ok {
+			if l.hasList {
+				l.list.MarkAllDone()
+				list := l.list
+				emit(Event{Kind: EventTodosKind, Todos: &list})
+			}
+			return run.Result{
+				Reply:        out.lastText,
+				Usage:        out.usage,
+				PlanSentinel: rolemanager.PlanComplete,
+				PlanText:     doc,
 				Passes:       l.passes,
 			}, nil
 		}
@@ -519,6 +551,10 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			if l.bestPlan == "" && !l.writeNow {
 				l.writeNow = true
 				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("planning pass %d spent its read budget with no plan drafted; the next pass writes it", l.passes)})
+				// The next pass is write-only whatever the evaluator says:
+				// its reason still rides that pass, but a PLAN_COMPLETE
+				// verdict cannot cancel it (see the guard below; session
+				// d9292a3d returned a pass's last sentence as the plan).
 			}
 		}
 
@@ -548,6 +584,20 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		} else {
 			l.malformedStreak = 0
 			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel, EvalReason: verdict.Reason})
+		}
+
+		// A verdict of complete is only as good as the plan it refers to.
+		// The evaluator sees a checklist and a digest, so a pass whose every
+		// research step is done but whose text holds no plan can read as
+		// complete; accepting that records a sentence as the plan. The
+		// harness holds the one fact that decides it — whether any plan
+		// text exists — so a plan-less "complete" becomes one write-only
+		// pass instead.
+		if sentinel == rolemanager.PlanComplete && !hasPlan(out.lastText) && l.bestPlan == "" {
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan evaluator reported complete after pass %d but no plan was written; the next pass writes it", l.passes)})
+			l.writeNow = true
+			turns = append(turns, directiveTurnsWithNote(l.planStartDirective(out.exhausted), l.knownNote())...)
+			continue
 		}
 
 		switch sentinel {

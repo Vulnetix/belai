@@ -23,7 +23,7 @@ func TestPlanDirectiveCadence(t *testing.T) {
 // no plan mode to exit; a step that does either can never complete, and the
 // execute loop spun on one. The contract also sizes the plan to the task.
 func TestPlanContractForbidsUnexecutableStepsAndSizesToTask(t *testing.T) {
-	for _, want := range []string{"Never write a step\nthat asks the user", "exits plan mode", "Size the plan and the research to the task"} {
+	for _, want := range []string{"Never write a step that asks the user", "exits plan mode", "Size the plan and the research to the task"} {
 		if !strings.Contains(PlanContract, want) {
 			t.Fatalf("contract missing %q", want)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -297,7 +298,7 @@ func TestPlanPassLoopHonoursMaxPassesCeilingGracefully(t *testing.T) {
 		Posture:       posture.Defaults(),
 		AllowExplore:  false,
 		AllowPassLoop: true,
-		MaxIterations: 2,
+		MaxIterations: 1,
 		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 2}},
 	})
 	if err != nil {
@@ -684,7 +685,7 @@ func planFinalPassServer(t *testing.T, eval string) (*httptest.Server, *sync.Mut
 				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
-			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"## Summary\nFix the parser.\n## Steps\n1. change the parser\n2. add the rollback step\n## Test Plan\ngo test\n## Assumptions\nnone\n## Risks\nnone"}`)
+			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"## Summary\nFix the parser.\n## Steps\n1. change the parser\n   - Files: p.go (new), p_test.go (new)\n   - Verify: go build ./...\n2. add the rollback step\n   - Files: p.go\n   - Verify: go build ./...\n## Test Plan\ngo test\n## Assumptions\nnone\n## Risks\nnone"}`)
 		}
 	}))
 	return srv, &mu, &toolSets, &lastUser
@@ -706,7 +707,7 @@ func TestPlanPassLoopFinalPassOffersOnlyTheFinishTools(t *testing.T) {
 		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
 		Posture:       posture.Defaults(),
 		AllowPassLoop: true,
-		MaxIterations: 2,
+		MaxIterations: 1,
 		Workdir:       root,
 		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 2}},
 	})
@@ -726,16 +727,16 @@ func TestPlanPassLoopFinalPassOffersOnlyTheFinishTools(t *testing.T) {
 	defer mu.Unlock()
 	last := (*toolSets)[len(*toolSets)-1]
 	slices.Sort(last)
-	if !slices.Equal(last, []string{"ExitPlanMode", "update_plan"}) {
-		t.Fatalf("final pass tools = %v, want only ExitPlanMode and update_plan", last)
+	if !slices.Equal(last, []string{"ExitPlanMode"}) {
+		t.Fatalf("final pass tools = %v, want only ExitPlanMode", last)
 	}
 	if !slices.Contains((*toolSets)[0], "Read") {
 		t.Fatalf("earlier passes keep the exploration tools: %v", (*toolSets)[0])
 	}
 	final := (*lastUser)[len(*lastUser)-1]
 	for i, u := range *lastUser {
-		if !strings.Contains(u, "PLAN check") && !strings.Contains(u, "planning checklist is optional") {
-			t.Fatalf("plan request %d carried neither a PLAN check nor the optional-checklist note:\n%s", i, u)
+		if !strings.Contains(u, "PLAN check") && !strings.Contains(u, "planning checklist is optional") && !strings.Contains(u, "last tool round") {
+			t.Fatalf("plan request %d carried neither a PLAN check, the optional-checklist note nor the last-round nudge:\n%s", i, u)
 		}
 	}
 	for _, want := range []string{"final planning pass", "not starting over", "Files already read: f.txt", "the rollback step"} {
@@ -843,5 +844,628 @@ func TestPlanPassLoopWritesAfterABudgetWithNoDraft(t *testing.T) {
 	}
 	if !warned {
 		t.Fatal("the forced write pass was not surfaced")
+	}
+}
+
+// A planning pass is told, from the harness, when its reading is nearly spent:
+// once with the count left and once on the last round, never on the first
+// round and never outside plan mode (session d9292a3d read to the last round).
+func TestPlanBudgetNudge(t *testing.T) {
+	const budget = 12
+	var nudged []int
+	for i := 0; i < budget; i++ {
+		if planBudgetNudge(modes.ModePlan, i, budget) != "" {
+			nudged = append(nudged, i)
+		}
+	}
+	if !slices.Equal(nudged, []int{budget - planNudgeRoundsLeft, budget - 1}) {
+		t.Fatalf("nudged rounds = %v, want the %dth-from-last and the last", nudged, planNudgeRoundsLeft)
+	}
+	if got := planBudgetNudge(modes.ModePlan, budget-planNudgeRoundsLeft, budget); !strings.Contains(got, "ExitPlanMode") || !strings.Contains(got, "8 of 12") {
+		t.Fatalf("early nudge = %q", got)
+	}
+	if got := planBudgetNudge(modes.ModePlan, budget-1, budget); !strings.Contains(got, "last tool round") {
+		t.Fatalf("last nudge = %q", got)
+	}
+	for _, m := range []modes.Mode{modes.ModeAgent, modes.ModeGoal} {
+		for i := 0; i < budget; i++ {
+			if got := planBudgetNudge(m, i, budget); got != "" {
+				t.Fatalf("mode %s round %d nudged: %q", m, i, got)
+			}
+		}
+	}
+	if planBudgetNudge(modes.ModePlan, 0, 1) != "" {
+		t.Fatal("the first round is never nudged")
+	}
+}
+
+// A non-plan reply is not recorded as the plan (session d9292a3d recorded a
+// stray sentence); a real plan is.
+func TestRecordPlanSkipsNonPlanReply(t *testing.T) {
+	root := t.TempDir()
+	s := &Session{workdir: root, allowPassLoop: true}
+	var warned string
+	emit := func(e Event) {
+		if e.Kind == EventWarningKind {
+			warned = e.Warning
+		}
+	}
+	res := s.recordPlan(run.Result{Reply: "Updated plan status now.", PlanSentinel: rolemanager.PlanPartial}, "do the thing", emit)
+	if res.PlanPath != "" || !strings.Contains(warned, "no plan file recorded") {
+		t.Fatalf("non-plan reply recorded: path=%q warning=%q", res.PlanPath, warned)
+	}
+	plan := "## Summary\n\nx\n\n## Key Changes\n\n1. Do it\n   - Files: a.go\n   - Verify: go test ./...\n"
+	res = s.recordPlan(run.Result{PlanText: plan, PlanSentinel: rolemanager.PlanComplete}, "do the thing", emit)
+	if res.PlanPath == "" {
+		t.Fatal("a real plan must be recorded")
+	}
+	data, err := os.ReadFile(res.PlanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(data), "# Plan: do the thing\n") {
+		t.Fatalf("recorded plan has no harness title:\n%s", data)
+	}
+}
+
+// The evaluator can call a finished research checklist complete. With no plan
+// text anywhere, the loop must not accept that: it schedules a write pass and
+// the plan arrives through ExitPlanMode.
+func TestPlanPassLoopRejectsCompleteVerdictWithoutAPlan(t *testing.T) {
+	srv, _, _ := planPassServer(t, planPassOpts{main: "reply", reply: "I have researched everything.", eval: []string{"PLAN_COMPLETE", "PLAN_COMPLETE"}})
+	defer srv.Close()
+	root := t.TempDir()
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 2,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes < 2 {
+		t.Fatalf("passes = %d: a plan-less PLAN_COMPLETE ended the turn at once", res.Passes)
+	}
+	if res.PlanPath != "" {
+		t.Fatalf("a non-plan reply was recorded as the plan: %s", res.PlanPath)
+	}
+}
+
+// A model that writes the finished plan as its reply, with a line of narration
+// before it, completes the turn on that pass: no evaluator verdict is spent
+// (the scripted one would say PLAN_PARTIAL), and the recorded file starts at
+// the plan's title.
+func TestPlanPassLoopAcceptsAPlanDocumentWrittenAsTheReply(t *testing.T) {
+	reply := "I have all the information needed. Grounding complete.\n\n# Add PATCH\n\n## Summary\n\nAdd it.\n\n## Key Changes\n\n1. Change a\n   - Files: a.go\n   - Verify: go test ./...\n\n## Assumptions\n\n- none\n"
+	srv, _, _ := planPassServer(t, planPassOpts{main: "reply", reply: reply, eval: []string{"PLAN_PARTIAL", "PLAN_PARTIAL"}})
+	defer srv.Close()
+	root := t.TempDir()
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "add patch")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes != 1 || res.PlanSentinel != rolemanager.PlanComplete {
+		t.Fatalf("passes = %d, sentinel = %q: a plan document in the reply should complete the turn at once", res.Passes, res.PlanSentinel)
+	}
+	if strings.Contains(res.PlanText, "Grounding") || !strings.HasPrefix(res.PlanText, "# Add PATCH") {
+		t.Fatalf("PlanText = %q", res.PlanText)
+	}
+	data, err := os.ReadFile(res.PlanPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "Grounding") || !strings.HasPrefix(string(data), "# Add PATCH") {
+		t.Fatalf("recorded plan:\n%s", data)
+	}
+}
+
+// A flawed plan is sent back once per turn with each flaw named; the next
+// ExitPlanMode of the turn, flawed or not, is accepted.
+func TestLintPlanOnceSendsAFlawedPlanBackOnce(t *testing.T) {
+	flawed := "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. Code\n   - Files: `src/a.ts`\n   - Verify: `npx vitest run test/a.test.ts`\n2. Tests\n   - Files: `test/a.test.ts` (new)\n   - Verify: `npx vitest run test/a.test.ts`\n"
+	s := &Session{}
+	back := s.lintPlanOnce(map[string]any{"plan": flawed}, false)
+	if !strings.Contains(back, "plan not accepted yet") || !strings.Contains(back, "step 1: Verify runs test/a.test.ts, which step 2 creates") {
+		t.Fatalf("first call = %q", back)
+	}
+	if again := s.lintPlanOnce(map[string]any{"plan": flawed}, false); again != "" {
+		t.Fatalf("a plan is sent back once a turn, got %q", again)
+	}
+	clean := &Session{}
+	if got := clean.lintPlanOnce(map[string]any{"plan": "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. A\n   - Files: `a.go`\n   - Verify: `go build ./...`\n"}, false); got != "" {
+		t.Fatalf("clean plan sent back: %q", got)
+	}
+	if clean.planLinted {
+		t.Fatal("a clean plan must not spend the one rejection")
+	}
+}
+
+// The permission decision is told, by the harness, when a call targets a file
+// the approved plan lists, and only then (measured: with only "Execute the
+// approved plan." it denied the plan's own edit).
+func TestApprovedPlanFactNamesOnlyListedTargets(t *testing.T) {
+	s := &Session{workdir: "/w", turnExecutePlan: true, turnPlanPaths: []string{"main.go", "src/a.ts"}}
+	for _, subject := range []string{"main.go", "./main.go", "/w/main.go", "src/a.ts"} {
+		if got := s.approvedPlanFact(subject); !strings.Contains(got, "one of the files that plan lists") {
+			t.Errorf("%q: %q", subject, got)
+		}
+	}
+	for _, subject := range []string{"other.go", "/etc/passwd", "../main.go", "rm -rf main.go", ""} {
+		if got := s.approvedPlanFact(subject); got != "" {
+			t.Errorf("%q must get no fact, got %q", subject, got)
+		}
+	}
+	if got := (&Session{workdir: "/w", turnPlanPaths: []string{"main.go"}}).approvedPlanFact("main.go"); got != "" {
+		t.Errorf("a turn that is not executing a plan gets no fact: %q", got)
+	}
+}
+
+// The last round of any plan pass offers only the finishing tools, so a pass
+// that read to its last round writes the plan there instead of costing a whole
+// extra pass (reproducing session d9292a3d: five of six runs spent a pass this
+// way). Earlier rounds keep the reading tools.
+func TestPlanPassLastRoundOffersOnlyTheFinishTools(t *testing.T) {
+	srv, mu, toolSets, _ := planFinalPassServer(t, "PLAN_PARTIAL\nMissing: x")
+	defer srv.Close()
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.PlanSentinel != rolemanager.PlanComplete || res.Passes != 1 {
+		t.Fatalf("passes = %d, sentinel = %q: the plan should arrive on the first pass's last round", res.Passes, res.PlanSentinel)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	sets := *toolSets
+	if len(sets) != 3 {
+		t.Fatalf("requests = %d, want 3 rounds", len(sets))
+	}
+	if !slices.Contains(sets[0], "Read") || !slices.Contains(sets[1], "Read") {
+		t.Fatalf("rounds before the last keep Read: %v %v", sets[0], sets[1])
+	}
+	last := append([]string(nil), sets[2]...)
+	slices.Sort(last)
+	if !slices.Equal(last, []string{"ExitPlanMode"}) {
+		t.Fatalf("last round tools = %v", last)
+	}
+	if sess.planFinalPass {
+		t.Fatal("the narrowing must not outlive the pass")
+	}
+}
+
+// A flawed plan on a pass's last round, or on the finishing pass, is accepted:
+// sending it back would spend the last round the planner has.
+func TestLintPlanOnceAcceptsOnTheLastRound(t *testing.T) {
+	flawed := "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. A\n   - Verify: go build\n"
+	s := &Session{}
+	if got := s.lintPlanOnce(map[string]any{"plan": flawed}, true); got != "" {
+		t.Fatalf("last round sent a plan back: %q", got)
+	}
+	if s.planLinted {
+		t.Fatal("the unspent rejection must stay available")
+	}
+}
+
+// The lint checks the plan's paths against the session's own repository.
+func TestLintPlanOnceChecksPathsAgainstTheWorkdir(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "real.go"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Session{workdir: root}
+	ghost := "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. A\n   - Files: `real.go`, `docs/ghost.md`\n   - Verify: none\n"
+	back := s.lintPlanOnce(map[string]any{"plan": ghost}, false)
+	if !strings.Contains(back, "docs/ghost.md, which does not exist") || strings.Contains(back, "real.go,") {
+		t.Fatalf("lint reply = %q", back)
+	}
+	ok := "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. A\n   - Files: `real.go`, `docs/ghost.md` (new)\n   - Verify: none\n"
+	if got := (&Session{workdir: root}).lintPlanOnce(map[string]any{"plan": ok}, false); got != "" {
+		t.Fatalf("a marked-new file was flagged: %q", got)
+	}
+}
+
+// A large plan with no mechanical flaw is sent back once with the review
+// checklist; a small one is not.
+func TestLintPlanOnceReviewsLargePlans(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("# T\n\n## Summary\n\nx\n\n## Key Changes\n\n")
+	for i := 1; i <= 5; i++ {
+		fmt.Fprintf(&b, "%d. Step\n   - Files: `f%d.go` (new)\n   - Verify: none\n", i, i)
+	}
+	s := &Session{}
+	back := s.lintPlanOnce(map[string]any{"plan": b.String()}, false)
+	if !strings.Contains(back, "plan check before it is accepted") {
+		t.Fatalf("a five-step plan should get the checklist, got %q", back)
+	}
+	if again := s.lintPlanOnce(map[string]any{"plan": b.String()}, false); again != "" {
+		t.Fatalf("the checklist is sent once, got %q", again)
+	}
+	small := "# T\n\n## Summary\n\nx\n\n## Key Changes\n\n1. A\n   - Files: `a.go` (new)\n   - Verify: none\n"
+	if got := (&Session{}).lintPlanOnce(map[string]any{"plan": small}, false); got != "" {
+		t.Fatalf("a one-step plan must not be reviewed: %q", got)
+	}
+}
+
+// A plan sent back on a pass's last round is given one more round, so the
+// correction lands in the same pass instead of costing a whole new one.
+func TestPlanSentBackOnTheLastRoundIsCorrectedInTheSamePass(t *testing.T) {
+	var mu sync.Mutex
+	var rounds [][]string
+	exits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			var names []string
+			for _, tl := range req.Tools {
+				names = append(names, tl.Function.Name)
+			}
+			if len(names) == 0 {
+				writeChatJSON(w, "name")
+				return
+			}
+			mu.Lock()
+			rounds = append(rounds, names)
+			mu.Unlock()
+			if slices.Contains(names, "Read") {
+				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				return
+			}
+			mu.Lock()
+			exits++
+			n := exits
+			mu.Unlock()
+			if n == 1 {
+				// No Files line: the lint sends this back.
+				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				return
+			}
+			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nfixed\n## Key Changes\n1. change it\n   - Files: p.go\n   - Verify: go build ./..."}`)
+		}
+	}))
+	defer srv.Close()
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes != 1 || res.PlanSentinel != rolemanager.PlanComplete || !strings.Contains(res.PlanText, "fixed") {
+		t.Fatalf("passes = %d, sentinel = %q, plan = %q: the correction should land in the first pass", res.Passes, res.PlanSentinel, res.PlanText)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(rounds) != 4 {
+		t.Fatalf("requests = %d (%v), want 3 rounds plus one extra", len(rounds), rounds)
+	}
+	for i, names := range rounds[2:] {
+		if slices.Contains(names, "Read") {
+			t.Fatalf("round %d still offers Read: %v", i+3, names)
+		}
+	}
+}
+
+// A plan the lint sent back is still recorded when the correction never comes:
+// measured in a large-prompt run whose model, given one more round, called a
+// tool the finishing surface withholds and ended the turn with no plan at all.
+func TestRejectedPlanIsRecordedWhenNoCorrectionArrives(t *testing.T) {
+	var mu sync.Mutex
+	exits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			if len(req.Tools) == 0 {
+				writeChatJSON(w, "name")
+				return
+			}
+			var names []string
+			for _, tl := range req.Tools {
+				names = append(names, tl.Function.Name)
+			}
+			if slices.Contains(names, "Read") {
+				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				return
+			}
+			mu.Lock()
+			exits++
+			n := exits
+			mu.Unlock()
+			if n == 1 {
+				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe rejected plan\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				return
+			}
+			// The correction never comes: a tool the narrowed surface withholds.
+			writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+		}
+	}))
+	defer srv.Close()
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 2}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.PlanPath == "" {
+		t.Fatalf("no plan recorded; reply = %q", res.Reply)
+	}
+	data, err := os.ReadFile(res.PlanPath)
+	if err != nil || !strings.Contains(string(data), "the rejected plan") {
+		t.Fatalf("the rejected plan should be what is recorded: %v\n%s", err, data)
+	}
+}
+
+// A last round spent on update_plan, which the finishing surface withholds, is
+// given back once, so the plan is written in the same pass (measured: one run
+// of the failing session's prompt spent pass 1 this way and needed a second).
+func TestWithheldToolOnTheLastRoundCostsNoPass(t *testing.T) {
+	var mu sync.Mutex
+	narrowed := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			if len(req.Tools) == 0 {
+				writeChatJSON(w, "name")
+				return
+			}
+			var names []string
+			for _, tl := range req.Tools {
+				names = append(names, tl.Function.Name)
+			}
+			if slices.Contains(names, "Read") {
+				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				return
+			}
+			mu.Lock()
+			narrowed++
+			n := narrowed
+			mu.Unlock()
+			if n == 1 {
+				writeToolCallJSON(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
+				return
+			}
+			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
+		}
+	}))
+	defer srv.Close()
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes != 1 || !strings.Contains(res.PlanText, "the plan") {
+		t.Fatalf("passes = %d, narrowed = %d, plan = %q: the plan should land in the first pass", res.Passes, narrowed, res.PlanText)
+	}
+}
+
+// A last round spent on update_plan and then a plan the lint sends back still
+// ends in the first pass: two rounds are given back.
+
+func TestWithheldToolThenRejectedPlanStillLandsInThePass(t *testing.T) {
+	var mu sync.Mutex
+	narrowed := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Tools []struct {
+				Function struct {
+					Name string `json:"name"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			if len(req.Tools) == 0 {
+				writeChatJSON(w, "name")
+				return
+			}
+			var names []string
+			for _, tl := range req.Tools {
+				names = append(names, tl.Function.Name)
+			}
+			if slices.Contains(names, "Read") {
+				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				return
+			}
+			mu.Lock()
+			narrowed++
+			n := narrowed
+			mu.Unlock()
+			if n == 2 {
+				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				return
+			}
+			if n == 1 {
+				writeToolCallJSON(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
+				return
+			}
+			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
+		}
+	}))
+	defer srv.Close()
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, tools.ExitPlanMode{}, tools.UpdatePlan{}),
+		Posture:       posture.Defaults(),
+		AllowPassLoop: true,
+		MaxIterations: 3,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 3}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes != 1 || !strings.Contains(res.PlanText, "the plan") {
+		t.Fatalf("passes = %d, narrowed = %d, plan = %q: the plan should land in the first pass", res.Passes, narrowed, res.PlanText)
 	}
 }

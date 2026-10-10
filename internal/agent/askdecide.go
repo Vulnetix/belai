@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -78,7 +79,7 @@ func (s *Session) decidePermissionAsk(ctx context.Context, name, subject string,
 	defer cancel()
 	prop := fmt.Sprintf("The agent wants to run the tool %q on this target: %s. Is it appropriate to let it proceed without asking the user?",
 		name, sanitize.Line(subject, 400))
-	p, err := s.askDecider.Judge(ctx, prop, s.askContext())
+	p, err := s.askDecider.Judge(ctx, prop, s.askContext()+s.approvedPlanFact(subject))
 	if err != nil {
 		return false, false
 	}
@@ -226,4 +227,25 @@ func (d *AskDecided) Line() string {
 		}
 	}
 	return fmt.Sprintf("Clef %s (confidence %.2f), so the user was not asked", what, d.Confidence)
+}
+
+// approvedPlanFact is the one sentence a permission decision gets about an
+// approved plan: the call's target is a file the plan lists. It is computed by
+// the harness from the plan the user reviewed, never copied from model prose,
+// and says nothing for a target the plan does not list, so a plan cannot talk
+// the decision into allowing anything it did not name. Without it the decision
+// saw only "Execute the approved plan." and denied the plan's own edits
+// (measured in the TUI: Clef denied an Edit of a file the approved plan listed).
+func (s *Session) approvedPlanFact(subject string) string {
+	if !s.turnExecutePlan || len(s.turnPlanPaths) == 0 || strings.TrimSpace(subject) == "" {
+		return ""
+	}
+	target := filepath.Clean(subject)
+	for _, p := range s.turnPlanPaths {
+		pp := filepath.Clean(p)
+		if target == pp || (filepath.IsAbs(target) && !filepath.IsAbs(pp) && target == filepath.Join(s.workdir, pp)) {
+			return "The user reviewed and approved a plan for this turn, and this call's target is one of the files that plan lists.\n"
+		}
+	}
+	return ""
 }

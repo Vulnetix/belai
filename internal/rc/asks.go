@@ -2,6 +2,7 @@ package rc
 
 import (
 	"context"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -233,4 +234,82 @@ func (b *askBridge) clarify(ctx context.Context, q *clarify.Questionnaire, modeC
 		return clarify.Answers{}
 	}
 	return out
+}
+
+// planReview is the plan-review ask open now: written when a plan turn ends
+// with a plan file, answered by the web while the session is idle. Unlike a
+// permission or a questionnaire it does not hold a turn: the plan outlives the
+// turn that wrote it, exactly as the TUI's review pane does.
+type planReview struct {
+	askID string
+	name  string
+	path  string
+}
+
+// planReviewOptions are the choices a remote session offers. approve_new needs
+// a second session to fork into, which a remote session does not have.
+var planReviewOptions = []string{webask.PlanApproveHere, webask.PlanRefine, webask.PlanStay}
+
+// recordPlanReview writes the plan-review ask for a plan file the turn just
+// recorded and returns it, or nil when nothing was written.
+func (b *askBridge) recordPlanReview(name, path string) *planReview {
+	body := ""
+	if data, err := os.ReadFile(path); err == nil {
+		body = string(data)
+	}
+	content, meta := webask.PlanReviewAsk(name, path, body, planReviewOptions)
+	id := b.record(webask.KindPlanReview, content, meta)
+	if id == "" {
+		return nil
+	}
+	return &planReview{askID: id, name: name, path: path}
+}
+
+// settlePlanReview writes the ask_answer entry for the open plan review.
+func (b *askBridge) settlePlanReview(p *planReview, source, remoteID, choice, notes string) string {
+	text := "plan review: " + strings.ReplaceAll(choice, "_", " ")
+	if source == webask.FromWeb {
+		text += " (answered on the web)"
+	}
+	meta := map[string]any{"plan_choice": choice}
+	if notes != "" {
+		meta["notes"] = notes
+	}
+	return b.settle(p.askID, webask.KindPlanReview, source, remoteID, text, meta)
+}
+
+// closePlanReview records the open plan review as closed because the host
+// moved on (a newer plan, or the session ended); nobody can answer it any more.
+func (b *askBridge) closePlanReview(p *planReview, reason string) {
+	if p == nil {
+		return
+	}
+	b.settle(p.askID, webask.KindPlanReview, webask.FromHost, "", "", map[string]any{"closed": true, "reason": reason})
+}
+
+// answerPlanReview applies one web answer to the open plan review. It returns
+// the accepted choice and notes, or ok=false after acking a refusal, so the
+// session loop acts only on an answer that validated against the review open
+// now. p may be nil: an answer to nothing open is refused.
+func (b *askBridge) answerPlanReview(p *planReview, ans sessionsync.RemoteAnswer) (choice, notes string, ok bool) {
+	refuse := func(why string) (string, string, bool) {
+		b.mirror.AckAnswer(ans.ID, sessionsync.AckRefused, why, "")
+		return "", "", false
+	}
+	if p == nil || ans.AskID != p.askID {
+		return refuse("this question is no longer open on the host: it was answered there, or the turn moved on")
+	}
+	if ans.Kind != webask.KindPlanReview {
+		return refuse("the answer does not fit a plan review")
+	}
+	choice, notes, err := webask.ParsePlanChoice(ans.Payload)
+	if err != nil {
+		return refuse(err.Error())
+	}
+	if choice == webask.PlanApproveNew {
+		return refuse("a remote session cannot fork; approve the plan here instead")
+	}
+	entryID := b.settlePlanReview(p, webask.FromWeb, ans.ID, choice, notes)
+	b.mirror.AckAnswer(ans.ID, sessionsync.AckAccepted, "", entryID)
+	return choice, notes, true
 }

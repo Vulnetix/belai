@@ -280,16 +280,27 @@ type Session struct {
 	// turnExecutePlan is set for the turn that executes an approved plan, so
 	// the first-pass directive can point at the plan rather than a goal.
 	turnExecutePlan bool
+	// planLinted is set once this turn has sent a plan back for the flaws
+	// plans.Lint found. A plan is sent back at most once a turn: the corrected
+	// plan, or the same one, is accepted.
+	planLinted bool
+	// lintRejected is the plan the lint sent back this turn. If the correction
+	// never arrives it is the plan of record: a plan with flaws beats no plan.
+	lintRejected string
+	// turnPlanPaths are the files the approved plan lists, for the turn that
+	// executes one: the harness's own reading of what the user approved, given to
+	// the permission decision as a fact (askdecide.go). Nil on any other turn.
+	turnPlanPaths []string
 	// turnSimple is set when the request scale job rated this turn's request
 	// simple: the goal contract draft, changed-file prefetch, planning list,
 	// verification gate and test-suite verification surface are dropped.
 	turnSimple bool
+	// turnDecision is TurnInput.Decision for this turn.
+	turnDecision bool
 	// turnFanOut is set for fan-out profile turns. It advertises the Task
 	// tool and allows several read-only subagents to run concurrently.
 	turnFanOut bool
 	// fanOutRegistry is the full registry plus a Task tool whose runner
-	// turnDecision is TurnInput.Decision for this turn.
-	turnDecision bool
 	// executes a read-only subagent for this session.
 	fanOutRegistry       *tools.Registry
 	fanOutOpenAITools    []wire.OpenAITool
@@ -435,10 +446,11 @@ type Session struct {
 	deferral *toolDeferral
 }
 
-// planFinishTools is the whole surface of the plan loop's final pass: record
-// the checklist, hand over the plan. No exploration tool is offered, so the
-// pass cannot end in more reading.
-var planFinishTools = []string{"ExitPlanMode", "update_plan", "AskUserQuestion"}
+// planFinishTools is the whole surface of the plan loop's last round and final
+// pass: hand over the plan, or ask the one question only the user can answer.
+// update_plan is not offered: on a narrowed last round models sometimes spent it
+// on a checklist update instead of the plan (two of three reproduction runs).
+var planFinishTools = []string{"ExitPlanMode", "AskUserQuestion"}
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
 // message rather than stalling the UI or the loop.
@@ -860,16 +872,16 @@ type TurnInput struct {
 	// constant (a worker's "complete the attached item"), so a drafted
 	// contract would add nothing.
 	NoGoalDraft bool
-}
-
-// ItemWithheldError ends a worker turn whose claimed item the security
-// classifier withheld.
 	// Decision marks a turn whose deliverable is a recorded decision, not a
 	// change to the files (a reviewer, a verifier, a read-only scout). The goal
 	// loop then asks for the decision, never tells the model to edit, does not
 	// treat a run without file writes as a stall and skips the read-only
 	// verification pass.
 	Decision bool
+}
+
+// ItemWithheldError ends a worker turn whose claimed item the security
+// classifier withheld.
 type ItemWithheldError struct {
 	Item     string
 	Sentinel rolemanager.Sentinel
@@ -1319,19 +1331,25 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.turnPriorGoal = nil
 	s.turnDraft = nil
 	s.turnExecutePlan = in.ExecutePlan
+	s.planLinted = false
+	s.lintRejected = ""
+	s.turnPlanPaths = nil
 	s.turnSimple = false
+	s.turnDecision = in.Decision
 	var draft *pendingDraft
 	// A turn that ends before the join must not leave the draft running.
 	defer func() {
 		if draft != nil {
 			draft.cancel(nil)
-	s.turnDecision = in.Decision
 		}
 	}()
 	switch {
 	case in.ExecutePlan:
 		loopDec.Mode = modes.ModeGoal
 		loopGoal = opts.PlanText
+		if d, err := plans.ParseDoc(opts.PlanText); err == nil {
+			s.turnPlanPaths = d.Paths()
+		}
 		if strings.TrimSpace(loopGoal) == "" {
 			loopGoal = clean
 		}

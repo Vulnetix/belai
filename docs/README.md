@@ -128,6 +128,9 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
   directories offered for remote control, with their bounds.
 - [Session assessment](session-assessment.md): what saved sessions showed about
   orchestration, prompts and UX, and the changes made in response.
+- [Plan mode tuning](plan-mode-tuning.md): the scoring rubric, the test matrix and
+  one row per measured run for the planning prompt and the plan loop, with the
+  revision that changed each result.
 
 ## Build, test, and publish
 
