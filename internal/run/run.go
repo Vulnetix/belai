@@ -2654,6 +2654,9 @@ const (
 	// StopCoordinated is a fleet worker's goal that ended because the forge
 	// coordinator took over publishing its branch (internal/agent/coordfact.go).
 	StopCoordinated StopReason = "coordinated"
+	// StopDecided is a fleet worker's goal that ended because the worker recorded
+	// how its item ends with KanbanOutcome (internal/agent/passloop.go).
+	StopDecided StopReason = "decided"
 )
 
 // Result captures what the noninteractive pipeline decided and produced.

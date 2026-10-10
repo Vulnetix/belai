@@ -31,7 +31,7 @@ func TestOperatingContractCarriesTheMechanics(t *testing.T) {
 		"vex/",
 		"call " + tools.PublishBranchName + " with a pull request title",
 		tools.CloseDuplicatePRName,
-		"end the turn without completing the goal",
+		"stop there: the harness returns the item on the kept branch",
 	} {
 		if !strings.Contains(d, want) {
 			t.Errorf("contract lacks %q:\n%s", want, d)

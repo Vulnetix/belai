@@ -126,6 +126,7 @@ type WorkerClaim struct {
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
 	verdict *VerdictRecord
+	outcome *OutcomeRecord
 }
 
 // owns reports whether the worker may write to item id: the claimed item or
@@ -784,7 +785,7 @@ func (r *Registry) WithKanbanWorker(store *kanban.Store, src *kanban.Source, cla
 		return r
 	}
 	base := KanbanBase{Store: store, Source: src, Claim: claim}
-	ts := []Tool{KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base}}
+	ts := []Tool{KanbanSearch{base}, KanbanUpdate{base}, KanbanHandoff{base}, KanbanOutcome{base}}
 	if len(claim.Verdicts) > 0 {
 		ts = append(ts, KanbanVerdict{base})
 	}

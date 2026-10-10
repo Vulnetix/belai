@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/transcript"
 )
 
@@ -767,6 +768,19 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			l.verificationPasses++
 		}
 		l.noteWithheld(out)
+
+		// A fleet worker that recorded how its item ends has decided: the record,
+		// not an evaluator's reading of its closing words, routes the card, so
+		// the goal ends here without asking the evaluator or writing a report
+		// (nothing reads one). The harness still checks the work afterwards.
+		if rec, ok := s.recordedOutcome(); ok {
+			s.turnStop = run.StopDecided
+			sentinel := rolemanager.GoalPartial
+			if rec.Outcome == tools.OutcomeSuccess {
+				sentinel = rolemanager.GoalComplete
+			}
+			return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+		}
 
 		// A pass that did exactly what the last one did, twice over, will
 		// do it again: stop and report instead of asking the evaluator

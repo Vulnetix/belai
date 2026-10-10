@@ -664,3 +664,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 
 	return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, repairFailures: repair, updatePlan: updatePlan}), turns, nil
 }
+		if _, decided := s.recordedOutcome(); decided {
+			// The worker recorded how its item ends: the turn is over (the goal
+			// loop reads the record), so no further tool round is spent re-checking it.
+			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan}), turns, nil
+		}

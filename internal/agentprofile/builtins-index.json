@@ -89,7 +89,7 @@
     {
       "name": "belai:reviewer",
       "path": "internal/agentprofile/builtin/reviewer.json",
-      "sha256": "be87e80c550a2951c6cf138401d25218a150fdc6822b803c62c134bad7c2c703"
+      "sha256": "78ac12c4eb3f14b4d5136ac266834355cf0c75bd1ba666eaa51efc55a8fe8b5c"
     },
     {
       "name": "belai:scout",
@@ -109,7 +109,7 @@
     {
       "name": "belai:verifier",
       "path": "internal/agentprofile/builtin/verifier.json",
-      "sha256": "c7d78c3a411fe74899c7d961449e3b9cea4e06b38a0f18ef0b5b22bb4bffee4b"
+      "sha256": "872663985a075bbea9e8b9a04f0c6b8a1b4725ed8e314cb532d5a319125d7477"
     },
     {
       "name": "belai:vuln-scout",

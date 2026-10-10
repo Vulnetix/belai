@@ -61,6 +61,12 @@ func fleetMock(t *testing.T) *httptest.Server {
 			calls++
 			n := calls
 			mu.Unlock()
+			if !wrote && strings.Contains(system, "REJECTER-PERSONA") {
+				// Records its decision on the board; the evaluator above would
+				// call this goal complete, so only the record can reject.
+				writeToolCallChat(w, "KanbanOutcome", map[string]any{"outcome": "failure", "reason": "hello.txt has no trailing newline"}, "Rejecting the branch.\n")
+				return
+			}
 			if !wrote && strings.Contains(system, "WRITER-PERSONA") {
 				writeToolCallChat(w, "Write", map[string]any{"file_path": "hello.txt", "content": "hello\n"}, "Plan:\n1. Add hello.txt\n[DONE:1]\n")
 				return

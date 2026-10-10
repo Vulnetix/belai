@@ -245,6 +245,7 @@ func (s *Session) kanbanDirective(prompt string) string {
 func workerDirective(c *tools.WorkerClaim) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You hold kanban item %s; its text is attached. The harness moves it when this goal ends — do not try to move it. KanbanUpdate may add a progress note to it.", kanban.ShortID(c.Item))
+	fmt.Fprintf(&b, " When you have decided how the item ends, record it last with %s (success, failure or blocked, with a one-line reason): the turn ends there and the harness routes the card from that record.", tools.KanbanOutcomeName)
 	if len(c.HandoffTo) > 0 || len(c.HandoffLabels) > 0 {
 		fmt.Fprintf(&b, " Work that belongs to another agent goes on the board with KanbanHandoff (at most %d per item)", tools.MaxHandoffsPerItem)
 		if len(c.HandoffTo) > 0 {
@@ -466,4 +467,13 @@ func (s *Session) kanbanNeeded(reply string, kt kanbanTurn) bool {
 		return true // an unreadable board is reported by the tools, not hidden here
 	}
 	return counts[kanban.Backlog]+counts[kanban.Review]+counts[kanban.InProgress]+counts[kanban.Blocked] > 0
+}
+
+// recordedOutcome is the outcome a fleet worker's model recorded with
+// KanbanOutcome this turn, if any. A session without a claim has none.
+func (s *Session) recordedOutcome() (tools.OutcomeRecord, bool) {
+	if s.kanban == nil || !s.kanban.worker {
+		return tools.OutcomeRecord{}, false
+	}
+	return s.kanban.base.Claim.RecordedOutcome()
 }
