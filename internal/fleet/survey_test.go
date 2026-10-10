@@ -240,7 +240,7 @@ func TestReadOnlyDirective(t *testing.T) {
 	}
 	w := &Worker{Profile: scoutProfile()}
 	w.Profile.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree, ReadOnly: true}
-	if w.directive(ws, true) != d {
+	if w.directive(ws, true, false) != d {
 		t.Fatal("a read-only worker got the writing directive")
 	}
 }

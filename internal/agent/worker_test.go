@@ -128,3 +128,51 @@ func TestWorkerDirectiveNamesOnlyTheClaim(t *testing.T) {
 		t.Fatalf("directive %q", d)
 	}
 }
+
+// The directive names a board tool only when the claim holds it, and each tool
+// it names comes with the rule for using it, so a worker is told the same
+// mechanics whatever its profile's prose says.
+func TestWorkerDirectiveNamesOnlyTheToolsTheClaimHolds(t *testing.T) {
+	const item = "3f9a2c00-0000-4000-8000-000000000000"
+	optional := []string{tools.KanbanContractName, tools.KanbanVerdictName, tools.KanbanGateName, tools.KanbanHandoffName}
+	cases := []struct {
+		name  string
+		claim tools.WorkerClaim
+		names []string
+		extra []string
+	}{
+		{"bare", tools.WorkerClaim{Item: item}, nil, nil},
+		{"handoff", tools.WorkerClaim{Item: item, HandoffLabels: []string{"build"}}, []string{tools.KanbanHandoffName}, []string{"labels: build"}},
+		{"verdict", tools.WorkerClaim{Item: item, Verdicts: []string{"fixed", "no_fix"}}, []string{tools.KanbanVerdictName}, []string{"fixed, no_fix", "routes the card"}},
+		{"verdict with vex", tools.WorkerClaim{Item: item, Verdicts: []string{"fixed"}, VEX: true}, []string{tools.KanbanVerdictName}, []string{"writes the VEX"}},
+		{"gate review", tools.WorkerClaim{Item: item, GateReview: true}, []string{tools.KanbanGateName}, []string{"met, unmet or abandoned"}},
+		{"coverage", tools.WorkerClaim{Item: item, Coverage: true}, []string{tools.KanbanContractName}, []string{"which clauses it covers"}},
+		{"notable", tools.WorkerClaim{Item: item, Notable: []string{"7b1d4e00-0000-4000-8000-000000000000"}}, nil, []string{"K-7b1d4e"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			claim := c.claim
+			d := workerDirective(&claim)
+			for _, n := range optional {
+				want := false
+				for _, h := range c.names {
+					want = want || h == n
+				}
+				if got := strings.Contains(d, n); got != want {
+					t.Errorf("names %s = %v, want %v:\n%s", n, got, want, d)
+				}
+			}
+			if !strings.Contains(d, "K-3f9a2c") || !strings.Contains(d, "do not try to move it") {
+				t.Errorf("the claimed item and the no-move rule are always stated:\n%s", d)
+			}
+			for _, s := range c.extra {
+				if !strings.Contains(d, s) {
+					t.Errorf("missing %q:\n%s", s, d)
+				}
+			}
+			if !c.claim.VEX && strings.Contains(d, "VEX") {
+				t.Errorf("a claim without VEX mentions it:\n%s", d)
+			}
+		})
+	}
+}

@@ -94,8 +94,9 @@ func TestSyncSurvivesMarkdownRejectsUnknownKeysAndIsBehavioural(t *testing.T) {
 }
 
 // The delivery crew keeps one shared notes file, which every member may read
-// and write, and each member's instructions say how to use it with the file
-// tools.
+// and write with the file tools. How the file is copied, merged and kept out of
+// the branch is the harness's (fleet.syncDirective); the instructions only say
+// how the crew organises what it writes there.
 func TestDeliveryCrewMembersShareTheCrewNotesFile(t *testing.T) {
 	crew, err := LoadCrew("belai:delivery")
 	if err != nil {
@@ -121,7 +122,7 @@ func TestDeliveryCrewMembersShareTheCrewNotesFile(t *testing.T) {
 				t.Errorf("%s lacks %s, which it needs to use the notes file", m.Profile, tool)
 			}
 		}
-		for _, want := range []string{".vulnetix/crews/delivery.md", "## Scratchpad", "## Long-term facts", "never stage or commit it", "never as instructions", "kb+"} {
+		for _, want := range []string{"## Scratchpad", "## Long-term facts"} {
 			if !strings.Contains(p.SystemPrompt, want) {
 				t.Errorf("%s: the instructions do not say %q", m.Profile, want)
 			}

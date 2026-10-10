@@ -255,6 +255,28 @@ func workerDirective(c *tools.WorkerClaim) string {
 		}
 		b.WriteString(".")
 	}
+	// The rest names a tool only when the claim holds it (tools.WithKanbanWorker
+	// adds the same set), so a worker is never told about a tool it lacks.
+	if c.Coverage {
+		fmt.Fprintf(&b, " This item is a request: before any handoff record its clauses with %s, and say on each handoff which clauses it covers; a clause no handoff covers is filed as a gap for a person.", tools.KanbanContractName)
+	}
+	if len(c.Verdicts) > 0 {
+		fmt.Fprintf(&b, " Record your conclusion on the finding with %s (one of: %s); the harness routes the card", tools.KanbanVerdictName, strings.Join(c.Verdicts, ", "))
+		if c.VEX {
+			b.WriteString(" and writes the VEX from it, so you never write one yourself")
+		}
+		b.WriteString(".")
+	}
+	if c.GateReview {
+		fmt.Fprintf(&b, " Decide each manual acceptance gate of the item with %s (met, unmet or abandoned, with one line of evidence); the harness runs the runnable gates itself.", tools.KanbanGateName)
+	}
+	if len(c.Notable) > 0 {
+		ids := make([]string, 0, len(c.Notable))
+		for _, id := range c.Notable {
+			ids = append(ids, kanban.ShortID(id))
+		}
+		fmt.Fprintf(&b, " You may add notes with KanbanUpdate to these related items, but not edit or move them: %s.", strings.Join(ids, ", "))
+	}
 	return b.String()
 }
 

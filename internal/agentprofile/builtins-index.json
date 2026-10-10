@@ -4,7 +4,7 @@
     {
       "name": "belai:builder",
       "path": "internal/agentprofile/builtin/builder.json",
-      "sha256": "4a17962d379ada40e91e7cd047cf8f06ee2b67e399e0f9ca4ad82c81d6ab09d5"
+      "sha256": "47e210f8a91dfc6cc9027dc2b456c3da0a32330548464c5ce553b1548290430a"
     },
     {
       "name": "belai:debug",
@@ -79,7 +79,7 @@
     {
       "name": "belai:patcher",
       "path": "internal/agentprofile/builtin/patcher.json",
-      "sha256": "d9b5c73cd9f2a658e090daffdbe2e7e5fea171c2c9359c81c70277b8ed84ee42"
+      "sha256": "1150451c973bf797296e92e39e1b8017132f39fd85d134f3bd90e87438a3eba0"
     },
     {
       "name": "belai:plan-handoff",
@@ -89,12 +89,12 @@
     {
       "name": "belai:reviewer",
       "path": "internal/agentprofile/builtin/reviewer.json",
-      "sha256": "effee43569544d0368e273399cfa64ca3d9ff67af6f647b7ea6ed648f98924e5"
+      "sha256": "be87e80c550a2951c6cf138401d25218a150fdc6822b803c62c134bad7c2c703"
     },
     {
       "name": "belai:scout",
       "path": "internal/agentprofile/builtin/scout.json",
-      "sha256": "d8631f3711e6b36c7b3afa8279e60c6f5d53c03a8056376f04bb6a8f595a9216"
+      "sha256": "ebad6836683c7818581bd65bb1766ece1c75ad319460e8dd6cef88aef2362160"
     },
     {
       "name": "belai:triage",
@@ -109,12 +109,12 @@
     {
       "name": "belai:verifier",
       "path": "internal/agentprofile/builtin/verifier.json",
-      "sha256": "37d9a230f5d3579857233a6aa9e24ca09c40626992a65be1493e3320168fb2d7"
+      "sha256": "c7d78c3a411fe74899c7d961449e3b9cea4e06b38a0f18ef0b5b22bb4bffee4b"
     },
     {
       "name": "belai:vuln-scout",
       "path": "internal/agentprofile/builtin/vuln-scout.json",
-      "sha256": "5d4d77c4cad0a7004eaa842612639316e56bb10a55463ce01d6c968da2ad17f3"
+      "sha256": "a12ef2037e93ffb0eabc5f30c6d285b1d4a4ce4ec0d1fdac286f1db3191007c7"
     },
     {
       "name": "belai:vulnetix-scanner",

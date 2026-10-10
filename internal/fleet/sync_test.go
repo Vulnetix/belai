@@ -361,21 +361,21 @@ func TestWorkspaceNoteNamesTheCrewFilesAndTheCommitRule(t *testing.T) {
 		},
 	}}
 	w := &Worker{Profile: p}
-	d := w.directive(ws, false)
+	d := w.directive(ws, false, false)
 	for _, want := range []string{"You may edit .vulnetix/crews/delivery.md", "Read only: .vulnetix/crews/rules.md", "never stage or commit them", "merges the ones you may write back"} {
 		if !strings.Contains(d, want) {
 			t.Fatalf("note lacks %q:\n%s", want, d)
 		}
 	}
 	p.Workspace.ReadOnly = true
-	if d := (&Worker{Profile: p}).directive(ws, false); !strings.Contains(d, "throwaway") || !strings.Contains(d, "an exception to any rule against editing files") {
+	if d := (&Worker{Profile: p}).directive(ws, false, false); !strings.Contains(d, "throwaway") || !strings.Contains(d, "an exception to any rule against editing files") {
 		t.Fatalf("a read-only workspace names the exception:\n%s", d)
 	}
-	plain := (&Worker{Profile: agentprofile.AgentProfile{Name: "y"}}).directive(ws, false)
+	plain := (&Worker{Profile: agentprofile.AgentProfile{Name: "y"}}).directive(ws, false, false)
 	if strings.Contains(plain, "Crew files") {
 		t.Fatalf("a profile that syncs nothing gets no crew note: %s", plain)
 	}
-	if (&Worker{Profile: p}).directive(nil, false) != "" {
+	if (&Worker{Profile: p}).directive(nil, false, false) != "" {
 		t.Fatal("no worktree, no note")
 	}
 }

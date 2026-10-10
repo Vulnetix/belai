@@ -59,7 +59,9 @@ func TestKnowledgeRefusesWhatItCannotRead(t *testing.T) {
 }
 
 // The security crew reads the review artifacts it works from through the
-// documents it lists, relative to the project's trusted root.
+// documents it lists, relative to the project's trusted root. Where they are
+// and what they hold is told to the agent by the harness from this list
+// (fleet.knowledgeDirective), not by the instructions.
 func TestSecurityCrewMembersListTheReviewArtifacts(t *testing.T) {
 	crew, err := LoadCrew("belai:security")
 	if err != nil {
@@ -75,9 +77,6 @@ func TestSecurityCrewMembersListTheReviewArtifacts(t *testing.T) {
 		}
 		if got := p.KnowledgePaths(); len(got) != 1 || got[0] != ".vulnetix" {
 			t.Errorf("%s lists %v, want [.vulnetix]", m.Profile, got)
-		}
-		if !strings.Contains(p.SystemPrompt, ".vulnetix/") || !strings.Contains(p.SystemPrompt, "kb+") {
-			t.Errorf("%s does not tell the agent where the artifacts are", m.Profile)
 		}
 		if p.ID == "" {
 			t.Errorf("%s has no id, so its index could not be keyed", m.Profile)
