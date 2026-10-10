@@ -973,8 +973,8 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |
-| `belai agent run NAME [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground. `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
-| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME and `-crew` is required |
+| `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME, `-crew` and `-prompt` is required |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers, all at once, each with 45 seconds to commit its work in progress, push the branch (a worker that may publish) and hand its card back before it is killed; claims are released |
@@ -1039,6 +1039,32 @@ every two seconds while the tab is open.
 On the kanban tab, `w` hands an item to the chosen crew: it adds the crew's
 entry labels, moves the item to backlog, and starts the crew when no worker
 is running.
+
+### A worker made from a prompt
+
+`belai agent run -prompt TEXT` (and `agent start -prompt TEXT`) runs a worker with
+no stored profile. The prompt is its instructions; the harness builds the rest as
+it would for a profile, so the worker claims, works in a worktree, publishes and is
+routed exactly as a stored one is. This is also what shows that a profile's prose
+is only persona and judgement: the board tools, the workspace, the crew files and
+the publishing rule are explained to the model by the harness, from the claim and
+the workspace, not by the prompt.
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `-prompt TEXT` | the worker's instructions; pass it as `-prompt=TEXT` if it starts with a dash. It shows in the process list | required |
+| `-tools T,T` | the tools it may use | all of them |
+| `-claim LIST[:LABEL,LABEL]` | what it claims | `backlog`, any label |
+| `-to LIST` | where a success goes | `review`, or `done` for a worker with no file tool that only decides |
+| `-publish MODE` | `none`, `draft_pr` or `agent` for a worker that changes files | `agent` |
+| `-read-only` | run checks in a throwaway worktree and change nothing | off |
+
+The worker is named `adhoc-` and eight hex digits of the prompt's hash, so the same
+prompt is the same identity. It is autonomous, makes at most 8 passes and 45 minutes
+per item, and keeps no lessons. It is validated like a stored profile, so an unknown
+tool or list is refused. It is not stored, so changing a profile on disk never restarts
+it. `-tools`, `-claim`, `-to`, `-publish` and `-read-only` need `-prompt`, and a name
+beside `-prompt` is refused.
 
 ## Git in the worktree
 

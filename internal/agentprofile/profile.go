@@ -71,6 +71,9 @@ type AgentProfile struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
+	// Ephemeral is true for a profile made from a prompt (Ephemeral): it is not
+	// stored, so a worker running it is not reloaded from disk.
+	Ephemeral bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
 	// "triage-deps.json"). Empty means derive it from Name. It is never
 	// serialised: the file's own name is the record.

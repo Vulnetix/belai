@@ -370,7 +370,8 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if ctx.Err() != nil {
 			return "stopped", nil
 		}
-		if cur, err := agentprofile.Load(p.Name); err == nil && ProfileHash(cur) != w.Record.ProfileHash {
+		// A profile made from a prompt is not stored, so there is nothing to reload.
+		if cur, err := agentprofile.Load(p.Name); !p.Ephemeral && err == nil && ProfileHash(cur) != w.Record.ProfileHash {
 			return "the profile changed; restart the worker to use the new definition", nil
 		}
 		if w.Registry != nil && w.Registry.Paused(w.Record.ID) {
