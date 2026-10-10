@@ -234,7 +234,7 @@ func ToWire(it Item) sessionsync.KanbanItem {
 			Labels: slices.Clone(it.Labels), Priority: it.Priority, Assignee: it.Assignee, PinHost: it.PinHost,
 			Parent: it.Parent, DependsOn: slices.Clone(it.DependsOn), Hops: it.Hops,
 			ClaimedBy: it.ClaimedBy, ClaimHost: it.ClaimHost, ClaimFrom: string(it.ClaimFrom),
-			LeaseUntil: it.LeaseUntil, Attempts: it.Attempts, Branch: it.Branch, PR: it.PR,
+			LeaseUntil: it.LeaseUntil, Attempts: it.Attempts, Bounces: it.Bounces, Branch: it.Branch, PR: it.PR,
 			Finding: it.Finding, SeenRef: it.SeenRef, Verdict: string(it.Verdict), VEX: it.VEX,
 		},
 	}
@@ -260,7 +260,7 @@ func FromWire(w sessionsync.KanbanItem) Item {
 		it.Labels, it.Priority, it.Assignee, it.PinHost = slices.Clone(a.Labels), a.Priority, a.Assignee, a.PinHost
 		it.Parent, it.DependsOn, it.Hops = a.Parent, slices.Clone(a.DependsOn), a.Hops
 		it.ClaimedBy, it.ClaimHost, it.ClaimFrom = a.ClaimedBy, a.ClaimHost, List(a.ClaimFrom)
-		it.LeaseUntil, it.Attempts, it.Branch, it.PR = a.LeaseUntil, a.Attempts, a.Branch, a.PR
+		it.LeaseUntil, it.Attempts, it.Bounces, it.Branch, it.PR = a.LeaseUntil, a.Attempts, a.Bounces, a.Branch, a.PR
 		// Validated by cleanRemote and applied by Merge only to an empty field.
 		it.Finding, it.SeenRef, it.Verdict, it.VEX = a.Finding, a.SeenRef, Verdict(a.Verdict), a.VEX
 	}

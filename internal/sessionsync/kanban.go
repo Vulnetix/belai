@@ -59,6 +59,7 @@ type KanbanAgent struct {
 	ClaimFrom  string   `json:"claimFrom,omitempty"`
 	LeaseUntil int64    `json:"leaseUntil,omitempty"`
 	Attempts   int      `json:"attempts,omitempty"`
+	Bounces    int      `json:"bounces,omitempty"`
 	Branch     string   `json:"branch,omitempty"`
 	PR         string   `json:"pr,omitempty"`
 	// Finding, SeenRef, Verdict and VEX are a security card's facts. Only a

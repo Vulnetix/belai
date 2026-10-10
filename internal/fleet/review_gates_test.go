@@ -111,8 +111,8 @@ func TestReviewerClosesACardOnlyWhenEveryGateIsMet(t *testing.T) {
 
 func TestReviewerThatLeavesAManualGateUndecidedFailsTheAttempt(t *testing.T) {
 	got, _ := reviewHarness(t, nil, nil)
-	if got.List != kanban.Backlog || !slicesContains(got.Labels, "build") || got.Attempts != 1 {
-		t.Fatalf("back to the builders: %s %v attempts %d", got.List, got.Labels, got.Attempts)
+	if got.List != kanban.Backlog || !slicesContains(got.Labels, "build") || got.Attempts != 0 || got.Bounces != 1 {
+		t.Fatalf("back to the builders as a return: %s %v attempts %d bounces %d", got.List, got.Labels, got.Attempts, got.Bounces)
 	}
 	if !strings.Contains(got.LastNote(), "manual gate G2 is not met") {
 		t.Fatalf("note %q", got.LastNote())
@@ -201,8 +201,8 @@ func TestReviewerApprovalStandsWhenTheWallBudgetEndsAfterIt(t *testing.T) {
 // Undecided gates at the deadline are not an approval.
 func TestReviewerOverrunWithAnUndecidedGateStillFails(t *testing.T) {
 	got, _ := reviewHarnessOverrun(t, nil, nil, true)
-	if got.List == kanban.Done || got.Attempts != 1 {
-		t.Fatalf("an undecided review closed the card: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	if got.List == kanban.Done || got.Bounces != 1 {
+		t.Fatalf("an undecided review closed the card: %s bounces=%d (%q)", got.List, got.Bounces, got.LastNote())
 	}
 }
 

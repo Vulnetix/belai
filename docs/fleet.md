@@ -83,8 +83,15 @@ One pass of the worker loop:
    a cancellation does not settle it. Without a record, `GOAL_COMPLETE` is a
    success. On a success the harness commits the worktree's changes to the
    branch and releases the item to `on_success`. A `failure`, a stall, a budget
-   stop or an error sends the item back to its source list until
-   `max_attempts`, then to `on_failure`; `blocked` goes to `blocked`. The checks
+   stop or an error sends the item to `on_failure` (by default the list it was
+   claimed from); `blocked` goes to `blocked`. Attempts are counted per stage:
+   a failure that retries the stage counts one attempt, and `max_attempts`
+   failed attempts at one stage block the item. A failure that sends the item
+   back to an earlier list (a review that rejects a branch) counts a return
+   instead and starts that stage's attempts afresh, and a success that moves the
+   item on starts the next stage's afresh, so a builder's tries are not charged
+   to the reviewer after it. An item sent back `max_attempts` times is blocked,
+   which bounds a card passed between two stages. The checks
    that follow can overrule a success, never a failure: unmet gates, a
    verification that fails, or a verdict the profile requires and the worker
    did not record all fail the item, and a verdict the worker did record routes

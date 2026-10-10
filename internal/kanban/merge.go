@@ -147,6 +147,9 @@ func keepAgent(r *Item, local Item) {
 	// The acceptance gates are host-local for the same reason.
 	r.Gates = cloneGates(local.Gates)
 	r.Clauses, r.Covers = slices.Clone(local.Clauses), slices.Clone(local.Covers)
+	// Bounces only grow, and the website may not carry the field: keep the larger
+	// count, so a pull from a backend that dropped it cannot reset the bound.
+	r.Bounces = max(local.Bounces, pulled.Bounces)
 	if !r.remoteAgent {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
@@ -220,6 +223,7 @@ func cleanRemote(r Item) Item {
 	r.DependsOn = deps
 	r.Hops = max(r.Hops, 0)
 	r.Attempts = max(r.Attempts, 0)
+	r.Bounces = max(r.Bounces, 0)
 	r.ClaimedBy, r.ClaimHost = CleanTitle(r.ClaimedBy), CleanTitle(r.ClaimHost)
 	if r.ClaimFrom != "" && !r.ClaimFrom.Valid() {
 		r.ClaimFrom = ""
