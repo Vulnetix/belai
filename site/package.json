@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=22"
   },
+  "resolutions": {
+    "sharp": "0.35.5"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
