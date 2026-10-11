@@ -18,6 +18,12 @@ func knowledgeTUI(t *testing.T) (*App, string) {
 	dir := t.TempDir()
 	a := New(Options{Workdir: dir})
 	// Guardrails off: ingestion sanitises and never calls a classifier here.
+	// The session override, not only the live holder: any settings reload
+	// (git sync, a settings write) recomputes the live posture through
+	// syncPosture, and on the CI runners one landed mid-test and put the
+	// default posture back, so the gate failed the document closed.
+	off := false
+	a.guardrailsOverride = &off
 	a.live.Set(posture.AllIgnore(), true)
 	return a, dir
 }
