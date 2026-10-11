@@ -334,7 +334,8 @@ func TestGoalPassLoopTwoMalformedEvaluationsStopGracefully(t *testing.T) {
 		if e.Kind == EventGoalEvalKind && e.Malformed {
 			sawMalformed = true
 		}
-		if e.Kind == EventWarningKind {
+		// The broken evaluator is a stuck goal: with nobody to ask, it ends.
+		if e.Kind == EventWarningKind && strings.Contains(e.Warning, "malformed") {
 			warning = e.Warning
 		}
 	})
@@ -658,6 +659,34 @@ func TestPassPrintIgnoresCallIDsAndWording(t *testing.T) {
 	}
 	if passPrint(nil, "  ") != "" {
 		t.Fatal("an empty pass has no fingerprint")
+	}
+}
+
+// The same work reworded is the same work: a Bash description, a re-ticked
+// checklist and a rephrased (declined) question do not make a pass new.
+func TestPassPrintIgnoresDescriptionsChecklistsAndQuestionWording(t *testing.T) {
+	check := func(desc, question string, todo bool) []run.Turn {
+		calls := []rolemanager.ToolCall{{Name: "Bash", RawArgs: `{"command":"test -f READY","description":"` + desc + `"}`}}
+		if todo {
+			calls = append(calls, rolemanager.ToolCall{Name: "Todo", Args: map[string]any{"todos": desc}})
+		}
+		if question != "" {
+			calls = append(calls, rolemanager.ToolCall{Name: "AskUserQuestion", Args: map[string]any{"questions": question}})
+		}
+		return []run.Turn{{Role: "assistant", ToolCalls: calls}}
+	}
+	if passPrint(check("Check", "", false), "") != passPrint(check("Re-check", "", true), "") {
+		t.Fatal("a reworded description or a checklist call must not make a pass new")
+	}
+	if passPrint(check("a", "keep waiting?", false), "") != passPrint(check("b", "", false), "") {
+		t.Fatal("a question is not work: asking or not, the pass is the same")
+	}
+	many := append(check("a", "", false), check("b", "", false)...)
+	if passPrint(check("a", "", false), "") != passPrint(many, "") {
+		t.Fatal("running the same check more times is the same work")
+	}
+	if passPrint(check("a", "", false), "") == passPrint([]run.Turn{{Role: "assistant", ToolCalls: []rolemanager.ToolCall{{Name: "Bash", RawArgs: `{"command":"ls"}`}}}}, "") {
+		t.Fatal("a different command is different work")
 	}
 }
 

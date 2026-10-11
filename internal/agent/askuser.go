@@ -34,6 +34,7 @@ func (s *Session) canAskUser() bool {
 // questionnaire so the pass ends and the answers start a new agent turn.
 func (s *Session) handleAskUser(ctx context.Context, pipe *rolemanager.Pipeline, args map[string]any, mode modes.Mode, emit func(Event)) (string, *clarify.Questionnaire) {
 	if !s.canAskUser() {
+		s.askOutcome.Store(askOutcomeDeclined)
 		return askUserUnavailable, nil
 	}
 	q, err := tools.QuestionnaireFromArgs(args)
@@ -83,12 +84,18 @@ func (s *Session) markAsked(q clarify.Questionnaire) {
 func (s *Session) askInline(ctx context.Context, pipe *rolemanager.Pipeline, q clarify.Questionnaire, emit func(Event)) string {
 	ans, ok := s.askUser(ctx, q, emit)
 	if !ok || ans.SkippedAll() {
+		s.askOutcome.Store(askOutcomeDeclined)
 		return askUserDeclined
 	}
 	turn, ok := s.admitAnswers(ctx, pipe, ans.Render(q), emit)
 	if !ok {
+		s.askOutcome.Store(askOutcomeDeclined)
 		return "tool result withheld: the answers could not be admitted. Proceed on your own judgement and state your assumptions."
 	}
+	s.askMu.Lock()
+	s.lastAnswer = turn.Content
+	s.askMu.Unlock()
+	s.askOutcome.Store(askOutcomeAnswered)
 	return delimiters.Egress(turn.Content, s.pool)
 }
 

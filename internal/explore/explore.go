@@ -353,6 +353,24 @@ func PlanGoalSurvey(goalText string) []Task {
 	})
 }
 
+// PlanGoalResearch derives the research tasks a goal's kickoff runs in the
+// background while the user answers the first questions and the main model
+// starts the work. They are seeded from what the session was given: the goal,
+// the repository map every subagent already carries, and the agent instruction
+// files (memory) the repository map names. memory holds root-relative paths
+// from the repository map, never file contents. It is pure and deterministic.
+func PlanGoalResearch(goalText string, memory []string) []Task {
+	conventions := "Name the conventions, constraints and gotchas this goal must respect: build and lint rules, error handling and naming style, and anything the project's instructions forbid. Goal: " + goalText
+	if len(memory) > 0 {
+		conventions = "Read the project's agent instruction files (" + strings.Join(memory, ", ") + ") and name only the rules that bear on this goal, plus the conventions the neighbouring code follows. Goal: " + goalText
+	}
+	return survey([]surveyTask{
+		{"edit targets", "Name the exact files and line ranges that must change for this goal (Grep/Glob for its key terms first). Goal: " + goalText, budgetLocate},
+		{"verification", "Name the existing tests and the command that runs them for the code this goal changes. Goal: " + goalText, budgetFocus},
+		{"conventions", conventions, budgetFocus},
+	})
+}
+
 // ReviewReportBytes bounds one scanner subagent's report. Its contract is one
 // line per finding rather than ten bullets, so it is larger than a survey's.
 const ReviewReportBytes = 16 * 1024

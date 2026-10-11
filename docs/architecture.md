@@ -1616,6 +1616,63 @@ asked anything.
 The first goal pass is a work pass, not an acknowledgement pass: the directive
 asks for one `Todo` call and the first real change in the same pass.
 
+#### Goal kickoff
+
+A new goal starts three things at once, so neither the user nor the main model
+waits on the other (`internal/agent/goalkickoff.go`):
+
+1. **A fast clarification round.** The fast-tier clarifier sees the prompt and
+   harness facts only (the repo map and the top-level listing) under a kickoff
+   framing (`rolemanager.ClarifyInput.Kickoff`): ask the one to three choices
+   the request leaves open whose answers change what gets built, never what the
+   repository can answer. The answers are admitted like typed text and ride on
+   the user's prompt turn.
+2. **Research subagents** (`explore.PlanGoalResearch`: edit targets,
+   verification, conventions), seeded from the goal, the repo map every
+   subagent carries and the agent instruction files the repo map names (the
+   repository's memory: paths only, the subagent reads them). They run in the
+   background, read-only, through `runExploreTasks`, and their reports are
+   classified like any explore report.
+3. **The kickoff pass.** It waits for the user's first answers only, then
+   starts the work, told the research is on its way and not to wait for it or
+   repeat it.
+
+The research is delivered when it lands: before the next tool round of the
+pass that is running, or at the pass boundary (waiting for it) when the
+kickoff pass already ended. It comes with a directive to ask the user, at
+once, anything still unclear in the light of the reports, then carry on. That
+is where the **first official turn** starts: the kickoff pass is not judged on
+its own, and the evaluator at the end of the first official turn sees the
+kickoff pass, the reports and that turn's tool calls together. After every
+judged turn that did not finish the goal, the directive carries a **turn
+review**: the turn's counts and the instruction to decide the next turn from
+its tool results and every subagent report (tool calls, a Todo update, `Task`
+subagents, `AskUserQuestion`).
+
+The kickoff is skipped where nobody needs it: a simple request, a
+continuation, an approved plan, a decision turn, a harness-constant prompt, a
+fleet worker, code mode and every subagent. The clarification round needs
+someone to answer (the TUI, an ACP editor, `belai rc` with asks, or a
+headless run given `-answers`), and the research needs the repo map it is
+seeded from.
+
+The loop then runs without a pass limit. The one stall that ends it is being
+stuck (five identical passes, five passes that ran no tool, or an evaluator
+that cannot be read): the model is asked to ask the user how to proceed;
+steering resets the loop and no steering ends it. The rules are in
+[role-manager.md](role-manager.md#stuck-goals).
+
+A headless run asks nothing unless it is given `-answers FILE`: a JSON array of
+the user's own answers, used in order, one per questionnaire
+(`{"choose": 0, "note": "…"}`, or `{"skip": true}` to decline). `choose` picks
+that option in every group (default the first, recommended one), `note` is free
+text on the first group, and once the file runs out every further question is
+declined. An entry with `"match"` (a case-insensitive regular expression) is kept
+for the first questionnaire whose question text matches it, so a test can aim an
+answer at a stuck goal's question; entries without it go to the rest in order.
+Each question and the scripted answer are printed to stderr, and the answers are
+admitted exactly like typed ones.
+
 **A pass that changes no file has not advanced the goal.** The loop's primary
 progress signal is the file-diff recorder's observation of each pass, not the
 model's prose or its checklist: two consecutive passes with no file change

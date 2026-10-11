@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -62,21 +63,24 @@ const (
 	// but a permanently unreachable evaluator must not grant unbounded passes.
 	maxGoalEvalErrors = 2
 	// maxUnproductivePasses: consecutive passes that executed no tool at all
-	// before the loop stops. The first one is repaired rather than fatal: a
-	// rejected argument shape costs a pass without meaning the run is over,
-	// and failing the goal there discards every pass that did work.
-	maxUnproductivePasses = 2
+	// before the loop counts as stuck and asks the user how to proceed. Each
+	// one before that is repaired: a rejected argument shape costs a pass
+	// without meaning the run is over.
+	maxUnproductivePasses = goalStuckPasses
 	// goalVerdictStall: tool results withheld by a classifier verdict, with no
 	// file changed, before the loop stops. Asking again returns the same
 	// verdict, so a goal that needs that content cannot progress; without this
 	// a goal to "read this file verbatim" retried Read, Cat, Bash and Grep
 	// against an injected file until it was killed.
 	goalVerdictStall = 3
-	// maxRepeatPasses: consecutive passes that repeat the previous pass's
-	// work exactly, changing no file, before the loop stops. One repeat gives
-	// the boundary directive a chance to change course; a second means it
-	// did not, and every further pass would be the same pass again.
-	maxRepeatPasses = 2
+	// goalStuckPasses: identical passes in a row (the same work, changing no
+	// file) that mean the loop is stuck. The loop then asks the model to ask
+	// the user how to proceed: steering resets the loop, no steering ends it.
+	// It is the one stall that ends an unbounded goal (goalstuck.go).
+	goalStuckPasses = 5
+	// maxRepeatPasses: repeats of the previous pass on top of the first, so
+	// goalStuckPasses identical passes in a row.
+	maxRepeatPasses = goalStuckPasses - 1
 	// readStreakNudgeAfter is how many tool rounds in a row may change no file
 	// before a goal or agent pass is told to start editing. The nudge repeats
 	// every readStreakNudgeAfter rounds while the streak lasts.
@@ -158,6 +162,9 @@ func (s *Session) goalAckDirective() string {
 	}
 	if s.turnExecutePlan {
 		directive = planExecuteDirective + " " + directive
+	}
+	if k := s.turnKickoff; k.pending() && k.researching {
+		directive += kickoffResearchNote
 	}
 	cmds := s.allTestCommands()
 	if len(cmds) == 0 {
@@ -428,22 +435,37 @@ func (l *passLedger) noteRepeat(passTurns []run.Turn, reply string) bool {
 // passPrint fingerprints a pass's work: the ordered tool calls with their
 // arguments, or the trimmed reply when the pass called no tool. Call ids and
 // wording around tool calls vary between passes that do the same thing, so
-// neither is part of it.
+// neither is part of it. Nor is other wording: a call's free-text
+// "description" argument is dropped, and the checklist calls (Todo,
+// update_plan) and AskUserQuestion are left out. The checklist is bookkeeping;
+// a question is not work either, and one the user declined changes nothing,
+// while one they answered changes the passes after it anyway. A model that
+// asked every other pass while repeating the same check looked like two
+// alternating kinds of pass and was never counted stuck. A model that re-ran the same check every pass while rewording its
+// description, re-ticking its list or asking the same question in new words
+// (each one declined) is repeating itself, and fingerprinting that wording
+// kept such a loop alive for ever.
+//
+// It is the set of distinct calls, not their sequence or count: running the
+// same check eleven times or forty is the same work, and a directive that cut
+// one pass short used to make it look new and restart the count.
 func passPrint(passTurns []run.Turn, reply string) string {
 	h := sha256.New()
-	calls := 0
+	var calls []string
 	for _, t := range passTurns {
 		for _, c := range t.ToolCalls {
-			args := c.RawArgs
-			if args == "" {
-				b, _ := json.Marshal(c.Args) // map keys marshal sorted
-				args = string(b)
+			if isChecklistTool(c.Name) || c.Name == "AskUserQuestion" {
+				continue
 			}
-			fmt.Fprintf(h, "%s\x00%s\x00", c.Name, args)
-			calls++
+			calls = append(calls, c.Name+"\x00"+workArgs(c))
 		}
 	}
-	if calls == 0 {
+	slices.Sort(calls)
+	calls = slices.Compact(calls)
+	for _, c := range calls {
+		h.Write([]byte(c + "\x00"))
+	}
+	if len(calls) == 0 {
 		r := strings.TrimSpace(reply)
 		if r == "" {
 			return ""
@@ -451,6 +473,23 @@ func passPrint(passTurns []run.Turn, reply string) string {
 		h.Write([]byte(r))
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// workArgs renders a call's arguments without its free-text description,
+// keys sorted, for the pass fingerprint.
+func workArgs(c rolemanager.ToolCall) string {
+	m := c.Args
+	if m == nil && c.RawArgs != "" {
+		if json.Unmarshal([]byte(c.RawArgs), &m) != nil {
+			return c.RawArgs
+		}
+	}
+	if _, ok := m["description"]; ok {
+		m = maps.Clone(m)
+		delete(m, "description")
+	}
+	b, _ := json.Marshal(m) // map keys marshal sorted
+	return string(b)
 }
 
 // stalledOnWrites reports whether the loop has gone long enough without a
@@ -679,9 +718,17 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		basePasses = prior.Passes
 		goalStart = goalStart.Add(-time.Duration(prior.TimeUsedSeconds) * time.Second)
 	}
+	// Research that finished while the user answered goes in first, so the
+	// first directive does not promise research that is already here.
+	turns = append(turns, s.deliverResearch(ctx, false, emit)...)
 	turns = append(turns, directiveTurns(s.goalAckDirective())...)
 	emitGoalState(emit, gs)
 	lastText := ""
+	// evalFrom is where the turn the evaluator will judge began: the kickoff
+	// pass is not judged on its own, so the first official turn's evidence
+	// runs from the kickoff pass through the research reports to its own end.
+	// -1 means the next pass starts a new turn.
+	evalFrom := -1
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:
 		// a deliberate esc returns the partial result, never raw
@@ -725,10 +772,22 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// below the threshold, so the common path is one cheap estimate.
 		if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
 			turns = compacted
+			evalFrom = -1 // the indices no longer hold
 		}
 
+		// Each goal turn may send its own Task subagents.
+		s.taskCallsThisTurn = 0
 		start := len(turns)
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModeGoal)
+		if evalFrom < 0 || evalFrom > start {
+			evalFrom = start
+		}
+		// Assign, never declare: a := here declared a turns local to the
+		// iteration, so every boundary directive was dropped and each pass
+		// started again from the turns the loop began with, blind to the
+		// passes before it.
+		var out passOutcome
+		var err error
+		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModeGoal)
 		if err != nil {
 			// Cancellation must not read as an error: a deliberate esc returns
 			// the partial result with ErrPassLoopCancelled, never a raw
@@ -785,9 +844,20 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// A pass that did exactly what the last one did, twice over, will
 		// do it again: stop and report instead of asking the evaluator
 		// for another verdict that buys the same pass.
-		if l.noteRepeat(turns[start:], out.reply) {
+		// A pass that executed no tool is the unproductive counter's to judge
+		// (below), so its repeats do not count here.
+		if out.productive > 0 && l.noteRepeat(turns[start:], out.reply) {
+			why := fmt.Sprintf("passes %d–%d repeated the same work and changed no file", l.passes-maxRepeatPasses, l.passes)
+			var steered bool
+			if turns, steered, err = s.goalStuck(ctx, pipe, system, turns, streaming, emit, &l, why); err != nil {
+				return s.stuckError(ctx, l, out, err)
+			}
+			if steered {
+				l.resetStall()
+				evalFrom = -1
+				continue
+			}
 			s.turnStop = run.StopStalled
-			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal stopped: passes %d–%d repeated the same work and changed no file; returning the work so far", l.passes-maxRepeatPasses, l.passes)})
 			return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial,
 				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
 		}
@@ -837,22 +907,43 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		gs.TimeUsedSeconds = int(time.Since(goalStart).Seconds())
 		emitGoalState(emit, gs)
 
+		// The kickoff pass is over before its research landed: wait for the
+		// research and open the first official turn with it. The kickoff pass
+		// is judged together with that turn, not on its own.
+		if s.turnKickoff.pending() {
+			if !out.exhausted {
+				turns = withReply(turns, out.reply)
+			}
+			turns = append(turns, s.deliverResearch(ctx, true, emit)...)
+			continue
+		}
+
 		if !out.exhausted {
 			// Natural exit: a no-tool-call reply is a claim of completion, not
-			// proof. Re-check the goal sentinel against the reply text itself
-			// once before trusting it. A non-complete verdict injects the
-			// continuation directive and loops; the existing stall detectors
-			// still bound a loop that is not advancing.
-			sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(out.reply), emit)
+			// proof. The evaluator judges the whole turn — its tool calls and
+			// results, the subagent reports and the closing reply — never the
+			// reply alone: shown only "done", it could never see the check
+			// that proves it and answered GOAL_PARTIAL for ever. A non-complete
+			// verdict injects the continuation directive and loops.
+			judged := append(slices.Clone(turns[evalFrom:]), run.Turn{Role: "assistant", Content: out.reply})
+			sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(evidenceDigest(judged)), emit)
 			if evalErr != nil {
 				s.turnStop = run.StopEvaluator
 				return run.Result{Passes: l.passes}, evalErr
 			}
+			review := turnReview(l.passes, turns[evalFrom:], s.takeResearchCount(), l.passWrites)
+			evalFrom = -1
 			if stop {
-				if sentinel != rolemanager.GoalComplete {
-					s.turnStop = run.StopEvaluator
+				var steered bool
+				if turns, steered, err = s.goalStuck(ctx, pipe, system, withReply(turns, out.reply), streaming, emit, &l, "the goal evaluator could not be read"); err != nil {
+					return s.stuckError(ctx, l, out, err)
 				}
-				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel,
+				if steered {
+					l.resetStall()
+					continue
+				}
+				s.turnStop = run.StopEvaluator
+				return s.goalReport(ctx, system, turns, streaming, emit, sentinel,
 					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 			}
 			if sentinel == rolemanager.GoalComplete {
@@ -883,14 +974,14 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			}
 			if l.notePartial() {
 				l.partialStreak = 0
-				turns = append(turns, l.directive(l.progressionDirective())...)
+				turns = append(turns, l.directive(withReview(l.progressionDirective(), review))...)
 				continue
 			}
 			if l.stalledOnWrites() {
-				turns = append(turns, l.directive(l.noWriteOrRepairDirective())...)
+				turns = append(turns, l.directive(withReview(l.noWriteOrRepairDirective(), review))...)
 				continue
 			}
-			turns = append(turns, l.directive(continuationDirective)...)
+			turns = append(turns, l.directive(withReview(continuationDirective, review))...)
 			continue
 		}
 
@@ -911,6 +1002,16 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		if out.productive == 0 {
 			l.unproductivePasses++
 			if l.unproductivePasses >= maxUnproductivePasses {
+				why := fmt.Sprintf("%d passes in a row executed no tool", l.unproductivePasses)
+				var steered bool
+				if turns, steered, err = s.goalStuck(ctx, pipe, system, turns, streaming, emit, &l, why); err != nil {
+					return s.stuckError(ctx, l, out, err)
+				}
+				if steered {
+					l.resetStall()
+					evalFrom = -1
+					continue
+				}
 				s.turnStop = run.StopStalled
 				// A goal that has already changed files keeps its work: the
 				// edits are on disk either way, and returning an error would
@@ -937,17 +1038,28 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// prose forward, and taught the model that a pass's deliverable is a
 		// report. The pass's own assistant text is the report, and the next
 		// iteration starts instead.
-		sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(evidenceDigest(turns[start:])), emit)
+		// The evaluator sees the whole turn: every tool call and result,
+		// the Task subagents' reports and, on the first official turn, the
+		// kickoff pass and the research reports.
+		sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(evidenceDigest(turns[evalFrom:])), emit)
 		if evalErr != nil {
 			// Transport failure: terminal. The verdict is unknown, and an
 			// unknown verdict must not grant compute.
 			s.turnStop = run.StopEvaluator
 			return run.Result{Passes: l.passes}, evalErr
 		}
+		review := turnReview(l.passes, turns[evalFrom:], s.takeResearchCount(), l.passWrites)
+		evalFrom = -1
 		if stop {
-			if sentinel != rolemanager.GoalComplete {
-				s.turnStop = run.StopEvaluator
+			var steered bool
+			if turns, steered, err = s.goalStuck(ctx, pipe, system, turns, streaming, emit, &l, "the goal evaluator could not be read"); err != nil {
+				return s.stuckError(ctx, l, out, err)
 			}
+			if steered {
+				l.resetStall()
+				continue
+			}
+			s.turnStop = run.StopEvaluator
 			return s.goalReport(ctx, system, turns, streaming, emit, sentinel,
 				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 		}
@@ -968,9 +1080,9 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				l.surveyedOnce = true
 			}
 			if l.decision {
-				turns = append(turns, l.directive(decisionPlanDirective)...)
+				turns = append(turns, l.directive(withReview(decisionPlanDirective, review))...)
 			} else {
-				turns = append(turns, l.directive(planDirective)...)
+				turns = append(turns, l.directive(withReview(planDirective, review))...)
 			}
 
 		case rolemanager.GoalPartial:
@@ -986,7 +1098,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			if arm {
 				l.verificationArmed = true
 			}
-			turns = append(turns, l.directive(body)...)
+			turns = append(turns, l.directive(withReview(body, review))...)
 
 		case rolemanager.GoalComplete:
 			if l.verificationPasses == 0 && !l.simple && !l.decision {
@@ -1179,7 +1291,7 @@ func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeli
 		l.evalErrorStreak++
 		emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: rolemanager.GoalPartial})
 		if l.evalErrorStreak >= maxGoalEvalErrors {
-			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator failed %d times in a row (%v); stopping the goal loop and returning the work so far", l.evalErrorStreak, err)})
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator failed %d times in a row (%v); the goal is stuck", l.evalErrorStreak, err)})
 			return rolemanager.GoalPartial, true, nil
 		}
 		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator transport error: %v; continuing as %s", err, rolemanager.GoalPartial.Label())})
@@ -1194,7 +1306,7 @@ func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeli
 	l.malformedStreak++
 	emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: true})
 	if l.malformedStreak >= maxMalformedEvals {
-		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator returned %d malformed replies in a row; stopping the goal loop and returning the work so far", l.malformedStreak)})
+		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator returned %d malformed replies in a row; the goal is stuck", l.malformedStreak)})
 		return sentinel, true, nil
 	}
 	return sentinel, false, nil
