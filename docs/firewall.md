@@ -89,8 +89,13 @@ consulted for a firewall key.
   configured header, to the instance's URL. A routed request never follows a
   redirect: model calls, model lists and nonce fetches all refuse one.
 - **URLs are https**, or plain http to a loopback host only.
-- **Sign-in providers are never routed.** Copilot, Kiro and the Cloudflare
-  AI Gateway provider are never routed through a firewall.
+- **Sign-in providers are not routed, except Kiro through Vulnetix.**
+  - Copilot and the Cloudflare AI Gateway provider are never routed through a
+    firewall.
+  - Kiro is routed only through the Vulnetix AI Firewall. That gateway mints
+    Kiro's token from the organisation's secrets vault
+    (`vulnetix ai-firewall kiro login`), and Belai sends only its Vulnetix key.
+  - Every other adapter refuses Kiro. See [Kiro](kiro.md#through-the-vulnetix-ai-firewall).
 - **Decision backends are never routed.** The local decision model
   (`decision-local`), Strands Decider-2B (`strands-decider`), the hosted
   `typesafe` provider and `systemone` profiles (kind `systemone`, once `jev`)

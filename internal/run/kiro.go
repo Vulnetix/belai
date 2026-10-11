@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/kiroauth"
 	"github.com/vulnetix/belai/internal/kiromodels"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -225,12 +226,20 @@ func kiroImages(atts []Attachment) []wire.KiroImage {
 // the catalogue with token when the process holds none younger than
 // kiromodels.TTL. A failed fetch is remembered as empty, so it is not
 // retried on every request and the request falls back to the plain shape.
-func kiroModelInfo(ctx context.Context, base, model, token, profileARN string) kiromodels.Info {
+// Through the Vulnetix AI Firewall, token is the Vulnetix key and the gateway
+// lists the models with the Kiro token it mints.
+func kiroModelInfo(ctx context.Context, base, model, token, profileARN string, route *firewall.Route) kiromodels.Info {
 	info, found, fresh := kiromodels.Lookup(base, model)
 	if fresh {
 		return info
 	}
-	infos, err := kiromodels.Fetch(ctx, kiroModelsClient, base, token, profileARN)
+	var infos []kiromodels.Info
+	var err error
+	if route.MintsKiroToken() {
+		infos, err = kiromodels.FetchRouted(ctx, kiroModelsClient, base, token, route.Apply)
+	} else {
+		infos, err = kiromodels.Fetch(ctx, kiroModelsClient, base, token, profileARN)
+	}
 	if err != nil {
 		infos = nil
 	}

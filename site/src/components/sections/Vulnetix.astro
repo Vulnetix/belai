@@ -156,7 +156,7 @@ const adapters: [string, string, string][] = [
 
 const firewallRules: [string, string][] = [
   ['Three modes', '`transparent` changes only the base URL and sends the provider\'s own key. `authorization` sends the firewall\'s key as a bearer token, and the firewall holds the provider key. `header` sends the firewall\'s key in a header you name.'],
-  ['Routed per provider', 'A firewall can be limited to some providers, and its URL can carry `{provider}`. Providers that sign in, such as Copilot and Kiro, and the classifier\'s decision backends are never routed.'],
+  ['Routed per provider', 'A firewall can be limited to some providers, and its URL can carry `{provider}`. Copilot, the Cloudflare AI Gateway provider and the classifier\'s decision backends are never routed. Kiro goes only through the Vulnetix AI Firewall, which mints its token from the Kiro sign-in in your organisation\'s secrets vault, so Belai sends just its Vulnetix key.'],
   ['Nonces from the gateway', 'A session\'s sealed-block nonces come from the active firewall first. When they all do, requests carry `X-Vulnetix-Nonce-Mode: enforce` and the Vulnetix gateway strips any sealed block it cannot verify.'],
   ['Verdicts as report cards', 'Each firewall\'s verdict is read from its response headers and refusal bodies, cleaned and capped, then shown to you as a card. A matched value is never shown, and the card never reaches a model.'],
 ];

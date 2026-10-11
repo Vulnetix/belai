@@ -113,6 +113,19 @@ func Fetch(ctx context.Context, client *http.Client, base, accessToken, profileA
 	if !kiroauth.AllowedAPIURL(base) {
 		return nil, fmt.Errorf("refusing to send a Kiro token to %q", base)
 	}
+	return fetch(ctx, client, base, accessToken, profileARN, nil)
+}
+
+// FetchRouted lists the models through the Vulnetix AI Firewall at base, which
+// mints the Kiro token from the org's secrets vault and adds the profile
+// itself. bearer is the Vulnetix API key, and apply sets the route's headers.
+// base is the firewall URL the route was planned with (already checked by
+// config.ValidFirewallURL), so it is not held to the Kiro host pin.
+func FetchRouted(ctx context.Context, client *http.Client, base, bearer string, apply func(http.Header)) ([]Info, error) {
+	return fetch(ctx, client, strings.TrimRight(base, "/"), bearer, "", apply)
+}
+
+func fetch(ctx context.Context, client *http.Client, base, accessToken, profileARN string, apply func(http.Header)) ([]Info, error) {
 	var c http.Client
 	if client != nil {
 		c = *client
@@ -134,6 +147,9 @@ func Fetch(ctx context.Context, client *http.Client, base, accessToken, profileA
 		}
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		req.Header.Set("Accept", "application/json")
+		if apply != nil {
+			apply(req.Header)
+		}
 		resp, err := c.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("list kiro models: %w", err)

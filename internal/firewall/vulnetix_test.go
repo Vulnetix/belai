@@ -138,11 +138,15 @@ func TestURLPathUUID(t *testing.T) {
 	}
 }
 
-// TestKiroIsNotRoutable pins that the kiro provider never goes through the
-// gateway: its access token is minted from an AWS sign-in and speaks a
-// surface the gateway does not relay.
-func TestKiroIsNotRoutable(t *testing.T) {
-	if _, ok := Slug("kiro"); ok {
-		t.Fatal("kiro must not be routable through the AI Firewall")
+// TestKiroIsRoutableThroughVulnetix pins that the kiro provider goes through
+// the gateway on its own slug: the gateway mints the Kiro token from the org's
+// secrets vault and relays the Kiro surface, so Belai's own sign-in is not
+// needed while routed. Generic gateways still refuse it (TestPlanKiroOnlyThroughVulnetix).
+func TestKiroIsRoutableThroughVulnetix(t *testing.T) {
+	if s, ok := Slug("kiro"); !ok || s != "kiro" {
+		t.Fatalf("Slug(kiro) = %q, %v", s, ok)
+	}
+	if got := BaseURL(DefaultGateway, "kiro", "org-1"); got != DefaultGateway+"/kiro/org-1/v1" {
+		t.Fatalf("BaseURL = %q", got)
 	}
 }

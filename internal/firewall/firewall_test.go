@@ -117,6 +117,38 @@ func TestPlanVulnetix(t *testing.T) {
 	}
 }
 
+// TestPlanKiroOnlyThroughVulnetix routes Kiro through the Vulnetix AI Firewall,
+// which mints Kiro's token from the org's secrets vault, and through nothing
+// else: a generic gateway would forward a Vulnetix key Kiro cannot use, or
+// need the Kiro token Belai only mints for a pinned AWS host.
+func TestPlanKiroOnlyThroughVulnetix(t *testing.T) {
+	kiroT := Target{Provider: "kiro", Surface: wire.SurfaceKiro, Auth: provider.AuthKiro, BaseURL: "https://q.us-east-1.amazonaws.com"}
+	r, err := Plan("vulnetix", config.FirewallInstance{Adapter: "vulnetix"}, kiroT, "vxkey", "org-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.BaseURL != "https://guardrails.vulnetix.com/kiro/org-1/v1" || r.APIKey != "vxkey" || r.KeepProviderKey {
+		t.Fatalf("route = %+v", r)
+	}
+	if !r.MintsKiroToken() {
+		t.Fatal("a Vulnetix route mints the Kiro token at the gateway")
+	}
+	for _, inst := range []config.FirewallInstance{
+		{Adapter: "custom", URL: "https://gw.example/v1", Mode: "authorization"},
+		{Adapter: "fastly"},
+		{Adapter: "kong"},
+		{Adapter: "aisg"},
+	} {
+		if r, err := Plan("x", inst, kiroT, "k", ""); err == nil {
+			t.Fatalf("%s routed Kiro: %+v", inst.Adapter, r)
+		}
+	}
+	var none *Route
+	if none.MintsKiroToken() || (&Route{AdapterID: "custom"}).MintsKiroToken() {
+		t.Fatal("only a Vulnetix route mints the Kiro token")
+	}
+}
+
 func TestPlanAISGHeaders(t *testing.T) {
 	r, err := Plan("aisg", config.FirewallInstance{Adapter: "aisg"}, openaiT, "gk", "")
 	if err != nil {

@@ -622,17 +622,28 @@ var kiroTokens = kiroauth.Shared
 // listKiro fetches Kiro's live catalogue with a freshly minted access token,
 // remembers it for the request builder, and maps it to the picker's models.
 func listKiro(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
-	login, err := kiroauth.ParseLogin(t.APIKey)
-	if err != nil {
-		return nil, err
-	}
-	tok, err := kiroTokens.Token(ctx, t.APIKey)
-	if err != nil {
-		return nil, err
-	}
-	infos, err := kiromodels.Fetch(ctx, client, t.BaseURL, tok.Value, login.ProfileARN)
-	if err != nil {
-		return nil, err
+	var infos []kiromodels.Info
+	if t.Firewall.MintsKiroToken() {
+		// Through the Vulnetix AI Firewall the key is the Vulnetix key and the
+		// gateway mints the Kiro token from the org's secrets vault.
+		var err error
+		infos, err = kiromodels.FetchRouted(ctx, client, t.BaseURL, t.APIKey, t.Firewall.Apply)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		login, err := kiroauth.ParseLogin(t.APIKey)
+		if err != nil {
+			return nil, err
+		}
+		tok, err := kiroTokens.Token(ctx, t.APIKey)
+		if err != nil {
+			return nil, err
+		}
+		infos, err = kiromodels.Fetch(ctx, client, t.BaseURL, tok.Value, login.ProfileARN)
+		if err != nil {
+			return nil, err
+		}
 	}
 	kiromodels.Remember(t.BaseURL, infos)
 	out := make([]models.Model, 0, len(infos))

@@ -65,6 +65,20 @@ func TestFetchPaginatesAndPins(t *testing.T) {
 	}
 }
 
+func TestFetchRoutedCarriesTheRouteHeaders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer vx-key" || r.Header.Get("X-Gw") != "1" || r.URL.Query().Get("profileArn") != "" {
+			t.Errorf("auth = %q, X-Gw = %q, query = %q", r.Header.Get("Authorization"), r.Header.Get("X-Gw"), r.URL.RawQuery)
+		}
+		fmt.Fprint(w, `{"models":[{"modelId":"a"}]}`)
+	}))
+	defer srv.Close()
+	infos, err := FetchRouted(context.Background(), srv.Client(), srv.URL+"/kiro/org/v1/", "vx-key", func(h http.Header) { h.Set("X-Gw", "1") })
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("FetchRouted = %+v, %v", infos, err)
+	}
+}
+
 func TestCacheTTL(t *testing.T) {
 	Forget()
 	defer Forget()
