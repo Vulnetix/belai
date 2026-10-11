@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +31,11 @@ func waitForHit(t *testing.T, a *App, query string, want bool) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("search %q: found=%v, want %v", query, got, want)
+			// Say why: the background refresh swallows its report, so run one
+			// here and show what it skipped, dropped or failed.
+			rep, err := a.knowledgeStore().Refresh(context.Background())
+			t.Fatalf("search %q: found=%v, want %v\nrefresh: err=%v profile=%+v project=%+v warnings=%q store warnings=%q",
+				query, got, want, err, rep.Profile, rep.Project, rep.Warnings, a.knowledgeStore().Warnings())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
