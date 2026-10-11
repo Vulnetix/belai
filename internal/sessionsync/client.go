@@ -166,6 +166,10 @@ type RCInfo struct {
 	// directory's project preferences (--web-project-settings); each RCDir then
 	// carries them.
 	ProjectSettings bool `json:"projectSettings"`
+	// PixAssistant says this host takes a start request in the pix-assistant
+	// mode (an ephemeral, read-only session engaged as a security-crew
+	// persona), so the website never sends one to an older daemon.
+	PixAssistant bool `json:"pixAssistant,omitempty"`
 }
 
 // RCControl is one session control as the website offers it.
@@ -605,6 +609,11 @@ type SessionMeta struct {
 	// worktree, distance from main, pull request, last sync). Opaque here;
 	// the server validates it. Empty outside a repository.
 	Git json.RawMessage `json:"git,omitempty"`
+	// Ephemeral marks a short-lived session the website hides from its
+	// session lists by default (a pix-assistant session), and Origin names
+	// what started it ("pix"). Both are empty for an ordinary session.
+	Ephemeral bool   `json:"ephemeral,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 }
 
 // Entry is one JSONL line as uploaded: the session.Entry fields plus seq.

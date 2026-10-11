@@ -75,6 +75,10 @@ type SessionInfo struct {
 	// Git is the session's repository (internal/gitsync.Info as JSON), kept
 	// current from Options.Git. Empty outside a repository.
 	Git json.RawMessage
+	// Ephemeral and Origin: SessionMeta's (a pix-assistant session sets
+	// them at start; nothing in the file changes them).
+	Ephemeral bool
+	Origin    string
 }
 
 // Status is a snapshot for /sync status.
@@ -609,7 +613,7 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.RemoteAnswersEnabled(),
 		DispatchID: i.DispatchID, Git: i.Git,
 		Controls: s.opts.RemoteCommands, ControlState: s.controlState(),
-		Shell: s.opts.RemoteShell,
+		Shell: s.opts.RemoteShell, Ephemeral: i.Ephemeral, Origin: i.Origin,
 	}
 }
 
@@ -783,6 +787,8 @@ func mergeInfo(old, n SessionInfo) SessionInfo {
 	n.ActiveProfile = orStr(n.ActiveProfile, old.ActiveProfile)
 	n.ParentSessionID = orStr(n.ParentSessionID, old.ParentSessionID)
 	n.ResumedFromID = orStr(n.ResumedFromID, old.ResumedFromID)
+	n.Origin = orStr(n.Origin, old.Origin)
+	n.Ephemeral = n.Ephemeral || old.Ephemeral
 	if len(n.Git) == 0 {
 		n.Git = old.Git
 	}
