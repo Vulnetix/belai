@@ -393,6 +393,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			turns = append(turns, directiveTurns(nudge)...)
 		}
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
+		// Goal research that landed while this pass ran is handed over
+		// before the next model call (goalkickoff.go).
+		turns = append(turns, s.deliverResearchMidPass(ctx, mode, emit)...)
 		s.clearStaleToolResults(turns)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {

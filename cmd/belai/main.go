@@ -172,6 +172,7 @@ func main() {
 	teleportPush := flag.Bool("teleport-push", false, "with -teleport, agree that the origin host may push the session's uncommitted and unpushed changes to the forge as one belai/teleport/<id> branch, which this host then fetches; without it they are sent as a patch and replayed here")
 	teleportRef := flag.String("teleport-ref", "", "with -teleport, check out this ref or commit instead of the one the session was at")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
+	flag.StringVar(&answersPath, "answers", "", "with -prompt, answer the questions the run asks (a goal's clarification round, AskUserQuestion, a stuck goal) from this JSON file of your answers, in order; without it the run asks nothing")
 	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
 	flag.CommandLine.Init(os.Args[0], flag.ContinueOnError)
 	if len(os.Args) == 2 && os.Args[1] == "help" {
@@ -662,14 +663,26 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	if settings.GitSyncEnabled() {
 		gs = gitsync.New(workdir, true, nil)
 	}
-	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, gs)
+	// -answers: the user's own answers file stands in for the person a
+	// headless run cannot ask, so the run may ask questions.
+	observe := tlog.Observe
+	allowClarify := false
+	if answersPath != "" {
+		script, err := loadAnswerScript(answersPath, os.Stderr)
+		if err != nil {
+			return run.Result{}, err
+		}
+		observe = script.observe(tlog.Observe)
+		allowClarify = true
+	}
+	sess, err := newCLISessionAsking(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, allowClarify, gs)
 	if err != nil {
 		return run.Result{}, err
 	}
 	defer flushKanban(settings, workdir)
 	// An explicit -mode is the user's choice and outranks the classifier,
 	// exactly as a mode picked in the TUI does.
-	res, err := sess.RunInputObserved(ctx, nil, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode}, tlog.Observe)
+	res, err := sess.RunInputObserved(ctx, nil, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode}, observe)
 	tlog.Flush()
 	if err == nil {
 		postEndTests(ctx, cfg, client, pol, workdir, settings, planMode, sess, res, tlog)
@@ -709,10 +722,16 @@ func postEndTests(ctx context.Context, cfg run.Config, client *http.Client, pol 
 // headless -prompt run (no asks: allowAsk false) and each ACP session (the
 // editor answers asks: allowAsk true).
 func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool, gs *gitsync.Hygiene) (*agent.Session, error) {
+	return newCLISessionAsking(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, allowAsk, false, gs)
+}
+
+// newCLISessionAsking is newCLISession for a run that can put questions to
+// someone (allowClarify): a headless run with -answers.
+func newCLISessionAsking(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk, allowClarify bool, gs *gitsync.Hygiene) (*agent.Session, error) {
 	store, src := cliKanban(workdir, sessionID, settings)
 	return headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
-		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk,
+		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk, AllowClarify: allowClarify,
 		AskDecider: cliAskDecider(allowAsk, settings, workdir),
 		MCP:        mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
 	})

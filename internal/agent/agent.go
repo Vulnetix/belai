@@ -277,6 +277,10 @@ type Session struct {
 	// turnDraft is this turn's goal-contract draft when it was still running
 	// as the goal loop started; the loop adopts it when it lands.
 	turnDraft *pendingDraft
+	// turnKickoff is this goal turn's kickoff (goalkickoff.go): the fast
+	// clarification round and the research subagents running beside the
+	// kickoff pass. Nil when the turn has none.
+	turnKickoff *goalKickoff
 	// turnExecutePlan is set for the turn that executes an approved plan, so
 	// the first-pass directive can point at the plan rather than a goal.
 	turnExecutePlan bool
@@ -330,8 +334,12 @@ type Session struct {
 	skillCands []tools.Candidate
 	// diagHist tracks each edited file's language server errors across passes.
 	diagHist diagTracker
-	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
+	// taskCallsThisTurn counts Task invocations in the current fan-out turn,
+	// or the current pass of a goal (each goal turn gets the budget afresh).
 	taskCallsThisTurn int
+	// taskSeq numbers every Task subagent of the user's turn, so ids stay
+	// unique when a goal pass resets the budget.
+	taskSeq int
 	// turnIntent is the detected intent for the current turn.
 	turnIntent rolemanager.Intent
 	// turnPrompt is the cleaned prompt of the current turn, context for the
@@ -357,6 +365,12 @@ type Session struct {
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
 	exploreBridge atomic.Pointer[steerBridge]
+	// askOutcome records how the latest AskUserQuestion call ended
+	// (goalstuck.go): a stuck goal reads it to tell steering from silence.
+	askOutcome atomic.Int32
+	// lastAnswer is the admitted text of the latest answered AskUserQuestion
+	// (askMu): a stuck goal carries it into the goal as the user's direction.
+	lastAnswer string
 	// exploreSubagent marks this session as an explore subagent, which lets the
 	// pass loop reset its iteration budget when steering arrives instead of
 	// returning a hard "max iterations" error.
@@ -1016,6 +1030,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	emit = stampEvents(emit)
 	s.emit = emit
 	s.taskCallsThisTurn = 0
+	s.taskSeq = 0
 	s.handoffTodoCalled = false
 	s.turnToolRuns = 0
 	s.resetTodoTracking()
@@ -1330,6 +1345,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	loopGoal := ""
 	s.turnPriorGoal = nil
 	s.turnDraft = nil
+	s.turnKickoff = nil
 	s.turnExecutePlan = in.ExecutePlan
 	s.planLinted = false
 	s.lintRejected = ""
@@ -1385,6 +1401,26 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 			break
 		}
 		draft = s.startGoalDraft(ctx, pipe, clean)
+	}
+
+	// The goal kickoff: the fast clarification round and the research
+	// subagents start now, beside the draft and the prefetch. The kickoff pass
+	// waits for the user's first answers only; the research is delivered
+	// when it lands (goalkickoff.go).
+	if s.kickoffEligible(in, loopDec) {
+		k := s.startGoalKickoff(ctx, pipe, clean, emit)
+		s.turnKickoff = k
+		// A kicked-off goal may send more subagents at any turn: the fan-out
+		// surface is the agent surface plus Task (read-only subagents whose
+		// reports classify as KindSubagent).
+		if s.fanOutTask != nil && s.fanOutRegistry != nil && s.allowExplore {
+			s.turnFanOut = true
+			s.fanOutTask.Runner = s.runTask
+		}
+		defer func() {
+			k.finish()
+			s.turnKickoff = nil
+		}()
 	}
 
 	// Context prefetch for plan and goal turns (and plan execution, which runs
@@ -1547,6 +1583,11 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		// so the parent model sees the reports as evidence, not the question.
 		turns = append(turns, exploreTurns...)
 		turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
+	}
+	if k := s.turnKickoff; k != nil {
+		if a := k.awaitAnswers(ctx); a != "" {
+			clarified = joinEvidence(clarified, a)
+		}
 	}
 	userContent := clean
 	if clarified != "" {

@@ -53,7 +53,14 @@ type ClarifyInput struct {
 	// this turn. Without it every round saw the same prompt and findings, so
 	// the clarifier asked the same question again.
 	Answered string
+	// Kickoff marks the goal kickoff's fast round: the work starts as soon as
+	// the user answers and research runs beside it, so the clarifier asks
+	// about the choices the request leaves open rather than about the code.
+	Kickoff bool
 }
+
+// clarifyKickoffNote is the harness's framing for the goal kickoff round.
+const clarifyKickoffNote = "Stage: goal kickoff. The work starts the moment the user answers, and read-only research subagents are reading the repository at the same time. Ask the one to three quick questions about choices the request leaves open whose answers change what gets built (behaviour, scope, interfaces, output, error handling, constraints). Never ask what the research or the repository can answer. Reply {\"groups\": []} only when the request leaves no such choice open."
 
 // BuildClarifyPayload constructs the classifier request for a clarification
 // round. The payload carries no tools, no skills, and no agent block.
@@ -140,6 +147,10 @@ func buildClarifyUserContent(in ClarifyInput) string {
 	b.WriteString(sanitize.Sanitize(in.Prompt))
 	b.WriteString("\nRound: ")
 	b.WriteString(sanitize.Sanitize(in.Round))
+	if in.Kickoff {
+		b.WriteString("\n")
+		b.WriteString(clarifyKickoffNote)
+	}
 	if a := strings.TrimSpace(in.Answered); a != "" {
 		b.WriteString("\nAlready answered:\n")
 		b.WriteString(sanitize.Sanitize(a))

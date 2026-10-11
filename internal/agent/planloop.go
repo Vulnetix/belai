@@ -379,7 +379,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		if final {
 			turns = append(turns, withPlanCheck(l.knownState()+" "+planFinalDirective, l.list, l.hasList, l.knownNote())...)
 		}
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
+		// Assign, never declare: a := here declared a turns local to the
+		// iteration, so every directive appended after the pass was dropped
+		// and each pass started again from the turns the loop began with.
+		var out passOutcome
+		var err error
+		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		s.planFinalPass = false
 		// A plan the lint sent back is still a plan. If no corrected one arrives,
 		// it is what the turn records, not nothing.

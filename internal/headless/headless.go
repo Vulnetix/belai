@@ -51,6 +51,10 @@ type Params struct {
 	// AllowAsk is true when someone can answer a permission ask (an ACP
 	// editor); the CLI and fleet workers cannot.
 	AllowAsk bool
+	// AllowClarify is true when someone can answer questions (a headless run
+	// given the user's -answers file): the goal kickoff's clarification
+	// round, AskUserQuestion and a stuck goal's question reach them.
+	AllowClarify bool
 	// AskDisabled resolves asks to allow. nil takes the settings' value.
 	AskDisabled *bool
 	// AskDecider answers an ask in the user's place above the user's threshold.
@@ -196,6 +200,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		PromptOptions: promptOpts,
 		SessionID:     p.SessionID,
 		AllowAsk:      p.AllowAsk,
+		AllowClarify:  p.AllowClarify,
 		Caps:          caps,
 		RepoIndex:     ix,
 		PlanSurface:   tools.PlanSurface{GuardrailsOff: !p.Settings.GuardrailsEnabled(), Perms: perms},

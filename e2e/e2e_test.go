@@ -1522,7 +1522,7 @@ func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		var system string
+		var system, lastTool string
 		hasTool := false
 		for _, m := range req.Messages {
 			switch m.Role {
@@ -1530,15 +1530,19 @@ func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
 				system = m.Content
 			case "tool":
 				hasTool = true
+				lastTool = m.Content
 			}
 		}
+		// A plan the lint sent back is submitted again, whole, as the
+		// send-back asks; any other tool result ends the turn.
+		resubmit := strings.Contains(lastTool, "call ExitPlanMode again")
 		switch {
 		case strings.Contains(system, "operating-mode classifier"):
 			writeChat(w, "PLAN")
 		case strings.Contains(system, "security classifier"):
 			writeChat(w, "SAFE")
 		default:
-			if hasTool {
+			if hasTool && !resubmit {
 				writeChat(w, "done")
 			} else {
 				writeToolCallChat(w, "ExitPlanMode", map[string]any{

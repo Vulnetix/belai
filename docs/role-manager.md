@@ -2033,8 +2033,10 @@ boundary intact. Its rules and edge cases are in
 At each pass boundary the evaluator is shown the goal, the rendered todo list,
 a block of **harness-observed facts** (pass number, tool results withheld this
 pass, files changed this pass, files changed so far, the paths involved), and
-a **sanitized** digest of that
-pass's turns (`transcript.Serialize`, with tool results bounded by
+a **sanitized** digest of the turn being judged — normally that pass's turns,
+and for the first official turn of a kickoff the kickoff pass, the research
+reports and that turn together, so every subagent report and tool call of the
+turn is in front of it (`transcript.Serialize`, with tool results bounded by
 `transcript.DefaultMaxToolResultChars`, and the whole digest bounded by
 `rolemanager.MaxGoalEvidenceChars` — the tail is kept, because the end of a
 pass is where its outcome is). The facts block is harness-computed, the same
@@ -2076,19 +2078,44 @@ not sure.
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
 | Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; the final report turn runs and its text is the reply (see [Final report](#final-report)) |
-| Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) ends the loop on the final report; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
+| Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the evaluator judges the whole turn (its tool calls and results, the subagent reports and the closing reply), never the reply alone, which could never show the check behind a claim of completion. `GOAL_COMPLETE` (past the verification gate) ends the loop on the final report; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
 | Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it. When the goal has changed no file (`writes == 0`) the armed pass carries the no-write directive instead, because re-reading a repository the goal never touched verifies nothing. If the pass also ended with every tool result withheld, the tool-repair directive replaces the no-write directive |
 | No-write escalation | `passesSinceWrite ≥ goalNoWritePasses` (2) | The no-write directive is injected, naming the next step and asking for the smallest correct edit or an explicit blocker. It outranks the periodic verification pass: a loop behind on writing does not need another read-only pass. A pass that also ended all-withheld gets the tool-repair directive instead — a model whose tools are failing must not be told to stop investigating |
 | Read streak (mid-pass) | 8 tool rounds in a row inside one pass changed no file (`readStreakNudgeAfter`) | The read-streak directive is injected at once, without waiting for the pass boundary: stop surveying and edit the first file the work needs from the bytes already read. It repeats every 8 such rounds and resets on any file change. A round whose every result was withheld does not count. Plan mode, a read-only agent turn, explore subagents and the report pass are never nudged; an agent-mode turn gets the softer agent edit nudge, because it may be a question. A pass has a 40-iteration budget and the boundary escalations only fire once it is spent, which let a goal read for over ten minutes before the harness said anything |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
-| Unproductive pass | A pass executed no non-withheld tool result | Repaired once: the tool-repair directive is injected and one more pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. A second consecutive empty pass stops the loop — with the work so far, `GOAL_PARTIAL` and a stop report when the goal has already changed a file, and with the error *pass N executed no tools* when it has not. Truncation repair still buys no further passes beyond that one repair |
-| Repeated pass | A pass changed no file and repeated the previous pass's work exactly — the same ordered tool calls and arguments, or the same reply when it called none — `maxRepeatPasses` (2) times in a row | Stops with `GOAL_PARTIAL`, a warning and a stop report. Call ids and wording are not part of the fingerprint. The progression reset cannot catch this: a model that re-adopts its checklist every pass (Todo 0/2, read, Todo 2/2) looks busy, and session `fbf5adf5` re-read the same file every pass until it was killed |
+| Unproductive pass | A pass executed no non-withheld tool result | Repaired: the tool-repair directive is injected and another pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. `goalStuckPasses` (5) empty passes in a row make the goal stuck (below). With no steering it ends with the work so far, `GOAL_PARTIAL` and a stop report when the goal has already changed a file, and with the error *pass N executed no tools* when it has not |
+| Stuck: repeated pass | A productive pass changed no file and repeated the previous pass's work — the same set of distinct tool calls and arguments, however many times each ran — until `goalStuckPasses` (5) identical passes ran in a row | The goal is stuck (below). With no steering it ends with `GOAL_PARTIAL` and a stop report. Call ids and wording are not part of the fingerprint: a call's free-text `description` is dropped, and `Todo`/`update_plan` (bookkeeping) and `AskUserQuestion` (a question is not work; a declined one changes nothing, an answered one changes the passes after it) are left out, so a model that asks every other pass while repeating the same check is still counted stuck. The progression reset cannot catch this: a model that re-adopts its checklist every pass (Todo 0/2, read, Todo 2/2) looks busy, and session `fbf5adf5` re-read the same file every pass until it was killed. A pass that ran no tool is the unproductive rule's, not this one's |
 | Verdict stall | `writes == 0` and the classifier has withheld 3 tool results by verdict (`goalVerdictStall`) since the goal began, checked before the all-withheld guard | Stops with `GOAL_PARTIAL`, a warning and a stop report naming the block: withheld content does not come back by asking again, with the same tool or another, so a goal that needs it cannot progress |
 | All-withheld goal | `writes == 0` and every pass so far ended with every tool result withheld | Error naming the tool failure, rather than granting unbounded passes against a broken resolver |
-| Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL`, a warning and a stop report — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
-| Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
+| Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once, or 2 consecutive evaluator transport failures | The goal is stuck (below). With no steering the loop returns the work so far with `GOAL_PARTIAL`, a warning and a stop report — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
+| Evaluator transport failure | `Classify` returns an error on its first call | One failure continues as `GOAL_PARTIAL` with a warning; two in a row are a broken evaluator (above) |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPassLoopCancelled` with the partial result — never a raw `context.Canceled` |
 | Configured ceiling | `resilience.max_passes` reached (0 = unbounded, the default) | Error: *max passes (N) reached* |
+
+### Stuck goals
+
+The loop has no pass ceiling (`resilience.max_passes` is an opt-in one). Short
+of the goal being met, a cancellation or one of the safety stops (verdict stall,
+all-withheld), the only thing that breaks it is being **stuck**: the rows above
+marked as such. A stuck goal is not stopped outright (`internal/agent/goalstuck.go`):
+
+1. The harness injects a directive asking the model to stop the work and ask the
+   user how to proceed, in one `AskUserQuestion` call that names where it is
+   stuck and the ways forward it sees. The model writes the question because it
+   knows where it is stuck. That pass counts as a pass.
+2. If the model did not ask (it carried on, or asked only what was already
+   asked), the harness asks a fixed question of its own: *try a different
+   approach* (with a note) or *stop the goal here*.
+3. **Steering** (an admitted answer, anything but a bare *stop*) resets every
+   stall counter (repeats, partial streak, passes since a write, empty passes,
+   evaluator streaks) and the loop carries on under a directive that puts the
+   user's direction above the approach that stalled.
+4. **No steering** (declined, refused by the classifier, *stop*) ends the goal
+   with the stop report. Where nobody can be asked (a headless run without
+   `-answers`, a worker) the goal ends at once with a warning.
+
+Which call asked is read from `Session.askOutcome`, set by the
+`AskUserQuestion` handler, never from the model's text.
 
 ### Final report
 
@@ -2177,6 +2204,10 @@ work-discipline section says.
 | Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) and the loop is not behind on writes — re-check completed items against disk before continuing |
 | Continuation | Budget exhaustion or a non-complete natural exit — if more tool calls are needed, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains |
 | Progression | `partialStreak` reaches `goalStallPartial` — execute the single most concrete next step as an edit; reset the streak and start a new agentic evaluation loop |
+| Kickoff research note | Rides on the goal acknowledgement while the kickoff's research subagents run — start now with what you know; do not wait for the reports or repeat their research |
+| Research arrived | The kickoff's research reports are delivered (at the next tool round, or at the pass boundary when the kickoff pass already ended) — ask the user at once, in one `AskUserQuestion` call, only what the code and the reports cannot answer, then update the Todo list and make the next change. It opens the first official turn |
+| Turn review | Appended to the action, partial, no-write, progression and continuation directives after an evaluation that did not finish the goal — the turn's harness facts (tool calls, subagent reports, files changed) and the instruction to decide the next turn from its tool results and every subagent report: tool calls, a Todo update, `Task` subagents, `AskUserQuestion` |
+| Stuck ask / stuck steered | The goal is stuck (see [Stuck goals](#stuck-goals)) — ask the user how to proceed; after steering, follow the user's direction over the approach that stalled |
 
 ### Per-pass TODO check
 

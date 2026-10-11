@@ -30,7 +30,7 @@ const modes = [
     n: '03',
     name: 'Goal',
     key: 'one objective',
-    lead: 'Works on one named objective until it is done, checking progress each pass against a todo list, and ends on a report of what changed.',
+    lead: 'Works on one named objective until it is done. It asks you a few quick questions while subagents research the repository, starts editing once you answer, reviews every pass against a todo list, and ends on a report of what changed.',
   },
   {
     n: '04',
@@ -58,7 +58,7 @@ const facts: Record<string, string[]> = {
   'When the model asks you': [
     'Your answers come back to it straight away and the work carries on',
     'Your answers start a new agent turn with every tool, so the model acts on them',
-    'Your answers come back to it straight away and the work carries on',
+    'First a quick round of questions while research runs, then again once the research is in. If the goal stalls, it asks how to proceed: your direction resets the loop, no answer ends it',
     'Your answers come back to it straight away and the work carries on',
   ],
   Afterwards: [
@@ -70,10 +70,10 @@ const facts: Record<string, string[]> = {
 };
 
 const loop = [
-  ['pass', 'the model works on the next step'],
-  ['todo list', "built from the model's own text, which tool output cannot change"],
+  ['kickoff', 'quick questions to you while research subagents read the repository'],
+  ['pass', "the model works the next step of a todo list built from its own text, which tool output cannot change"],
   ['check', 'progress against the list, scored first by a decision model when one is set up'],
-  ['continue', 'while the objective moves forward'],
+  ['continue', 'with no pass limit, while the objective moves forward'],
 ];
 
 const limits = [
@@ -85,6 +85,7 @@ const limits = [
   ['An approved plan is the gate', 'Once you approve a plan, its run is no longer plan mode and gets the full surface.'],
   ['A question is asked once', 'A question already asked in the session is never asked again.'],
   ['Nobody to answer', 'A headless run or a background agent is told to proceed on its own judgement, and nothing widens.'],
+  ['A stalled goal asks you', 'Five passes in a row that repeat the same work, or change nothing, stop the loop and ask you how to proceed. Your direction joins the objective and the loop starts again; no answer ends the goal with its report.'],
   ['Surveys end', 'After eight rounds of reading without changing a file, a goal is told to stop surveying and make the first edit.'],
   ['A clear score ends a pass, an unclear one is checked harder', 'With a decision backend, a clearly complete or not started pass is settled by its scores. Anything else goes to the model judge with the scores, and completion needs a check made with tools. The verification pass still runs.'],
 ];

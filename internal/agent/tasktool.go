@@ -25,10 +25,11 @@ func (s *Session) runTask(ctx context.Context, description, prompt string) (tool
 		return tools.Result{}, fmt.Errorf("Task budget exhausted for this turn")
 	}
 	s.taskCallsThisTurn++
+	s.taskSeq++
 
 	g := s.groundingProbe(ctx)
 	t := explore.Task{
-		Index:     s.taskCallsThisTurn - 1,
+		Index:     s.taskSeq - 1,
 		Reference: description,
 		Prompt:    prompt + explore.ReportContract(),
 		Kind:      explore.RefText,
