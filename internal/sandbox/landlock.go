@@ -328,9 +328,21 @@ func osList(dir string) ([]llEntry, bool) {
 	return out, true
 }
 
+// init makes every binary that links this package act as the Landlock helper
+// when it was started as one: belai itself, and every test binary. Under
+// go test, os.Executable() is the test binary, so the Landlock probe runs
+// `<pkg>.test __landlock-exec -probe`. A test binary that did not handle that
+// read `__landlock-exec` as a positional argument and ran its whole suite
+// again, which probed again: on a CI runner without a usable bubblewrap that
+// multiplied into dozens of test binaries until the kernel's OOM killer took
+// the runner down. Registering the helper here, rather than in each package's
+// TestMain, covers every package that reaches the sandbox, including the ones
+// that only do so through another package.
+func init() { HelperMain() }
+
 // HelperMain runs the Landlock helper when this process was started as one,
-// and never returns then. A main, and the TestMain of a package whose tests
-// run sandboxed commands (the test binary is then the helper), call it first.
+// and never returns then. init already calls it for every binary linking this
+// package; a main or TestMain calling it first as well is harmless.
 func HelperMain() {
 	if len(os.Args) > 1 && os.Args[1] == LandlockCommand {
 		os.Exit(LandlockExecMain(os.Args[2:], os.Stdout, os.Stderr))
