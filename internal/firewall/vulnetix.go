@@ -41,6 +41,10 @@ var slugs = map[string]string{
 	"alibaba":    "alibaba",
 	"moonshot":   "moonshot",
 	"minimax":    "minimax",
+	// Kiro has no API key: the gateway mints its token from the Kiro sign-in
+	// the org keeps in the secrets vault (`vulnetix ai-firewall kiro login`),
+	// so Belai sends only the Vulnetix key and never mints one itself.
+	"kiro": "kiro",
 }
 
 // Slug returns the gateway provider segment for the given Belai provider, and
@@ -102,6 +106,14 @@ func URLPathUUID(baseURL string) string {
 	return ""
 }
 
+// MintsKiroToken reports whether r is a Vulnetix AI Firewall route, whose
+// gateway mints Kiro's access token from the org's secrets vault and sets the
+// profile itself. Belai then sends its Vulnetix key as the Bearer token and
+// must not mint, or even read, a Kiro token of its own.
+func (r *Route) MintsKiroToken() bool {
+	return r != nil && (r.AdapterID == "vulnetix" || r.Mode == "vulnetix")
+}
+
 type vulnetixAdapter struct{}
 
 func (vulnetixAdapter) ID() string           { return "vulnetix" }
@@ -149,13 +161,15 @@ func (vulnetixAdapter) Instructions() []string {
 	return []string{
 		"Sign in with `vulnetix auth login` using an API key; Belai reads the key and organisation from the Vulnetix CLI.",
 		"Provider keys you save in /providers are pushed to the firewall (BYOK) with `vulnetix ai-firewall key set`, so they are no longer sent from this machine.",
+		"Kiro is signed in once for the organisation with `vulnetix ai-firewall kiro login`; the firewall mints Kiro's tokens, so this machine's Kiro sign-in is not used while routed.",
 		"Guardrails are managed with `vulnetix ai-firewall guardrails` or at https://www.vulnetix.com/vdb-ai-firewall.",
 	}
 }
 
 // vulnetixHints explains the gateway's refusal codes.
 var vulnetixHints = map[string]string{
-	"provider_key_missing": "the firewall has no key for this provider — save it again in /providers to sync it, or run `vulnetix ai-firewall key set`",
+	"provider_key_missing": "the firewall has no key for this provider — save it again in /providers to sync it, or run `vulnetix ai-firewall key set` (for Kiro, `vulnetix ai-firewall kiro login`)",
+	"vault_kiro_relogin":   "the Kiro sign-in in your organisation's secrets vault has expired — run `vulnetix ai-firewall kiro login`",
 	"provider_denied":      "your organisation's AI Firewall policy denies this provider",
 	"provider_disabled":    "this provider is disabled on the AI Firewall",
 	"model_denied":         "your organisation's AI Firewall policy denies this model — pick another in /model",

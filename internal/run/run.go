@@ -2088,7 +2088,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			key = token.Value
 		}
 		var kiroProfile string
-		if cfg.Auth == provider.AuthKiro {
+		if cfg.Auth == provider.AuthKiro && !cfg.Firewall.MintsKiroToken() {
 			// The access token goes only to a pinned Kiro host (or a
 			// loopback mock), whatever BELAI_BASE_URL says.
 			if !kiroauth.AllowedAPIURL(cfg.BaseURL) {
@@ -2136,7 +2136,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		case kindKiro:
 			// The live catalogue decides what may ride in
 			// additionalModelRequestFields and whether images go out.
-			info := kiroModelInfo(ctx, cfg.BaseURL, cfg.Model, key, kiroProfile)
+			info := kiroModelInfo(ctx, cfg.BaseURL, cfg.Model, key, kiroProfile, cfg.Firewall)
 			req := buildKiroRequest(cfg.Model, system, turns, openAITools, kiroProfile, info.Images)
 			req.AdditionalModelRequestFields = info.RequestFields(reasoningEffort, cfg.MaxTokens)
 			return p.NewKiroRequest(req)

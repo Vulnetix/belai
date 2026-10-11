@@ -249,13 +249,17 @@ func Plan(name string, inst config.FirewallInstance, t Target, secret, account s
 	return r, nil
 }
 
-// supportsCommon is the rule every routing adapter shares: providers whose
-// credentials are minted by a sign-in (Copilot, Kiro) or whose URL is itself
-// a gateway (Cloudflare) are never routed, and only the three relayed wire
-// surfaces are.
+// supportsCommon is the rule every generic routing adapter shares: providers
+// whose credentials are minted by a sign-in (Copilot, Kiro) or whose URL is
+// itself a gateway (Cloudflare) are not routed, and only the three relayed
+// wire surfaces are. Kiro is the exception for the Vulnetix adapter alone,
+// which does not use this rule: that gateway mints Kiro's token itself from
+// the org's secrets vault, which no generic gateway can.
 func supportsCommon(t Target) (bool, string) {
 	switch t.Auth {
-	case provider.AuthCopilot, provider.AuthKiro, provider.AuthCFAIG:
+	case provider.AuthKiro:
+		return false, fmt.Sprintf("%s signs in with its own token; only the Vulnetix AI Firewall can route it", t.Provider)
+	case provider.AuthCopilot, provider.AuthCFAIG:
 		return false, fmt.Sprintf("%s signs in with its own token and is never routed through a firewall", t.Provider)
 	}
 	switch t.Surface {
