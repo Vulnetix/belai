@@ -100,7 +100,7 @@ func TestEnvironmentDropsAnyValueThatFailsItsCheck(t *testing.T) {
 			t.Errorf("%q passed through:\n%s", banned, got)
 		}
 	}
-	for _, want := range []string{"the Package Firewall covers go", "built-in models Pix Smart (pix-smart).", "packs ok-pack."} {
+	for _, want := range []string{"the Package Firewall covers go", "built-in models Pix Smart (pix-smart).", "packs ok-pack; extensions ok."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
