@@ -16,7 +16,10 @@ func TestBashRunsInsideSandbox(t *testing.T) {
 	if name, _ := sandbox.Backend(); name != "bwrap" && name != "landlock" {
 		t.Skip("no Linux sandbox backend usable here")
 	}
-	root, outside := t.TempDir(), t.TempDir()
+	// The outside directory is under the home directory, which every backend
+	// keeps read-only: under Landlock the host's /tmp is writable by design,
+	// so a second t.TempDir() is not outside the roots there.
+	root, outside := t.TempDir(), homeTemp(t)
 	b := &Bash{Root: root, Timeout: BashDefaultTimeout}
 	ctx := sandbox.WithPolicy(context.Background(), sandbox.Policy{Mode: sandbox.ModeAuto, DenyNetwork: true, Writable: []string{root}})
 	res, err := b.Execute(ctx, map[string]any{"command": "echo x > " + filepath.Join(outside, "f")})
@@ -47,4 +50,20 @@ func TestBashRequiredSandboxRefusesWithoutBackend(t *testing.T) {
 	if _, err := b.Execute(ctx, map[string]any{"command": "true"}); err == nil {
 		t.Fatal("required sandbox ran without a backend")
 	}
+}
+
+// homeTemp makes a directory under the home directory, which the sandbox keeps
+// read-only. /tmp will not do: under Landlock the host's /tmp is writable.
+func homeTemp(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	dir, err := os.MkdirTemp(home, ".belai-sandbox-test-")
+	if err != nil {
+		t.Skipf("the home directory is not writable: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
 }
