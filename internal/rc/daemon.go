@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/libitem"
+	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -377,7 +378,8 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
 		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
-		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings}
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings,
+		PixAssistant: true}
 	if d.o.Controls {
 		for _, c := range sessionctl.Controls {
 			h.RC.ControlCatalogue = append(h.RC.ControlCatalogue, sessionsync.RCControl{
@@ -695,8 +697,9 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
+	pix := IsPixMode(r.Mode)
 	switch r.Mode {
-	case "", "agent", "plan", "goal", "code":
+	case "", "agent", "plan", "goal", "code", string(modes.ModePixAssistant):
 	default:
 		return "", "unknown mode " + fmt.Sprintf("%q", r.Mode)
 	}
@@ -732,6 +735,15 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
 		Shell: d.o.Shell,
+	}
+	if pix {
+		// An advisory session: the persona by its built-in name, git sync
+		// off, a short idle, and none of the host's web opt-ins (controls,
+		// guardrails off, shell lines), whatever the request or the host says.
+		c.Profile, _ = PixPersonaName(r.Profile)
+		off := false
+		c.GitSync, c.Idle = &off, PixIdle
+		c.Controls, c.GuardrailsOff, c.Shell = false, false, false
 	}
 	pid, wait, err := d.o.Start(c)
 	if err != nil {

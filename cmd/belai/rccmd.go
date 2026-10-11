@@ -447,7 +447,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	fs.SetOutput(stderr)
 	dispatch := fs.String("dispatch", "", "the website request this session answers")
 	sessionID := fs.String("session-id", "", "the session id the daemon minted")
-	modeFlag := fs.String("mode", "", "agent, plan, goal or code (default: classified)")
+	modeFlag := fs.String("mode", "", "agent, plan, goal, code or pix-assistant (default: classified)")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end after this long without a prompt")
 	providerFlag := fs.String("provider", "", "provider for this session (default: the host's own)")
 	modelFlag := fs.String("model", "", "model for this session (default: the host's own)")
@@ -458,7 +458,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	shell := fs.Bool("shell", false, "run shell lines from the web (belai rc --web-shell)")
 	var addDirs stringList
 	fs.Var(&addDirs, "add-dir", "an extra workspace directory for the session (repeatable; the daemon checked each is offered)")
-	profileFlag := fs.String("profile", "", "engage this agent profile for agent-mode turns (a web request's choice, with -mode agent)")
+	profileFlag := fs.String("profile", "", "engage this agent profile for agent-mode turns (a web request's choice, with -mode agent), or the persona of a -mode pix-assistant session")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -472,12 +472,22 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	}
 	mode := modes.Mode(*modeFlag)
 	switch mode {
-	case "", modes.ModeAgent, modes.ModePlan, modes.ModeGoal, modes.ModeCode:
+	case "", modes.ModeAgent, modes.ModePlan, modes.ModeGoal, modes.ModeCode, modes.ModePixAssistant:
 	default:
 		fmt.Fprintf(stderr, "belai rc-session: unknown mode %q\n", *modeFlag)
 		return 2
 	}
-	if *profileFlag != "" {
+	var pix *rc.PixSession
+	if mode == modes.ModePixAssistant {
+		ps, code := rcPixStart(*profileFlag, *gitSyncFlag, *controls, *shell, stderr)
+		if code != 0 {
+			return code
+		}
+		pix = &ps
+		// The persona rides as the session's persona, not as an engaged
+		// profile, and the session ends after a short wait for a follow-up.
+		*profileFlag, *gitSyncFlag, *idle = "", "off", rc.PixIdle
+	} else if *profileFlag != "" {
 		if mode != modes.ModeAgent {
 			fmt.Fprintln(stderr, "belai rc-session: -profile needs -mode agent")
 			return 2
@@ -498,7 +508,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		return 1
 	}
 	pick := rcModelPick{Provider: *providerFlag, Model: *modelFlag, Effort: *effortFlag, Profile: *profileFlag,
-		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell, Dirs: addDirs}
+		Controls: *controls, AllowGuardrailsOff: *allowGuardrailsOff, Shell: *shell, Dirs: addDirs, Pix: pix}
 	switch *gitSyncFlag {
 	case "":
 	case "on", "off":
@@ -513,6 +523,30 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		return 1
 	}
 	return 0
+}
+
+// rcPixStart checks the flags of a -mode pix-assistant session and loads its
+// persona. The daemon never passes -controls, -shell or -git-sync on for one,
+// so any of them is refused rather than ignored.
+func rcPixStart(profile, gitSync string, controls, shell bool, stderr io.Writer) (rc.PixSession, int) {
+	if controls || shell {
+		fmt.Fprintln(stderr, "belai rc-session: a pix-assistant session takes no -controls or -shell")
+		return rc.PixSession{}, 2
+	}
+	if gitSync != "" && gitSync != "off" {
+		fmt.Fprintln(stderr, "belai rc-session: a pix-assistant session runs with -git-sync off")
+		return rc.PixSession{}, 2
+	}
+	if _, ok := rc.PixPersonaName(profile); !ok {
+		fmt.Fprintf(stderr, "belai rc-session: -mode pix-assistant needs -profile vuln-scout, patcher or verifier, not %q\n", profile)
+		return rc.PixSession{}, 2
+	}
+	ps, err := rc.LoadPixPersona(profile)
+	if err != nil {
+		fmt.Fprintln(stderr, "belai rc-session:", err)
+		return rc.PixSession{}, 1
+	}
+	return ps, 0
 }
 
 // rcModelPick is what a web request chose for the session: provider, model
@@ -533,6 +567,10 @@ type rcModelPick struct {
 	// Dirs are the extra workspace directories (/add-dir) beyond the working
 	// directory; each is trust-checked before the session starts.
 	Dirs []string
+	// Pix, when set, makes this a pix-assistant session: agent mode with the
+	// persona's text in the system block, its tools narrowed to rc.PixTools,
+	// no kanban board, and registered as ephemeral with origin "pix".
+	Pix *rc.PixSession
 }
 
 // stringList is a repeatable string flag.
@@ -653,11 +691,21 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if err != nil {
 		return err
 	}
-	w, err := session.NewWriter(store, key, sessionID, session.Meta{Cwd: cwd, Mode: string(mode)})
+	// A pix-assistant session is recorded under its own mode name and runs
+	// its turns in agent mode.
+	metaMode := mode
+	activeProfile := ""
+	if pick.Pix != nil {
+		metaMode, mode, activeProfile = modes.ModePixAssistant, modes.ModeAgent, pick.Pix.Name
+	}
+	w, err := session.NewWriter(store, key, sessionID, session.Meta{Cwd: cwd, Mode: string(metaMode), ActiveProfile: activeProfile})
 	if err != nil {
 		return err
 	}
 	name := "web · " + firstLine(prompt, 60)
+	if pick.Pix != nil {
+		name = "pix · " + firstLine(prompt, 60)
+	}
 	w.Name(name)
 
 	client, err := rcClient(cwd)
@@ -698,13 +746,23 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	// last lines and end the session on the website.
 	syncer.Start(context.Background())
 	defer syncer.Close(5 * time.Second)
-	syncer.Activate(sessionsync.SessionInfo{
+	info := sessionsync.SessionInfo{
 		ID: sessionID, Path: store.SessionPath(key, sessionID), ProjectKey: string(key),
 		ProjectName: key.Project(), Cwd: cwd, Name: name, Model: cfg.Model, Provider: cfg.Provider,
-		Mode: string(mode), DispatchID: dispatch,
-	})
+		Mode: string(metaMode), DispatchID: dispatch, ActiveProfile: activeProfile,
+	}
+	if pick.Pix != nil {
+		info.Ephemeral, info.Origin = true, rc.PixOrigin
+	}
+	syncer.Activate(info)
 
-	board, src := cliKanban(cwd, sessionID, settings)
+	// A pix-assistant session is advisory: it gets no board, so no kanban
+	// tool joins its read-only surface.
+	var board *kanban.Store
+	var src *kanban.Source
+	if pick.Pix == nil {
+		board, src = cliKanban(cwd, sessionID, settings)
+	}
 	if board != nil {
 		// The session runs for hours: take the website's board before the first
 		// turn and keep it current, or a card filed after the sandbox started
@@ -726,9 +784,13 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		Prompt: prompt, Mode: mode, Profile: pick.Profile, Idle: idle, Out: stderr,
 		Workdir: cwd, SlashCommands: settings.SyncItemEnabled("command"),
 		Facts: map[string]any{
-			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
+			"mode": string(metaMode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,
 			"guardrails": settings.GuardrailsEnabled(), "routing": cfg.Routing.Kind,
 		},
+	}
+	narrow, persona := rcProfileNarrow(pick.Profile), ""
+	if pick.Pix != nil {
+		narrow, persona = rcNarrow(pick.Pix.Tools, pick.Pix.Skills), pick.Pix.Persona
 	}
 	if !pick.Controls {
 		// Asks off exactly as for `belai -prompt`: nobody can answer one, so a
@@ -738,7 +800,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-			Narrow: rcProfileNarrow(pick.Profile),
+			Narrow: narrow, Persona: persona,
 		})
 		if err != nil {
 			w.System("remote session could not start: " + err.Error())
@@ -746,6 +808,11 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			return err
 		}
 		opts.Agent = sess
+		if pick.Pix != nil {
+			// Nothing to review and nothing to execute: no plan executor, no
+			// web answers, no shell.
+			return rc.RunSession(ctx, opts)
+		}
 		if settings.SyncRemoteAnswersEnabled() {
 			// The web can review a plan this session writes. An approved plan
 			// runs on a session that resolves asks to allow: the person
@@ -877,6 +944,12 @@ func rcProfileNarrow(name string) func(*tools.Registry) *tools.Registry {
 	} else if p, err := agentprofile.Load(name); err == nil {
 		allow, skillNames = p.Tools, p.Skills
 	}
+	return rcNarrow(allow, skillNames)
+}
+
+// rcNarrow limits a registry to the allowed tools and the Skill tool to the
+// named skills. Nothing to narrow by keeps every tool.
+func rcNarrow(allow, skillNames []string) func(*tools.Registry) *tools.Registry {
 	if len(allow) == 0 && len(skillNames) == 0 {
 		return nil
 	}

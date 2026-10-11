@@ -1415,7 +1415,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   guardrails off, sessions run with `AllowAsk` false and web answers off
   (never `AskDisabled`, which would allow every ask); a guardrails-off
   project preference is overridden to on for a remote session, never honoured
-  without the host's flag. The prompt reaches the child on stdin, never argv. The heartbeat's worker entries are
+  without the host's flag. A `pix-assistant` start runs only as one of
+  `rc.PixPersonas`, with its tools cut to `rc.PixTools` (read-only), no board,
+  git sync off, a short idle and none of the host's web opt-ins (controls,
+  guardrails off, shell). The prompt reaches the child on stdin, never argv. The heartbeat's worker entries are
   registry facts plus a tail of each worker's own log, read by id from the
   fleet log directory (never a path from a record), cleaned with
   `sessionsync.CleanLogLine` and capped per line, per worker and in total.

@@ -844,3 +844,42 @@ func TestCommandsRefusedWhenOff(t *testing.T) {
 	s.Activate(SessionInfo{ID: testSess, Path: path})
 	eventually(t, "refusal", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.acks["command:c2"] == AckRefused })
 }
+
+// A pix-assistant session registers as ephemeral with its origin, and a later
+// line from the file (which never names either) leaves both alone, so the
+// website keeps hiding it from its session lists.
+func TestEphemeralOriginReachTheRegistration(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	meta := func() SessionMeta {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions[testSess]
+	}
+	s := startSyncer(t, srv, false)
+
+	s.Activate(SessionInfo{ID: testSess, Path: path, Ephemeral: true, Origin: "pix", ActiveProfile: "belai:vuln-scout"})
+	appendLines(t, path, line("a", "session_meta", `{"schema":2,"mode":"pix-assistant"}`))
+	s.Nudge()
+	eventually(t, "the registration", func() bool { m := meta(); return m.Mode == "pix-assistant" })
+	if m := meta(); !m.Ephemeral || m.Origin != "pix" || m.ActiveProfile != "belai:vuln-scout" {
+		t.Fatalf("registration = %+v", m)
+	}
+
+	for field, want := range map[string]string{"Ephemeral": "ephemeral,omitempty", "Origin": "origin,omitempty"} {
+		f, _ := reflect.TypeOf(SessionMeta{}).FieldByName(field)
+		if got := f.Tag.Get("json"); got != want {
+			t.Errorf("SessionMeta.%s wire tag = %q, want %q", field, got, want)
+		}
+	}
+	if f, _ := reflect.TypeOf(RCInfo{}).FieldByName("PixAssistant"); f.Tag.Get("json") != "pixAssistant,omitempty" {
+		t.Errorf("RCInfo.PixAssistant wire tag = %q", f.Tag.Get("json"))
+	}
+	// An ordinary session sends neither.
+	b, _ := json.Marshal(SessionMeta{HostID: "h"})
+	if strings.Contains(string(b), "ephemeral") || strings.Contains(string(b), "origin") {
+		t.Fatalf("an ordinary session's meta = %s", b)
+	}
+}
