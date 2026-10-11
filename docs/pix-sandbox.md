@@ -32,6 +32,13 @@ The rules about host ids, settings and directories are pinned by
 | `--web-shell` | on | the session page can run a shell line in the sandbox, from the composer's `!cmd` (output goes to the model) and the console drawer (it never does), under the TUI's permission rules and bubblewrap profile ([remote-control.md](remote-control.md#shell-lines-from-the-web)) |
 | `--allow-private-cidr <cidr>` | the range the egress gateway answers from (`fd00::/64`) | WebFetch may reach that one range. The gateway stands in for every host the machine reaches, so a name resolves to a placeholder such as `fd00::119:1`, which the fetch guard would otherwise refuse as private. Loopback, link-local and every other private range stay refused ([sanitization.md](sanitization.md)) |
 
+A sandbox runs the released `belai rc`, so it also answers the console's Pix
+assistant: it advertises `rc.pixAssistant`, and a `pix-assistant` start in one
+of its repositories runs an ephemeral, read-only session as Rubber Duck,
+Kremvax or Dark Avenger, with git sync off and a 5 minute idle, whatever the
+sandbox's `--web-controls` and `--web-shell` say
+([remote-control.md](remote-control.md), Pix assistant sessions).
+
 ## Rules
 
 - **The host id is canonical.** A uuid seeded into `sync/host-id` is the host id

@@ -115,13 +115,36 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   and the daemon checks both again; the name is passed to `belai rc-session
   -profile`, which loads the profile on this host, narrows the tools to its
   allowlist and engages it for agent-mode turns. An older daemon offers none.
+- **Pix assistant sessions.** A start request with `mode: "pix-assistant"`
+  comes from the console's Pix assistant ("Ask in repo"). The daemon advertises
+  it with `rc.pixAssistant: true`, and the website never sends one to a host
+  that does not. The request must name one of `rc.PixPersonas` as its
+  `profile`: `vuln-scout` (Rubber Duck), `patcher` (Kremvax) or `verifier`
+  (Dark Avenger), bare or with the `belai:` prefix. These are worker profiles,
+  so they are not in `SessionAgents`; in this mode they are checked against
+  that list instead, and any other profile, or none, is refused (outside this
+  mode a persona is held to the ordinary rules and refused). The daemon passes
+  the persona by its built-in name with `-git-sync off`, `-idle 5m` and none of
+  `-controls`, `-allow-guardrails-off` or `-shell`, whatever the request or the
+  host's flags say, and `rc-session` refuses any of them in this mode. The
+  session runs its turns in agent mode with the persona's identity, system
+  prompt, skills and personality in the system block, plus a harness brief that
+  it is advisory and has no kanban item. Its tools are the persona's allowlist
+  intersected with `Read`, `Grep`, `Glob`, `Vulnetix` and `Skill` (Kremvax
+  included), it has no kanban board, no plan executor and no web answers, and it
+  registers as `ephemeral: true`, `origin: "pix"`, `activeProfile` the persona,
+  so the website draws it in the persona's colours and keeps it out of its
+  session lists. The prompt is built by the server (the question, the page
+  context and any docs) and arrives on stdin like any web prompt: it is cleaned
+  by `sessionsync.CleanPrompt` in the daemon and again in the child, and admitted
+  like a typed prompt; the page context is data, never instructions.
 - Web prompts sent while a turn runs wait their turn and show as queued.
 - It ends after `--idle` (default 30 minutes) without a prompt, when you press
   **Stop session** on the website, or when remote control stops.
 - **The command is the daemon's, not yours.** `belai rc-session` needs
   `-session-id` (the id the daemon minted for the session) and `-dispatch` (the
   website request it answers) and refuses to start without both, with `-mode`
-  (`agent`, `plan`, `goal` or `code`, otherwise classified from the prompt), `-idle`,
+  (`agent`, `plan`, `goal`, `code` or `pix-assistant`, otherwise classified from the prompt), `-idle`,
   `-provider`, `-model` and `-effort`, `-profile` (an agent profile, with `-mode
   agent`), `-git-sync on|off` and `-add-dir DIR` (repeatable: an extra workspace
   directory, as `/add-dir`; the daemon passes each only when the web request

@@ -205,6 +205,15 @@ the footer and the picker; see [Agent personas](tui-design.md#agent-personas). O
 the website a session is drawn in the colours of the agent that ran it
 (`activeProfile` in the session registration, see [session-sync.md](session-sync.md)).
 
+The security crew's three personas also answer the console's Pix assistant: a
+`pix-assistant` start on `belai rc` runs as Rubber Duck (`belai:vuln-scout`),
+Kremvax (`belai:patcher`) or Dark Avenger (`belai:verifier`), and as no other
+profile. The session takes the persona's identity, system prompt, skills,
+personality and presentation, but its tools are cut to the read-only
+`Read`, `Grep`, `Glob`, `Vulnetix` and `Skill` (so Kremvax cannot edit there),
+and the profile's `worker` mode, kanban block and workspace do not apply. See
+[remote-control.md](remote-control.md) (Pix assistant sessions).
+
 ### Validation rules
 
 - `workspace.sync` needs `workspace.isolation: worktree`, lists at most 8 distinct, non-overlapping repository-relative paths made of letters, digits and `. _ - /` only, with `access` of `read` or `write`. A path under `.git`, `.vulnetix/belai`, `.vulnetix/settings.json` or `.vulnetix/credentials.json` is refused, and so is write access to the scanner evidence in `.vulnetix` (`memory.yaml`, scan artefacts, `vex/`, `quality/`).

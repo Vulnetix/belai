@@ -379,6 +379,18 @@ and the inbox run on the syncer's own goroutines.
   session (`?session=`), so two Belais on one machine never take each other's
   prompts.
 
+## Ephemeral sessions
+
+A session registration may carry `ephemeral: true` and an `origin`. Both are
+`omitempty`, so an ordinary session sends neither. Today only a `belai rc`
+`pix-assistant` session sets them (`origin: "pix"`): it is a short, read-only
+answer to a question asked in the console's Pix assistant, started with the
+persona as its `activeProfile`. The host sets both when it activates the session
+and nothing in the transcript changes them. The server stores them on the
+session row and leaves ephemeral sessions out of the session list unless
+`includeEphemeral=1`. The host advertises that it can start such sessions with
+`rc.pixAssistant: true`. See [remote-control.md](remote-control.md).
+
 ## Server side
 
 - **API:** `vdb-site` (`api/internal/handler/belai_*.go`) serves `/v1/belai/*`.

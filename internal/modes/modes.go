@@ -1,6 +1,7 @@
 // Package modes defines the harness interaction modes: agent (default),
 // plan (read-only planning), goal (goal-directed work) and code (agent work
-// that batches tool calls in a script).
+// that batches tool calls in a script), plus the remote-control-only
+// pix-assistant start mode.
 package modes
 
 import "fmt"
@@ -17,6 +18,12 @@ const (
 	// reachable only from inside a script (docs/code-mode.md). It is chosen
 	// explicitly and never picked by intent detection.
 	ModeCode Mode = "code"
+	// ModePixAssistant is a start mode for `belai rc` only: an ephemeral,
+	// read-only agent-mode session engaged as one of the security crew's
+	// personas, started by the console's Pix assistant
+	// (docs/remote-control.md). It is never an interactive mode, so Parse
+	// does not accept it.
+	ModePixAssistant Mode = "pix-assistant"
 )
 
 // Default returns the default interactive mode (agent).

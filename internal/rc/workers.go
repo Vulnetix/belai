@@ -76,8 +76,16 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 // checkAgentProfile validates the agent profile a start request names: it needs
 // agent mode, and the name must be one this host offers (SessionAgents), so a
 // name from the website cannot reach a profile this host never advertised.
-// An empty name is the default agent.
+// An empty name is the default agent. In the pix-assistant mode a persona is
+// required and it must be one of PixPersonas instead: they are worker
+// profiles, so SessionAgents never lists them, and no other profile is taken.
 func (d *Daemon) checkAgentProfile(name, mode string) string {
+	if IsPixMode(mode) {
+		if _, ok := PixPersonaName(name); !ok {
+			return pixPersonaRefusal
+		}
+		return ""
+	}
 	if name == "" {
 		return ""
 	}
