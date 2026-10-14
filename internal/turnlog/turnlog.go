@@ -258,6 +258,10 @@ func (l *Log) TurnStarted(facts map[string]any) {
 	l.w.Entry(session.Entry{Type: "turn_state", Role: "system", Meta: meta})
 }
 
+// TurnID is the id the running turn's turn_state lines carry, or "" outside
+// a turn (or without a writer). Call it from the goroutine that runs the turn.
+func (l *Log) TurnID() string { return l.turnID }
+
 // TurnEnded flushes the turn's last text and writes its turn_state end line
 // ("ended", "error" or "interrupted").
 func (l *Log) TurnEnded(state string, facts map[string]any) {

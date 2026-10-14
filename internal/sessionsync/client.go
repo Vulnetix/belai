@@ -170,7 +170,18 @@ type RCInfo struct {
 	// mode (an ephemeral, read-only session engaged as a security-crew
 	// persona), so the website never sends one to an older daemon.
 	PixAssistant bool `json:"pixAssistant,omitempty"`
+	// Features names what this daemon takes beyond the base protocol, so the
+	// website offers a choice only to a host that understands it: "worktree"
+	// (a start request's Branch and Workspace) and "checkout" (a session's
+	// RemoteCommand.Checkout). Nil from an older daemon.
+	Features []string `json:"features,omitempty"`
 }
+
+// The RCInfo.Features this build sends.
+const (
+	FeatureWorktree = "worktree"
+	FeatureCheckout = "checkout"
+)
 
 // RCControl is one session control as the website offers it.
 type RCControl struct {
@@ -403,6 +414,24 @@ type RCDir struct {
 	// came from. Values are booleans, fixed words and numbers only.
 	Prefs     map[string]any         `json:"prefs,omitempty"`
 	Effective map[string]RCEffective `json:"effective,omitempty"`
+	// Worktrees are the linked worktrees of the directory's repository that
+	// live under the host's worktrees directory (config.WorktreesDir), at most
+	// RCMaxWorktrees, so the website can start a session in one by its
+	// Workspace.
+	Worktrees []RCWorktree `json:"worktrees,omitempty"`
+}
+
+// RCMaxWorktrees caps RCDir.Worktrees.
+const RCMaxWorktrees = 32
+
+// RCWorktree is one linked worktree an offered directory's repository has:
+// its path on the host, the branch checked out there ("" when detached) and
+// its path relative to the worktrees directory, which a start request names
+// as its Workspace.
+type RCWorktree struct {
+	Path      string `json:"path"`
+	Branch    string `json:"branch,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // RCEffective is one preference key's resolved value and its settings layer
@@ -426,6 +455,13 @@ type Dispatch struct {
 	// Dirs are the extra workspace directories a "start" request adds beyond
 	// Cwd (/add-dir): each is one the host offers, checked again by the daemon.
 	Dirs []string `json:"dirs,omitempty"`
+	// Branch is the branch a "start" request runs its session on, and
+	// Workspace the worktree for it, relative to the host's worktrees directory
+	// (owner/repo/branch-slug when empty). A branch Cwd already has checked out
+	// and no Workspace runs in Cwd itself; otherwise the daemon reuses or makes
+	// a worktree of Cwd's repository there (rc workspace.go).
+	Branch    string `json:"branch,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 	// Profile or Crew names what a "worker" or "crew" request starts.
 	Profile string `json:"profile,omitempty"`
 	Crew    string `json:"crew,omitempty"`
@@ -675,10 +711,12 @@ type RemoteDraft struct {
 
 // RemoteCommand is a request sent from the website, claimed from the inbox: a
 // session control (a slash line "/caveman on" or a key "f4"), a custom slash
-// command by name (Command and Args) or, from a host run with --web-shell, one
-// shell line; exactly one of Line, Key, Command and Shell.
+// command by name (Command and Args), a branch to check out (Checkout) or,
+// from a host run with --web-shell, one shell line; exactly one of Line, Key,
+// Command, Checkout and Shell.
 // It is untrusted: a control is parsed by internal/sessionctl, which knows
-// only its fixed controls, and a shell line runs only after the TUI's own
+// only its fixed controls, a branch is checked by git before it is checked out
+// (gitsync Checkout), and a shell line runs only after the TUI's own
 // permission rules and under its sandbox profile (internal/rc shell.go).
 type RemoteCommand struct {
 	ID        string `json:"id"`
@@ -693,9 +731,15 @@ type RemoteCommand struct {
 	// Shell is the line to run, Cwd the directory the page was showing and
 	// Attach whether its output may go to the model's next turn (the
 	// composer's `!cmd`; the console's remote shell never attaches).
-	Shell     string `json:"shell,omitempty"`
-	Cwd       string `json:"cwd,omitempty"`
-	Attach    bool   `json:"attach,omitempty"`
+	Shell  string `json:"shell,omitempty"`
+	Cwd    string `json:"cwd,omitempty"`
+	Attach bool   `json:"attach,omitempty"`
+	// Checkout is a branch to switch the session's checkout to (a host run
+	// with --web-controls). It waits for the running turn unless Interrupt is
+	// set: then the turn is stopped, the branch checked out and the turn's
+	// prompt run again on it.
+	Checkout  string `json:"checkout,omitempty"`
+	Interrupt bool   `json:"interrupt,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 

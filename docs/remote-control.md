@@ -77,6 +77,40 @@ checks each request against its own list again (an exact match after
 resolving symlinks, never a prefix), and the session checks trust once more
 where it runs.
 
+### Starting on a branch or in a worktree
+
+The advertisement says `features: ["worktree", "checkout"]`, and each directory
+lists the linked `worktrees` of its repository that live under the worktrees
+directory (`config.WorktreesDir`, `~/.vulnetix/worktrees` unless
+`BELAI_WORKTREES_DIR` says otherwise): `{path, branch, workspace}`, at most 32,
+`workspace` being the path relative to that directory. The list is read with
+`git worktree list` when the daemon advertises, and again after a start made
+or used one.
+
+A start request may name a `branch` and a `workspace`. Neither, or the branch
+the directory already has checked out and no workspace, starts in the directory
+as before. Otherwise the session runs in `<worktrees>/<workspace>`, by default
+`<owner>/<repo>/<branch with / as ->` from the origin remote (the checkout's
+name when origin is not a forge address):
+
+- The branch is held to the advertised shape and git's `check-ref-format`; the
+  workspace is one to four plain segments (`[A-Za-z0-9._-]`, never `.` or
+  `..`, at most 200 characters) and, symlinks resolved, stays under the
+  worktrees directory.
+- An existing workspace is used only when this repository lists it as a
+  worktree, its git common directory is the repository's, and it is on the
+  requested branch; otherwise the start is refused with what is there
+  (`workspace X is on branch Y`). A workspace alone takes whatever branch it is on.
+- A missing workspace is made with `git worktree add`; a branch the repository
+  lacks is fetched from origin first (`fetch --no-tags origin --
+  refs/heads/<branch>`) and created tracking `origin/<branch>`. Git's own
+  refusal (the branch is checked out in another worktree) is the reason.
+- Every git call is the hardened runner (no hooks, no fsmonitor, no file
+  transport, no prompt, the scrubbed environment) and the whole preparation is
+  bounded to two minutes. The worktree is trusted for the directory only, as a
+  teleport's is, and the session's trust check runs there.
+- A `pix-assistant` start ignores both and reads the directory as offered.
+
 ## How a session runs
 
 Each session is its own process, `belai rc-session`, started in the chosen
@@ -139,6 +173,9 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   by `sessionsync.CleanPrompt` in the daemon and again in the child, and admitted
   like a typed prompt; the page context is data, never instructions.
 - Web prompts sent while a turn runs wait their turn and show as queued.
+- **Switching branch.** With `--web-controls` the website may send a command
+  `{checkout: "<branch>"}` to switch the session's checkout (see
+  [Session controls from the web](#session-controls-from-the-web)).
 - It ends after `--idle` (default 30 minutes) without a prompt, when you press
   **Stop session** on the website, or when remote control stops.
 - **The command is the daemon's, not yours.** `belai rc-session` needs
@@ -231,6 +268,24 @@ a control rather than a prompt, and the keys work while the page has focus.
 - **What the transcript shows.** Every applied control writes a harness line
   (`web: caveman: on`), and the turn facts carry the current mode, model,
   guardrails, ask and caveman.
+- **Switch branch.** A command `{checkout: "<branch>"}` checks the branch out in
+  the session's directory through its git hygiene (`gitsync.Hygiene.Checkout`):
+  hardened, time-bounded git that refuses a name git would not take, uncommitted
+  tracked changes and a rebase, merge, cherry-pick, revert or bisect underway,
+  and never stashes or discards anything. A branch the repository lacks is
+  fetched from origin and created tracking it; git's own refusal (checked out in
+  another worktree) is the reason. Between turns it runs at once. During a turn
+  it is acknowledged `queued` and runs when the turn ends, before the next
+  prompt (a later switch replaces a waiting one). With `interrupt: true` the
+  repository is checked first, so a switch that would be refused leaves the turn
+  running; otherwise the turn is stopped (`turn_state` `interrupted`, the
+  session goes on), the branch checked out (`web: checked out <branch>`), and
+  the turn's prompt runs again on it as a user entry with `retry_of` the
+  interrupted turn's `turn_id` and the original's source. The interrupted turn
+  is left out of the conversation history. A switch git refuses after the
+  interrupt is acknowledged `refused` and nothing is retried. With git sync on,
+  the next turn syncs the new branch with origin's default branch as it would
+  after a commit.
 - **Language servers** start only when the web turns them on, in the directory
   the host trusts, with the same scrubbed environment, process group and
   refused edits as in the TUI. They are closed when the session is rebuilt or

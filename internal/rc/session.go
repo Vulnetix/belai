@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -63,6 +64,12 @@ type SessionOptions struct {
 	// Shell, when set, runs the shell lines the website sends (belai rc
 	// --web-shell). The lines arrive on Commands, so Commands must be set too.
 	Shell ShellRunner
+	// Checkout, when set, switches the session's checkout to the branch a web
+	// command names (RemoteCommand.Checkout, belai rc --web-controls), and
+	// CheckoutCheck says beforehand whether it would, so a switch that would be
+	// refused never interrupts a turn. They arrive on Commands too.
+	Checkout      CheckoutRunner
+	CheckoutCheck func(ctx context.Context, branch string) error
 	// Changed is called after the controls changed, with the new state (the
 	// syncer re-registers the session with it).
 	Changed func(json.RawMessage, bool)
@@ -87,6 +94,25 @@ type SessionOptions struct {
 	// turn's result and the paths its tools changed: the post-end test pass
 	// and auto-commit, each when its control is on.
 	AfterTurn func(ctx context.Context, prompt string, res run.Result, paths []string)
+}
+
+// CheckoutRunner switches a session's checkout to branch (gitsync
+// Hygiene.Checkout): the transcript line on success, the refusal otherwise,
+// both harness text.
+type CheckoutRunner func(ctx context.Context, branch string) (string, error)
+
+// checkoutTimeout bounds one branch switch, the fetch of a missing branch
+// included.
+const checkoutTimeout = 2 * time.Minute
+
+// lastTurn is what a turn ran with, so a branch switch that interrupts it can
+// run it again on the new branch.
+type lastTurn struct {
+	text        string
+	meta        map[string]any
+	tp          turnPlan
+	attachments []run.Attachment
+	turnID      string
 }
 
 // RunSession runs the dispatched prompt, then every web prompt addressed to
@@ -114,9 +140,10 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 	if o.Answers != nil {
 		bridge = newAskBridge(o.Log, o.Answers, o.AskWait)
 	}
-	// Commands carry web controls and, with a Shell runner, shell lines.
+	// Commands carry web controls, branch switches and, with a Shell runner,
+	// shell lines.
 	commands := o.Commands
-	if o.Controls == nil && o.Shell == nil {
+	if o.Controls == nil && o.Shell == nil && o.Checkout == nil {
 		commands = nil
 	}
 	shells := &shellQueue{}
@@ -158,6 +185,9 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 	// open is the plan review the web has not answered yet. It outlives the
 	// turn that wrote it and is answered while the session is idle.
 	var open *planReview
+	// retry is the turn a branch switch interrupted, run again before anything
+	// else waiting.
+	var retry *lastTurn
 	for {
 		if ctx.Err() != nil {
 			bridge.closePlanReview(open, "the session stopped")
@@ -169,9 +199,11 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		if bridge != nil && open != nil {
 			planAnswers = o.Answers.Answers()
 		}
-		if len(queue) > 0 {
+		switch {
+		case retry != nil:
+		case len(queue) > 0:
 			p, queue = queue[0], queue[1:]
-		} else {
+		default:
 			select {
 			case <-ctx.Done():
 				bridge.closePlanReview(open, "the session stopped")
@@ -228,6 +260,11 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
+				if c.Checkout != "" {
+					runCheckout(ctx, o, c, "")
+					resetIdle()
+					continue
+				}
 				applyCommand(ctx, o, c, true, bridge, shells, analyse, enqueue)
 				// A shell line is activity: a console left open on a sandbox
 				// keeps its session alive while it is in use.
@@ -237,56 +274,88 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 				continue
 			}
 		}
-		text := sessionsync.CleanPrompt(p.Content)
-		if text == "" {
-			if p.ID != "" {
-				o.Mirror.Ack(p.ID, sessionsync.AckRefused, "the prompt was empty after cleaning", "")
+		var text string
+		var meta map[string]any
+		var attachments []run.Attachment
+		if retry != nil {
+			// The interrupted turn again, on the branch just checked out: the
+			// same prompt, origin and attachments, recorded as a retry of it.
+			text, tp = retry.text, retry.tp
+			attachments = append(slices.Clone(retry.attachments), shells.drain()...)
+			meta = maps.Clone(retry.meta)
+			meta["retry_of"] = retry.turnID
+			retry = nil
+			o.Log.User(text, meta)
+			o.Mirror.Nudge()
+		} else {
+			text = sessionsync.CleanPrompt(p.Content)
+			if text == "" {
+				if p.ID != "" {
+					o.Mirror.Ack(p.ID, sessionsync.AckRefused, "the prompt was empty after cleaning", "")
+				}
+				continue
 			}
-			continue
+			// A leading "/" or "!" is plain prompt text: a prompt is never a slash
+			// command or a shell command. Session controls and shell lines arrive on
+			// their own channel (Commands): controls typed and parsed by
+			// sessionctl, shell lines checked and run by the ShellRunner.
+			meta = map[string]any{"source": "web", "dispatch_id": o.Dispatch}
+			if p.ID != "" {
+				meta = map[string]any{"source": "web", "remote_prompt_id": p.ID}
+			}
+			if p.Origin != "" {
+				meta = map[string]any{"source": p.Origin}
+			}
+			if p.Command != "" {
+				meta["command"] = p.Command
+			}
+			id := o.Log.User(text, meta)
+			if p.ID != "" {
+				o.Mirror.Ack(p.ID, sessionsync.AckAccepted, "", id)
+			}
+			o.Mirror.Nudge()
+			// Output of the composer's shell lines since the last turn rides on this
+			// one, exactly once. The console's lines never get here.
+			attachments = shells.drain()
 		}
-		// A leading "/" or "!" is plain prompt text: a prompt is never a slash
-		// command or a shell command. Session controls and shell lines arrive on
-		// their own channel (Commands): controls typed and parsed by
-		// sessionctl, shell lines checked and run by the ShellRunner.
-		meta := map[string]any{"source": "web", "dispatch_id": o.Dispatch}
-		if p.ID != "" {
-			meta = map[string]any{"source": "web", "remote_prompt_id": p.ID}
-		}
-		if p.Origin != "" {
-			meta = map[string]any{"source": p.Origin}
-		}
-		if p.Command != "" {
-			meta["command"] = p.Command
-		}
-		id := o.Log.User(text, meta)
-		if p.ID != "" {
-			o.Mirror.Ack(p.ID, sessionsync.AckAccepted, "", id)
-		}
-		o.Mirror.Nudge()
+		last := lastTurn{text: text, meta: maps.Clone(meta), tp: tp, attachments: attachments}
+		delete(last.meta, "retry_of")
 
-		// Output of the composer's shell lines since the last turn rides on this
-		// one, exactly once. The console's lines never get here.
-		attachments := shells.drain()
+		// The turn runs on its own context, so a branch switch can stop it
+		// without ending the session.
+		turnCtx, cancelTurn := context.WithCancel(ctx)
 		done := make(chan turnResult, 1)
 		go func() {
-			done <- runTurn(ctx, o, history, text, bridge, attachments, tp)
+			done <- runTurn(turnCtx, o, history, text, bridge, attachments, tp)
 		}()
 		// While the turn runs, later prompts wait their turn (FIFO) and the
-		// website shows them queued.
+		// website shows them queued; so does a branch switch that does not
+		// interrupt (the latest one wins).
 		var reply run.Turn
+		var pending *sessionsync.RemoteCommand
+		interrupted := false
+		finished := func(res turnResult) {
+			reply = res.turn
+			if res.plan != nil {
+				// The turn wrote a plan and offered it for review. An
+				// older review that is still open is superseded by it.
+				if open != nil && open.askID != res.plan.askID {
+					bridge.closePlanReview(open, "a newer plan replaced it")
+				}
+				open = res.plan
+			}
+		}
+		supersede := func() {
+			if pending != nil {
+				ackCheckout(o, pending.ID, sessionsync.AckRefused, "a later branch switch replaced this one")
+				pending = nil
+			}
+		}
 	wait:
 		for {
 			select {
 			case res := <-done:
-				reply = res.turn
-				if res.plan != nil {
-					// The turn wrote a plan and offered it for review. An
-					// older review that is still open is superseded by it.
-					if open != nil && open.askID != res.plan.askID {
-						bridge.closePlanReview(open, "a newer plan replaced it")
-					}
-					open = res.plan
-				}
+				finished(res)
 				break wait
 			case q, ok := <-prompts:
 				if !ok {
@@ -302,9 +371,51 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					commands = nil
 					continue
 				}
-				applyCommand(ctx, o, c, false, bridge, shells, analyse, enqueue)
+				if c.Checkout == "" {
+					applyCommand(ctx, o, c, false, bridge, shells, analyse, enqueue)
+					continue
+				}
+				if !c.Interrupt {
+					supersede()
+					if why := checkoutRefusal(ctx, o, c, false); why != "" {
+						ackCheckout(o, c.ID, sessionsync.AckRefused, why)
+						continue
+					}
+					pending = &c
+					ackCheckout(o, c.ID, sessionsync.AckQueued, "")
+					continue
+				}
+				// A turn that has just ended is not run again: the switch
+				// happens as it would between turns.
+				select {
+				case res := <-done:
+					finished(res)
+					supersede()
+					runCheckout(ctx, o, c, "")
+					break wait
+				default:
+				}
+				// A switch that would be refused leaves the turn running.
+				if why := checkoutRefusal(ctx, o, c, true); why != "" {
+					o.Log.System("web: branch switch to " + c.Checkout + " refused: " + why)
+					o.Mirror.Nudge()
+					ackCheckout(o, c.ID, sessionsync.AckRefused, why)
+					continue
+				}
+				cancelTurn()
+				res := <-done
+				finished(res)
+				interrupted = true
+				supersede()
+				if runCheckout(ctx, o, c, "; retrying the turn") {
+					r := last
+					r.turnID = res.turnID
+					retry = &r
+				}
+				break wait
 			}
 		}
+		cancelTurn()
 		if o.Controls != nil {
 			if err := o.Controls.Settle(); err != nil {
 				o.Log.System("web: the change could not be applied, the session keeps its previous setup: " + err.Error())
@@ -314,8 +425,13 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 				o.Changed(o.Controls.StateJSON(), o.Controls.Asks() && bridge != nil)
 			}
 		}
-		if reply.Role != "" {
+		// An interrupted turn is not history: its retry (or the next prompt)
+		// starts from where it began.
+		if reply.Role != "" && !interrupted {
 			history = append(history, run.Turn{Role: "user", Content: text}, reply)
+		}
+		if pending != nil {
+			runCheckout(ctx, o, *pending, "")
 		}
 		if !idle.Stop() {
 			select {
@@ -325,6 +441,62 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 		}
 		idle.Reset(o.Idle)
 	}
+}
+
+// checkoutRefusal is why the branch switch c cannot run, or "": it must be a
+// branch name alone, the session must take switches and, with check, the
+// repository must be ready for it now (CheckoutCheck).
+func checkoutRefusal(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, check bool) string {
+	switch {
+	case c.Line != "" || c.Key != "" || c.Command != "" || c.Shell != "":
+		return "a branch switch is one branch name"
+	case o.Checkout == nil:
+		return "this session does not switch branches from the web"
+	}
+	if check && o.CheckoutCheck != nil {
+		cctx, cancel := context.WithTimeout(ctx, checkoutTimeout)
+		defer cancel()
+		if err := o.CheckoutCheck(cctx, c.Checkout); err != nil {
+			return err.Error()
+		}
+	}
+	return ""
+}
+
+// runCheckout switches the session's branch for c now and reports it: a
+// harness line in the transcript and the ack, whose reason on success is the
+// summary with suffix. It reports whether the branch was checked out.
+func runCheckout(ctx context.Context, o SessionOptions, c sessionsync.RemoteCommand, suffix string) bool {
+	if why := checkoutRefusal(ctx, o, c, false); why != "" {
+		ackCheckout(o, c.ID, sessionsync.AckRefused, why)
+		return false
+	}
+	cctx, cancel := context.WithTimeout(ctx, checkoutTimeout)
+	defer cancel()
+	summary, err := o.Checkout(cctx, c.Checkout)
+	if err != nil {
+		o.Log.System("web: branch switch to " + c.Checkout + " refused: " + err.Error())
+		o.Mirror.Nudge()
+		ackCheckout(o, c.ID, sessionsync.AckRefused, err.Error())
+		return false
+	}
+	o.Log.System("web: " + summary)
+	o.Mirror.Nudge()
+	ackCheckout(o, c.ID, sessionsync.AckAccepted, summary+suffix)
+	return true
+}
+
+// ackCheckout acknowledges a branch switch with the controls' state, when the
+// session has controls.
+func ackCheckout(o SessionOptions, id, status, reason string) {
+	if o.AckCommand == nil {
+		return
+	}
+	var state json.RawMessage
+	if o.Controls != nil {
+		state = o.Controls.StateJSON()
+	}
+	o.AckCommand(id, status, reason, state)
 }
 
 // maxTurnPaths caps the changed paths one turn collects for auto-commit.
@@ -474,6 +646,8 @@ type turnPlan struct {
 type turnResult struct {
 	turn run.Turn
 	plan *planReview
+	// turnID is the id of the turn's turn_state lines.
+	turnID string
 }
 
 // runTurn runs one turn between its turn_state lines.
@@ -485,6 +659,7 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		agentRunner, mode, asks = o.Controls.Runner(), o.Controls.Mode(), o.Controls.Asks()
 	}
 	o.Log.TurnStarted(facts)
+	turnID := o.Log.TurnID()
 	o.Mirror.Nudge()
 	var paths []string
 	seen := map[string]bool{}
@@ -594,10 +769,10 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 	opened := review
 	reviewMu.Unlock()
 	if err != nil {
-		return turnResult{plan: opened}
+		return turnResult{plan: opened, turnID: turnID}
 	}
 	if o.AfterTurn != nil && ctx.Err() == nil {
 		o.AfterTurn(ctx, text, res, paths)
 	}
-	return turnResult{turn: run.Turn{Role: "assistant", Content: res.Reply}, plan: opened}
+	return turnResult{turn: run.Turn{Role: "assistant", Content: res.Reply}, plan: opened, turnID: turnID}
 }

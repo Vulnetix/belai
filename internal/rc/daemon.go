@@ -153,6 +153,9 @@ type Options struct {
 	// Prefs reads the offered directories' preferences (localPrefs unless a
 	// test replaces it).
 	Prefs func([]Dir) map[string]DirPrefs
+	// Workspace prepares the directory a start request that names a branch or
+	// a workspace runs in (prepareWorkspace unless a test replaces it).
+	Workspace Workspacer
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -209,6 +212,9 @@ type Daemon struct {
 	schedErr map[string]string // per sync step, the last failure logged ("" when it works)
 	started  time.Time
 	wg       sync.WaitGroup
+	// worktreesChanged says a start used a worktree since the last
+	// advertisement, so the next heartbeat advertises the directories again.
+	worktreesChanged bool
 	// avatarSlot holds one token while an avatar is being drawn.
 	avatarSlot chan struct{}
 	// codeSlot holds a token for each teleport_code request being answered.
@@ -256,6 +262,9 @@ func New(o Options) (*Daemon, error) {
 	}
 	if o.Knowledge == nil {
 		o.Knowledge = localKnowledge
+	}
+	if o.Workspace == nil {
+		o.Workspace = prepareWorkspace
 	}
 	{
 		// The knowledge catalogue covers the offered directories, which only
@@ -379,7 +388,7 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
 		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings,
-		PixAssistant: true}
+		PixAssistant: true, Features: []string{sessionsync.FeatureWorktree, sessionsync.FeatureCheckout}}
 	if d.o.Controls {
 		for _, c := range sessionctl.Controls {
 			h.RC.ControlCatalogue = append(h.RC.ControlCatalogue, sessionsync.RCControl{
@@ -401,9 +410,11 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	}
 	d.mu.Lock()
 	d.catalog = inv.catalogueHash()
+	d.worktreesChanged = false
 	d.mu.Unlock()
 	for _, dir := range d.o.Dirs {
 		rd := dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
+		rd.Worktrees = dirWorktrees(ctx, dir.Path)
 		if p, ok := inv.Prefs[dir.Path]; ok {
 			rd.Prefs, rd.Effective = p.Prefs, p.Effective
 		}
@@ -435,10 +446,11 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 		}
 		inv := d.o.Inventory()
 		d.mu.Lock()
-		changed := inv.catalogueHash() != d.catalog
+		changed := inv.catalogueHash() != d.catalog || d.worktreesChanged
 		d.mu.Unlock()
 		if changed {
-			// A profile or crew was added, edited or removed: advertise again.
+			// A profile or crew was added, edited or removed, or a start used a
+			// worktree: advertise again.
 			d.register(ctx, inv)
 		}
 		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running(), inv.Workers)
@@ -724,6 +736,23 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 		return "", fmt.Sprintf("this host is already running %d of %d sessions", n, d.o.Max)
 	}
 	d.mu.Unlock()
+	// A branch or a workspace moves the session into a worktree of the
+	// directory's repository (workspace.go). A pix-assistant session reads
+	// the directory as offered and ignores both.
+	if !pix && (r.Branch != "" || r.Workspace != "") {
+		ctx, cancel := context.WithTimeout(context.Background(), workspaceTimeout)
+		dir, err := d.o.Workspace(ctx, cwd, r.Branch, r.Workspace)
+		cancel()
+		if err != nil {
+			return "", clip(err.Error())
+		}
+		if dir != cwd {
+			d.mu.Lock()
+			d.worktreesChanged = true
+			d.mu.Unlock()
+		}
+		cwd = dir
+	}
 
 	sid, err := session.NewID()
 	if err != nil {

@@ -912,6 +912,10 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	opts.AckCommand = syncer.AckCommand
 	opts.Changed = syncer.SetSessionControls
 	opts.Answers = syncer
+	// A branch switch from the web runs through the session's git hygiene:
+	// hardened, time-bounded git that refuses a dirty tree or an operation
+	// underway, and refreshes what the website shows of the repository.
+	opts.Checkout, opts.CheckoutCheck = gs.Checkout, gs.CanCheckout
 	if pick.Shell {
 		// A web control can turn guardrails off or change the mode, so a
 		// line is judged by the session's settings and posture as they are now.
