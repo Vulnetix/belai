@@ -188,11 +188,18 @@ func TestLockRemovedAfterStop(t *testing.T) {
 func TestLogGrepLineNumbersAndContext(t *testing.T) {
 	m := testManager(t)
 	entry, _ := m.Start("echo", "echo one && echo two && echo MATCH && echo four")
-	// The command exits quickly; logs are still open.
-	time.Sleep(200 * time.Millisecond)
-	out, err := m.LogGrep(entry.ID, "MATCH", 10, 1)
-	if err != nil {
-		t.Fatalf("LogGrep: %v", err)
+	// The command exits quickly, but its output reaches the log a little
+	// later under load: poll rather than trust one fixed sleep.
+	var out string
+	var err error
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		out, err = m.LogGrep(entry.ID, "MATCH", 10, 1)
+		if err != nil {
+			t.Fatalf("LogGrep: %v", err)
+		}
+		if strings.Contains(out, "four") || time.Now().After(deadline) {
+			break
+		}
 	}
 	if !strings.Contains(out, fmt.Sprintf("%s:3: MATCH", entry.ID)) {
 		t.Fatalf("expected MATCH line, got %q", out)
