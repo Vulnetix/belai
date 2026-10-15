@@ -894,8 +894,11 @@ func (s *Syncer) inbox(ctx context.Context) {
 				}
 			} else if !s.opts.RemoteCommands {
 				reason := "this host does not take session controls from the web"
-				if c.Command != "" {
+				switch {
+				case c.Command != "":
 					reason = "this host does not take slash commands from the web (belai rc --web-controls)"
+				case c.Checkout != "":
+					reason = "this host does not switch branches from the web (belai rc --web-controls)"
 				}
 				s.AckCommand(c.ID, AckRefused, reason, nil)
 				continue
