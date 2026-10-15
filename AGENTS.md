@@ -1432,7 +1432,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   That log holds harness lines and the worker process's stderr only; nothing
   may write model output or item text to it. An offered directory carries only
   identifier-shaped git facts read from its files (`rc/dirgit.go`: owner/repo,
-  forge host and kind, branch, default branch), never a URL or a credential. A
+  forge host and kind, branch, default branch, and the linked worktrees under
+  `config.WorktreesDir` as a path rebuilt from a checked workspace), never a URL
+  or a credential. A start's `branch` and `workspace` (`rc/workspace.go`) move
+  the session only into a worktree of the offered directory's repository under
+  `config.WorktreesDir`: the branch passes the advertised shape and
+  `check-ref-format`, the workspace is at most four plain segments that stay
+  under that directory with symlinks resolved, an existing one is used only
+  when the repository lists it as its worktree with the same common dir and on
+  that branch, git is the hardened runner under a time bound, and the worktree
+  is trusted for that directory only. A pix-assistant start ignores both. A
   `library_sync` request runs one pass of the automatic library sync and is
   acknowledged with counts only. A website `pause` or `resume`
   request names a worker id only: the daemon accepts it when it has the shape
@@ -1459,7 +1468,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and an unanswered ask is denied after `rc.DefaultAskWait`. Ask off mirrors
   `f4` (`AskDisabled`), so it is part of the same opt-in. Each applied control
   writes a harness-composed transcript line and its ack carries the state;
-  refusal reasons are harness text. Auto-commit commits only the paths a
+  refusal reasons are harness text. A web branch switch
+  (`RemoteCommand.Checkout`, same opt-in) runs only through
+  `gitsync.Hygiene.Checkout`: a checked branch name, refused on a dirty tree or
+  an operation underway, never a stash, reset or discard; an interrupting one
+  is checked first so a refusal never stops the turn, and the retried prompt is
+  the interrupted turn's own text, admitted again. Auto-commit commits only the paths a
   completed goal's tools changed through `forge.CommitPaths`, and the post-end
   test pass is `headless.RunPostEnd` under the session's gates.
 - **Web project settings write the host's preferences only.**

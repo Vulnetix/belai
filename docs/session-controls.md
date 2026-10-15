@@ -25,6 +25,15 @@ because both are parsed by one table (`internal/sessionctl`).
 
 `/model` and `/lsp` with no argument still open their screens.
 
+A web session also takes a **branch switch**, which is not a row of the table
+because it is no setting: the website sends `{checkout: "<branch>"}` and the
+host checks the branch out through the session's git hygiene, refusing a dirty
+tree or an operation underway. It waits for a running turn unless the command
+says `interrupt: true`; then the turn is stopped (it ends `interrupted`), the
+branch checked out and the turn's prompt run again, its user entry carrying
+`retry_of`. A switch that would be refused never stops the turn. See
+[remote-control.md](remote-control.md#session-controls-from-the-web).
+
 ## What a control changes
 
 A control changes this session only. Auto-commit, decisions, tests, language
