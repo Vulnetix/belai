@@ -7,6 +7,7 @@ package turnlog
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/vulnid"
@@ -202,6 +204,19 @@ func (l *Log) Observe(e agent.Event) {
 		if e.Warning != "" {
 			l.w.System(e.Warning)
 		}
+	case agent.EventRetryKind:
+		// A retried model call is a harness fact the transcript keeps, so a
+		// turn that later fails shows what was tried: the count and one
+		// cleaned, capped line of why.
+		line := fmt.Sprintf("retrying the model call (%d", e.RetryAttempt)
+		if e.RetryMax > 0 {
+			line += fmt.Sprintf("/%d", e.RetryMax)
+		}
+		line += ")"
+		if e.RetryReason != "" {
+			line += ": " + sanitize.Line(e.RetryReason, 200)
+		}
+		l.w.System(line)
 	case agent.EventAskDecidedKind:
 		// An ask the decision model answered in the user's place: a harness
 		// line of kind, outcome and confidence, never the question.

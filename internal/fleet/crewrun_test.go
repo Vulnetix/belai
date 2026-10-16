@@ -13,6 +13,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionctl"
@@ -367,5 +368,42 @@ func TestDemandCountsClaimableCards(t *testing.T) {
 	n, err := store.Demand(kanban.ClaimRequest{Labels: []string{"build"}, Profile: "p", Worker: "w", Lease: time.Minute})
 	if err != nil || n != 2 {
 		t.Fatalf("demand %d, %v", n, err)
+	}
+}
+
+// A run's worker records each fault in the run's crew log: a code, and the
+// harness note as its one cleaned detail; the audit mirror carries the code
+// only, never the note.
+func TestARunWorkerFaultReachesTheCrewLog(t *testing.T) {
+	store, reg := testEnv(t)
+	repo := gitRepo(t)
+	cr, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: repo}}, Members: members("t-patcher", 1)}, nil)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(context.Context, Turn) (run.Result, error) {
+		return run.Result{StopReason: run.StopError}, &run.ProviderError{Status: 401, Body: "bad key \x1b[31msecret-ish"}
+	})
+	w.Repo, w.Record.Run, w.Record.Crew = repo, cr.ID, "c"
+	findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	gd, _ := config.GlobalDir()
+	dir := crewlog.Dir(gd, cr.ID)
+	faults, err := crewlog.ReadFaults(dir, crewlog.Filter{})
+	if err != nil || len(faults) != 1 || faults[0].Class != FaultAuth || faults[0].Status != 401 || strings.ContainsRune(faults[0].Detail, '\x1b') {
+		t.Fatalf("faults %+v, %v", faults, err)
+	}
+	entries, _ := crewlog.ReadEntries(dir, crewlog.Filter{Kind: "worker.fault"})
+	if len(entries) != 1 || entries[0].Data["class"] != FaultAuth {
+		t.Fatalf("entries %+v", entries)
+	}
+	for _, e := range entries {
+		for _, v := range e.Data {
+			if strings.Contains(v, "bad key") {
+				t.Fatal("the audit mirror carries error text")
+			}
+		}
+	}
+	if bad, err := crewlog.Verify(dir); bad != -1 || err != nil {
+		t.Fatalf("chain broken at %d: %v", bad, err)
 	}
 }

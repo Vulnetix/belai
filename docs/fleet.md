@@ -470,6 +470,80 @@ security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
 (the builder) and Isadora Pell (the reviewer). See
 [Built-in personas](agent-profiles.md#built-in-personas).
 
+### Crew runs: one crew over a scope of directories
+
+`belai agent start -crew CREW` launches a **crew run**: the crew once, over
+the directories it is given, not once per repository. Each `-dir PATH[:WEIGHT]`
+adds a directory to its scope (repeatable; the default is the repository you
+are in), and the crew shares its members' workers between them:
+
+```sh
+belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/src/docs:1 \
+  -model anthropic/claude-sonnet-5-5 -fallback openai/gpt-5 -fallback-after 3 -probe 600
+```
+
+- **The run file is the crew's settings.** A launch writes
+  `~/.vulnetix/belai/agents/run/crews/<run>.json`: the scope and each
+  directory's weight, the members and their replicas, the primary model, the
+  effort, the fallback chain, `max_workers`, and whether the run stays. The
+  [control room](#the-control-room) edits the same file while the crew runs;
+  every edit is numbered (`seq`) and says who made it.
+- **A supervisor allocates the work.** `belai agent supervise -run ID`, started
+  detached by the launch, counts every member profile's claimable cards in
+  each directory every five seconds and shares the member's replicas between
+  the unpaused directories in proportion to weight × claimable cards (largest
+  remainder; a tie goes to the heavier directory). A profile with no work
+  anywhere is spread by weight alone, so a scout still surveys. The total is
+  cut to `max_workers`, dropping the slots with the least work per worker
+  first. Missing workers are started, and surplus ones are drained (they finish
+  the card in hand, then leave), idle ones first and none younger than a
+  minute, so the crew follows the work without thrashing.
+- **A worker still runs in one repository at a time.** Each directory's
+  settings, posture, trust and MCP servers are its own, so the supervisor
+  moves a worker by draining it in one directory and starting one in another;
+  it never carries one repository's permissions into the next. Every
+  directory is trust-checked, and every member preflighted under that
+  directory's settings, at launch.
+- **One run per crew.** Launching a crew that is already running adds the new
+  directories to its scope (or resumes a paused one) instead; with nothing new
+  it is refused, unless `-fill`, which only confirms the supervisor keeps the
+  crew full. A run ends when it is stopped (`belai agent stop RUN`), or, unless
+  it stays (`-stay`), after a quiet window with nothing to claim anywhere in
+  its scope. Workers of a run never leave on their own quiet window: the
+  supervisor decides.
+- **Launch and the control room are one form.** Anything a launch sets, the
+  control room changes on the running crew, and the change applies at the
+  workers' next claim or round, never with a restart.
+
+### Live controls
+
+A running worker reads a typed control file beside its record
+(`<id>.control.json`) before every claim and every round: the model it runs
+on (`provider/model`), its effort, and whether to drain. The control room,
+`belai agent control`, the crew supervisor and the fallback policy write it;
+it holds fixed fields, never text the worker acts on. A model is resolved when
+the control is read, so one this host cannot run is refused, and the worker
+answers every control in `<id>.control.ack.json` (accepted, or refused with
+the reason). A model a person picked is pinned: the fallback policy leaves it
+until `-auto` hands it back.
+
+### Provider fallback
+
+Each model call is retried on its own (see [resilience](resilience.md)). An
+outage that outlasts those retries sends the card back uncounted and backs the
+worker off (15 seconds, doubling to five minutes). In a crew run with a
+fallback chain, `-fallback-after` outages in a row (default 3) move the worker
+to the next fallback this host can run instead, and it claims again at once.
+After `-probe` seconds on a fallback (default 600) it goes back to the primary
+for one card: if the provider recovered it stays, and one more outage sends it
+straight back. Every move is a `worker.fallback` fact in the audit and the
+crew log. Failures are classified by type and status, never by the provider's
+text: `provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429),
+`provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
+`provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
+`token_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
+`max_passes`, `incomplete`, `error` and `worker_failed` are not.
+
 ### The delivery crew
 
 Start it with `belai agent start -crew belai:delivery` or `/fleet`. It runs
@@ -977,9 +1051,13 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
 | `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME, `-crew` and `-prompt` is required |
+| `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-fallback P/M]… [-fallback-after N] [-probe SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-fallback` targets are tried in order; `-model` sets the run's primary. A running crew takes new directories into its scope |
+| `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, primary model |
+| `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the fallback policy |
+| `belai agent supervise -run ID` | a crew run's supervisor in the foreground; the launch starts it detached |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
-| `belai agent stop ID \| NAME \| -all` | stop workers, all at once, each with 45 seconds to commit its work in progress, push the branch (a worker that may publish) and hand its card back before it is killed; claims are released |
+| `belai agent stop ID \| NAME \| RUN \| -all` | a run id stops the crew run: its supervisor stops its workers. Otherwise, stop workers, all at once, each with 45 seconds to commit its work in progress, push the branch (a worker that may publish) and hand its card back before it is killed; claims are released |
 | `belai agent pause ID \| NAME` | finish the card in hand, then claim nothing until resumed |
 | `belai agent resume ID \| NAME` | take cards again |
 | `belai kanban add TITLE [-body TEXT \| -body-file FILE] [-list backlog\|review] [-label L] [-priority N] [-assignee NAME] [-depends K-…] [-project NAME] [-json]` | file an item. `-body-file` reads the details from a file and replaces `-body`; `-list` is `backlog` (default) or `review`, and anything else is refused; `-priority` runs -2 to 3; `-label` and `-depends` repeat. A card is not filed twice: when an unfinished card in the same project has the same title (compared ignoring case and extra spaces), the command prints that card's id marked `(already on the board)` and files nothing |
@@ -1012,7 +1090,7 @@ run id is reduced to an identifier). The directory is `0700` and holds two
 append-only `0600` JSONL files:
 
 - `faults.jsonl`: one line per worker or item failure: worker, profile, item,
-  session, repository, fault `class` (such as `auth` or `rate_limited`),
+  session, repository, fault `class` (a [fault code](#provider-fallback) such as `provider_auth` or `provider_rate_limit`),
   provider, model, HTTP status, retries, outcome and a `detail`. The detail is
   the only free text: it is cleaned to one line (control, escape and bidi
   runes removed) and capped at 240 bytes, and it never leaves this machine.

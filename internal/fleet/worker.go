@@ -336,7 +336,9 @@ func (w *Worker) Run(ctx context.Context) error {
 	reason, runErr := w.loop(ctx)
 	w.Record.State, w.Record.Item, w.Record.Stopped, w.Record.Reason = StateStopped, "", w.clock().UnixMilli(), reason
 	if runErr != nil {
-		w.Record.State, w.Record.Reason = StateFailed, runErr.Error()
+		w.Record.State, w.Record.Reason = StateFailed, sanitize.Line(runErr.Error(), 240)
+		w.Record.LastFault, w.Record.LastFaultAt = FaultWorker, w.clock().UnixMilli()
+		w.recordWorkerFault(runErr)
 		w.notify("worker_failed")
 	}
 	w.save()

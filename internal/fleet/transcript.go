@@ -6,6 +6,7 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/turnlog"
@@ -66,7 +67,9 @@ func (t *transcript) finish(res run.Result, err error) {
 	}
 	switch {
 	case err != nil:
-		t.log.System("worker turn ended: " + err.Error())
+		// One cleaned, capped line: a provider's body or a wrapped error can be
+		// long and carry control characters.
+		t.log.System("worker turn ended: " + sanitize.Line(err.Error(), 480))
 	default:
 		t.log.System(fmt.Sprintf("goal %s after %d passes", res.StopReason, res.Passes))
 	}
