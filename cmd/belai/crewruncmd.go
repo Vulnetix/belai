@@ -28,20 +28,20 @@ func (l *listFlag) Set(s string) error { *l = append(*l, s); return nil }
 // crewLaunch is what `agent start -crew` asks for: the same settings the
 // control room edits on a running crew.
 type crewLaunch struct {
-	crew                  string
-	dirs                  []string
-	trust                 bool
-	provider, model       string
-	effort                string
-	fallbacks             []string
-	fallbackAfter, probe  int
-	maxWorkers            int
-	stay, fill, webCtl    bool
-	stdout                io.Writer
-	startSupervisor       fleet.SupervisorStarter // nil starts `belai agent supervise`
-	registry              *fleet.Registry         // nil opens the default
-	checkDir              func(dir string, members []agentprofile.Member) error
-	waitForWorkers        time.Duration
+	crew                 string
+	dirs                 []string
+	trust                bool
+	provider, model      string
+	effort               string
+	fallbacks            []string
+	fallbackAfter, probe int
+	maxWorkers           int
+	stay, fill, webCtl   bool
+	stdout               io.Writer
+	startSupervisor      fleet.SupervisorStarter // nil starts `belai agent supervise`
+	registry             *fleet.Registry         // nil opens the default
+	checkDir             func(dir string, members []agentprofile.Member) error
+	waitForWorkers       time.Duration
 }
 
 // parseTarget reads "provider/model" or a bare model.
@@ -295,8 +295,12 @@ func agentControl(fs *flag.FlagSet, rest []string, stdout io.Writer) (int, error
 		c.Effort, c.Drain, c.Auto = *effort, c.Drain || *drain, *auto
 	}
 	ref := fs.Arg(0)
+	action := controlAction(*model, *effort, *drain, *auto)
 	if strings.HasPrefix(ref, "run-") {
 		ids, err := reg.ControlRun(ref, "", "human", set)
+		if run, gerr := reg.GetRun(ref); gerr == nil {
+			fleet.RecordControl(run.ID, run.Crew, action, "", map[string]string{"target": *model})
+		}
 		for _, id := range ids {
 			fmt.Fprintf(stdout, "%s  control written\n", id)
 		}
@@ -314,6 +318,7 @@ func agentControl(fs *flag.FlagSet, rest []string, stdout io.Writer) (int, error
 		if err != nil {
 			return 1, err
 		}
+		fleet.RecordControl(r.Run, r.Crew, action, "", map[string]string{"worker": r.ID, "target": *model})
 		fmt.Fprintf(stdout, "%s  control %d written; it applies before the next round\n", r.ID, c.Seq)
 	}
 	return 0, nil
@@ -329,6 +334,9 @@ func agentStopRun(id string, stdout io.Writer) (int, error) {
 	if err := reg.StopRun(id, "human", agentStopGrace); err != nil {
 		return 1, err
 	}
+	if run, err := reg.GetRun(id); err == nil {
+		fleet.RecordControl(run.ID, run.Crew, "stop", "", nil)
+	}
 	fmt.Fprintf(stdout, "%s stopping; its workers finish or hand back their cards\n", id)
 	return 0, nil
 }
@@ -338,4 +346,19 @@ func boolCode(err error) int {
 		return 1
 	}
 	return 0
+}
+
+// controlAction names a control for the crew log: a fixed word.
+func controlAction(model, effort string, drain, auto bool) string {
+	switch {
+	case drain:
+		return "drain"
+	case model != "":
+		return "model"
+	case effort != "":
+		return "effort"
+	case auto:
+		return "auto"
+	}
+	return "control"
 }

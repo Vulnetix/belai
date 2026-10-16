@@ -61,8 +61,8 @@ const (
 // rotateAt is the size past which a file rotates; tests lower it.
 var rotateAt int64 = 4 << 20
 
-// Fault is one worker or item failure. Class is a fault code (auth,
-// rate_limited, …); Detail is the only free text and is cleaned by Append.
+// Fault is one worker or item failure. Class is a fault code (provider_auth,
+// provider_rate_limit, …); Detail is the only free text and is cleaned by Append.
 type Fault struct {
 	At       int64  `json:"at,omitempty"`
 	Run      string `json:"run,omitempty"`

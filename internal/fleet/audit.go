@@ -6,7 +6,11 @@ import (
 	"strconv"
 
 	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/otel"
 )
 
 // The fleet's audit facts (internal/audit, docs/audit.md). Every value is a
@@ -17,7 +21,7 @@ import (
 
 // auditItem records a fact about a card this worker holds.
 func (w *Worker) auditItem(kind audit.Kind, it kanban.Item, f audit.Fact) {
-	if !audit.Enabled() {
+	if !audit.Enabled() && w.Record.Run == "" {
 		return
 	}
 	f.Kind, f.ActorKind = kind, audit.ActorAgent
@@ -34,7 +38,7 @@ func (w *Worker) auditItem(kind audit.Kind, it kanban.Item, f audit.Fact) {
 		f.SeenRef = it.SeenRef
 	}
 	f.Data = withData(f.Data, "worker", w.Record.ID)
-	audit.Emit(f)
+	w.emitFact(f)
 }
 
 // auditClaimed records that this worker claimed the card. The card's list is
@@ -47,7 +51,7 @@ func (w *Worker) auditClaimed(it kanban.Item) {
 // auditWorker records a fact about the worker itself. state is the word the
 // worker's record holds (paused, running, stopped, failed): never a reason.
 func (w *Worker) auditWorker(kind audit.Kind, state string) {
-	if !audit.Enabled() {
+	if !audit.Enabled() && w.Record.Run == "" {
 		return
 	}
 	f := audit.Fact{Kind: kind, ActorKind: audit.ActorAgent, Actor: w.Profile.Name, Crew: w.Record.Crew,
@@ -56,14 +60,14 @@ func (w *Worker) auditWorker(kind audit.Kind, state string) {
 	if state != "" {
 		f.Data["state"] = state
 	}
-	audit.Emit(f)
+	w.emitFact(f)
 }
 
 // auditCommit records the tip of the item's work: the branch head after the
 // harness committed what the model left, measured from the base the branch
 // started at. It says nothing when the branch changed no file.
 func (w *Worker) auditCommit(ctx context.Context, it kanban.Item, ws *Workspace, files int, outcome string) {
-	if !audit.Enabled() || ws == nil || !ws.Worktree || files <= 0 {
+	if (!audit.Enabled() && w.Record.Run == "") || ws == nil || !ws.Worktree || files <= 0 {
 		return
 	}
 	head, err := ws.Head(ctx)
@@ -79,7 +83,7 @@ func (w *Worker) auditCommit(ctx context.Context, it kanban.Item, ws *Workspace,
 // auditPublish records a draft pull request the harness opened for the item's
 // branch. The address is kept only as an https URL; anything else is dropped.
 func (w *Worker) auditPublish(it kanban.Item, ws *Workspace, pr string) {
-	if !audit.Enabled() {
+	if !audit.Enabled() && w.Record.Run == "" {
 		return
 	}
 	data := map[string]string{}
@@ -110,16 +114,126 @@ func withData(m map[string]string, k, v string) map[string]string {
 	return m
 }
 
-// auditFallback records a worker moving to a fallback target, or back to its
-// primary (streak 0).
-func (w *Worker) auditFallback(to Target, streak int) {
-	w.auditWorker(audit.Kind("worker.fallback"), "fallback")
-	_ = to
-	_ = streak
+// emitFact sends a fact to the audit (when sync records one) and, for a
+// worker of a crew run, to the run's crew log, which is kept on this machine
+// whether or not sync is on.
+func (w *Worker) emitFact(f audit.Fact) {
+	audit.Emit(f)
+	if w.Record.Run != "" {
+		appendEntry(w.Record.Run, f, w.Record.ID, w.Profile.Name)
+	}
 }
 
-// recordFault records a failed item in the audit and the crew log.
+// appendEntry mirrors a fact into a run's crew log.
+func appendEntry(run string, f audit.Fact, worker, profile string) {
+	l := openCrewLog(run)
+	if l == nil {
+		return
+	}
+	defer l.Close()
+	_ = l.AppendEntry(crewlog.Entry{Kind: string(f.Kind), Actor: f.Actor, ActorKind: f.ActorKind, Worker: worker, Profile: profile,
+		Item: f.ItemID, Session: f.SessionID, Repo: f.Repo, Outcome: f.Outcome, Data: f.Data})
+}
+
+// openCrewLog opens a run's crew log, nil when it cannot.
+func openCrewLog(run string) *crewlog.Log {
+	gd, err := config.GlobalDir()
+	if err != nil {
+		return nil
+	}
+	l, err := crewlog.Open(crewlog.Dir(gd, run))
+	if err != nil {
+		return nil
+	}
+	return l
+}
+
+// auditFallback records a worker moving to a fallback target, or back to its
+// primary to probe it (streak 0).
+func (w *Worker) auditFallback(to Target, streak int) {
+	if !audit.Enabled() && w.Record.Run == "" {
+		return
+	}
+	outcome := "fallback"
+	if streak == 0 {
+		outcome = "probe"
+	}
+	f := audit.Fact{Kind: audit.WorkerFallback, ActorKind: audit.ActorHarness, Actor: w.Profile.Name, Crew: w.Record.Crew,
+		Repo: w.Record.Project, Outcome: outcome, Data: map[string]string{"worker": w.Record.ID, "target": to.String()}}
+	if streak > 0 {
+		f.Data["retries"] = strconv.Itoa(streak)
+	}
+	w.emitFact(f)
+}
+
+// recordFault records a failed item: a worker.fault audit fact carrying only
+// its code, the fatal-fault counter, the crew log's fault line with the
+// harness's note as its one detail, and a notification for a fault that was
+// not the provider's.
 func (w *Worker) recordFault(it kanban.Item, o outcome) {
-	_ = it
-	_ = o
+	code := o.fault.Code
+	if code == "" {
+		code = FaultIncomplete
+		if o.blocked {
+			code = FaultError
+		}
+	}
+	state := "failed"
+	switch {
+	case o.transient:
+		state = "transient"
+	case o.blocked:
+		state = "blocked"
+	}
+	data := map[string]string{"class": code}
+	if o.fault.Status != 0 {
+		data["status"] = strconv.Itoa(o.fault.Status)
+	}
+	w.auditItem(audit.WorkerFault, it, audit.Fact{SessionID: w.Record.Session, Outcome: state, Data: data})
+	t := w.currentTarget()
+	otel.Add(otel.MetricWorkerFatal, 1, otel.S(otel.AttrAgentProfile, w.Profile.Name), otel.S(otel.AttrProvider, t.Provider),
+		otel.S(otel.AttrModel, t.Model), otel.S(otel.AttrErrorClass, code))
+	if w.Record.Run != "" {
+		if l := openCrewLog(w.Record.Run); l != nil {
+			_ = l.AppendFault(crewlog.Fault{Run: w.Record.Run, Crew: w.Record.Crew, Worker: w.Record.ID, Profile: w.Profile.Name,
+				Item: it.Short(), Session: w.Record.Session, Repo: w.Record.Project, Class: code, Provider: t.Provider, Model: t.Model,
+				Status: o.fault.Status, Retries: w.outages, Outcome: state, Detail: o.note})
+			l.Close()
+		}
+		if !o.transient {
+			w.notify(notify.EventCrewFault)
+		}
+	}
+}
+
+// recordWorkerFault records a worker that stopped on an error of its own.
+func (w *Worker) recordWorkerFault(err error) {
+	if !audit.Enabled() && w.Record.Run == "" {
+		return
+	}
+	code := classifyErr(err).Code
+	if code == FaultError {
+		code = FaultWorker
+	}
+	w.emitFact(audit.Fact{Kind: audit.WorkerFault, ActorKind: audit.ActorAgent, Actor: w.Profile.Name, Crew: w.Record.Crew,
+		Repo: w.Record.Project, Outcome: "failed", Data: map[string]string{"worker": w.Record.ID, "class": code}})
+	if w.Record.Run != "" {
+		if l := openCrewLog(w.Record.Run); l != nil {
+			_ = l.AppendFault(crewlog.Fault{Run: w.Record.Run, Crew: w.Record.Crew, Worker: w.Record.ID, Profile: w.Profile.Name,
+				Repo: w.Record.Project, Class: code, Outcome: "failed", Detail: err.Error()})
+			l.Close()
+		}
+	}
+}
+
+// RecordControl records a change made to a running crew (crew.control): in
+// the audit when sync records one, and in the run's crew log. action is a
+// fixed word (pause, drain, model, scope, move, priority, …); data holds
+// identifiers only.
+func RecordControl(run, crew, action, itemID string, data map[string]string) {
+	f := audit.Fact{Kind: audit.CrewControl, ActorKind: audit.ActorHuman, Crew: crew, ItemID: itemID, Outcome: action, Data: data}
+	audit.Emit(f)
+	if run != "" {
+		appendEntry(run, f, data["worker"], "")
+	}
 }
