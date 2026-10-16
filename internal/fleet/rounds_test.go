@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -283,5 +284,37 @@ func TestTheHarnessDoesNotCommitACacheLeftInTheWorktree(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if got.List == kanban.Review || !strings.Contains(got.LastNote(), "looks like a cache or build output") {
 		t.Fatalf("a cache was committed and sent on: %+v (%q)", got, got.LastNote())
+	}
+}
+
+// A provider outage costs the card nothing and must not cost the crew its
+// worker either: the card is not pinned as failed, the loop backs off, and the
+// same worker claims it again once the provider answers.
+func TestAWorkerClaimsTheCardAgainAfterAProviderOutage(t *testing.T) {
+	store, reg := testEnv(t)
+	calls := 0
+	w := newWorker(t, store, reg, quickPoll(), func(ctx context.Context, tt Turn) (run.Result, error) {
+		calls++
+		if calls == 1 {
+			return run.Result{StopReason: run.StopError}, errors.New(`provider returned 503: {"errors":[{"code":503,"message":"unavailable"}]}`)
+		}
+		return complete(ctx, tt)
+	})
+	w.Once = false
+	var waited []int
+	w.OutageDelay = func(streak int) time.Duration { waited = append(waited, streak); return 0 }
+	it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: []string{"build"}}, kanban.Provenance{})
+	rec, _ := runFor(t, w, 5*time.Second)
+	got, _ := store.Get(it.ID)
+	if calls != 2 || got.List == kanban.Backlog || got.Attempts > 1 || !slices.Equal(waited, []int{1}) {
+		t.Fatalf("calls=%d list=%s attempts=%d waited=%v record=%+v", calls, got.List, got.Attempts, waited, rec)
+	}
+}
+
+func TestOutageDelayDoublesToACap(t *testing.T) {
+	for streak, want := range map[int]time.Duration{1: 15 * time.Second, 2: 30 * time.Second, 3: time.Minute, 6: 5 * time.Minute, 20: 5 * time.Minute} {
+		if got := outageDelay(streak); got != want {
+			t.Errorf("outageDelay(%d) = %s, want %s", streak, got, want)
+		}
 	}
 }
