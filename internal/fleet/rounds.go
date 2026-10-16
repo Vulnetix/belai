@@ -60,6 +60,9 @@ func (w *Worker) maxRounds(it kanban.Item, ws *Workspace) int {
 // reports the finding and rounds remain, a feedback turn. nextRound is called
 // between turns so the token budget counts them together.
 func (w *Worker) runRounds(ctx context.Context, t Turn, nextRound func()) roundsResult {
+	// A control written while the card was claimed applies from its first
+	// round, and one written during a round from the next.
+	w.applyControl()
 	res, err := w.Runner(ctx, t)
 	rr := roundsResult{res: res, err: err, rounds: 1}
 	max := w.maxRounds(t.Item, t.Workspace)
@@ -88,6 +91,7 @@ func (w *Worker) runRounds(ctx context.Context, t Turn, nextRound func()) rounds
 		w.Record.Session = t.SessionID
 		w.save()
 		w.logf("%s: the scanner still reports %s; round %d of %d", t.Item.Short(), t.Item.Finding, t.Round, max)
+		w.applyControl()
 		res, err := w.Runner(ctx, t)
 		res.Passes += rr.res.Passes
 		rr.res, rr.err, rr.rounds = res, err, rr.rounds+1
