@@ -75,6 +75,26 @@ type Record struct {
 	Reason   string `json:"reason,omitempty"`
 	Log      string `json:"log,omitempty"`
 	Detached bool   `json:"detached,omitempty"`
+	// Run is the crew run this worker belongs to (crewrun.go).
+	Run string `json:"run,omitempty"`
+	// Provider, Model and Effort are what the next turn runs on: the start's,
+	// or the control room's or a fallback's since.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Effort   string `json:"effort,omitempty"`
+	// Fallback is the fallback target in use, "" on the primary.
+	Fallback string `json:"fallback,omitempty"`
+	// Outages counts the items in a row the provider sent back unworked;
+	// OutageUntil is when the worker claims again (unix ms).
+	Outages     int   `json:"outages,omitempty"`
+	OutageUntil int64 `json:"outage_until,omitempty"`
+	// LastFault is the code of the last failure (faults.go), LastFaultAt when.
+	LastFault   string `json:"last_fault,omitempty"`
+	LastFaultAt int64  `json:"last_fault_at,omitempty"`
+	// Draining is a worker asked to finish its card and leave.
+	Draining bool `json:"draining,omitempty"`
+	// TokensLive is the item in hand's token count so far.
+	TokensLive int `json:"tokens_live,omitempty"`
 }
 
 // Registry is the directory of worker records.
@@ -214,6 +234,8 @@ func (r *Registry) Remove(id string) error {
 	}
 	_ = os.Remove(r.pausePath(id))
 	_ = os.Remove(r.coordPath(id))
+	_ = os.Remove(r.controlPath(id))
+	_ = os.Remove(r.ackPath(id))
 	err := os.Remove(r.path(id))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -435,8 +457,10 @@ type SpawnOptions struct {
 	Exe, Repo string
 	Profile   string
 	Crew      string
-	// Provider and Model override the profile's model.
-	Provider, Model string
+	// Run is the crew run the worker belongs to.
+	Run string
+	// Provider and Model override the profile's model; Effort its effort.
+	Provider, Model, Effort string
 	// Stay keeps the worker waiting for work instead of exiting once the
 	// board has nothing left for it.
 	Stay bool
@@ -467,6 +491,12 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	args := []string{"agent", "run", "-id", id, "-detached"}
 	if o.Crew != "" {
 		args = append(args, "-crew", o.Crew)
+	}
+	if o.Run != "" {
+		args = append(args, "-run", o.Run)
+	}
+	if o.Effort != "" {
+		args = append(args, "-effort", o.Effort)
 	}
 	if o.Provider != "" {
 		args = append(args, "-provider", o.Provider)
@@ -534,7 +564,7 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	_ = os.MkdirAll(r.dir, 0o700)
 	if release, err := config.AcquireFileLock(filepath.Join(r.dir, ".lock")); err == nil {
 		if _, err := r.Get(id); err != nil {
-			_ = r.Save(Record{ID: id, Profile: o.Profile, Crew: o.Crew, PID: pid, Repo: o.Repo,
+			_ = r.Save(Record{ID: id, Profile: o.Profile, Crew: o.Crew, Run: o.Run, PID: pid, Repo: o.Repo,
 				State: StateStarting, Started: r.now().UnixMilli(), Log: logFile.Name(), Detached: true})
 		}
 		release()

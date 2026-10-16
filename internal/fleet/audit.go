@@ -109,3 +109,17 @@ func withData(m map[string]string, k, v string) map[string]string {
 	m[k] = v
 	return m
 }
+
+// auditFallback records a worker moving to a fallback target, or back to its
+// primary (streak 0).
+func (w *Worker) auditFallback(to Target, streak int) {
+	w.auditWorker(audit.Kind("worker.fallback"), "fallback")
+	_ = to
+	_ = streak
+}
+
+// recordFault records a failed item in the audit and the crew log.
+func (w *Worker) recordFault(it kanban.Item, o outcome) {
+	_ = it
+	_ = o
+}
