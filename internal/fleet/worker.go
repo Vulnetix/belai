@@ -149,6 +149,10 @@ type Worker struct {
 	// Jev runs the delivery relevance jobs; nil builds it from Cfg on first use,
 	// and with no decision backend configured no job runs.
 	Jev *jev.Jobs
+	// OutageDelay is how long the loop waits before claiming again after the
+	// provider made the last streak-th item in a row come back unworked; nil
+	// uses outageDelay.
+	OutageDelay func(streak int) time.Duration
 	// Fast is the fast-tier classifier for the delivery roles (gate_draft,
 	// delivery_report); nil builds it from Cfg and Client on first use.
 	Fast     rolemanager.Classifier
@@ -170,6 +174,7 @@ type Worker struct {
 	fastOnce   sync.Once
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
+	outages    int              // consecutive items released because the model provider was unavailable
 	coordMu    sync.Mutex
 	coord      coordState // the forge coordinator's answer for the item in hand
 }
@@ -452,6 +457,20 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		if maxItems > 0 && n >= maxItems {
 			return fmt.Sprintf("worked max_items (%d)", maxItems), nil
+		}
+		if w.outages > 0 {
+			// The provider is down, not the card: wait it out and claim the
+			// same card again, instead of hammering a failing endpoint or
+			// leaving the crew idle until the quiet window ends it.
+			d := outageDelay(w.outages)
+			if w.OutageDelay != nil {
+				d = w.OutageDelay(w.outages)
+			}
+			w.logf("model provider unavailable (%d in a row); claiming again in %s", w.outages, d.Round(time.Second))
+			if !sleep(ctx, d) {
+				return "stopped", nil
+			}
+			quietSince = w.clock()
 		}
 		if isCron {
 			// A scheduled worker works one item per tick.
@@ -1209,17 +1228,25 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		w.Record.Done++
 	}
 	released, err := w.Store.Release(it.ID, w.Record.ID, out)
-	if o.failed {
+	w.mu.Lock()
+	switch {
+	case o.failed && o.transient:
+		// The provider failed, not the card: it stays claimable, and the loop
+		// backs off before the next claim.
+		w.outages++
+	case o.failed:
 		// Skip it until someone else touches it: a move or an assignment
 		// after this release is a deliberate retry.
 		at := int64(math.MaxInt64)
 		if err == nil {
 			at = released.Updated
 		}
-		w.mu.Lock()
 		w.failures[it.ID] = at
-		w.mu.Unlock()
+		w.outages = 0
+	default:
+		w.outages = 0
 	}
+	w.mu.Unlock()
 	if err != nil {
 		w.logf("%s: release: %v", it.Short(), err)
 		return it
@@ -1238,6 +1265,17 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	w.Record.Item = ""
 	w.save()
 	return released
+}
+
+// outageDelay is the wait after the streak-th consecutive provider outage:
+// 15 s doubling to 5 min. The per-call retries (docs/resilience.md, L1 and L2)
+// cover a blip; this covers an outage that outlasts them.
+func outageDelay(streak int) time.Duration {
+	d := 15 * time.Second
+	for i := 1; i < streak && d < 5*time.Minute; i++ {
+		d *= 2
+	}
+	return min(d, 5*time.Minute)
 }
 
 // publish pushes the item's branch and opens a draft pull request.
