@@ -46,13 +46,20 @@ const (
 	// goal loop ended (run.StopReason: complete, stalled, …).
 	AttrAgentProfile = "belai.agent.profile"
 	AttrStopReason   = "belai.stop_reason"
+	// AttrErrorClass is a fault code (auth, rate_limited, …), never error text.
+	AttrErrorClass = "belai.error.class"
 )
+
+// MetricWorkerFatal counts fleet worker items that ended on a fatal fault,
+// labelled by AttrAgentProfile, AttrProvider, AttrModel and AttrErrorClass.
+const MetricWorkerFatal = "belai.worker.fatal"
 
 var allowedAttrs = map[string]bool{
 	AttrMode: true, AttrOutcome: true, AttrPasses: true, AttrProvider: true,
 	AttrModel: true, AttrRole: true, AttrEstimated: true,
 	AttrToolName: true, AttrToolKind: true, AttrDecision: true, AttrVerdict: true,
 	AttrHookEvent: true, AttrProjectKey: true, AttrAgentProfile: true, AttrStopReason: true,
+	AttrErrorClass: true,
 }
 
 // Allowed reports whether key may be exported.

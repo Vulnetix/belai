@@ -63,7 +63,7 @@ func TestTelemetryPageNamesOnlyAllowedAttributes(t *testing.T) {
 	for _, attr := range []string{
 		otel.AttrMode, otel.AttrOutcome, otel.AttrPasses, otel.AttrProvider, otel.AttrModel, otel.AttrRole,
 		otel.AttrEstimated, otel.AttrToolName, otel.AttrToolKind, otel.AttrDecision, otel.AttrVerdict,
-		otel.AttrHookEvent, otel.AttrProjectKey, otel.AttrAgentProfile, otel.AttrStopReason,
+		otel.AttrHookEvent, otel.AttrProjectKey, otel.AttrAgentProfile, otel.AttrStopReason, otel.AttrErrorClass,
 	} {
 		if !otel.Allowed(attr) {
 			t.Errorf("%s is not on the allowlist", attr)

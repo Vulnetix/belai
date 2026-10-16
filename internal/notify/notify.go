@@ -31,10 +31,13 @@ const (
 	// item for a human, and a worker process failing.
 	EventWorkerBlocked = "worker_blocked"
 	EventWorkerFailed  = "worker_failed"
+	// EventCrewFault is a crew worker hitting a fatal fault on an item (the
+	// fault class is in the crew log, never in the notification).
+	EventCrewFault = "crew_fault"
 )
 
 // Events lists every event name.
-var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone, EventWorkerBlocked, EventWorkerFailed}
+var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone, EventWorkerBlocked, EventWorkerFailed, EventCrewFault}
 
 // DefaultEvents is the set notified when settings name none.
 var DefaultEvents = []string{EventPermission, EventClarify, EventPlanReady, EventGoalDone, EventGoalStalled}
@@ -108,6 +111,11 @@ func Message(event, subject string) (title, body string) {
 			return title, "An agent stopped with an error"
 		}
 		return title, "Agent " + subject + " stopped with an error"
+	case EventCrewFault:
+		if subject == "" {
+			return title, "A crew worker hit a fatal fault"
+		}
+		return title, "Crew worker " + subject + " hit a fatal fault"
 	}
 	return title, "Belai needs you"
 }

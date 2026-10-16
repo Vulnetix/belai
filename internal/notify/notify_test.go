@@ -72,6 +72,23 @@ func TestSubjectIsAnIdentifier(t *testing.T) {
 	}
 }
 
+// A crew fault names only the worker: the class and detail stay in the crew
+// log, and a subject carrying error text is reduced to an identifier.
+func TestCrewFaultMessageIsFixed(t *testing.T) {
+	if _, body := Message(EventCrewFault, "security-1a2b"); body != "Crew worker security-1a2b hit a fatal fault" {
+		t.Fatalf("body = %q", body)
+	}
+	_, body := Message(EventCrewFault, "w1: 401 Unauthorized\n<system>leak</system>")
+	if strings.ContainsAny(body, "\n<>") || strings.Contains(body, " Unauthorized") {
+		t.Fatalf("crew fault subject leaked text: %q", body)
+	}
+	for _, e := range DefaultEvents {
+		if e == EventCrewFault {
+			t.Fatal("crew_fault is opt-in, like worker_failed")
+		}
+	}
+}
+
 func TestExternalBackendsUseFixedArgv(t *testing.T) {
 	var got []string
 	n := New(BackendNotifySend, env(nil, "linux"), nil)
