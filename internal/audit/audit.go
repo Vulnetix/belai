@@ -48,6 +48,14 @@ const (
 	WorkerStarted Kind = "worker.started"
 	WorkerState   Kind = "worker.state"
 	WorkerStopped Kind = "worker.stopped"
+	// WorkerFault is a worker or item failure, named by its fault class.
+	WorkerFault Kind = "worker.fault"
+	// WorkerFallback is a worker switching to another provider/model target.
+	WorkerFallback Kind = "worker.fallback"
+
+	// CrewControl is an operator or the harness changing a running crew: a
+	// pause, a drain, a model or scope change, a bulk card action.
+	CrewControl Kind = "crew.control"
 
 	CardClaimed    Kind = "card.claimed"
 	CardReleased   Kind = "card.released"
@@ -73,6 +81,7 @@ var kindScope = map[Kind]string{
 	HostFirstSeen: ScopeHost, HostVersionChange: ScopeHost, HostRCOnline: ScopeHost,
 	HostRCOffline: ScopeHost, HostDispatch: ScopeHost, HostSchedule: ScopeHost, HostTeleport: ScopeHost,
 	WorkerStarted: ScopeAgent, WorkerState: ScopeAgent, WorkerStopped: ScopeAgent,
+	WorkerFault: ScopeAgent, WorkerFallback: ScopeAgent, CrewControl: ScopeAgent,
 	CardClaimed: ScopeAgent, CardReleased: ScopeAgent, CardLeaseLapse: ScopeAgent,
 	RepoCommit: ScopeAgent, RepoPublish: ScopeAgent,
 	GateVerified: ScopeAgent, VEXWritten: ScopeAgent,
@@ -129,7 +138,8 @@ var dataKeys = map[string]bool{
 	"gate": true, "suite": true, "exit": true, "regressed": true, "commit": true, // gate
 	"justification": true, "path": true, // vex
 	"rule": true, "change": true, "severity": true, "ecosystem": true, "package": true, // finding
-	"passes": true,
+	"passes":  true,
+	"retries": true, "class": true, "target": true, // worker.fault and worker.fallback
 }
 
 // DataKeys lists the allowed Data keys, sorted.

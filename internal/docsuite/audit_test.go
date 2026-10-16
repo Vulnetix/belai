@@ -53,7 +53,7 @@ func TestEveryAuditKindIsDocumentedOnThePageAndTheSite(t *testing.T) {
 			t.Errorf("the website's audit list shows %s, which internal/audit does not define", k)
 		}
 	}
-	for _, m := range regexp.MustCompile("`((?:host|worker|card|repo|gate|vex|finding)\\.[a-z_]+)`").FindAllStringSubmatch(doc, -1) {
+	for _, m := range regexp.MustCompile("`((?:host|worker|crew|card|repo|gate|vex|finding)\\.[a-z_]+)`").FindAllStringSubmatch(doc, -1) {
 		if !want[m[1]] {
 			t.Errorf("docs/audit.md names %s, which internal/audit does not define", m[1])
 		}
