@@ -64,7 +64,7 @@ the harness read itself, and nothing else can be recorded.
 `package`, `passes`, `path`, `pr`, `previous`, `profile`, `reason`,
 `regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,
 `suite`, `target`, `to`, `version`, `worker`. `schedule` is a schedule's UUID.
-`class` is a fault code (`auth`, `rate_limited`, …), `retries` a count and
+`class` is a fault code (`provider_auth`, `provider_rate_limit`, …; see [fleet.md](fleet.md#provider-fallback)), `retries` a count and
 `target` a `provider/model` pair, all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it
 needs a line here and a change to `TestDataKeysAllowlist`.
 

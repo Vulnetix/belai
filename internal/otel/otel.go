@@ -46,7 +46,7 @@ const (
 	// goal loop ended (run.StopReason: complete, stalled, …).
 	AttrAgentProfile = "belai.agent.profile"
 	AttrStopReason   = "belai.stop_reason"
-	// AttrErrorClass is a fault code (auth, rate_limited, …), never error text.
+	// AttrErrorClass is a fault code (provider_auth, provider_rate_limit, …), never error text.
 	AttrErrorClass = "belai.error.class"
 )
 
