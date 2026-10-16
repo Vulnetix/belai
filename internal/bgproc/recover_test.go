@@ -3,7 +3,6 @@ package bgproc
 import (
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
@@ -25,7 +24,10 @@ func TestUnsafeTailDroppedStillRecovers(t *testing.T) {
 	if _, err := m.Start("false", "false"); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	eventually(func() bool {
+		p, ok := m.Lookup("p0")
+		return ok && p.State == StateRecovering
+	})
 
 	p, ok := m.Lookup("p0")
 	if !ok || p.State != StateRecovering {
