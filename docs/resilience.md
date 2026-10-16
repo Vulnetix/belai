@@ -163,6 +163,22 @@ Each retry event includes the budget of the layer that is retrying
 count against the fixed transport budget of 3. L2 retries count against
 `max_attempts`.
 
+## Fleet workers and provider outages
+
+L1 and L2 cover a blip. An outage that outlasts them ends the worker's turn with
+`provider returned 429/5xx`, and the fleet worker (`internal/fleet/worker.go`)
+treats that as the provider's failure, not the card's:
+
+- the card goes back where it was claimed from, uncounted as an attempt;
+- it is **not** pinned in the worker's skip list, so the same worker can claim
+  it again (a card the agent really failed is still skipped until touched);
+- the loop waits `outageDelay` (15 s doubling to 5 min, per consecutive
+  outage) before the next claim, resets the quiet window so the worker is not
+  retired as idle, and resets the streak on the first release that is not an
+  outage.
+
+`Once` and single-item runs return after the release as before.
+
 ## Configuration
 
 Retry budgets are configurable via `config.Settings.Resilience`:
