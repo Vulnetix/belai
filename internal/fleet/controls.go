@@ -108,6 +108,39 @@ func (c *WorkerControls) Apply(cmd sessionsync.RemoteCommand) (string, error) {
 	return ch.Summary + " (from the next turn)", nil
 }
 
+// SetTarget moves the next turn to provider/model (when model is set) and to
+// effort (when set), resolved now so a model this host cannot run is refused
+// here. The control room and the fallback policy use it; the web uses Apply.
+func (c *WorkerControls) SetTarget(provider, model, effort string) error {
+	cur := c.State()
+	next := cur.Clone()
+	if model != "" {
+		next.Provider, next.Model = provider, model
+	}
+	if effort != "" {
+		next.Effort = effort
+	}
+	c.mu.Lock()
+	cfg := c.cfg
+	c.mu.Unlock()
+	moved := next.Provider != cur.Provider || next.Model != cur.Model
+	if moved {
+		if c.Resolve == nil {
+			return errors.New("this worker cannot change its model")
+		}
+		nc, err := c.Resolve(next)
+		if err != nil {
+			return errors.New("the worker cannot run that model: " + err.Error())
+		}
+		cfg = nc
+	}
+	c.mu.Lock()
+	c.st, c.cfg = next, cfg
+	c.moved = c.moved || moved
+	c.mu.Unlock()
+	return nil
+}
+
 // Turn is what the next turn runs on: the settings with the controls overlaid,
 // the run config for the chosen model, and the posture (every rule ignored
 // when guardrails are off, which the host allowed).

@@ -12,12 +12,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
@@ -107,10 +107,12 @@ type Worker struct {
 	// sync.remote_prompts switch; off, the worker takes nothing from the web.
 	RemotePrompts bool
 	web           *webInbox
-	// Controls, when set, takes session controls from the web (belai rc
-	// --web-controls passed to the workers it starts): the model, effort,
-	// guardrails and caveman of the next turn (controls.go). nil takes none.
-	Controls *WorkerControls
+	// Controls holds the model, effort, guardrails and caveman of the next
+	// turn (controls.go). The control room and the fallback policy change it
+	// through the control file (control.go); the website only when
+	// WebControls is on (belai rc --web-controls). nil changes nothing.
+	Controls    *WorkerControls
+	WebControls bool
 	// Record is this worker's registry entry (ID, Profile, Crew set).
 	Record Record
 	// Once works at most one item (or finds none) and returns.
@@ -175,6 +177,13 @@ type Worker struct {
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 	outages    int              // consecutive items released because the model provider was unavailable
+	ctlSeq     int64            // the last control applied (control.go)
+	pinned     bool             // a human picked the model; the fallback policy leaves it
+	primary    Target           // the target the worker returns to from a fallback
+	fbIdx      int              // the next fallback to try
+	fbSince    time.Time        // when the worker moved to its fallback
+	crewRun    *CrewRun         // the crew run as last read
+	liveTokens atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
 	coordMu    sync.Mutex
 	coord      coordState // the forge coordinator's answer for the item in hand
 }
@@ -208,6 +217,7 @@ func (w *Worker) save() {
 		return
 	}
 	w.Record.Beat = w.clock().UnixMilli()
+	w.Record.TokensLive = int(w.liveTokens.Load())
 	if err := w.Registry.Save(w.Record); err != nil {
 		w.logf("registry: %v", err)
 	}
@@ -282,6 +292,8 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.Record.Project, _ = kanban.ProjectFor(w.Repo)
 	w.Record.State = StateIdle
 	w.Record.Started = w.clock().UnixMilli()
+	w.syncTarget()
+	w.primary = w.currentTarget()
 	if w.Registry != nil {
 		max := w.Settings.MaxWorkers()
 		if w.MaxWorkers > 0 {
@@ -316,7 +328,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			w.web = &webInbox{mirror: w.mirror, facts: w.profileFacts}
 			go w.web.run(ctx)
 		}
-		if w.Controls != nil {
+		if w.Controls != nil && w.WebControls {
 			w.mirror.SetSessionControls(w.Controls.StateJSON(), false)
 			go w.runControls(ctx, w.mirror)
 		}
@@ -379,6 +391,14 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if cur, err := agentprofile.Load(p.Name); !p.Ephemeral && err == nil && ProfileHash(cur) != w.Record.ProfileHash {
 			return "the profile changed; restart the worker to use the new definition", nil
 		}
+		w.applyControl()
+		if w.Record.Draining {
+			return "drained: asked to finish its card and leave", nil
+		}
+		if why := w.refreshRun(); why != "" {
+			return why, nil
+		}
+		w.probeStep()
 		if w.Registry != nil && w.Registry.Paused(w.Record.ID) {
 			if w.Record.State != StatePaused {
 				w.logf("paused: claiming nothing until resumed")
@@ -458,7 +478,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if maxItems > 0 && n >= maxItems {
 			return fmt.Sprintf("worked max_items (%d)", maxItems), nil
 		}
-		if w.outages > 0 {
+		if w.outages > 0 && !w.fallbackStep() {
 			// The provider is down, not the card: wait it out and claim the
 			// same card again, instead of hammering a failing endpoint or
 			// leaving the crew idle until the quiet window ends it.
@@ -466,10 +486,13 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			if w.OutageDelay != nil {
 				d = w.OutageDelay(w.outages)
 			}
-			w.logf("model provider unavailable (%d in a row); claiming again in %s", w.outages, d.Round(time.Second))
+			w.logf("model provider unavailable (%d in a row on %s); claiming again in %s", w.outages, w.currentTarget(), d.Round(time.Second))
+			w.Record.OutageUntil = w.clock().Add(d).UnixMilli()
+			w.save()
 			if !sleep(ctx, d) {
 				return "stopped", nil
 			}
+			w.Record.OutageUntil = 0
 			quietSince = w.clock()
 		}
 		if isCron {
@@ -669,12 +692,18 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		lease := p.LeaseDuration()
 		t := time.NewTicker(lease / 3)
 		defer t.Stop()
+		// The heartbeat carries the item's running token count to the
+		// control room between renewals.
+		beat := time.NewTicker(10 * time.Second)
+		defer beat.Stop()
 		for {
 			select {
 			case <-renewDone:
 				return
 			case <-itemCtx.Done():
 				return
+			case <-beat.C:
+				w.save()
 			case <-t.C:
 				if err := w.Store.Renew(it.ID, w.Record.ID, lease); errors.Is(err, kanban.ErrLeaseLost) {
 					cancel(errLeaseLost)
@@ -726,6 +755,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			tokens = tokBase + e.GoalState.TokensUsed
 			total := tokens
 			tokMu.Unlock()
+			w.liveTokens.Store(int64(total))
 			if b := p.Budget; b != nil && b.MaxTokensPerItem > 0 && total > b.MaxTokensPerItem {
 				cancel(errTokenBudget)
 			}
@@ -757,7 +787,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		if w.stopped(ctx, itemCtx, it, nil) {
 			return
 		}
-		w.release(ctx, it, outcome{failed: true, note: note})
+		w.release(ctx, it, outcome{failed: true, fault: Fault{Code: FaultWorkspace}, note: note})
 		return
 	}
 	w.Record.Branch = ws.Branch
@@ -1017,6 +1047,8 @@ func (w *Worker) workspace(ctx context.Context, it kanban.Item) (*Workspace, err
 type outcome struct {
 	failed  bool
 	blocked bool
+	// fault classifies a failure (faults.go); zero for a success.
+	fault Fault
 	// transient marks a failure that was the model provider's (rate limit, quota,
 	// outage): the item goes back where it came from and the attempt is not
 	// counted, because the item was not what failed. Anything committed stays on
@@ -1048,7 +1080,7 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error, clai
 	rec := recordedOutcome(claim, res, runErr, cause)
 	switch {
 	case errors.As(runErr, &withheld):
-		return outcome{failed: true, blocked: true, note: "item text withheld by the security classifier: " + withheld.Sentinel.Label() + "; a human must review it"}
+		return outcome{failed: true, blocked: true, fault: Fault{Code: FaultWithheld}, note: "item text withheld by the security classifier: " + withheld.Sentinel.Label() + "; a human must review it"}
 	case res.StopReason == run.StopComplete && runErr == nil:
 		o.note = fmt.Sprintf("agent %s completed it (%d passes)", w.Profile.Name, res.Passes)
 		return o
@@ -1073,9 +1105,8 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error, clai
 		return o
 	}
 	o.failed = true
-	if runErr != nil && transientProviderError(runErr) {
-		o.transient = true
-	}
+	o.fault = classifyFault(runErr, cause, res.StopReason)
+	o.transient = o.fault.Outage
 	why := string(res.StopReason)
 	switch {
 	case cause != nil && !errors.Is(cause, context.Canceled):
@@ -1127,14 +1158,6 @@ func recordSettled(res run.Result, runErr, cause error) bool {
 
 	return cause == nil && res.StopReason == run.StopMaxPasses
 }
-
-// providerOutage matches the error a worker turn ends with when the provider
-// refused a call: rate limit or quota (429) or a server error.
-var providerOutage = regexp.MustCompile(`provider returned (429|50[0-9])\b`)
-
-// transientProviderError reports whether err is the model provider refusing the
-// call for its own reasons, which says nothing about the item.
-func transientProviderError(err error) bool { return providerOutage.MatchString(err.Error()) }
 
 // routesToDone reports whether release would send a successful outcome to the
 // Done list, the one route after which the harness publishes the branch itself.
@@ -1232,7 +1255,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	switch {
 	case o.failed && o.transient:
 		// The provider failed, not the card: it stays claimable, and the loop
-		// backs off before the next claim.
+		// backs off (or falls back) before the next claim.
 		w.outages++
 	case o.failed:
 		// Skip it until someone else touches it: a move or an assignment
@@ -1246,7 +1269,15 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	default:
 		w.outages = 0
 	}
+	w.Record.Outages = w.outages
+	w.liveTokens.Store(0)
+	if o.failed && o.fault.Code != "" {
+		w.Record.LastFault, w.Record.LastFaultAt = o.fault.Code, w.clock().UnixMilli()
+	}
 	w.mu.Unlock()
+	if o.failed {
+		w.recordFault(it, o)
+	}
 	if err != nil {
 		w.logf("%s: release: %v", it.Short(), err)
 		return it
@@ -1382,7 +1413,8 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	p := w.Profile
 	settings, cfg, pol := w.Settings, w.Cfg, w.Posture
 	if w.Controls != nil {
-		// The controls the web set apply from this turn.
+		// The controls set from the control room, the fallback policy or the
+		// web apply from this turn.
 		settings, cfg, pol = w.Controls.Turn(settings, cfg, pol)
 	}
 	// The pass ceiling is a copy: Resilience is a pointer shared with the

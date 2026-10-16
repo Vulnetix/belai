@@ -76,11 +76,22 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
                                  start detached workers; prints their ids
       -replicas N                workers of NAME or of the prompt (default 1)
       -trust-dir, -provider, -model, -stay, -drain as for run
+      -crew C                    one supervised crew run over its scope:
+        -dir PATH[:WEIGHT]       a directory in the scope (repeatable;
+                                 default this repository); a running crew
+                                 takes new directories into its scope
+        -fallback P/M            fallback targets, in order (repeatable)
+        -fallback-after N -probe SECS -effort E
+  runs [-all] [-json]            crew runs: scope, workers, primary model
+  control [-model P/M] [-effort E] [-drain] [-auto] ID|NAME|RUN
+                                 change running workers from the next round
+  supervise -run ID              a crew run's supervisor (started by start)
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
   pause ID|NAME                  finish the card in hand, then claim nothing
   resume ID|NAME                 take cards again
-  stop ID|NAME | -all            stop workers; their items go back to the board
+  stop ID|NAME|RUN | -all        stop workers or a crew run; their items go
+                                 back to the board
   status                         workers and this project's board
 
 A worker claims kanban items that match its profile, works each as a goal in
@@ -225,6 +236,16 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 
 	case "run":
 		return agentRun(ctx, fs, rest, stdout, stderr)
+	case "supervise":
+		return agentSupervise(ctx, fs, rest, stdout)
+	case "control":
+		return agentControl(fs, rest, stdout)
+	case "runs":
+		all := fs.Bool("all", false, "include ended crew runs")
+		if err := fs.Parse(rest); err != nil {
+			return 2, nil
+		}
+		return agentRuns(stdout, *all, *asJSON)
 	case "start":
 		return agentStart(ctx, fs, rest, stdout, stderr)
 	case "ps":
@@ -243,7 +264,10 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 	case "stop":
 		all := fs.Bool("all", false, "stop every worker")
 		if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1 && !*all) {
-			return 2, errors.New("usage: belai agent stop ID|NAME | -all")
+			return 2, errors.New("usage: belai agent stop ID|NAME|RUN | -all")
+		}
+		if strings.HasPrefix(fs.Arg(0), "run-") {
+			return agentStopRun(fs.Arg(0), stdout)
 		}
 		return agentStop(fs.Arg(0), *all, stdout)
 	case "pause", "resume":
@@ -322,6 +346,8 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	model := fs.String("model", "", "model override")
 	id := fs.String("id", "", "worker id (set by `agent start`)")
 	crew := fs.String("crew", "", "the crew this worker belongs to (set by `agent start`)")
+	runID := fs.String("run", "", "the crew run this worker belongs to (set by the crew supervisor)")
+	effort := fs.String("effort", "", "effort override (set by the crew supervisor)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
 	drain := fs.Bool("drain", false, "exit once nothing is left to claim even when the profile has a cron schedule")
@@ -384,6 +410,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	if cfg, err = withClassifier(cfg, settings, resolver); err != nil {
 		return 1, err
 	}
+	if *effort != "" {
+		cfg.Effort = *effort
+	}
 	store, err := kanban.OpenDefault()
 	if err != nil {
 		return 1, err
@@ -427,25 +456,25 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Profile: profile, Repo: repo, Settings: settings, Posture: pol,
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
 		Sessions: sessions, Sync: headless.SyncClient(settings, repo), RemotePrompts: settings.SyncRemotePromptsEnabled(),
-		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
+		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Run: *runID, Detached: *detached, Log: logPath(reg, workerID, *detached)},
 		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 		// A push handed to the forge coordinator is filed by belai rc, so only
 		// while one runs on this host.
 		Coordinator: func() bool { _, live := rc.ReadRecord(); return live },
 	}
-	if *webControls {
-		// The model, effort, guardrails and caveman of the next turn, from the
-		// website; a model is resolved when the control arrives, the way a
-		// remote session resolves one (rccmd.go).
-		w.Controls = fleet.NewWorkerControls(settings, cfg, rcControlEnv(cfg, *allowOff), func(st sessionctl.State) (run.Config, error) {
-			nc, err := run.ResolveWithSource(st.Model, st.Provider, os.Getenv, resolver)
-			if err != nil {
-				return run.Config{}, err
-			}
-			return withClassifier(nc, settings, resolver)
-		})
-	}
+	// The model, effort, guardrails and caveman of the next turn: from the
+	// control room and the crew's fallback policy always, from the website only
+	// with -web-controls. A model is resolved when the control arrives, the way
+	// a remote session resolves one (rccmd.go).
+	w.Controls = fleet.NewWorkerControls(settings, cfg, rcControlEnv(cfg, *allowOff), func(st sessionctl.State) (run.Config, error) {
+		nc, err := run.ResolveWithSource(st.Model, st.Provider, os.Getenv, resolver)
+		if err != nil {
+			return run.Config{}, err
+		}
+		return withClassifier(nc, settings, resolver)
+	})
+	w.WebControls = *webControls
 	if err := w.Run(ctx); err != nil {
 		return 1, err
 	}
@@ -521,8 +550,14 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	fill := fs.Bool("fill", false, "with -crew, start only the replicas the crew lacks in this repository")
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
+	var dirs, fallbacks listFlag
+	fs.Var(&dirs, "dir", "with -crew, a directory in the crew's scope, PATH or PATH:WEIGHT (repeatable; default this repository)")
+	fs.Var(&fallbacks, "fallback", "with -crew, a fallback provider/model when the provider keeps failing (repeatable, in order)")
+	effort := fs.String("effort", "", "with -crew, the workers' effort")
+	fallbackAfter := fs.Int("fallback-after", 0, "with -crew, outages in a row before a worker moves to the next fallback (default 3)")
+	probe := fs.Int("probe", 0, "with -crew, seconds on a fallback before a worker tries the primary again (default 600)")
 	adhoc := addAdhocFlags(fs)
-	const startUsage = "usage: belai agent start NAME [-replicas N] | -crew CREW [-fill] | -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
+	const startUsage = "usage: belai agent start NAME [-replicas N] | -crew CREW [-dir PATH[:WEIGHT]]... [-fallback P/M]... [-fill] | -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
 	if err := parseInterleaved(fs, rest); err != nil {
 		return 2, errors.New(startUsage)
 	}
@@ -544,6 +579,16 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	if *fill && *crewName == "" {
 		return 2, errors.New("-fill needs -crew")
+	}
+	if *crewName == "" && (len(dirs) > 0 || len(fallbacks) > 0 || *effort != "" || *fallbackAfter != 0 || *probe != 0) {
+		return 2, errors.New("-dir, -fallback, -effort, -fallback-after and -probe need -crew")
+	}
+	if *crewName != "" {
+		// A crew is one run over its scope, supervised: the same settings the
+		// control room edits while it runs.
+		return startCrewRun(crewLaunch{crew: *crewName, dirs: dirs, trust: *trust, provider: *providerName, model: *model,
+			effort: *effort, fallbacks: fallbacks, fallbackAfter: *fallbackAfter, probe: *probe, maxWorkers: *maxWorkers,
+			stay: *stay, fill: *fill, webCtl: *webControls, stdout: stdout, waitForWorkers: 8 * time.Second})
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
