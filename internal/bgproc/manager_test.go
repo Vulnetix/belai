@@ -34,7 +34,10 @@ func TestStartAndStop(t *testing.T) {
 	if err := m.Stop(p.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	eventually(func() bool {
+		_, ok := m.Lookup(p.ID)
+		return !ok
+	})
 	if _, ok := m.Lookup(p.ID); ok {
 		t.Fatal("stopped process should be removed")
 	}
@@ -188,19 +191,14 @@ func TestLockRemovedAfterStop(t *testing.T) {
 func TestLogGrepLineNumbersAndContext(t *testing.T) {
 	m := testManager(t)
 	entry, _ := m.Start("echo", "echo one && echo two && echo MATCH && echo four")
-	// The command exits quickly, but its output reaches the log a little
-	// later under load: poll rather than trust one fixed sleep.
 	var out string
-	var err error
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		out, err = m.LogGrep(entry.ID, "MATCH", 10, 1)
-		if err != nil {
+	eventually(func() bool {
+		var err error
+		if out, err = m.LogGrep(entry.ID, "MATCH", 10, 1); err != nil {
 			t.Fatalf("LogGrep: %v", err)
 		}
-		if strings.Contains(out, "four") || time.Now().After(deadline) {
-			break
-		}
-	}
+		return strings.Contains(out, "four")
+	})
 	if !strings.Contains(out, fmt.Sprintf("%s:3: MATCH", entry.ID)) {
 		t.Fatalf("expected MATCH line, got %q", out)
 	}
@@ -218,14 +216,15 @@ func TestTailAfterExit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
-
 	// A process that exits unexpectedly stays in the active map in the
 	// recovering state; Tail should still resolve it by name.
-	tail, err := m.Tail("echo", 10)
-	if err != nil {
-		t.Fatalf("Tail: %v", err)
-	}
+	var tail string
+	eventually(func() bool {
+		if tail, err = m.Tail("echo", 10); err != nil {
+			t.Fatalf("Tail: %v", err)
+		}
+		return strings.Contains(tail, "beta")
+	})
 	if !strings.Contains(tail, "alpha") || !strings.Contains(tail, "beta") {
 		t.Fatalf("tail = %q, want alpha and beta", tail)
 	}
@@ -238,7 +237,11 @@ func TestHistorySurvivesStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	// Stop only once alpha is in the log, so the tail below has it.
+	eventually(func() bool {
+		tail, _ := m.TailByID(p.ID, 10)
+		return strings.Contains(tail, "alpha")
+	})
 	if err := m.Stop(p.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
@@ -276,13 +279,24 @@ func TestTailByIDAndLogDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
-	tail, err := m.TailByID(p.ID, 10)
-	if err != nil {
-		t.Fatalf("TailByID: %v", err)
-	}
+	var tail string
+	eventually(func() bool {
+		if tail, err = m.TailByID(p.ID, 10); err != nil {
+			t.Fatalf("TailByID: %v", err)
+		}
+		return strings.Contains(tail, "hello log")
+	})
 	if !strings.Contains(tail, "hello log") {
 		t.Fatalf("tail = %q, want hello log", tail)
+	}
+}
+
+// eventually polls ok for up to five seconds. A process's output reaches its
+// log a little after it is written, later still under -race on a loaded
+// runner, so a test that reads a log waits for the line, not a fixed sleep.
+func eventually(ok func() bool) {
+	for deadline := time.Now().Add(5 * time.Second); !ok() && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
