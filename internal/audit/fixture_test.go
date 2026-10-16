@@ -63,6 +63,12 @@ func serverFixture(t *testing.T) *Recorder {
 		Verdict: "fixed", Outcome: "gone", Data: map[string]string{"change": "gone"}})
 	emit(Fact{Kind: WorkerState, ActorKind: ActorAgent, Actor: "belai:security", Repo: "belai", Outcome: "paused",
 		Data: map[string]string{"worker": "security-1a2b", "state": "paused"}})
+	emit(Fact{Kind: WorkerFallback, ActorKind: ActorHarness, Actor: "belai:security", Crew: "belai:security", Repo: "belai", Outcome: "switched",
+		Data: map[string]string{"worker": "security-1a2b", "target": "openai/gpt-5", "class": "rate_limited"}})
+	emit(Fact{Kind: WorkerFault, ActorKind: ActorHarness, Actor: "belai:security", Crew: "belai:security", ItemID: card, Repo: "belai", Outcome: "failed",
+		Data: map[string]string{"worker": "security-1a2b", "class": "auth", "status": "401", "retries": "2", "target": "openai/gpt-5"}})
+	emit(Fact{Kind: CrewControl, ActorKind: ActorHuman, Crew: "belai:security", Outcome: "drain",
+		Data: map[string]string{"state": "draining"}})
 	emit(Fact{Kind: WorkerStopped, ActorKind: ActorAgent, Actor: "belai:security", Repo: "belai", Outcome: "stopped",
 		Data: map[string]string{"worker": "security-1a2b", "state": "stopped"}})
 	emit(Fact{Kind: HostRCOffline, ActorKind: ActorHarness, Data: map[string]string{"reason": "stopped"}})

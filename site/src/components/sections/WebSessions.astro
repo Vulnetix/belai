@@ -76,6 +76,8 @@ const audit = [
   ['host.teleport', 'this host opened a session teleported in from another, naming the new session and the origin'],
   ['host.schedule', 'belai rc fired a stored schedule, skipped or was refused a run, or turned a schedule off'],
   ['worker.started · state · stopped', 'a worker started, was paused or resumed, and stopped'],
+  ['worker.fault · fallback', 'a worker or item failed, named by its fault class, or a worker switched provider/model target'],
+  ['crew.control', 'an operator or the harness paused, drained, re-modelled or re-scoped a running crew, or acted on its cards in bulk'],
   ['card.claimed · released', 'a worker took a card and handed it back, with the list it went to'],
   ['card.lease_lapsed', 'a claim ran out of lease and the card went back to its list'],
   ['repo.commit', 'the commit id Belai read from git, the base the branch started at and how many files changed'],

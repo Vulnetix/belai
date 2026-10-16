@@ -1004,6 +1004,37 @@ it stops, relaunches or restarts its machine.
 `-trust-dir` to trust it, as with `-prompt`. `-provider` and `-model`
 override the profile's model for that run.
 
+### Crew log
+
+The audit stream is deleted once it has uploaded, so each crew run also keeps
+a local record under `~/.vulnetix/belai/crews/<run>/` (`internal/crewlog`; the
+run id is reduced to an identifier). The directory is `0700` and holds two
+append-only `0600` JSONL files:
+
+- `faults.jsonl`: one line per worker or item failure: worker, profile, item,
+  session, repository, fault `class` (such as `auth` or `rate_limited`),
+  provider, model, HTTP status, retries, outcome and a `detail`. The detail is
+  the only free text: it is cleaned to one line (control, escape and bidi
+  runes removed) and capped at 240 bytes, and it never leaves this machine.
+  Every other field is an identifier reduced as the audit reduces one.
+- `audit.jsonl`: a crew-scoped mirror of the [audit](audit.md) facts, with
+  the same kinds and `data` keys, chained by SHA-256: each line carries `seq`,
+  `prev` (the previous line's `hash`) and `hash` (over the line's JSON without
+  `hash`).
+
+Workers and the harness append from separate processes under an advisory
+lockfile, each line in one write. A file past 4 MiB is renamed to `.1`, with
+three generations kept (`.1` to `.3`). A rotated file's chain ends with it:
+the new file's first line starts a new chain (empty `prev`) while `seq` keeps
+counting, so `-verify` checks the current file only.
+
+| Command | Effect |
+|---|---|
+| `belai crew log [-run ID \| -crew NAME] [-class C] [-worker W] [-limit N] [-json]` | the run's faults, newest last: time, worker, profile, item, class, status and detail. With no `-run` or `-crew` it reads the newest run; `-crew` picks the newest run of that crew |
+| `belai crew log -audit` | the run's audit entries instead: time, seq, kind, worker, item, outcome and data |
+| `belai crew log -follow` | keep printing new lines, polling every second |
+| `belai crew log -verify` | whether the current audit file's chain is intact, or the seq where it breaks (exit status 1) |
+
 ## In the TUI
 
 The `/agents` hub has four tabs, `1` to `4` or `tab` to move: **live** (agents

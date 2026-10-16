@@ -48,6 +48,9 @@ the harness read itself, and nothing else can be recorded.
 | host | `host.teleport` | this host opened a session teleported in from another (`belai -teleport`); the event names the new session, and `from` is the origin session |
 | host | `host.schedule` | `belai rc` fires, skips or refuses a stored schedule, updates it to `worked`/`drained`/`worker_failed`, or turns a schedule off because it cannot accept it |
 | agent | `worker.started`, `worker.state`, `worker.stopped` | a worker starts, is paused or resumed, and stops |
+| agent | `worker.fault` | a worker or the item it holds fails; `class` is the fault code, never the error text |
+| agent | `worker.fallback` | a worker switches to another provider/model `target` (such as `openai/gpt-5`) |
+| agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model or scope change, a bulk card action |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
 | agent | `repo.commit` | the tip of an item's work, or an auto-commit in the TUI |
@@ -56,11 +59,13 @@ the harness read itself, and nothing else can be recorded.
 | agent | `vex.written` | the harness writes the VEX for a verdict |
 | agent | `finding.carded`, `finding.reconciled` | the sweep files a finding card, or finds it gone or closed |
 
-`data` keys: `attempt`, `change`, `commit`, `dispatch`, `ecosystem`, `exit`,
+`data` keys: `attempt`, `change`, `class`, `commit`, `dispatch`, `ecosystem`, `exit`,
 `files`, `forge`, `from`, `gate`, `hops`, `justification`, `list`, `os`,
 `package`, `passes`, `path`, `pr`, `previous`, `profile`, `reason`,
-`regressed`, `rule`, `schedule`, `severity`, `state`, `status`, `suite`, `to`,
-`version`, `worker`. `schedule` is a schedule's UUID. Adding one is adding something that can leave the machine, so it
+`regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,
+`suite`, `target`, `to`, `version`, `worker`. `schedule` is a schedule's UUID.
+`class` is a fault code (`auth`, `rate_limited`, …), `retries` a count and
+`target` a `provider/model` pair, all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it
 needs a line here and a change to `TestDataKeysAllowlist`.
 
 A card links to a vulnerability (`vulnId`) only when it is a security card: one
