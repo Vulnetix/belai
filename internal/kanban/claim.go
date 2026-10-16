@@ -379,6 +379,22 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 	return out, err
 }
 
+// Demand counts the items r would claim now, without claiming or reaping:
+// what a crew supervisor weighs when it shares its workers between
+// repositories.
+func (s *Store) Demand(r ClaimRequest) (int, error) {
+	n := 0
+	err := s.read(func(b *Board) {
+		now := s.nowMs()
+		for _, it := range b.Items {
+			if r.matches(b, it, now) {
+				n++
+			}
+		}
+	})
+	return n, err
+}
+
 // ClaimID claims one named item. It must be in a claimable list, unclaimed,
 // have its dependencies done, and not be assigned to another profile.
 func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
