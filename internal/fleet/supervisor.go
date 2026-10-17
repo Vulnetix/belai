@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/notify"
 )
 
 // Slot is one place a crew run's workers go: a member profile in a
@@ -135,6 +136,10 @@ type Supervisor struct {
 	Grace    time.Duration
 	// MinTenure keeps a worker this long before it may be moved (default 1m).
 	MinTenure time.Duration
+	// Notify sends a notification about the crew (crew_sleeping when its
+	// pool failed, crew_stopped when the run ends on its own); nil sends
+	// nothing.
+	Notify func(event string)
 	// PID is this supervisor's process id (default os.Getpid()): the run
 	// names its supervisor, and one that finds another named stands down.
 	PID   int
@@ -145,6 +150,12 @@ type Supervisor struct {
 func (s *Supervisor) logf(format string, args ...any) {
 	if s.Log != nil {
 		fmt.Fprintf(s.Log, "%s %s\n", s.clock().Format(time.RFC3339), fmt.Sprintf(format, args...))
+	}
+}
+
+func (s *Supervisor) notify(event string) {
+	if s.Notify != nil {
+		s.Notify(event)
 	}
 }
 
@@ -488,6 +499,12 @@ func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
 	}
 	if action != "" {
 		recordPool(next, action)
+	}
+	switch {
+	case why != "":
+		s.notify(notify.EventCrewStopped)
+	case action == "pool_sleep":
+		s.notify(notify.EventCrewSleeping)
 	}
 	if why != "" {
 		if l := openCrewLog(run.ID); l != nil {

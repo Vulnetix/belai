@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionctl"
 )
@@ -334,9 +335,11 @@ func TestTheCrewSleepsRetriesOnceThenStops(t *testing.T) {
 	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1),
 		Pool: []Target{{"p1", "m1"}, {"p2", "m2"}}, FinalRetrySecs: 600}, nil)
 	now := time.Now()
+	var notified []string
 	s := &Supervisor{Registry: reg, Store: store, RunID: run.ID, Max: 8, now: func() time.Time { return now },
 		Demand: func(string, string) int { return 1 },
-		Spawn:  func(SpawnOptions) (string, error) { return "", errors.New("no") }}
+		Spawn:  func(SpawnOptions) (string, error) { return "", errors.New("no") },
+		Notify: func(e string) { notified = append(notified, e) }}
 	worker := func(epoch int, exhaustedAt, success int64) {
 		_ = reg.Save(Record{ID: "t-builder-aaaaaa", Profile: "t-builder", Run: run.ID, Repo: run.Scope[0].Path, PID: os.Getpid(),
 			State: StateIdle, Started: now.UnixMilli(), PoolExhausted: exhaustedAt > 0, PoolExhaustedAt: exhaustedAt, PoolEpoch: epoch, LastSuccess: success})
@@ -349,6 +352,9 @@ func TestTheCrewSleepsRetriesOnceThenStops(t *testing.T) {
 	if run.PoolPhase != PoolSleeping || run.SleepUntil != now.Add(10*time.Minute).UnixMilli() {
 		t.Fatalf("phase %q until %d", run.PoolPhase, run.SleepUntil)
 	}
+	if strings.Join(notified, ",") != notify.EventCrewSleeping {
+		t.Fatalf("notified %v on the sleep", notified)
+	}
 	now = now.Add(11 * time.Minute)
 	s.Reconcile(run)
 	run, _ = reg.GetRun(run.ID)
@@ -360,6 +366,9 @@ func TestTheCrewSleepsRetriesOnceThenStops(t *testing.T) {
 	why := s.Reconcile(run)
 	if !strings.Contains(why, "again after the final retry") {
 		t.Fatalf("reason %q", why)
+	}
+	if strings.Join(notified, ",") != notify.EventCrewSleeping+","+notify.EventCrewStopped {
+		t.Fatalf("notified %v when the run ended", notified)
 	}
 	gd, _ := config.GlobalDir()
 	faults, _ := crewlog.ReadFaults(crewlog.Dir(gd, run.ID), crewlog.Filter{Class: FaultPoolExhausted})

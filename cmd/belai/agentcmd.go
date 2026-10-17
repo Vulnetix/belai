@@ -472,6 +472,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		if exe, err := os.Executable(); err == nil {
 			w.AdoptSupervisor = reg.StartSupervisor(exe)
 		}
+		w.CrewNotify = workerNotifier(settings, *crew, *detached)
 	}
 	if err := w.Run(ctx); err != nil {
 		return 1, err
@@ -504,7 +505,8 @@ func workerNotifier(s config.Settings, profile string, detached bool) func(strin
 	nt := notify.New(backend, env, os.Stderr)
 	wanted := n.Events
 	if wanted == nil {
-		wanted = append(append([]string{}, notify.DefaultEvents...), notify.EventWorkerBlocked, notify.EventWorkerFailed)
+		wanted = append(append([]string{}, notify.DefaultEvents...), notify.EventWorkerBlocked, notify.EventWorkerFailed,
+			notify.EventCrewSleeping, notify.EventCrewStopped)
 	}
 	return func(event string) {
 		for _, e := range wanted {

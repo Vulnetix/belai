@@ -216,7 +216,8 @@ func agentSupervise(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	s := &fleet.Supervisor{Registry: reg, Store: store, RunID: run.ID, Exe: exe, Max: workerCap(settings, 0), Log: stdout}
+	s := &fleet.Supervisor{Registry: reg, Store: store, RunID: run.ID, Exe: exe, Max: workerCap(settings, 0), Log: stdout,
+		Notify: workerNotifier(settings, run.Crew, true)}
 	if err := s.Run(ctx); errors.Is(err, fleet.ErrSupervised) {
 		fmt.Fprintf(stdout, "crew run %s already has a live supervisor\n", run.ID)
 	} else if err != nil {

@@ -34,10 +34,16 @@ const (
 	// EventCrewFault is a crew worker hitting a fatal fault on an item (the
 	// fault class is in the crew log, never in the notification).
 	EventCrewFault = "crew_fault"
+	// EventCrewSleeping is a crew run going to sleep because every provider
+	// and model in its pool failed; EventCrewStopped is a crew run ending on
+	// its own (its pool failed again after the final retry, or its supervisor
+	// kept dying). The subject is the crew's name.
+	EventCrewSleeping = "crew_sleeping"
+	EventCrewStopped  = "crew_stopped"
 )
 
 // Events lists every event name.
-var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone, EventWorkerBlocked, EventWorkerFailed, EventCrewFault}
+var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone, EventWorkerBlocked, EventWorkerFailed, EventCrewFault, EventCrewSleeping, EventCrewStopped}
 
 // DefaultEvents is the set notified when settings name none.
 var DefaultEvents = []string{EventPermission, EventClarify, EventPlanReady, EventGoalDone, EventGoalStalled}
@@ -116,6 +122,16 @@ func Message(event, subject string) (title, body string) {
 			return title, "A crew worker hit a fatal fault"
 		}
 		return title, "Crew worker " + subject + " hit a fatal fault"
+	case EventCrewSleeping:
+		if subject == "" {
+			return title, "A crew's providers all failed; it sleeps before a final retry"
+		}
+		return title, "Crew " + subject + "'s providers all failed; it sleeps before a final retry"
+	case EventCrewStopped:
+		if subject == "" {
+			return title, "A crew run stopped on its own"
+		}
+		return title, "Crew " + subject + " stopped on its own"
 	}
 	return title, "Belai needs you"
 }
