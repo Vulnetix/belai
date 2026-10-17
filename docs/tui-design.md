@@ -281,7 +281,8 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
   pace, and a limit bar or sparkline); that slot is the only one when routing
   is `routed` or the model has no budget.
   Line 2 is provider, model and effort, the switches as `●`/`○` (with
-  `● rc N` while `belai rc` runs), and the session, token count and context
+  `● rc N` while `belai rc` runs, and `inbox N` in amber text, with no glyph,
+  while cards wait on you), and the session, token count and context
   bar on the right. Line 3 shows the armed or
   hover hint while there is one and the subagent roster otherwise; it is
   always reserved so the footer never changes height under the pointer.

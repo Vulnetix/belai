@@ -63,6 +63,11 @@ type Footer struct {
 	// sessions); empty while `belai rc` is not running.
 	RC string
 
+	// Inbox is the segment that says cards wait on a person ("inbox 3"); empty
+	// while none do. It is amber text with no glyph: amber means the harness is
+	// waiting for you.
+	Inbox string
+
 	// Voice is the speech-input segment ("voice: listening"); empty while voice
 	// input is off. VoiceOn draws the dot filled while the microphone is open
 	// or the model is working.
@@ -576,6 +581,9 @@ func (f Footer) permissionChipsAt(bareFirewall bool) string {
 	}
 	if f.RC != "" {
 		out += "  " + switchDot(f.RC, true)
+	}
+	if f.Inbox != "" {
+		out += "  " + WarnStyle.Render(f.Inbox)
 	}
 	return out
 }
