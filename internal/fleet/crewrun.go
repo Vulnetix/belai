@@ -53,7 +53,6 @@ func (s RunState) Live() bool { return s == RunRunning || s == RunStopping || s 
 
 // Crew run limits.
 const (
-	MaxScopeDirs      = 16
 	MinWeight         = 1
 	MaxWeight         = 10
 	MaxPool           = 8
@@ -254,8 +253,6 @@ func (r CrewRun) Validate() error {
 		return errors.New("a crew run needs a crew")
 	case len(r.Scope) == 0:
 		return errors.New("a crew run needs at least one directory in its scope")
-	case len(r.Scope) > MaxScopeDirs:
-		return fmt.Errorf("a crew run's scope holds at most %d directories", MaxScopeDirs)
 	case len(r.Members) == 0:
 		return errors.New("a crew run needs at least one member")
 	case len(r.Pool) > MaxPool:
