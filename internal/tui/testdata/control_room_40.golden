@@ -82,3 +82,32 @@ c max workers  ·  1-6 tab  ·  [ ] crew
 ·  n launch  ·  S stop run  ·  esc
 back
 
+=== tab 5
+◈ crew control room            running
+──────────────────────────────────────
+
+  workers 1/4 (cap 4) · working 1 · 1…
+  pool openai/gpt-5 → anthropic/claud…
+  openai/gpt-5 down ×1
+   1 workers 1   2 board 2   3 provid…
+  faults, newest first
+  no faults recorded
+
+c class  ·  enter card  ·  1-6 tab  ·
+[ ] crew  ·  n launch  ·  S stop run
+·  esc back
+
+=== tab 6
+◈ crew control room            running
+──────────────────────────────────────
+
+  workers 1/4 (cap 4) · working 1 · 1…
+  pool openai/gpt-5 → anthropic/claud…
+  openai/gpt-5 down ×1
+   1 workers 1   2 board 2   3 provid…
+  chain intact
+  no audit entries yet
+
+enter card  ·  1-6 tab  ·  [ ] crew  ·
+n launch  ·  S stop run  ·  esc back
+
