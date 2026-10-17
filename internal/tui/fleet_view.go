@@ -276,16 +276,17 @@ func (a *App) startFleetWorkers(profile, crew string, replicas int) {
 	type launch struct{ profile, crew string }
 	var launches []launch
 	if crew != "" {
-		c, err := agentprofile.LoadCrew(crew)
-		if err != nil {
-			notice("fleet: " + err.Error())
+		// A crew is one supervised run over its scope, launched exactly as
+		// the control room launches one; this repository is the scope, or
+		// joins it when the crew already runs.
+		a.crew.errMsg, a.crew.status = "", ""
+		a.crewLaunch(crew + " " + repo)
+		if a.crew.errMsg != "" {
+			notice("fleet: " + a.crew.errMsg)
 			return
 		}
-		for _, m := range c.Members {
-			for range m.Count() {
-				launches = append(launches, launch{m.Profile, c.Name})
-			}
-		}
+		a.addSystem("⚙ " + a.crew.status + " — /crew opens its control room")
+		return
 	} else {
 		for range max(replicas, 1) {
 			launches = append(launches, launch{profile, ""})

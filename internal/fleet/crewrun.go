@@ -16,7 +16,9 @@ import (
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/trustgate"
 )
 
 // A crew run is one launch of a crew over a scope of repositories. The crew is
@@ -487,4 +489,50 @@ func (r *Registry) stopRunWorkers(id string, grace time.Duration) {
 	for range recs {
 		<-done
 	}
+}
+
+// RepoPolicy is the settings and posture a worker in repo runs under: the
+// repository root's, never a worktree's.
+func RepoPolicy(repo string) (config.Settings, posture.Policy, error) {
+	settings, err := config.LoadMerged(repo)
+	if err != nil {
+		return config.Settings{}, nil, fmt.Errorf("load settings: %w", err)
+	}
+	projectPol, _ := posture.Load(repo)
+	pol := posture.Defaults().Override(projectPol)
+	if !settings.GuardrailsEnabled() {
+		pol = posture.AllIgnore()
+	}
+	return settings, pol, nil
+}
+
+// CheckScopeDir checks a directory can join a crew run's scope: it is
+// trusted, and every member preflights under its own settings. The CLI trusts
+// a directory first when asked (-trust-dir); the control room only adds
+// directories already trusted.
+func CheckScopeDir(dir string, members []agentprofile.Member) error {
+	st, err := trustgate.Check(dir)
+	if err != nil {
+		return fmt.Errorf("check trust for %s: %w", dir, err)
+	}
+	if !st.Trusted {
+		return fmt.Errorf("%s is not a trusted workspace: run `belai` there once to review and trust it", dir)
+	}
+	settings, pol, err := RepoPolicy(dir)
+	if err != nil {
+		return fmt.Errorf("%s: %w", dir, err)
+	}
+	for _, m := range members {
+		p, err := agentprofile.Load(m.Profile)
+		if err != nil {
+			return err
+		}
+		if err := Preflight(p, settings, pol); err != nil {
+			return fmt.Errorf("%s in %s: %w", m.Profile, dir, err)
+		}
+		if err := CheckRepo(p, dir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
