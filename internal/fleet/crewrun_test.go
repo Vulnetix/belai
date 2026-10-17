@@ -243,65 +243,167 @@ func TestADrainedOrPausedWorkerLeaves(t *testing.T) {
 	}
 }
 
-// After FallbackAfter outages in a row a run's worker moves to its fallback at
-// once instead of backing off, and after the probe interval it tries the
-// primary again; one more outage there sends it straight back.
-func TestFallbackAndProbe(t *testing.T) {
+// poolWorker is a worker of a run whose pool is pool, on the pool's first
+// target, with the run read.
+func poolWorker(t *testing.T, pool []Target, switchAfter int) (*Worker, *Registry, CrewRun) {
+	t.Helper()
 	store, reg := testEnv(t)
-	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1),
-		Fallbacks: []Target{{"p3", "nope"}, {"p2", "m2"}}, FallbackAfter: 2, ProbeSecs: 60}, nil)
+	run, err := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1),
+		Pool: pool, SwitchAfter: switchAfter}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := newWorker(t, store, reg, builderProfile(), complete)
 	w.Controls = fakeControls()
 	w.Repo, w.Record.Run = run.Scope[0].Path, run.ID
-	now := time.Now()
-	w.now = func() time.Time { return now }
 	w.syncTarget()
-	w.primary = w.currentTarget()
 	if w.refreshRun() != "" {
 		t.Fatal("the run refused the worker")
 	}
+	return w, reg, run
+}
+
+// The pool is a ring: after SwitchAfter outages a worker moves to the next
+// target it can run, and round again to one that failed before once the pool
+// has worked since.
+func TestThePoolCyclesAndWrapsRound(t *testing.T) {
+	w, _, _ := poolWorker(t, []Target{{"p1", "m1"}, {"p3", "nope"}, {"p2", "m2"}}, 2)
+	if w.currentTarget() != (Target{"p1", "m1"}) {
+		t.Fatalf("started on %v", w.currentTarget())
+	}
 	w.outages = 1
-	if w.fallbackStep() {
+	if w.poolStep() {
 		t.Fatal("moved before the streak")
 	}
 	w.outages = 2
-	if !w.fallbackStep() || w.currentTarget() != (Target{"p2", "m2"}) || w.Record.Fallback != "p2/m2" || w.outages != 0 {
-		t.Fatalf("fallback skipped the unrunnable target to p2/m2: %v, %q, %d", w.currentTarget(), w.Record.Fallback, w.outages)
+	if !w.poolStep() || w.currentTarget() != (Target{"p2", "m2"}) || w.Record.PoolIndex != 2 || w.outages != 0 {
+		t.Fatalf("moved to %v (index %d), skipping the target this host cannot run", w.currentTarget(), w.Record.PoolIndex)
 	}
-	w.probeStep()
-	if w.Record.Fallback == "" {
-		t.Fatal("probed before the interval")
-	}
-	now = now.Add(2 * time.Minute)
-	w.probeStep()
-	if w.currentTarget() != (Target{"p1", "m1"}) || w.Record.Fallback != "" || w.outages != 1 {
-		t.Fatalf("probe: %v, %q, outages %d", w.currentTarget(), w.Record.Fallback, w.outages)
-	}
-	w.outages++
-	if !w.fallbackStep() || w.Record.Fallback != "p2/m2" {
-		t.Fatal("one outage on the probe did not go back to the fallback")
-	}
-	// A human pin holds against the policy.
-	w.pinned = true
-	w.outages = 5
-	if w.fallbackStep() {
-		t.Fatal("the policy moved a pinned worker")
+	// A card the provider answered: the pool works again, and the next
+	// streak wraps round to the first target, which failed before.
+	w.poolSuccess()
+	w.outages = 2
+	if !w.poolStep() || w.currentTarget() != (Target{"p1", "m1"}) || w.Record.PoolExhausted {
+		t.Fatalf("wrapped to %v, exhausted %v", w.currentTarget(), w.Record.PoolExhausted)
 	}
 }
 
-// The run's primary set in the control room moves its workers at the next
-// loop.
-func TestARunPrimaryChangeMovesTheWorker(t *testing.T) {
-	store, reg := testEnv(t)
-	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1)}, nil)
-	w := newWorker(t, store, reg, builderProfile(), complete)
-	w.Controls = fakeControls()
-	w.Repo, w.Record.Run = run.Scope[0].Path, run.ID
-	w.primary = w.currentTarget()
-	_, _ = reg.UpdateRun(run.ID, "human", func(cr *CrewRun) error { cr.Primary = Target{"p9", "m9"}; return nil })
+// Every target failing since the last success leaves the worker waiting on
+// the crew instead of claiming.
+func TestAWorkerReportsThePoolSpent(t *testing.T) {
+	w, _, _ := poolWorker(t, []Target{{"p1", "m1"}, {"p2", "m2"}}, 1)
+	w.outages = 1
+	w.poolStep()
+	w.outages = 1
+	if !w.poolStep() || !w.Record.PoolExhausted || w.poolWait(time.Second) != time.Second {
+		t.Fatalf("exhausted %v, wait %s", w.Record.PoolExhausted, w.poolWait(time.Second))
+	}
+	// A human pin stays out of it.
+	w.pinned = true
+	if w.poolWait(time.Second) != 0 {
+		t.Fatal("a pinned worker waits on the pool")
+	}
+}
+
+// Another worker getting a card through means the pool is not down: a
+// worker that found every target failing cycles on.
+func TestAnotherWorkersSuccessRevivesThePool(t *testing.T) {
+	w, reg, run := poolWorker(t, []Target{{"p1", "m1"}, {"p2", "m2"}}, 1)
+	w.outages = 1
+	w.poolStep()
+	w.outages = 1
+	w.poolStep()
+	_, _ = reg.UpdateRun(run.ID, "supervisor", func(cr *CrewRun) error {
+		cr.LastSuccess = time.Now().Add(time.Second).UnixMilli()
+		return nil
+	})
 	w.refreshRun()
-	if w.currentTarget() != (Target{"p9", "m9"}) || w.primary != (Target{"p9", "m9"}) {
+	if w.Record.PoolExhausted {
+		t.Fatal("still exhausted after another worker's success")
+	}
+}
+
+// A pool edited in the control room moves a worker whose target left it;
+// the crew's final retry sends every worker back to the first target.
+func TestThePoolFollowsTheRun(t *testing.T) {
+	w, reg, run := poolWorker(t, []Target{{"p1", "m1"}, {"p2", "m2"}}, 1)
+	_, _ = reg.UpdateRun(run.ID, "human", func(cr *CrewRun) error { cr.Pool = []Target{{"p9", "m9"}, {"p2", "m2"}}; return nil })
+	w.refreshRun()
+	if w.currentTarget() != (Target{"p9", "m9"}) {
 		t.Fatalf("target %v", w.currentTarget())
+	}
+	w.outages = 1
+	w.poolStep()
+	w.outages = 1
+	w.poolStep()
+	_, _ = reg.UpdateRun(run.ID, "supervisor", func(cr *CrewRun) error { cr.PoolEpoch = 1; return nil })
+	w.refreshRun()
+	if w.Record.PoolExhausted || w.Record.PoolEpoch != 1 || w.currentTarget() != (Target{"p9", "m9"}) {
+		t.Fatalf("after the final retry: exhausted %v, epoch %d, target %v", w.Record.PoolExhausted, w.Record.PoolEpoch, w.currentTarget())
+	}
+}
+
+// The crew sleeps once its pool is spent, makes one final retry when the
+// sleep ends, and stops when the pool fails again; a success on the final
+// retry makes it healthy instead.
+func TestTheCrewSleepsRetriesOnceThenStops(t *testing.T) {
+	store, reg := testEnv(t)
+	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1),
+		Pool: []Target{{"p1", "m1"}, {"p2", "m2"}}, FinalRetrySecs: 600}, nil)
+	now := time.Now()
+	s := &Supervisor{Registry: reg, Store: store, RunID: run.ID, Max: 8, now: func() time.Time { return now },
+		Demand: func(string, string) int { return 1 },
+		Spawn:  func(SpawnOptions) (string, error) { return "", errors.New("no") }}
+	worker := func(epoch int, exhaustedAt, success int64) {
+		_ = reg.Save(Record{ID: "t-builder-aaaaaa", Profile: "t-builder", Run: run.ID, Repo: run.Scope[0].Path, PID: os.Getpid(),
+			State: StateIdle, Started: now.UnixMilli(), PoolExhausted: exhaustedAt > 0, PoolExhaustedAt: exhaustedAt, PoolEpoch: epoch, LastSuccess: success})
+	}
+	worker(0, now.UnixMilli(), 0)
+	if why := s.Reconcile(run); why != "" {
+		t.Fatalf("ended at once: %q", why)
+	}
+	run, _ = reg.GetRun(run.ID)
+	if run.PoolPhase != PoolSleeping || run.SleepUntil != now.Add(10*time.Minute).UnixMilli() {
+		t.Fatalf("phase %q until %d", run.PoolPhase, run.SleepUntil)
+	}
+	now = now.Add(11 * time.Minute)
+	s.Reconcile(run)
+	run, _ = reg.GetRun(run.ID)
+	if run.PoolPhase != PoolFinalRetry || run.PoolEpoch != 1 {
+		t.Fatalf("phase %q epoch %d", run.PoolPhase, run.PoolEpoch)
+	}
+	// The final retry fails on every target too: the run ends, and says why.
+	worker(1, now.Add(time.Minute).UnixMilli(), 0)
+	why := s.Reconcile(run)
+	if !strings.Contains(why, "again after the final retry") {
+		t.Fatalf("reason %q", why)
+	}
+	gd, _ := config.GlobalDir()
+	faults, _ := crewlog.ReadFaults(crewlog.Dir(gd, run.ID), crewlog.Filter{Class: FaultPoolExhausted})
+	if len(faults) != 1 {
+		t.Fatalf("faults %+v", faults)
+	}
+	// A success on the final retry instead: healthy again.
+	worker(1, 0, now.Add(2*time.Minute).UnixMilli())
+	if why := s.Reconcile(run); why != "" {
+		t.Fatalf("a recovered pool ended the run: %q", why)
+	}
+	run, _ = reg.GetRun(run.ID)
+	if run.PoolPhase != PoolHealthy {
+		t.Fatalf("phase %q", run.PoolPhase)
+	}
+}
+
+// A worker of a sleeping crew does not claim until the sleep ends.
+func TestASleepingCrewsWorkerWaits(t *testing.T) {
+	w, reg, run := poolWorker(t, []Target{{"p1", "m1"}}, 1)
+	_, _ = reg.UpdateRun(run.ID, "supervisor", func(cr *CrewRun) error {
+		cr.PoolPhase, cr.SleepUntil = PoolSleeping, time.Now().Add(time.Hour).UnixMilli()
+		return nil
+	})
+	w.refreshRun()
+	if d := w.poolWait(30 * time.Second); d != 30*time.Second {
+		t.Fatalf("wait %s", d)
 	}
 }
 

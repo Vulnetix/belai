@@ -49,8 +49,8 @@ the harness read itself, and nothing else can be recorded.
 | host | `host.schedule` | `belai rc` fires, skips or refuses a stored schedule, updates it to `worked`/`drained`/`worker_failed`, or turns a schedule off because it cannot accept it |
 | agent | `worker.started`, `worker.state`, `worker.stopped` | a worker starts, is paused or resumed, and stops |
 | agent | `worker.fault` | a worker or the item it holds fails; `class` is the fault code, never the error text |
-| agent | `worker.fallback` | a worker switches to another provider/model `target` (such as `openai/gpt-5`) |
-| agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model or scope change, a bulk card action |
+| agent | `worker.fallback` | a worker moves to another `target` of its crew's provider pool (such as `openai/gpt-5`), outcome `switch`, or finds the whole pool failing, outcome `pool_exhausted` |
+| agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model, pool or scope change, a bulk card action, or the harness moving the crew through its pool (`pool_sleep`, `final_retry`, `pool_recovered`, `pool_exhausted`) |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
 | agent | `repo.commit` | the tip of an item's work, or an auto-commit in the TUI |
@@ -64,7 +64,7 @@ the harness read itself, and nothing else can be recorded.
 `package`, `passes`, `path`, `pr`, `previous`, `profile`, `reason`,
 `regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,
 `suite`, `target`, `to`, `version`, `worker`. `schedule` is a schedule's UUID.
-`class` is a fault code (`provider_auth`, `provider_rate_limit`, …; see [fleet.md](fleet.md#provider-fallback)), `retries` a count and
+`class` is a fault code (`provider_auth`, `provider_rate_limit`, …; see [fleet.md](fleet.md#the-provider-pool)), `retries` a count and
 `target` a `provider/model` pair, all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it
 needs a line here and a change to `TestDataKeysAllowlist`.
 

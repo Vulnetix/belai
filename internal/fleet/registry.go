@@ -82,8 +82,18 @@ type Record struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
-	// Fallback is the fallback target in use, "" on the primary.
-	Fallback string `json:"fallback,omitempty"`
+	// PoolIndex is the pool target the worker is on; PoolExhausted is set
+	// when every target failed since its last success, at PoolExhaustedAt in
+	// the run's PoolEpoch. LastSuccess is its newest card finished without a
+	// provider outage.
+	PoolIndex       int   `json:"pool_index,omitempty"`
+	PoolExhausted   bool  `json:"pool_exhausted,omitempty"`
+	PoolExhaustedAt int64 `json:"pool_exhausted_at,omitempty"`
+	PoolEpoch       int   `json:"pool_epoch,omitempty"`
+	LastSuccess     int64 `json:"last_success,omitempty"`
+	// Sleeping is a worker waiting out the crew's sleep before the final
+	// retry.
+	Sleeping bool `json:"sleeping,omitempty"`
 	// Outages counts the items in a row the provider sent back unworked;
 	// OutageUntil is when the worker claims again (unix ms).
 	Outages     int   `json:"outages,omitempty"`
