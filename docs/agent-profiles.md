@@ -189,6 +189,9 @@ its report, never what it may do.
 | `belai:debug` | Pip Ostrander | Symptom, check, cause, fix |
 | `belai:fanout` | Marigold Teague | A join of the parallel results |
 | `belai:plan-handoff` | Thaddeus Rook | A handover note with what done looks like |
+| `belai:designer` | Sanzo Wada | A design brief of journeys and the states to check |
+| `belai:planner` | Henry Gantt | A one-page plan of small tasks with their gates |
+| `belai:repro` | Grace Hopper | A case file from reproduction to root cause |
 
 Each avatar is a drawing of Pix in the agent's colours with one detail that
 suggests its work, and it passes the same `internal/svgguard` check as a drawing

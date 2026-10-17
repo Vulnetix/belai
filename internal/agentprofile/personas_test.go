@@ -16,6 +16,7 @@ var personaProfiles = []string{
 	"belai:vuln-scout", "belai:patcher", "belai:verifier",
 	"belai:scout", "belai:builder", "belai:reviewer",
 	"belai:triage-vulns", "belai:debug", "belai:fanout", "belai:plan-handoff",
+	"belai:designer", "belai:planner", "belai:repro",
 }
 
 func TestBuiltinPersonas(t *testing.T) {

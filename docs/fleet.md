@@ -470,7 +470,9 @@ A crew is a named set of profiles started together:
 Each built-in member has a persona, so the console shows who is who. The
 security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
 (the verifier); the delivery crew is Juniper Tallis (the scout), Odo Brannigan
-(the builder) and Isadora Pell (the reviewer). See
+(the builder) and Isadora Pell (the reviewer). The lead of each of the other
+three crews has one too: Henry Gantt (`belai:planner`, feature), Grace Hopper
+(`belai:repro`, bug) and Sanzo Wada (`belai:designer`, ui). See
 [Built-in personas](agent-profiles.md#built-in-personas).
 
 ### Crew runs: one crew over a scope of directories
