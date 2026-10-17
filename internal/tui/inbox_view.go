@@ -19,7 +19,8 @@ import (
 // worker blocked (internal/attention orders them, the longest wait first within
 // each kind). It reads the board and nothing else, so it works the same with no
 // session, no rc and no network. A checkpoint is decided here: a approves the
-// card, x sends it back to the backlog with the reason typed in the composer.
+// card, x blocks it with the reason typed in the composer; edit or re-queue it
+// from /kanban.
 
 type inboxViewState struct {
 	items            []attention.Item
@@ -112,7 +113,10 @@ func (a *App) decideInbox(approve bool, reason string) {
 	if store == nil {
 		return
 	}
-	d := kanban.Decision{Approve: approve, Back: kanban.Backlog, Note: reason}
+	// A rejection blocks the card: a planner's handoff still carries the label
+	// a builder claims by, so returning it to the backlog would build the plan
+	// that was just refused.
+	d := kanban.Decision{Approve: approve, Back: kanban.Blocked, Note: reason}
 	got, err := store.Decide(it.ID, d, a.sessionID)
 	if err != nil {
 		st.note, st.noteErr = err.Error(), true
@@ -120,7 +124,7 @@ func (a *App) decideInbox(approve bool, reason string) {
 	}
 	verb := "Approved"
 	if !approve {
-		verb = "Sent back to the backlog:"
+		verb = "Blocked with your reason:"
 	}
 	st.note, st.noteErr = fmt.Sprintf("%s %s.", verb, got.Short()), false
 	a.loadInbox()
@@ -138,7 +142,7 @@ func (a *App) handleInboxKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			reason := strings.TrimSpace(a.editor.Value())
 			if reason == "" {
-				st.note, st.noteErr = "Say what is wrong, so the earlier stage can fix it.", true
+				st.note, st.noteErr = "Say what is wrong: the card is blocked with this note.", true
 				return a, nil
 			}
 			st.mode = ""
@@ -261,10 +265,10 @@ func (a *App) inboxTail(w int) string {
 	}
 	b.WriteString("\n")
 	if st.mode == "reject" {
-		b.WriteString(a.renderFieldEditor("why is it sent back? (the earlier stage reads this)", w) + "\n")
+		b.WriteString(a.renderFieldEditor("why is it rejected? (it is blocked with this note)", w) + "\n")
 		return b.String()
 	}
-	b.WriteString(lipgloss.NewStyle().Width(w).Render(components.HelpBar("↑↓", "move", "a", "approve", "x", "send back", "t", "kanban", "r", "refresh", "esc", "back")) + "\n")
+	b.WriteString(lipgloss.NewStyle().Width(w).Render(components.HelpBar("↑↓", "move", "a", "approve", "x", "reject", "t", "kanban", "r", "refresh", "esc", "back")) + "\n")
 	return b.String()
 }
 

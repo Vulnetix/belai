@@ -260,9 +260,12 @@ label, whatever its other labels or assignee, so the next stage waits.
 
 Only a person clears it, with `belai kanban checkpoint ID approve` or `reject`
 (or the same decision on the website). Approve removes the label and leaves the
-card in its list for the next stage to claim. Reject removes it too and returns
-the card to the list you name (backlog by default), counts one bounce, and
-resets the stage's attempts. A worker's outcome can drop its own labels but
+card in its list for the next stage to claim. Reject removes it too and moves
+the card to the list you name, `blocked` by default, with your reason in its
+history, and resets the stage's attempts. It is blocked and not returned to the
+backlog because a planner's handoff still carries the label a builder claims
+by, so a card returned there would build the plan you just refused; name
+`backlog` or `review` to re-queue it deliberately, which counts one bounce. A worker's outcome can drop its own labels but
 never a checkpoint, and a label from a newer Belai that this one does not know
 holds the card all the same. A failed stage is retried and then blocked as
 before; it never holds a card. A held card is not claimed, so a decision on a
@@ -274,8 +277,8 @@ assigned to a person (`person:HANDLE`), and a card a worker blocked. Within a
 kind the card that has waited longest comes first. The list shows the card's
 reason, its short id, its title, its project and its age, and the selected card
 shows its latest note below, so you decide on what the stage left and not on
-the title alone. `a` approves a checkpoint; `x` asks for a reason and sends it
-back to the backlog; `t` opens `/kanban`; `r` refreshes. Approve and send back
+the title alone. `a` approves a checkpoint; `x` asks for a reason and blocks
+the card with it; `t` opens `/kanban`; `r` refreshes. Approve and reject
 apply only to a checkpoint: the other two kinds are moved or released from
 `/kanban`. The footer shows `inbox N` in amber while any card waits.
 
@@ -284,7 +287,8 @@ From the command line:
 ```sh
 belai kanban add "Add a -json flag to agent ps" -label build -priority 2
 belai kanban checkpoint K-3f9a2c approve -note "scope is right"
-belai kanban checkpoint K-3f9a2c reject -to backlog -note "tests missing"
+belai kanban checkpoint K-3f9a2c reject -note "tests missing"
+belai kanban checkpoint K-3f9a2c reject -to backlog -note "reworded, build it"
 belai kanban list -label build
 belai kanban show K-3f9a2c
 belai kanban move K-3f9a2c done -note "shipped"

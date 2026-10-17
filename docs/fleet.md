@@ -988,8 +988,8 @@ File an item with the entry label, or use `belai kanban add -flow feature`,
 `bug` or `ui`, which adds it. The first stage reads and runs checks but never
 changes code. Each handoff it files carries a **checkpoint** (see
 [Human checkpoints](kanban.md#human-checkpoints)): no builder takes it until a
-person runs `belai kanban checkpoint ID approve`, or sends it back with
-`reject`. After approval the ordinary `belai:builder` and `belai:reviewer` work
+person runs `belai kanban checkpoint ID approve`, or refuses it with `reject`,
+which blocks the card with the reason so the refused plan is never built. After approval the ordinary `belai:builder` and `belai:reviewer` work
 it, and the reviewed branch arrives as a draft pull request, which is the last
 human gate.
 

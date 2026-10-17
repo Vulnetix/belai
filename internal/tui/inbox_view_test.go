@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/vulnetix/belai/internal/attention"
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
@@ -59,7 +60,9 @@ func TestInboxListsWhatWaitsOnYouAndApproves(t *testing.T) {
 	}
 }
 
-func TestInboxSendBackNeedsAReasonAndReturnsTheCardToTheBacklog(t *testing.T) {
+// A rejected plan must not be built: the card still carries the label a builder
+// claims by, so it is blocked, not returned to the backlog.
+func TestInboxRejectNeedsAReasonAndBlocksTheCard(t *testing.T) {
 	a, _ := kanbanApp(t)
 	held := addHeld(t, a, "fix the parser", kanban.CheckpointRootCause)
 	a.enterInbox()
@@ -79,8 +82,12 @@ func TestInboxSendBackNeedsAReasonAndReturnsTheCardToTheBacklog(t *testing.T) {
 	a.editor.SetValue("the cause is the lexer, not the parser")
 	a.handleInboxKey(kkey("enter"))
 	got, _ := a.kb.store.Get(held.ID)
-	if _, still := kanban.HeldFor(got); still || got.List != kanban.Backlog || got.Bounces != 1 {
-		t.Fatalf("send back: %s bounces %d labels %q", got.List, got.Bounces, got.Labels)
+	if _, still := kanban.HeldFor(got); still || got.List != kanban.Blocked || got.Bounces != 0 {
+		t.Fatalf("reject: %s bounces %d labels %q", got.List, got.Bounces, got.Labels)
+	}
+	// Blocked, it is still the person's to triage: it stays in the inbox.
+	if len(a.inboxState.items) != 1 || a.inboxState.items[0].Kind != attention.KindBlocked {
+		t.Fatalf("a rejected card left the inbox: %+v", a.inboxState.items)
 	}
 	if note := got.LastNote(); !strings.Contains(note, "rejected: the cause is the lexer") {
 		t.Fatalf("the reason is not on the card: %q", note)

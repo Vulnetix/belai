@@ -48,7 +48,8 @@ const kanbanUsage = `usage: belai kanban <command> [flags] [args]
   checkpoint ID approve|reject [-to LIST] [-note T]
                            decide a card a flow stage holds for a person:
                            approve lets the next stage take it, reject clears
-                           the hold and returns it to -to (default backlog)
+                           the hold and moves it to -to (default blocked, so
+                           the rejected plan is not built; backlog re-queues it)
   delete ID                delete an item
   import FILE.jsonl        file one item per line: {"title", "body", "list",
                            "labels", "priority", "assignee", "depends_on"}
@@ -307,7 +308,7 @@ func (k *kanbanCLI) run(cmd string, rest []string, stdin io.Reader, stdout, stde
 		return k.assign(fs.Arg(0), fs.Arg(1), *crew, *host, *start, stdout)
 
 	case "checkpoint":
-		to := fs.String("to", "backlog", "list a rejected card returns to")
+		to := fs.String("to", "blocked", "list a rejected card goes to")
 		note := fs.String("note", "", "why")
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 2 || (fs.Arg(1) != "approve" && fs.Arg(1) != "reject") {
 			return 2, errors.New("usage: belai kanban checkpoint ID approve|reject [-to LIST] [-note TEXT]")
