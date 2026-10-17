@@ -564,8 +564,8 @@ other worker of the crew got a card through since, the worker stops claiming
 and reports the pool spent. The supervisor then puts the whole crew to sleep:
 no worker claims for `-final-retry` seconds (default 900). When the sleep ends
 the crew makes its **final retry**: every worker starts the pool again from
-its first target. A card the provider answers in that pass makes the crew
-healthy again; the whole pool failing once more ends the run, with the reason
+its first target. A card the provider answers after the crew went to sleep,
+in that pass or before it began, makes the crew healthy again; the whole pool failing once more ends the run, with the reason
 and a `pool_exhausted` fault in the crew log. Each step is a `crew.control`
 fact from the harness: `pool_sleep`, `final_retry`, `pool_recovered`,
 `pool_exhausted`. A run with no pool keeps each profile's model and only backs

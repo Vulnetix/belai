@@ -439,8 +439,9 @@ func (s *Supervisor) boardDemand(run CrewRun) func(profile, repo string) int {
 // the pool failed since its last success, with no other worker getting a card
 // through after, puts the crew to sleep for FinalRetry; when the sleep ends
 // the crew makes its final retry (a new epoch: every worker starts the pool
-// again); a success in that pass makes the crew healthy again, and the pool
-// failing once more ends the run with a reason.
+// again); a success after the crew went to sleep, in that pass or before it,
+// makes the crew healthy again, and the pool failing once more ends the run
+// with a reason.
 func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
 	if len(run.Pool) == 0 {
 		return run, ""
@@ -464,7 +465,14 @@ func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
 			s.logf("every provider and model in the pool failed; the crew sleeps %s before its final retry", run.FinalRetry())
 		}
 	case PoolSleeping:
-		if now >= run.SleepUntil {
+		switch {
+		case last > run.RetryFrom:
+			// A card got through after the crew went to sleep (a worker whose
+			// wait ended first, or one mid-card on a target that works): the
+			// pool is back without a final retry.
+			phase, action = PoolHealthy, "pool_recovered"
+			s.logf("the pool recovered while the crew slept")
+		case now >= run.SleepUntil:
 			phase, action = PoolFinalRetry, "final_retry"
 			s.logf("final retry over the pool")
 		}
@@ -485,11 +493,13 @@ func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
 		cr.LastSuccess = max(cr.LastSuccess, last)
 		switch action {
 		case "pool_sleep":
-			cr.PoolPhase, cr.SleepUntil = PoolSleeping, s.clock().Add(cr.FinalRetry()).UnixMilli()
+			// RetryFrom marks when the crew went to sleep: any success after it,
+			// while asleep or on the final retry, means the pool works again.
+			cr.PoolPhase, cr.SleepUntil, cr.RetryFrom = PoolSleeping, s.clock().Add(cr.FinalRetry()).UnixMilli(), now
 		case "final_retry":
-			cr.PoolPhase, cr.PoolEpoch, cr.RetryFrom, cr.SleepUntil = PoolFinalRetry, cr.PoolEpoch+1, now, 0
+			cr.PoolPhase, cr.PoolEpoch, cr.SleepUntil = PoolFinalRetry, cr.PoolEpoch+1, 0
 		case "pool_recovered":
-			cr.PoolPhase, cr.RetryFrom = PoolHealthy, 0
+			cr.PoolPhase, cr.RetryFrom, cr.SleepUntil = PoolHealthy, 0, 0
 		}
 		return nil
 	})

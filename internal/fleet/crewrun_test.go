@@ -386,6 +386,38 @@ func TestTheCrewSleepsRetriesOnceThenStops(t *testing.T) {
 	}
 }
 
+// A card that gets through after the crew went to sleep, before the
+// supervisor starts the final retry, recovers the pool: the crew does not wait
+// in a final retry nobody needs.
+func TestASuccessDuringTheSleepRecoversThePool(t *testing.T) {
+	store, reg := testEnv(t)
+	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("t-builder", 1),
+		Pool: []Target{{"p1", "m1"}, {"p2", "m2"}}, FinalRetrySecs: 600}, nil)
+	now := time.Now()
+	s := &Supervisor{Registry: reg, Store: store, RunID: run.ID, Max: 8, now: func() time.Time { return now },
+		Demand: func(string, string) int { return 1 },
+		Spawn:  func(SpawnOptions) (string, error) { return "", errors.New("no") }}
+	worker := func(exhaustedAt, success int64) {
+		_ = reg.Save(Record{ID: "t-builder-aaaaaa", Profile: "t-builder", Run: run.ID, Repo: run.Scope[0].Path, PID: os.Getpid(),
+			State: StateIdle, Started: now.UnixMilli(), PoolExhausted: exhaustedAt > 0, PoolExhaustedAt: exhaustedAt, LastSuccess: success})
+	}
+	worker(now.UnixMilli(), 0)
+	s.Reconcile(run)
+	run, _ = reg.GetRun(run.ID)
+	if run.PoolPhase != PoolSleeping {
+		t.Fatalf("phase %q", run.PoolPhase)
+	}
+	now = now.Add(11 * time.Minute)
+	worker(0, now.Add(-time.Second).UnixMilli())
+	if why := s.Reconcile(run); why != "" {
+		t.Fatalf("ended: %q", why)
+	}
+	run, _ = reg.GetRun(run.ID)
+	if run.PoolPhase != PoolHealthy || run.PoolEpoch != 0 || run.SleepUntil != 0 {
+		t.Fatalf("phase %q epoch %d until %d", run.PoolPhase, run.PoolEpoch, run.SleepUntil)
+	}
+}
+
 // A worker of a sleeping crew does not claim until the sleep ends.
 func TestASleepingCrewsWorkerWaits(t *testing.T) {
 	w, reg, run := poolWorker(t, []Target{{"p1", "m1"}}, 1)
