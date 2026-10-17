@@ -547,7 +547,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
 	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
-	fill := fs.Bool("fill", false, "with -crew, start only the replicas the crew lacks in this repository")
+	fill := fs.Bool("fill", false, "with -crew, confirm a crew already running over this directory instead of refusing (its supervisor keeps it full)")
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
 	var dirs, pool listFlag

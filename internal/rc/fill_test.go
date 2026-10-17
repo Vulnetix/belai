@@ -1,6 +1,8 @@
 package rc
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -69,5 +71,20 @@ func TestDaemonStartsWorkersWithItsWebControls(t *testing.T) {
 		if got.Controls != c.controls || got.GuardrailsOff != c.wantOff {
 			t.Errorf("controls %v off %v: start = %+v", c.controls, c.off, got)
 		}
+	}
+}
+
+// A web crew start is one crew run: `agent start -crew NAME`, run in the
+// offered directory (the run's scope is the working directory, never a -dir
+// from the request), with -fill to confirm a crew already running there and
+// -web-controls so the website's control room may change the run.
+func TestCrewStartArgvIsOneCrewRun(t *testing.T) {
+	got := strings.Join(agentStartArgs(WorkerStart{Crew: "aws-infra", Fill: true, Controls: true, Provider: "openai", Model: "gpt-5"}), " ")
+	want := "agent start -provider openai -model gpt-5 -web-controls -crew aws-infra -fill"
+	if got != want {
+		t.Fatalf("argv %q, want %q", got, want)
+	}
+	if args := agentStartArgs(WorkerStart{Crew: "aws-infra"}); slices.Contains(args, "-dir") || slices.Contains(args, "-fill") {
+		t.Fatalf("argv %v", args)
 	}
 }
