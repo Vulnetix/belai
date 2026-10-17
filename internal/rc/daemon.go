@@ -80,6 +80,10 @@ type Options struct {
 	// of this host (steerWorker unless a test replaces it). The error text is
 	// the refusal reason.
 	SteerWorker func(spec fleet.CoordSpec) error
+	// CrewControl applies a website change to a crew run on this host (the
+	// host's registry unless a test replaces it). It returns a report, or an
+	// error whose text is the refusal reason.
+	CrewControl func(c *sessionsync.RCCrewControl) (string, error)
 	// ForgeSpool is the fleet registry directory whose <worker>.forge spools
 	// the daemon files with the forge coordinator (the host's registry unless a
 	// test replaces it); ForgeRelayEvery is how often it looks (5s).
@@ -298,6 +302,17 @@ func New(o Options) (*Daemon, error) {
 	if o.PauseWorker == nil {
 		o.PauseWorker = setWorkerPaused
 	}
+	if o.CrewControl == nil {
+		controls, dirs := o.Controls, o.Dirs
+		o.CrewControl = func(c *sessionsync.RCCrewControl) (string, error) {
+			reg, err := fleet.OpenRegistry(nil)
+			if err != nil {
+				return "", err
+			}
+			return applyCrewControl(crewControlEnv{Registry: reg, Controls: controls, Dirs: dirs,
+				CheckDir: fleet.CheckScopeDir, Grace: 45 * time.Second}, c)
+		}
+	}
 	if o.SteerWorker == nil {
 		o.SteerWorker = steerWorker
 	}
@@ -453,7 +468,7 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 			// worktree: advertise again.
 			d.register(ctx, inv)
 		}
-		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running(), inv.Workers)
+		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running(), inv.Workers, inv.Runs)
 		if errors.Is(err, sessionsync.ErrNotFound) {
 			// The server lost the host (or never had it): advertise again.
 			d.register(ctx, inv)
@@ -499,7 +514,7 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		switch r.Kind {
 		case "start", "stop", "worker", "crew", "pause", "resume", "profile_backup", "profile_install", "crew_backup", "crew_install", "avatar",
 			"item_backup", "item_install", "provider_keys_install", "provider_keys_remove", "mcp_secrets_install", "mcp_secrets_remove", "library_sync", "library_scan", "library_import",
-			"project_prefs", "teleport_backup", "teleport_code", "steer":
+			"project_prefs", "teleport_backup", "teleport_code", "steer", "crew_control":
 			kind = r.Kind
 		}
 		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
@@ -543,6 +558,15 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
 		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+	case "crew_control":
+		report, err := d.o.CrewControl(r.Control)
+		if err != nil {
+			d.logf("refused crew_control: %v", err)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			return
+		}
+		d.logf("crew_control: %s", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", clip(report))
 	case "steer":
 		// The forge coordinator's answer to a request a worker filed: checked
 		// field by field here and again by the worker, which takes it only for

@@ -423,6 +423,34 @@ predict what will happen to them:
   tails together stay under 48 KiB. The log holds harness lines and the
   worker process's stderr, never a transcript: model output goes to the
   item's session. The server cleans it again and applies the same caps.
+- **Crew runs.** Each heartbeat also carries the host's
+  [crew runs](fleet.md#crew-runs-one-crew-over-a-scope-of-directories): every
+  live one (running, stopping, or `orphaned` while its supervisor is restarted),
+  then those that ended in the last 15 minutes, at most 20. Each has its id,
+  crew, state and cleaned reason, its scope (each directory's path, weight and
+  whether it is paused), its members and their replicas, its provider pool, the
+  switch streak, the final-retry sleep, effort, `max_workers`, whether it stays,
+  whether it takes web controls, the pool's phase, sleep end, epoch and last
+  success, the supervisor's restarts and heartbeat, and the edit count and who
+  made the last edit. Settings and state only: never a prompt, a card or a
+  model's text. A worker's record names its run.
+- **Crew control.** A `crew_control` request is the website's control room: one
+  change to a running crew run, the same changes the TUI control room makes. It
+  names the run and one operation from a closed set: `scope_weight`,
+  `scope_pause`, `scope_add` and `scope_remove` (a directory of the scope),
+  `replicas` (a member), `pool`, `switch_after`, `final_retry`, `max_workers`,
+  `stop` (the run), and `worker_drain`, `worker_stop`, `worker_target`,
+  `worker_effort` and `worker_auto` (one worker of the run). The daemon refuses
+  it unless `belai rc` runs with `--web-controls` and the run was started with
+  web controls, and refuses any operation it does not know, a run or worker id
+  out of shape, a worker that is not live in that run, a weight, replica count,
+  streak, sleep or cap out of range, and a provider or model that is not a
+  plain identifier. A directory added to a scope must be one this host offers,
+  already trusted, with every member preflighting there: trust is never granted
+  from the website. A model the host cannot run is refused by the worker when
+  it applies the control, as from the TUI. Each accepted change is a
+  `crew.control` audit fact with the actor `web`, and applies at the workers'
+  next claim or round.
 - **Pause and resume.** The website can ask a live worker to pause or resume
   with a `pause` or `resume` request that names the worker's id. The daemon
   refuses an id that does not look like one, and a worker that is not live in
@@ -470,9 +498,12 @@ predict what will happen to them:
   host's own default, which is why the website starts a Pix sandbox's workers on
   that sandbox's own default (its launch config's model, else the first provider
   its vault grants, else Pix Smart) rather than on an OpenAI default it holds no
-  key for. A `crew` request with `fill` set runs
-  `belai agent start -crew NAME -fill` instead, which starts only the replicas the
-  crew lacks in that directory (the Crews tab's "Start the missing worker").
+  key for. A `crew` request launches a crew run whose scope is the
+  request's directory. If that crew already runs on the host, the directory is
+  added to the running crew's scope instead (and a run that lost its supervisor
+  gets a new one first); with `fill` set, `belai agent start -crew NAME -fill`, a
+  crew already running over that directory is confirmed rather than refused, since
+  its supervisor keeps every member at its replicas.
 
 ## Scheduled agents
 

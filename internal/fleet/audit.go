@@ -239,7 +239,17 @@ func recordPool(run CrewRun, action string) {
 // fixed word (pause, drain, model, scope, move, priority, …); data holds
 // identifiers only.
 func RecordControl(run, crew, action, itemID string, data map[string]string) {
-	f := audit.Fact{Kind: audit.CrewControl, ActorKind: audit.ActorHuman, Crew: crew, ItemID: itemID, Outcome: action, Data: data}
+	recordControl(audit.ActorHuman, run, crew, action, itemID, data)
+}
+
+// RecordWebControl is RecordControl for a change the website asked for
+// (belai rc's crew_control request).
+func RecordWebControl(run, crew, action string, data map[string]string) {
+	recordControl(audit.ActorWeb, run, crew, action, "", data)
+}
+
+func recordControl(actor string, run, crew, action, itemID string, data map[string]string) {
+	f := audit.Fact{Kind: audit.CrewControl, ActorKind: actor, Crew: crew, ItemID: itemID, Outcome: action, Data: data}
 	audit.Emit(f)
 	if run != "" {
 		appendEntry(run, f, data["worker"], "")

@@ -32,6 +32,9 @@ type Inventory struct {
 	// Agents are the agent profiles a web session may be started with.
 	Agents  []sessionsync.RCAgent
 	Workers []sessionsync.RCWorker
+	// Runs are the host's crew runs: live ones, then those that ended in
+	// the last RecentWorkers.
+	Runs []sessionsync.RCCrewRun
 	// Items are the library items this host holds, for the kinds whose sync
 	// switch is on: kind, name and hash, never a document.
 	Items []sessionsync.RCItem
@@ -126,6 +129,7 @@ func LocalInventory() Inventory {
 	inv.Commands = localInventoryCommands()
 	inv.Models = LocalModels()
 	inv.Workers = localWorkers()
+	inv.Runs = localRuns()
 	return inv
 }
 
@@ -259,7 +263,7 @@ func reportWorkers(all []fleet.Record, logDir string, now time.Time) []sessionsy
 			break
 		}
 		w := sessionsync.RCWorker{
-			ID: r.ID, Profile: r.Profile, Crew: r.Crew, State: string(r.State),
+			ID: r.ID, Profile: r.Profile, Crew: r.Crew, Run: r.Run, State: string(r.State),
 			Item: r.Item, Project: r.Project, Session: r.Session, Started: r.Started,
 			Beat: r.Beat, Stopped: r.Stopped, Reason: sessionsync.CleanLogLine(r.Reason),
 			Done: r.Done, Failed: r.Failed, Branch: r.Branch,
@@ -273,6 +277,52 @@ func reportWorkers(all []fleet.Record, logDir string, now time.Time) []sessionsy
 			}
 		}
 		out = append(out, w)
+	}
+	return out
+}
+
+func localRuns() []sessionsync.RCCrewRun {
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		return []sessionsync.RCCrewRun{}
+	}
+	runs, err := reg.ListRuns()
+	if err != nil {
+		return []sessionsync.RCCrewRun{}
+	}
+	return reportRuns(runs, time.Now())
+}
+
+// reportRuns picks and shapes the crew runs a heartbeat carries: every live
+// one, then those that ended within RecentWorkers, up to MaxRCRuns. Settings
+// and state only; the reason is cleaned like a log line.
+func reportRuns(runs []fleet.CrewRun, now time.Time) []sessionsync.RCCrewRun {
+	out := []sessionsync.RCCrewRun{}
+	for _, r := range runs {
+		if len(out) >= sessionsync.MaxRCRuns {
+			break
+		}
+		if !r.State.Live() && (r.Stopped == 0 || now.Sub(time.UnixMilli(r.Stopped)) > RecentWorkers) {
+			continue
+		}
+		cr := sessionsync.RCCrewRun{
+			ID: r.ID, Crew: r.Crew, State: string(r.State), Reason: sessionsync.CleanLogLine(r.Reason),
+			Scope: []sessionsync.RCScopeDir{}, Members: []sessionsync.RCMember{},
+			SwitchAfter: r.SwitchAfter, FinalRetrySecs: r.FinalRetrySecs, Effort: r.Effort, MaxWorkers: r.MaxWorkers,
+			Stay: r.Stay, WebControls: r.WebControls, PoolPhase: r.PoolPhase, SleepUntil: r.SleepUntil,
+			PoolEpoch: r.PoolEpoch, LastSuccess: r.LastSuccess, Restarts: r.Restarts,
+			Started: r.Started, Stopped: r.Stopped, Beat: r.Beat, Seq: r.Seq, UpdatedBy: r.UpdatedBy,
+		}
+		for _, d := range r.Scope {
+			cr.Scope = append(cr.Scope, sessionsync.RCScopeDir{Path: d.Path, Weight: d.Weight, Paused: d.Paused})
+		}
+		for _, m := range r.Members {
+			cr.Members = append(cr.Members, sessionsync.RCMember{Profile: m.Profile, Replicas: m.Count()})
+		}
+		for _, t := range r.Pool {
+			cr.Pool = append(cr.Pool, sessionsync.RCTarget{Provider: t.Provider, Model: t.Model})
+		}
+		out = append(out, cr)
 	}
 	return out
 }
