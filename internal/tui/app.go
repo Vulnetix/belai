@@ -42,6 +42,7 @@ import (
 	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/firewall"
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/gitsync"
@@ -701,6 +702,10 @@ type App struct {
 	procManager *bgproc.Manager
 	// kb is the global kanban board (kanban.go); nil when the setting is off.
 	kb *kanbanUI
+	// crew is the crew control room (/crew); crewStarter, when set, starts a
+	// launched run's supervisor in place of `belai agent supervise` (tests).
+	crew        controlRoom
+	crewStarter fleet.SupervisorStarter
 
 	// git and ci tabs of the runs panel (forge_state.go, forge_actions.go).
 	// forgeRunner and forgeLook are nil in production (real exec, PATH
@@ -2597,6 +2602,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case fleetTickMsg:
 		return a, a.handleFleetTick()
+
+	case controlRoomTickMsg:
+		return a, a.handleControlRoomTick()
 
 	case agentPulseMsg:
 		return a, a.handleAgentPulse()
