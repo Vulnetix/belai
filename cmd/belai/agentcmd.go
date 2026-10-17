@@ -326,16 +326,7 @@ func trustRepo(repo string, grant bool) error {
 // repoPolicy is the settings and posture a worker in repo runs under: the
 // repository root's, never a worktree's.
 func repoPolicy(repo string) (config.Settings, posture.Policy, error) {
-	settings, err := config.LoadMerged(repo)
-	if err != nil {
-		return config.Settings{}, nil, fmt.Errorf("load settings: %w", err)
-	}
-	projectPol, _ := posture.Load(repo)
-	pol := posture.Defaults().Override(projectPol)
-	if !settings.GuardrailsEnabled() {
-		pol = posture.AllIgnore()
-	}
-	return settings, pol, nil
+	return fleet.RepoPolicy(repo)
 }
 
 func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stderr io.Writer) (int, error) {
@@ -599,47 +590,21 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if err != nil {
 		return 1, err
 	}
-	type launch struct{ profile, crew string }
-	var launches []launch
-	var crew agentprofile.Crew
-	if *crewName != "" {
-		c, err := agentprofile.LoadCrew(*crewName)
-		if err != nil {
-			return 1, err
-		}
-		crew = c
-		for _, m := range c.Members {
-			for range m.Count() {
-				launches = append(launches, launch{m.Profile, c.Name})
-			}
-		}
-	} else {
-		if *replicas < 1 || *replicas > agentprofile.MaxReplicas {
-			return 2, fmt.Errorf("-replicas runs 1 to %d", agentprofile.MaxReplicas)
-		}
-		name := fs.Arg(0)
-		if adhocProfile != nil {
-			name = adhocProfile.Name
-		}
-		for range *replicas {
-			launches = append(launches, launch{name, ""})
-		}
+	if *replicas < 1 || *replicas > agentprofile.MaxReplicas {
+		return 2, fmt.Errorf("-replicas runs 1 to %d", agentprofile.MaxReplicas)
 	}
-	// Check every profile before starting any, so a crew starts whole or not
-	// at all.
-	for _, l := range launches {
-		var p agentprofile.AgentProfile
-		if adhocProfile != nil {
-			p = *adhocProfile
-		} else if p, err = agentprofile.Load(l.profile); err != nil {
-			return 1, err
-		}
-		if err := fleet.Preflight(p, settings, pol); err != nil {
-			return 1, fmt.Errorf("%s: %w", l.profile, err)
-		}
-		if err := fleet.CheckRepo(p, repo); err != nil {
-			return 1, err
-		}
+	name := fs.Arg(0)
+	var p agentprofile.AgentProfile
+	if adhocProfile != nil {
+		name, p = adhocProfile.Name, *adhocProfile
+	} else if p, err = agentprofile.Load(name); err != nil {
+		return 1, err
+	}
+	if err := fleet.Preflight(p, settings, pol); err != nil {
+		return 1, fmt.Errorf("%s: %w", name, err)
+	}
+	if err := fleet.CheckRepo(p, repo); err != nil {
+		return 1, err
 	}
 	store, err := kanban.OpenDefault()
 	if err != nil {
@@ -648,10 +613,6 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	reg, err := fleet.OpenRegistry(store)
 	if err != nil {
 		return 1, err
-	}
-	onePerRepo := false
-	if c, err := agentprofile.LoadCrew(*crewName); err == nil {
-		onePerRepo = c.OnePerRepo
 	}
 	max := workerCap(settings, *maxWorkers)
 	// Each worker reserves its own slot; it must do so under the cap this
@@ -665,28 +626,15 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return 1, err
 	}
 	var started []string
-	// The one-per-repository check, the worker cap and the spawns are one step
-	// under the crew-start lock, so two starts fired together cannot both pass.
-	// Filling a crew that is already live is the point of -fill, so it skips the
-	// one-per-repository refusal; the cap still applies to what it starts.
-	nothing := false
-	if err := reg.WithCrewStart(*crewName, repo, onePerRepo && !*fill, func() error {
+	// The worker cap and the spawns are one step under the start lock, so two
+	// starts fired together cannot both take the last slot.
+	if err := reg.WithCrewStart("", repo, false, func() error {
 		live, _ := reg.Live()
-		if *fill {
-			launches = launches[:0]
-			for _, p := range fleet.FillCrew(crew, live, repo) {
-				launches = append(launches, launch{p, crew.Name})
-			}
-			if len(launches) == 0 {
-				nothing = true
-				return nil
-			}
+		if len(live)+*replicas > max {
+			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", *replicas, len(live)+*replicas, max)
 		}
-		if len(live)+len(launches) > max {
-			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
-		}
-		for _, l := range launches {
-			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
+		for range *replicas {
+			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: name, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
 				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff}
 			if adhocProfile != nil {
 				so.Prompt, so.Tools, so.Claim, so.To, so.Publish, so.ReadOnly = *adhoc.prompt, splitList(*adhoc.tools), *adhoc.claim, *adhoc.to, *adhoc.publish, *adhoc.readOnly
@@ -700,10 +648,6 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return nil
 	}); err != nil {
 		return 1, err
-	}
-	if nothing {
-		fmt.Fprintf(stdout, "%s has every replica it asks for in this repository; nothing to fill\n", crew.Name)
-		return 0, nil
 	}
 	// Wait briefly for each worker to register, so a worker that fails its
 	// own start is reported here rather than discovered later.

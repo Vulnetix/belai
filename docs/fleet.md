@@ -1017,17 +1017,14 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 ```
 
 A crew runs 1 to 8 members, each 1 to 8 replicas, and every member must be a
-worker profile. Set `"one_per_repo": true` on a crew (both built-in crews have
-it) to refuse a start while one of its workers is live in the same repository.
-The check, the worker cap and the spawns are one step under a lock, so two
-starts fired together cannot both get in. A crew without it can be started
-alongside itself.
+worker profile. A crew runs once at a time, however many directories it works:
+launching it again adds directories to the run's scope (see
+[Crew runs](#crew-runs-one-crew-over-a-scope-of-directories)). The older
+`"one_per_repo"` field is still read, and is now always the case.
 
-`belai agent start -crew NAME -fill` starts only the replicas the crew lacks in
-this repository: for each member, its replicas less its live workers of that crew
-here. It is how a replica that the worker cap refused, or that ended, comes back
-without starting the whole crew again, so it skips the one-per-repository refusal.
-The worker cap still applies, and a crew with every replica live starts nothing.
+`belai agent start -crew NAME -fill` no longer starts replicas itself: the
+run's supervisor keeps every member at its replicas, so `-fill` only confirms a
+running crew (or launches it) without the refusal a second launch gets.
 
 ## Command line
 
@@ -1050,7 +1047,7 @@ The worker cap still applies, and a crew with every replica live starts nothing.
 | `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
-| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-fill` (with `-crew`) starts only the replicas the crew lacks in this repository, skipping the one-per-repository refusal, and starts nothing when none is missing; exactly one of NAME, `-crew` and `-prompt` is required |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-crew` launches a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) (see the row below); `-fill` (with `-crew`) confirms a running crew without refusing, since its supervisor keeps it full; exactly one of NAME, `-crew` and `-prompt` is required |
 | `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-fallback P/M]… [-fallback-after N] [-probe SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-fallback` targets are tried in order; `-model` sets the run's primary. A running crew takes new directories into its scope |
 | `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, primary model |
 | `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the fallback policy |
@@ -1150,6 +1147,38 @@ every two seconds while the tab is open.
 On the kanban tab, `w` hands an item to the chosen crew: it adds the crew's
 entry labels, moves the item to backlog, and starts the crew when no worker
 is running.
+
+### The control room
+
+`/crew` (or `o` on the screen switcher, `f1`) opens the **crew control room**:
+one crew run's operations screen, refreshed every two seconds. `/crew NAME`
+or `/crew RUN` opens it on that crew. The header shows the run (crew, id,
+state), its workers against the replicas and the cap, the tokens the items in
+hand have used, the primary model and the fallback chain, and a health chip
+for every provider its live workers run on: `ok`, `degraded` (an outage was
+seen) or `down` (a worker is backing off or past the fallback streak), with
+how many workers are on a fallback. `[` and `]` switch between crew runs; `n`
+launches one, `S` stops the run in view.
+
+Every change the room makes goes to the [run file](#crew-runs-one-crew-over-a-scope-of-directories)
+or a worker's [control file](#live-controls) and applies at the workers' next
+claim or round. Each is recorded as a `crew.control` fact in the run's
+[crew log](#crew-log) (and the audit, when sync is on): the action, the
+worker, card or directory, never free text.
+
+| Tab | Shows | Keys |
+|---|---|---|
+| `1` workers | each worker: state (draining included), repository, card, model (`⤳` on a fallback), outage streak and when it claims again, tokens on the card in hand, done and failed, heartbeat, last fault; the selected worker's profile, branch, session, the answer to its last control and its log | `p` pause or resume, `d` drain, `x` stop, `M` model, `E` effort, `A` hand the model back to the fallback policy, `l` log |
+| `2` board | the cards the crew works or may claim in its scope (held by its workers, assigned to it or a member, or carrying a member's claim labels), in progress first, with priority, tries and bounces, holder and lease | `space` mark, `a` mark all, `m` move, `b` block (releases a claim first), `u` unblock to backlog, `R` release, `+`/`-` priority, `L` labels (`+add -remove`), `A` assign, `d` delete, `o` show done |
+| `3` providers | the primary and the fallback chain, the streak and the probe interval, and each provider's health | `P` primary, `F` fallbacks, `f` force every worker onto the selected fallback, `g` back to the primary, `<`/`>` the streak, `{`/`}` the probe interval |
+| `4` scope | each directory with its weight, workers, open, held and blocked cards, and whether it is paused; each member with its replicas and how many run | `+`/`-` weight or replicas, `space` pause a directory, `a` add one, `D` remove one, `c` max workers |
+| `5` faults | the run's faults, newest first: time, worker, card, fault code (amber for an outage, red otherwise), status and the cleaned detail | `c` cycle the fault class, `enter` open the card |
+| `6` audit | the run's crew log entries with their sequence numbers, and whether the chain is intact | `enter` open the card |
+
+A bulk action applies to the marked cards, or to the selected card when none
+is marked. Launching a crew does not reset its cards: attempts, bounces and
+the blocked list are on the cards and survive a run, so `u` on the board is
+how blocked cards come back.
 
 ### A worker made from a prompt
 
