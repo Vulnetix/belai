@@ -1436,6 +1436,15 @@ file, is therefore swept to `failed` like any other and keeps its log, rather
 than vanishing. The starter reaps the child, so a long-lived starter (the TUI)
 never keeps a crashed worker as a zombie that looks alive and holds its slot.
 
+`belai rc` on Linux also marks itself a child subreaper and reaps the ended workers
+it adopts (`proc.ReapOrphans`, a pass every 10 seconds). A worker runs in its own
+session, so when `belai agent start` has exited, an ended worker is adopted by the
+nearest subreaper, which in a container is otherwise PID 1. A PID 1 that never reaps
+(the Pix sandbox image's is `sleep infinity`) would keep each ended worker in the
+process table until the cgroup's `pids.max` is full and every later start fails with
+"resource temporarily unavailable". A zombie is reaped only after it has sat for a
+whole pass, so a child something is still waiting on is never taken from that wait.
+
 The log says what the worker does, in harness words only:
 
 - at start, what it looks for: `looking for backlog items labelled scout

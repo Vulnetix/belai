@@ -382,6 +382,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.logf("start sessions at %s", d.o.URL)
 
 	go d.heartbeat(ctx)
+	// Workers run in their own sessions, so an ended one is adopted by the
+	// nearest subreaper; without this that is PID 1, which in a container may
+	// never reap and so fills the process table.
+	go proc.ReapOrphans(ctx, 10*time.Second, d.logf)
 	if d.o.Schedules != nil {
 		d.wg.Add(1)
 		go d.scheduler(ctx)
