@@ -21,8 +21,18 @@ import (
 // of belai:delivery over the session's directory and one worker.
 func controlRoomApp(t *testing.T) (*App, *fleet.Registry, fleet.CrewRun) {
 	t.Helper()
+	return controlRoomAppIn(t, "")
+}
+
+// controlRoomAppIn is controlRoomApp with the session in dir, when not empty.
+func controlRoomAppIn(t *testing.T, dir string) (*App, *fleet.Registry, fleet.CrewRun) {
+	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
 	a, _ := kanbanApp(t)
+	if dir != "" {
+		a.workdir = dir
+		a.kb.src = kanban.NewSource(kanban.ProvenanceFor(dir, a.sessionID, ""))
+	}
 	a.crewStarter = func(fleet.CrewRun) (int, error) { return os.Getpid(), nil }
 	reg, err := a.fleetRegistry()
 	if err != nil {
