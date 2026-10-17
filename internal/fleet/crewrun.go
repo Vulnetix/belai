@@ -154,6 +154,8 @@ type CrewRun struct {
 	// PoolEpoch counts the final retries started: a worker that sees it move
 	// forgets which targets failed and starts the pool again. LastSuccess is
 	// the newest card any worker finished without a provider outage.
+	// RetryFrom is when the crew went to sleep: a success after it recovers
+	// the pool.
 	PoolPhase   string `json:"pool_phase,omitempty"`
 	SleepUntil  int64  `json:"sleep_until,omitempty"`
 	PoolEpoch   int    `json:"pool_epoch,omitempty"`
