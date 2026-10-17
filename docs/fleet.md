@@ -1019,8 +1019,8 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 A crew runs 1 to 8 members, each 1 to 8 replicas, and every member must be a
 worker profile. A crew runs once at a time, however many directories it works:
 launching it again adds directories to the run's scope (see
-[Crew runs](#crew-runs-one-crew-over-a-scope-of-directories)). The older
-`"one_per_repo"` field is still read, and is now always the case.
+[Crew runs](#crew-runs-one-crew-over-a-scope-of-directories)). A crew file's
+`"one_per_repo": true` is still read; it is now always the case.
 
 `belai agent start -crew NAME -fill` no longer starts replicas itself: the
 run's supervisor keeps every member at its replicas, so `-fill` only confirms a
