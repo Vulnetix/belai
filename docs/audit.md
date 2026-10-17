@@ -50,7 +50,7 @@ the harness read itself, and nothing else can be recorded.
 | agent | `worker.started`, `worker.state`, `worker.stopped` | a worker starts, is paused or resumed, and stops |
 | agent | `worker.fault` | a worker or the item it holds fails; `class` is the fault code, never the error text |
 | agent | `worker.fallback` | a worker moves to another `target` of its crew's provider pool (such as `openai/gpt-5`), outcome `switch`, or finds the whole pool failing, outcome `pool_exhausted` |
-| agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model, pool or scope change, a bulk card action, or the harness moving the crew through its pool (`pool_sleep`, `final_retry`, `pool_recovered`, `pool_exhausted`) |
+| agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model, pool or scope change, a bulk card action, or the harness moving the crew through its pool (`pool_sleep`, `final_retry`, `pool_recovered`, `pool_exhausted`), or restarting a crew's supervisor that died (`supervisor_restarted`, `supervisor_failed`) |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
 | agent | `repo.commit` | the tip of an item's work, or an auto-commit in the TUI |

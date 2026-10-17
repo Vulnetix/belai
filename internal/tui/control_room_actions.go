@@ -730,14 +730,10 @@ func (a *App) crewLaunch(text string) {
 		cr.status = fmt.Sprintf("%s is running; added %s to its scope", c.Name, strings.Join(added, ", "))
 		return
 	}
-	exe, err := os.Executable()
+	start, err := a.supervisorStarter(reg)
 	if err != nil {
 		cr.errMsg = err.Error()
 		return
-	}
-	start := a.crewStarter
-	if start == nil {
-		start = reg.StartSupervisor(exe)
 	}
 	run, err := reg.LaunchCrew(fleet.NewCrewRun(c, scope), start)
 	if err != nil {
@@ -747,6 +743,19 @@ func (a *App) crewLaunch(text string) {
 	fleet.RecordControl(run.ID, run.Crew, "launch", "", nil)
 	cr.runID, cr.tab = run.ID, crWorkers
 	cr.status = fmt.Sprintf("launched %s over %d %s; its supervisor starts the workers", run.ID, len(run.Scope), pluralWord(len(run.Scope), "directory", "directories"))
+}
+
+// supervisorStarter starts a crew run's supervisor from this binary (or the
+// test's stand-in).
+func (a *App) supervisorStarter(reg *fleet.Registry) (fleet.SupervisorStarter, error) {
+	if a.crewStarter != nil {
+		return a.crewStarter, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return reg.StartSupervisor(exe), nil
 }
 
 func parseCrewTarget(s string) fleet.Target {

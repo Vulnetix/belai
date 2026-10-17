@@ -37,12 +37,15 @@ const (
 	// FaultPoolExhausted ends a crew run: every target in its pool failed,
 	// and failed again after the final retry.
 	FaultPoolExhausted = "pool_exhausted"
+	// FaultSupervisor ends a crew run whose supervisor kept dying: more than
+	// MaxSupervisorRestarts in SupervisorRestartWindow.
+	FaultSupervisor = "supervisor_failed"
 )
 
 // FaultCodes lists every code, for the control room's filter and the docs.
 var FaultCodes = []string{FaultUnavailable, FaultRateLimit, FaultTransport, FaultAuth, FaultQuota, FaultRejected,
 	FaultOverflow, FaultWallBudget, FaultTokenBudget, FaultLeaseLost, FaultWithheld, FaultWorkspace,
-	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted}
+	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted, FaultSupervisor}
 
 // Fault is a classified failure.
 type Fault struct {

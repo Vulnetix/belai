@@ -511,6 +511,21 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
   it stays (`-stay`), after a quiet window with nothing to claim anywhere in
   its scope. Workers of a run never leave on their own quiet window: the
   supervisor decides.
+- **A crew outlives its supervisor.** If the supervisor dies while the run is
+  still meant to run (a crash, an out-of-memory kill, `kill -9`), the run is
+  `orphaned`, not ended: its workers keep the cards they hold, and a new
+  supervisor is started by the first thing to notice. Every worker of the run
+  checks every ten seconds, even while busy on a card, and so do `belai rc`, a
+  relaunch of the crew and the control room. A supervisor counts as gone when
+  its process is gone or it has not beaten for 30 seconds. The run names its
+  supervisor, so only one runs it: a second `belai agent supervise` for the
+  same run stands down, and a supervisor that finds another named (it hung and
+  was replaced) leaves without touching the workers. A run that was stopping
+  when its supervisor died is stopped by whoever notices. A supervisor that
+  keeps dying ends the run: after 5 restarts within 10 minutes the run is
+  `failed`, its workers are stopped, and the crew log has a
+  `supervisor_failed` fault. Each restart is a `crew.control` fact
+  (`supervisor_restarted`, with the restart count in `retries`).
 - **Launch and the control room are one form.** Anything a launch sets, the
   control room changes on the running crew, and the change applies at the
   workers' next claim or round, never with a restart.
@@ -562,7 +577,7 @@ Failures are classified by type and status, never by the provider's text:
 `provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
 `provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
 `token_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
-`max_passes`, `incomplete`, `error`, `worker_failed` and `pool_exhausted` are
+`max_passes`, `incomplete`, `error`, `worker_failed`, `pool_exhausted` and `supervisor_failed` are
 not.
 
 ### The delivery crew

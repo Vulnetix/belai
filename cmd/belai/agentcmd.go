@@ -467,6 +467,12 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		return withClassifier(nc, settings, resolver)
 	})
 	w.WebControls = *webControls
+	if *runID != "" {
+		// A worker of a crew run restarts the run's supervisor if it dies.
+		if exe, err := os.Executable(); err == nil {
+			w.AdoptSupervisor = reg.StartSupervisor(exe)
+		}
+	}
 	if err := w.Run(ctx); err != nil {
 		return 1, err
 	}

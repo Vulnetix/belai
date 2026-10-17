@@ -136,6 +136,12 @@ type Worker struct {
 	Log        io.Writer
 	// Notify sends a notification event with the agent name as subject.
 	Notify func(event string)
+	// AdoptSupervisor starts a new supervisor for the worker's crew run when
+	// the run's supervisor died (AdoptRun); WatchEvery is how often the
+	// worker checks (default 10s). nil leaves it to belai rc and the next
+	// launch.
+	AdoptSupervisor SupervisorStarter
+	WatchEvery      time.Duration
 	// Runner works one item; nil uses the real agent session.
 	Runner TurnRunner
 	// Review runs the review scanners over the repository for a sweep; nil
@@ -329,6 +335,11 @@ func (w *Worker) Run(ctx context.Context) error {
 			w.mirror.SetSessionControls(w.Controls.StateJSON(), false)
 			go w.runControls(ctx, w.mirror)
 		}
+	}
+	if w.Record.Run != "" && w.Registry != nil && w.AdoptSupervisor != nil {
+		watch, stopWatch := context.WithCancel(ctx)
+		defer stopWatch()
+		go w.watchSupervisor(watch)
 	}
 	reason, runErr := w.loop(ctx)
 	w.Record.State, w.Record.Item, w.Record.Stopped, w.Record.Reason = StateStopped, "", w.clock().UnixMilli(), reason
@@ -1663,4 +1674,26 @@ func describePRs(prs []forge.PR, current string) string {
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// watchSupervisor adopts the worker's crew run whenever its supervisor dies,
+// so a crew keeps being allocated, drained and stopped. It runs beside the
+// loop, so a worker busy on a long card still notices.
+func (w *Worker) watchSupervisor(ctx context.Context) {
+	every := w.WatchEvery
+	if every <= 0 {
+		every = 10 * time.Second
+	}
+	for sleep(ctx, every) {
+		did, err := w.Registry.AdoptRun(w.Record.Run, "worker", w.AdoptSupervisor)
+		switch {
+		case err != nil:
+			w.logf("crew supervisor: %s", sanitize.Line(err.Error(), 240))
+		case did == AdoptRestarted:
+			w.logf("the crew supervisor had exited; started a new one")
+		case did == AdoptFailed:
+			w.logf("the crew supervisor kept exiting; the crew run failed")
+			w.notify(notifyCrewStopped)
+		}
+	}
 }

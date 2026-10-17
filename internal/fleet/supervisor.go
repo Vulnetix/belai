@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -134,8 +135,11 @@ type Supervisor struct {
 	Grace    time.Duration
 	// MinTenure keeps a worker this long before it may be moved (default 1m).
 	MinTenure time.Duration
-	now       func() time.Time
-	quiet     time.Time
+	// PID is this supervisor's process id (default os.Getpid()): the run
+	// names its supervisor, and one that finds another named stands down.
+	PID   int
+	now   func() time.Time
+	quiet time.Time
 }
 
 func (s *Supervisor) logf(format string, args ...any) {
@@ -156,18 +160,35 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if s.Interval <= 0 {
 		s.Interval = 5 * time.Second
 	}
+	if s.PID <= 0 {
+		s.PID = os.Getpid()
+	}
 	s.quiet = s.clock()
+	if err := s.claim(); err != nil {
+		return err
+	}
 	s.logf("supervising crew run %s", s.RunID)
 	for {
 		run, err := s.Registry.GetRun(s.RunID)
 		if err != nil {
 			return err
 		}
-		if ctx.Err() != nil || run.State != RunRunning {
+		if run.Supervisor != s.PID {
+			// Another supervisor took the run over while this one was not
+			// beating (hung, or thought dead): it owns the workers now.
+			s.logf("crew run %s is supervised by %d now; standing down", run.ID, run.Supervisor)
+			return nil
+		}
+		if ctx.Err() != nil || (run.State != RunRunning && run.State != RunOrphaned) {
 			return s.finish(run, ctx.Err() != nil)
 		}
 		_, _ = s.Registry.UpdateRun(s.RunID, "supervisor", func(cr *CrewRun) error {
 			cr.Beat = s.clock().UnixMilli()
+			if cr.State == RunOrphaned && cr.Supervisor == s.PID {
+				// Marked orphaned while a slow reconcile kept this supervisor
+				// from beating: it is alive, so the run is its again.
+				cr.State, cr.Reason = RunRunning, ""
+			}
 			return nil
 		})
 		if done := s.Reconcile(run); done != "" {
@@ -181,6 +202,26 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			continue
 		}
 	}
+}
+
+// claim names this process the run's supervisor. It refuses when another
+// live supervisor runs it, so a second `agent supervise` (or two adopters
+// racing) never doubles the crew.
+func (s *Supervisor) claim() error {
+	_, err := s.Registry.UpdateRun(s.RunID, "supervisor", func(cr *CrewRun) error {
+		if !cr.State.Live() {
+			return nil
+		}
+		if cr.Supervisor > 0 && cr.Supervisor != s.PID && s.Registry.SupervisorAlive(*cr) {
+			return ErrSupervised
+		}
+		cr.Supervisor, cr.Beat = s.PID, s.clock().UnixMilli()
+		if cr.State == RunOrphaned {
+			cr.State, cr.Reason = RunRunning, ""
+		}
+		return nil
+	})
+	return err
 }
 
 func (s *Supervisor) finish(run CrewRun, cancelled bool) error {

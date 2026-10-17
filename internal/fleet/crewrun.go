@@ -41,10 +41,15 @@ const (
 	RunStopping RunState = "stopping"
 	RunStopped  RunState = "stopped"
 	RunFailed   RunState = "failed"
+	// RunOrphaned is a run whose supervisor died while the run was still
+	// meant to run. Its workers carry on, and the first thing to notice (one
+	// of its workers, belai rc, a relaunch or the control room) starts a new
+	// supervisor (AdoptRun).
+	RunOrphaned RunState = "orphaned"
 )
 
 // Live reports whether the run's supervisor is meant to be running.
-func (s RunState) Live() bool { return s == RunRunning || s == RunStopping }
+func (s RunState) Live() bool { return s == RunRunning || s == RunStopping || s == RunOrphaned }
 
 // Crew run limits.
 const (
@@ -54,6 +59,15 @@ const (
 	MaxPool           = 8
 	DefaultSwitch     = 3
 	DefaultFinalRetry = 15 * time.Minute
+	// SupervisorStale is how old a supervisor's heartbeat may be before the
+	// supervisor counts as gone, whatever its pid says (a reused pid, a
+	// zombie, a hung process).
+	SupervisorStale = 30 * time.Second
+	// MaxSupervisorRestarts supervisors started for one run within
+	// SupervisorRestartWindow, after which the run fails: a supervisor that
+	// keeps dying will not be fixed by another restart.
+	MaxSupervisorRestarts   = 5
+	SupervisorRestartWindow = 10 * time.Minute
 )
 
 // Pool phases: the crew's state against its provider pool.
@@ -131,6 +145,10 @@ type CrewRun struct {
 	// "human", "supervisor").
 	Seq       int64  `json:"seq"`
 	UpdatedBy string `json:"updated_by,omitempty"`
+	// Restarts counts the supervisors started for the run since
+	// RestartWindow, by AdoptRun.
+	Restarts      int   `json:"restarts,omitempty"`
+	RestartWindow int64 `json:"restart_window,omitempty"`
 
 	// The pool's state, kept by the supervisor (supervisor.go, poolStep).
 	// PoolEpoch counts the final retries started: a worker that sees it move
@@ -347,8 +365,25 @@ func (r *Registry) saveRun(run CrewRun) error {
 	return writeJSONAtomic(r.runsDir(), r.runPath(run.ID), run)
 }
 
-// ListRuns returns every crew run, newest first. A run whose supervisor is
-// gone is marked failed; its workers carry on until they are stopped.
+// SupervisorAlive reports whether the run's supervisor is running: its
+// process exists and it beat within SupervisorStale (a supervisor that has
+// not beaten yet is judged from when the run started or was adopted).
+func (r *Registry) SupervisorAlive(run CrewRun) bool {
+	if run.Supervisor <= 0 || !proc.Alive(run.Supervisor) {
+		return false
+	}
+	last := max(run.Beat, run.Started)
+	return r.now().Sub(time.UnixMilli(last)) < SupervisorStale
+}
+
+// orphaned reports whether a live run has lost its supervisor.
+func (r *Registry) orphaned(run CrewRun) bool {
+	return run.State.Live() && run.Supervisor > 0 && !r.SupervisorAlive(run)
+}
+
+// ListRuns returns every crew run, newest first. A live run whose supervisor
+// is gone is marked orphaned; its workers carry on, and AdoptRun starts it a
+// new supervisor.
 func (r *Registry) ListRuns() ([]CrewRun, error) {
 	entries, err := os.ReadDir(r.runsDir())
 	if errors.Is(err, os.ErrNotExist) {
@@ -367,13 +402,15 @@ func (r *Registry) ListRuns() ([]CrewRun, error) {
 		if err != nil {
 			continue
 		}
-		if run.State.Live() && run.Supervisor > 0 && !proc.Alive(run.Supervisor) {
-			run, _ = r.UpdateRun(run.ID, "harness", func(cr *CrewRun) error {
-				if cr.State.Live() {
-					cr.State, cr.Reason, cr.Stopped = RunFailed, "the crew supervisor exited without stopping", r.now().UnixMilli()
+		if run.State == RunRunning && r.orphaned(run) {
+			if up, err := r.UpdateRun(run.ID, "harness", func(cr *CrewRun) error {
+				if cr.State == RunRunning && r.orphaned(*cr) {
+					cr.State, cr.Reason = RunOrphaned, ReasonOrphaned
 				}
 				return nil
-			})
+			}); err == nil {
+				run = up
+			}
 		}
 		out = append(out, run)
 	}
@@ -497,7 +534,7 @@ func (r *Registry) StopRun(id, by string, grace time.Duration) error {
 	if err != nil {
 		return err
 	}
-	if run.Supervisor > 0 && proc.Alive(run.Supervisor) {
+	if r.SupervisorAlive(run) {
 		return nil
 	}
 	r.stopRunWorkers(run.ID, grace)
