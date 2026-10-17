@@ -148,22 +148,20 @@ func openCrewLog(run string) *crewlog.Log {
 	return l
 }
 
-// auditFallback records a worker moving to a fallback target, or back to its
-// primary to probe it (streak 0).
-func (w *Worker) auditFallback(to Target, streak int) {
+// auditPoolSwitch records a worker moving to another target of its pool
+// (worker.fallback), or, with a zero target, finding the whole pool spent.
+func (w *Worker) auditPoolSwitch(to Target, streak int) {
 	if !audit.Enabled() && w.Record.Run == "" {
 		return
 	}
-	outcome := "fallback"
-	if streak == 0 {
-		outcome = "probe"
+	outcome, data := "switch", map[string]string{"worker": w.Record.ID, "retries": strconv.Itoa(streak)}
+	if to.Zero() {
+		outcome = "pool_exhausted"
+	} else {
+		data["target"] = to.String()
 	}
-	f := audit.Fact{Kind: audit.WorkerFallback, ActorKind: audit.ActorHarness, Actor: w.Profile.Name, Crew: w.Record.Crew,
-		Repo: w.Record.Project, Outcome: outcome, Data: map[string]string{"worker": w.Record.ID, "target": to.String()}}
-	if streak > 0 {
-		f.Data["retries"] = strconv.Itoa(streak)
-	}
-	w.emitFact(f)
+	w.emitFact(audit.Fact{Kind: audit.WorkerFallback, ActorKind: audit.ActorHarness, Actor: w.Profile.Name, Crew: w.Record.Crew,
+		Repo: w.Record.Project, Outcome: outcome, Data: data})
 }
 
 // recordFault records a failed item: a worker.fault audit fact carrying only
@@ -224,6 +222,16 @@ func (w *Worker) recordWorkerFault(err error) {
 			l.Close()
 		}
 	}
+}
+
+// recordPool records a change of the crew's pool phase, made by the
+// supervisor (crew.control, harness): pool_sleep, final_retry, pool_recovered
+// or pool_exhausted.
+func recordPool(run CrewRun, action string) {
+	f := audit.Fact{Kind: audit.CrewControl, ActorKind: audit.ActorHarness, Crew: run.Crew, Outcome: action,
+		Data: map[string]string{"retries": strconv.Itoa(run.PoolEpoch)}}
+	audit.Emit(f)
+	appendEntry(run.ID, f, "", "")
 }
 
 // RecordControl records a change made to a running crew (crew.control): in

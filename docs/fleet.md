@@ -479,13 +479,13 @@ are in), and the crew shares its members' workers between them:
 
 ```sh
 belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/src/docs:1 \
-  -model anthropic/claude-sonnet-5-5 -fallback openai/gpt-5 -fallback-after 3 -probe 600
+  -pool anthropic/claude-sonnet-5-5 -pool openai/gpt-5 -pool google/gemini-3 -switch-after 3 -final-retry 900
 ```
 
 - **The run file is the crew's settings.** A launch writes
   `~/.vulnetix/belai/agents/run/crews/<run>.json`: the scope and each
-  directory's weight, the members and their replicas, the primary model, the
-  effort, the fallback chain, `max_workers`, and whether the run stays. The
+  directory's weight, the members and their replicas, the provider pool, the
+  effort, `max_workers`, and whether the run stays. The
   [control room](#the-control-room) edits the same file while the crew runs;
   every edit is numbered (`seq`) and says who made it.
 - **A supervisor allocates the work.** `belai agent supervise -run ID`, started
@@ -520,29 +520,50 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
 A running worker reads a typed control file beside its record
 (`<id>.control.json`) before every claim and every round: the model it runs
 on (`provider/model`), its effort, and whether to drain. The control room,
-`belai agent control`, the crew supervisor and the fallback policy write it;
+`belai agent control`, the crew supervisor and the provider pool write it;
 it holds fixed fields, never text the worker acts on. A model is resolved when
 the control is read, so one this host cannot run is refused, and the worker
 answers every control in `<id>.control.ack.json` (accepted, or refused with
-the reason). A model a person picked is pinned: the fallback policy leaves it
+the reason). A model a person picked is pinned: the provider pool leaves it
 until `-auto` hands it back.
 
-### Provider fallback
+### The provider pool
 
 Each model call is retried on its own (see [resilience](resilience.md)). An
 outage that outlasts those retries sends the card back uncounted and backs the
-worker off (15 seconds, doubling to five minutes). In a crew run with a
-fallback chain, `-fallback-after` outages in a row (default 3) move the worker
-to the next fallback this host can run instead, and it claims again at once.
-After `-probe` seconds on a fallback (default 600) it goes back to the primary
-for one card: if the provider recovered it stays, and one more outage sends it
-straight back. Every move is a `worker.fallback` fact in the audit and the
-crew log. Failures are classified by type and status, never by the provider's
-text: `provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429),
+worker off (15 seconds, doubling to five minutes).
+
+A crew run's `-pool` is a pool of providers and models, not a primary with
+fallbacks. Workers start on its first target (`-model`, when given, is the
+first). After `-switch-after` outages in a row (default 3) a worker moves to
+the next target this host can run and claims again at once; the pool is a
+ring, so it wraps round and comes back to a target that failed before, which
+by then may have recovered. A target the host has no credentials for counts as
+failed in that pass. Every move is a `worker.fallback` fact (outcome `switch`,
+with the `target`) in the audit and the crew log. A worker that finishes a card
+the provider answered, whatever became of the card, forgets which targets
+failed.
+
+When every target in the pool has failed since a worker's last success, and no
+other worker of the crew got a card through since, the worker stops claiming
+and reports the pool spent. The supervisor then puts the whole crew to sleep:
+no worker claims for `-final-retry` seconds (default 900). When the sleep ends
+the crew makes its **final retry**: every worker starts the pool again from
+its first target. A card the provider answers in that pass makes the crew
+healthy again; the whole pool failing once more ends the run, with the reason
+and a `pool_exhausted` fault in the crew log. Each step is a `crew.control`
+fact from the harness: `pool_sleep`, `final_retry`, `pool_recovered`,
+`pool_exhausted`. A run with no pool keeps each profile's model and only backs
+off. A model a person pins (`M` in the control room, `belai agent control
+-model`) is left alone by the pool until `-auto` hands it back.
+
+Failures are classified by type and status, never by the provider's text:
+`provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429) and
 `provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
 `provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
 `token_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
-`max_passes`, `incomplete`, `error` and `worker_failed` are not.
+`max_passes`, `incomplete`, `error`, `worker_failed` and `pool_exhausted` are
+not.
 
 ### The delivery crew
 
@@ -1048,9 +1069,9 @@ running crew (or launches it) without the refusal a second launch gets.
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
 | `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-crew` launches a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) (see the row below); `-fill` (with `-crew`) confirms a running crew without refusing, since its supervisor keeps it full; exactly one of NAME, `-crew` and `-prompt` is required |
-| `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-fallback P/M]… [-fallback-after N] [-probe SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-fallback` targets are tried in order; `-model` sets the run's primary. A running crew takes new directories into its scope |
-| `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, primary model |
-| `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the fallback policy |
+| `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-pool P/M]… [-switch-after N] [-final-retry SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-pool` names the [provider pool](#the-provider-pool), cycled in order; `-model` is its first target. A running crew takes new directories into its scope |
+| `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, the pool and its phase |
+| `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the provider pool |
 | `belai agent supervise -run ID` | a crew run's supervisor in the foreground; the launch starts it detached |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
@@ -1087,7 +1108,7 @@ run id is reduced to an identifier). The directory is `0700` and holds two
 append-only `0600` JSONL files:
 
 - `faults.jsonl`: one line per worker or item failure: worker, profile, item,
-  session, repository, fault `class` (a [fault code](#provider-fallback) such as `provider_auth` or `provider_rate_limit`),
+  session, repository, fault `class` (a [fault code](#the-provider-pool) such as `provider_auth` or `provider_rate_limit`),
   provider, model, HTTP status, retries, outcome and a `detail`. The detail is
   the only free text: it is cleaned to one line (control, escape and bidi
   runes removed) and capped at 240 bytes, and it never leaves this machine.
@@ -1154,10 +1175,11 @@ is running.
 one crew run's operations screen, refreshed every two seconds. `/crew NAME`
 or `/crew RUN` opens it on that crew. The header shows the run (crew, id,
 state), its workers against the replicas and the cap, the tokens the items in
-hand have used, the primary model and the fallback chain, and a health chip
-for every provider its live workers run on: `ok`, `degraded` (an outage was
-seen) or `down` (a worker is backing off or past the fallback streak), with
-how many workers are on a fallback. `[` and `]` switch between crew runs; `n`
+hand have used, the provider pool, a health chip for every target its live
+workers run on (`ok`, `degraded` when an outage was seen, `down` when a worker
+is backing off or past the switch streak, with the worker count), and the
+pool's phase: workers that found the pool spent, the crew asleep with the time
+to its final retry, or the final retry under way. `[` and `]` switch between crew runs; `n`
 launches one, `S` stops the run in view.
 
 Every change the room makes goes to the [run file](#crew-runs-one-crew-over-a-scope-of-directories)
@@ -1168,9 +1190,9 @@ worker, card or directory, never free text.
 
 | Tab | Shows | Keys |
 |---|---|---|
-| `1` workers | each worker: state (draining included), repository, card, model (`⤳` on a fallback), outage streak and when it claims again, tokens on the card in hand, done and failed, heartbeat, last fault; the selected worker's profile, branch, session, the answer to its last control and its log | `p` pause or resume, `d` drain, `x` stop, `M` model, `E` effort, `A` hand the model back to the fallback policy, `l` log |
+| `1` workers | each worker: state (draining included), repository, card, model, `asleep` or `pool spent`, outage streak and when it claims again, tokens on the card in hand, done and failed, heartbeat, last fault; the selected worker's profile, branch, session, the answer to its last control and its log | `p` pause or resume, `d` drain, `x` stop, `M` model, `E` effort, `A` hand the model back to the pool, `l` log |
 | `2` board | the cards the crew works or may claim in its scope (held by its workers, assigned to it or a member, or carrying a member's claim labels), in progress first, with priority, tries and bounces, holder and lease | `space` mark, `a` mark all, `m` move, `b` block (releases a claim first), `u` unblock to backlog, `R` release, `+`/`-` priority, `L` labels (`+add -remove`), `A` assign, `d` delete, `o` show done |
-| `3` providers | the primary and the fallback chain, the streak and the probe interval, and each provider's health | `P` primary, `F` fallbacks, `f` force every worker onto the selected fallback, `g` back to the primary, `<`/`>` the streak, `{`/`}` the probe interval |
+| `3` providers | the pool's targets in order with each one's health, workers and outages, the switch streak, the sleep before the final retry, and the pool's phase | `P` the pool, `f` every worker onto the selected target (the pool cycles on from there), `g` every worker back to the pool, `<`/`>` the switch streak, `{`/`}` the sleep before the final retry |
 | `4` scope | each directory with its weight, workers, open, held and blocked cards, and whether it is paused; each member with its replicas and how many run | `+`/`-` weight or replicas, `space` pause a directory, `a` add one, `D` remove one, `c` max workers |
 | `5` faults | the run's faults, newest first: time, worker, card, fault code (amber for an outage, red otherwise), status and the cleaned detail | `c` cycle the fault class, `enter` open the card |
 | `6` audit | the run's crew log entries with their sequence numbers, and whether the chain is intact | `enter` open the card |

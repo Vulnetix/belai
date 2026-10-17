@@ -28,20 +28,20 @@ func (l *listFlag) Set(s string) error { *l = append(*l, s); return nil }
 // crewLaunch is what `agent start -crew` asks for: the same settings the
 // control room edits on a running crew.
 type crewLaunch struct {
-	crew                 string
-	dirs                 []string
-	trust                bool
-	provider, model      string
-	effort               string
-	fallbacks            []string
-	fallbackAfter, probe int
-	maxWorkers           int
-	stay, fill, webCtl   bool
-	stdout               io.Writer
-	startSupervisor      fleet.SupervisorStarter // nil starts `belai agent supervise`
-	registry             *fleet.Registry         // nil opens the default
-	checkDir             func(dir string, members []agentprofile.Member) error
-	waitForWorkers       time.Duration
+	crew                    string
+	dirs                    []string
+	trust                   bool
+	provider, model         string
+	effort                  string
+	pool                    []string
+	switchAfter, finalRetry int
+	maxWorkers              int
+	stay, fill, webCtl      bool
+	stdout                  io.Writer
+	startSupervisor         fleet.SupervisorStarter // nil starts `belai agent supervise`
+	registry                *fleet.Registry         // nil opens the default
+	checkDir                func(dir string, members []agentprofile.Member) error
+	waitForWorkers          time.Duration
 }
 
 // parseTarget reads "provider/model" or a bare model.
@@ -97,12 +97,13 @@ func startCrewRun(l crewLaunch) (int, error) {
 	}
 	run := fleet.NewCrewRun(c, scope)
 	if l.model != "" {
-		run.Primary = fleet.Target{Provider: l.provider, Model: l.model}
+		// -model is the pool's first target, where the workers start.
+		run.Pool = append(run.Pool, fleet.Target{Provider: l.provider, Model: l.model})
 	}
 	run.Effort, run.MaxWorkers, run.Stay, run.WebControls = l.effort, l.maxWorkers, l.stay, l.webCtl
-	run.FallbackAfter, run.ProbeSecs = l.fallbackAfter, l.probe
-	for _, f := range l.fallbacks {
-		run.Fallbacks = append(run.Fallbacks, parseTarget(f))
+	run.SwitchAfter, run.FinalRetrySecs = l.switchAfter, l.finalRetry
+	for _, t := range l.pool {
+		run.Pool = append(run.Pool, parseTarget(t))
 	}
 	start := l.startSupervisor
 	if start == nil {
@@ -238,7 +239,7 @@ func agentRuns(stdout io.Writer, all, asJSON bool) (int, error) {
 		return 0, nil
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "RUN\tCREW\tSTATE\tWORKERS\tSCOPE\tPRIMARY")
+	fmt.Fprintln(tw, "RUN\tCREW\tSTATE\tWORKERS\tSCOPE\tPOOL")
 	for _, r := range shown {
 		var dirs []string
 		for _, d := range r.Scope {
@@ -248,11 +249,18 @@ func agentRuns(stdout io.Writer, all, asJSON bool) (int, error) {
 			}
 			dirs = append(dirs, s)
 		}
-		primary := r.Primary.String()
-		if primary == "" {
-			primary = "profiles'"
+		var pool []string
+		for _, t := range r.Pool {
+			pool = append(pool, t.String())
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d\t%s\t%s\n", r.ID, r.Crew, r.State, len(reg.RunWorkers(r.ID)), r.Replicas(), strings.Join(dirs, ", "), primary)
+		poolText := strings.Join(pool, " ")
+		if poolText == "" {
+			poolText = "profiles'"
+		}
+		if r.PoolPhase != fleet.PoolHealthy {
+			poolText += " (" + r.PoolPhase + ")"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d\t%s\t%s\n", r.ID, r.Crew, r.State, len(reg.RunWorkers(r.ID)), r.Replicas(), strings.Join(dirs, ", "), poolText)
 	}
 	return 0, tw.Flush()
 }
@@ -263,7 +271,7 @@ func agentControl(fs *flag.FlagSet, rest []string, stdout io.Writer) (int, error
 	model := fs.String("model", "", "the model the next turn runs on (provider/model or model)")
 	effort := fs.String("effort", "", "the effort of the next turn")
 	drain := fs.Bool("drain", false, "finish the card in hand, then stop")
-	auto := fs.Bool("auto", false, "hand the model back to the crew's fallback policy")
+	auto := fs.Bool("auto", false, "hand the model back to the crew's pool")
 	const usage = "usage: belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID|NAME|RUN"
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 || (*model == "" && *effort == "" && !*drain && !*auto) {
 		return 2, errors.New(usage)

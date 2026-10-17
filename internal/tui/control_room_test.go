@@ -62,7 +62,7 @@ func TestControlRoomShowsTheRun(t *testing.T) {
 		t.Fatalf("/crew opened view %v", a.view)
 	}
 	out := roomText(a)
-	for _, want := range []string{run.ID, "belai:delivery", "workers 1/4", "openai down", "belai-builder-aaaaaa", "outages 2", "12k tok"} {
+	for _, want := range []string{run.ID, "belai:delivery", "workers 1/4", "openai/gpt-5 down ×1", "belai-builder-aaaaaa", "outages 2", "12k tok"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the workers tab lacks %q:\n%s", want, out)
 		}
@@ -155,17 +155,36 @@ func TestControlRoomSetsModels(t *testing.T) {
 		t.Fatalf("control %+v", c)
 	}
 	a.handleControlRoomKey(kkey("3"))
-	a.handleControlRoomKey(kkey("F"))
+	a.handleControlRoomKey(kkey("P"))
 	a.editor.SetValue("openai/gpt-5, google/gemini-3")
 	a.handleControlRoomKey(kkey("enter"))
 	a.handleControlRoomKey(kkey(">"))
 	got, _ := reg.GetRun(run.ID)
-	if len(got.Fallbacks) != 2 || got.Fallbacks[1] != (fleet.Target{Provider: "google", Model: "gemini-3"}) || got.FallbackAfter != fleet.DefaultFallAfter+1 {
+	if len(got.Pool) != 2 || got.Pool[1] != (fleet.Target{Provider: "google", Model: "gemini-3"}) || got.SwitchAfter != fleet.DefaultSwitch+1 {
 		t.Fatalf("run %+v", got)
 	}
+	// Every worker onto the selected pool target, still cycling the pool.
+	a.handleControlRoomKey(kkey("down"))
 	a.handleControlRoomKey(kkey("f"))
-	if c, _ := reg.Control("belai-builder-aaaaaa"); c.Target.Model != "gpt-5" {
-		t.Fatalf("force fallback wrote %+v", c)
+	if c, _ := reg.Control("belai-builder-aaaaaa"); c.Target.Model != "gemini-3" || !c.Auto {
+		t.Fatalf("pool target wrote %+v", c)
+	}
+	if out := roomText(a); !strings.Contains(out, "pool openai/gpt-5 → google/gemini-3 ↺") {
+		t.Fatalf("header lacks the pool:\n%s", out)
+	}
+}
+
+// A crew asleep before its final retry says so, with the time left.
+func TestControlRoomShowsThePoolAsleep(t *testing.T) {
+	a, reg, run := controlRoomApp(t)
+	_, _ = reg.UpdateRun(run.ID, "supervisor", func(r *fleet.CrewRun) error {
+		r.Pool = []fleet.Target{{Provider: "openai", Model: "gpt-5"}}
+		r.PoolPhase, r.SleepUntil = fleet.PoolSleeping, time.Now().Add(10*time.Minute).UnixMilli()
+		return nil
+	})
+	a.push(viewControlRoom)
+	if out := roomText(a); !strings.Contains(out, "the crew sleeps, final retry in") {
+		t.Fatalf("no sleep shown:\n%s", out)
 	}
 }
 
