@@ -111,6 +111,29 @@ func TestDecideRejectSendsTheCardBackAndCountsABounce(t *testing.T) {
 	}
 }
 
+// A planner's handoff keeps the label a builder claims by, so a rejection to
+// blocked is the one that cannot be built; only a deliberate re-queue counts as
+// a bounce.
+func TestRejectToBlockedKeepsTheRefusedCardOutOfEveryWorkersReach(t *testing.T) {
+	s := testStore(t)
+	addItem(t, s, ItemInput{Title: "plan", Labels: []string{"plan"}})
+	held := claimThenRelease(t, s, Outcome{To: Backlog, AddLabels: []string{CheckpointLabel(CheckpointPlanApproval), "build"}})
+
+	got, err := s.Decide(held.ID, Decision{Back: Blocked, Note: "wrong approach"}, "sess")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.List != Blocked || got.Bounces != 0 || !slices.Contains(got.Labels, "build") {
+		t.Fatalf("after reject: %s bounces %d labels %q", got.List, got.Bounces, got.Labels)
+	}
+	r := claimReq("w2")
+	r.Lists = []List{Backlog, Review}
+	r.Labels = []string{"build"}
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("a rejected plan is claimable: %v", err)
+	}
+}
+
 func TestDecideNeedsAListToRejectToAndAnUnclaimedCard(t *testing.T) {
 	s := testStore(t)
 	it := addItem(t, s, ItemInput{Title: "plan", Labels: []string{CheckpointLabel(CheckpointVisual)}})

@@ -73,7 +73,7 @@ func TestKanbanFlowAndCheckpointDecisions(t *testing.T) {
 	if code, out, e := run("checkpoint", held, "reject", "-to", "nowhere"); code != 2 {
 		t.Fatalf("a bad list: %d %q %q", code, out, e)
 	}
-	if code, out, e := run("checkpoint", held, "reject", "-note", "tests missing"); code != 0 || !strings.Contains(out, "backlog") {
+	if code, out, e := run("checkpoint", held, "reject", "-note", "tests missing"); code != 0 || !strings.Contains(out, "blocked") {
 		t.Fatalf("reject: %d %q %q", code, out, e)
 	}
 	if code, shown, _ := run("show", held); code != 0 || strings.Contains(shown, "checkpoint:") || !strings.Contains(shown, "rejected: tests missing") {

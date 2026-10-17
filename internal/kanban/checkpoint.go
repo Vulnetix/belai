@@ -56,9 +56,13 @@ type Decision struct {
 	// Approve lets the card go on: the checkpoint label is cleared and the
 	// card stays in its list for the next stage to claim.
 	Approve bool
-	// Back is where a rejected card returns to. A rejection clears the
-	// checkpoint label too, so the earlier stage can claim the card again; it
-	// counts as a bounce, which bounds a card passed back and forth.
+	// Back is where a rejected card goes. A rejection clears the checkpoint
+	// label too, so a card sent to backlog or review is claimable again, by
+	// whichever stage's labels it still carries: a planner's handoff keeps its
+	// build label, so a builder would build the rejected plan. Blocked is the
+	// safe place, a person's to triage, and what the TUI and the website use.
+	// Backlog and review count as a bounce, which bounds a card passed back and
+	// forth.
 	Back List
 	// Note is the person's reason. It is kept in the card's history.
 	Note string
@@ -92,7 +96,9 @@ func (s *Store) Decide(ref string, d Decision, sessionID string) (Item, error) {
 		from, to := it.List, it.List
 		if !d.Approve {
 			verb, to = "rejected", d.Back
-			it.Bounces++
+			if d.Back == Backlog || d.Back == Review {
+				it.Bounces++
+			}
 			it.Attempts = 0
 		}
 		note := fmt.Sprintf("checkpoint %s %s", reason, verb)
