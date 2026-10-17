@@ -50,6 +50,7 @@ var screenEntries = []screenEntry{
 	{key: "t", name: "kanban", desc: "the global kanban board", view: viewKanban, open: viaCommand("/kanban"), status: (*App).kanbanStatus},
 	{key: "c", name: "mcp", desc: "MCP servers: built-in switches, local and remote servers, secrets", view: viewMCP, open: viaCommand("/mcp"), status: (*App).mcpStatus},
 	{key: "o", name: "crew", desc: "the crew control room: workers, cards, providers, scope, faults, audit", view: viewControlRoom, open: viaCommand("/crew"), status: (*App).controlRoomStatus},
+	{key: "w", name: "inbox", desc: "cards waiting on you: checkpoints, cards for a person, blocked cards", view: viewInbox, open: viaCommand("/inbox"), status: (*App).inboxStatus},
 	{key: "n", name: "knowledge", desc: "indexed documents, labels and topics, by scope", view: viewKnowledge, open: viaCommand("/knowledge"), status: (*App).knowledgeStatus},
 }
 

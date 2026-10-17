@@ -461,7 +461,12 @@ type App struct {
 	rcLive     bool
 	rcSessions int
 	rcPolled   time.Time
-	kiroLogin  kiroLoginState
+	// inboxWaiting is how many cards wait on a person, as the footer shows it,
+	// re-read at most every few seconds (inboxPolled).
+	inboxWaiting int
+	inboxPolled  time.Time
+	inboxState   inboxViewState
+	kiroLogin    kiroLoginState
 	// gettingStartedOnInit opens the Getting started view on the first
 	// frame of a first interactive launch (start.go).
 	gettingStartedOnInit bool
@@ -2388,6 +2393,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.budgets.Refresh(budgetRefreshAge)
 		}
 		a.pollRC(false)
+		a.pollInbox(false)
 		a.refreshFooter()
 		var forgeCmd tea.Cmd
 		if a.forgeTabActive() {
@@ -5531,6 +5537,7 @@ func (a *App) refreshFooter() {
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	a.footer.RoutedModels = routedModelCount(a.cfg)
 	a.footer.RC = a.rcFooterLabel()
+	a.footer.Inbox = a.inboxFooterLabel()
 	a.footer.Voice, a.footer.VoiceOn = a.voiceFooter()
 	now := time.Now()
 	run.SetPlanLimits(a.settings.PlanLimitsEnabled())

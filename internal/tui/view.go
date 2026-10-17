@@ -44,6 +44,7 @@ const (
 	viewHelp
 	viewMCP
 	viewControlRoom
+	viewInbox
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -93,6 +94,7 @@ func init() {
 	viewHandlers[viewHelp] = viewHandler{name: "help", enter: (*App).enterHelp, key: (*App).handleHelpKey, render: (*App).helpView}
 	viewHandlers[viewMCP] = viewHandler{name: "mcp", enter: (*App).enterMCP, key: (*App).handleMCPKey, render: (*App).mcpView}
 	viewHandlers[viewControlRoom] = viewHandler{name: "crew", enter: (*App).enterControlRoom, key: (*App).handleControlRoomKey, render: (*App).controlRoomView}
+	viewHandlers[viewInbox] = viewHandler{name: "inbox", enter: (*App).enterInbox, key: (*App).handleInboxKey, render: (*App).inboxView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

@@ -558,6 +558,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("trusted", "manage trusted directories, the ones remote control offers", nil, func(a *App, arg string) tea.Cmd {
 		return a.openTrusted()
 	})
+	r.Register("inbox", "cards waiting on you: flow checkpoints, cards assigned to a person, blocked cards", nil, func(a *App, arg string) tea.Cmd {
+		return a.openInbox()
+	})
 	r.Register("knowledge", "browse and search indexed knowledge: this project, every project, the agents", func() []string {
 		return []string{"project", "global", "agents"}
 	}, func(a *App, arg string) tea.Cmd {

@@ -268,6 +268,17 @@ holds the card all the same. A failed stage is retried and then blocked as
 before; it never holds a card. A held card is not claimed, so a decision on a
 card a worker holds is refused.
 
+`/inbox` (or `w` on the screen switcher, `f1`) is the queue of cards waiting on
+you. It lists three kinds, in this order: a card held at a checkpoint, a card
+assigned to a person (`person:HANDLE`), and a card a worker blocked. Within a
+kind the card that has waited longest comes first. The list shows the card's
+reason, its short id, its title, its project and its age, and the selected card
+shows its latest note below, so you decide on what the stage left and not on
+the title alone. `a` approves a checkpoint; `x` asks for a reason and sends it
+back to the backlog; `t` opens `/kanban`; `r` refreshes. Approve and send back
+apply only to a checkpoint: the other two kinds are moved or released from
+`/kanban`. The footer shows `inbox N` in amber while any card waits.
+
 From the command line:
 
 ```sh
