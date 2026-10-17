@@ -231,7 +231,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   confirmation before any repo content is read, any process is auto-started,
   or any model turn runs. Headless invocations fail closed; `-trust-dir` is the
   only bypass and grants trust to the directory only, never its proposed
-  `workspace_dirs`. Guardrails-off does not skip the gate.
+  `workspace_dirs`. The crew control room's scope tab may trust a directory
+  it adds only after its own y/n confirmation naming that directory, with the
+  same limit. Guardrails-off does not skip the gate.
 - **Path resolution is root-relative, not process-relative.** A path argument
   may be an absolute filesystem path under any root (primary or added, longest
   match first), a path relative to the working directory, or — when it starts

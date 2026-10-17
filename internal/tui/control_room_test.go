@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +140,44 @@ func TestControlRoomEditsTheScope(t *testing.T) {
 	got, _ = reg.GetRun(run.ID)
 	if got.Members[0].Replicas != run.Members[0].Count()+1 {
 		t.Fatalf("replicas %+v", got.Members)
+	}
+}
+
+// Adding an untrusted directory asks first: no leaves it untrusted and out of
+// the scope, yes trusts the directory alone and adds it.
+func TestControlRoomTrustsADirectoryOnlyWhenConfirmed(t *testing.T) {
+	a, reg, run := controlRoomApp(t)
+	dir := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
+		t.Skipf("git init: %v %s", err, out)
+	}
+	add := func(answer string) {
+		a.handleControlRoomKey(kkey("a"))
+		a.editor.SetValue(dir)
+		a.handleControlRoomKey(kkey("enter"))
+		if a.crew.mode != "trust-dir" || !strings.Contains(roomText(a), dir+" is not trusted") {
+			t.Fatalf("mode %q, no trust question:\n%s", a.crew.mode, roomText(a))
+		}
+		a.handleControlRoomKey(kkey(answer))
+	}
+	a.push(viewControlRoom)
+	a.handleControlRoomKey(kkey("4"))
+	add("n")
+	if st, _ := trustgate.Check(dir); st.Trusted {
+		t.Fatal("no trusted the directory")
+	}
+	if got, _ := reg.GetRun(run.ID); len(got.Scope) != 1 {
+		t.Fatalf("no added to the scope: %+v", got.Scope)
+	}
+	add("y")
+	if st, _ := trustgate.Check(dir); !st.Trusted {
+		t.Fatal("yes did not trust the directory")
+	}
+	got, _ := reg.GetRun(run.ID)
+	if _, ok := got.Dir(dir); !ok && !strings.Contains(a.crew.errMsg, "sandbox") {
+		// A host with no sandbox backend refuses the members' preflight;
+		// the trust is still granted, which is what this checks.
+		t.Fatalf("not in the scope (%s): %+v", a.crew.errMsg, got.Scope)
 	}
 }
 

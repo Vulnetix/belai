@@ -53,13 +53,16 @@ type controlRoom struct {
 	acks    map[string]fleet.ControlAck
 	cards   []kanban.Item
 	marks   map[string]bool
-	faults  []crewlog.Fault
-	entries []crewlog.Entry
-	chain   int64 // the audit chain's first bad seq, -1 when intact
-	class   string
-	done    bool // the board shows done cards too
-	showLog bool
-	log     []string
+	// trustDir is the untrusted directory the trust-dir confirmation asks
+	// about, added to the scope once the user trusts it.
+	trustDir fleet.ScopeDir
+	faults   []crewlog.Fault
+	entries  []crewlog.Entry
+	chain    int64 // the audit chain's first bad seq, -1 when intact
+	class    string
+	done     bool // the board shows done cards too
+	showLog  bool
+	log      []string
 	// mode is an open editor or confirmation; see handleControlRoomKey.
 	mode    string
 	status  string
