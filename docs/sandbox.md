@@ -175,7 +175,9 @@ Under Landlock, which has no mount or network namespaces:
   but cannot start (unprivileged user namespaces off), the kernel is asked
   for Landlock; with neither, `auto` runs unsandboxed and `required` refuses.
   A probe that fails because the machine was out of processes or memory at
-  that moment ("Resource temporarily unavailable", "Cannot allocate memory")
+  that moment ("Resource temporarily unavailable", "Cannot allocate memory",
+  or the Go runtime's "failed to create new OS thread", which is how the Landlock
+  helper dies when no thread is left)
   is tried up to four times, 250 ms apart and doubling, before it counts; any
   other failure counts at once. A result reached through such a failure is
   not kept for the life of the process: after a five second cooldown the next

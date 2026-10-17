@@ -1447,6 +1447,12 @@ process table until the cgroup's `pids.max` is full and every later start fails 
 "resource temporarily unavailable". A zombie is reaped only after it has sat for a
 whole pass, so a child something is still waiting on is never taken from that wait.
 
+When a `belai agent start` that `belai rc` runs fails, the refusal sent back to the
+website is the last 400 bytes of its output, so the end (the result or the error) is
+what is reported. A Go crash dump is the exception: its end is only stack frames, so
+the text is cut where `runtime stack:` or `goroutine N` begins and the cause above it
+("failed to create new OS thread", a panic message) is what is kept.
+
 The log says what the worker does, in harness words only:
 
 - at start, what it looks for: `looking for backlog items labelled scout

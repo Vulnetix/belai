@@ -161,9 +161,21 @@ type startError string
 
 func (e startError) Error() string { return string(e) }
 
+// goDumpMarkers begin the part of a crashed Go program's output that is only
+// stack frames. The cause (a thread that could not be made, a panic message) is
+// above them.
+var goDumpMarkers = []string{"\nruntime stack:", "\ngoroutine "}
+
 // clip keeps the last line-joined maxStartReport bytes: the end of the
-// command's output carries the result or the error.
+// command's output carries the result or the error. A Go crash dump is the
+// exception: its end is stack frames, so it is cut where the frames begin and
+// the cause above them is kept.
 func clip(s string) string {
+	for _, m := range goDumpMarkers {
+		if i := strings.Index(s, m); i > 0 {
+			s = s[:i]
+		}
+	}
 	s = strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " · ")), " ")
 	if len(s) > maxStartReport {
 		s = "…" + strings.ToValidUTF8(s[len(s)-maxStartReport:], "")

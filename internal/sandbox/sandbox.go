@@ -232,7 +232,17 @@ var (
 // that probed ended.
 func transientProbeFailure(msg string) bool {
 	m := strings.ToLower(msg)
-	return strings.Contains(m, "resource temporarily unavailable") || strings.Contains(m, "cannot allocate memory") || strings.Contains(m, "eagain")
+	for _, t := range []string{
+		"resource temporarily unavailable", "cannot allocate memory", "eagain",
+		// The Landlock helper is this executable: with no thread left to make,
+		// the Go runtime dies before it can say any of the above.
+		"failed to create new os thread", "newosproc", "max user processes",
+	} {
+		if strings.Contains(m, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // shortReason flattens a probe's output and error into one line.
