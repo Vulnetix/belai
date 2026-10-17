@@ -259,7 +259,41 @@ type Query struct {
 	// to that profile.
 	Labels   []string
 	Assignee string
-	Limit    int
+	// Crew, Profile, ClaimedBy and LabelSets keep a crew's cards: an item
+	// assigned to the crew or to one of the profiles, claimed by one of the
+	// workers, or carrying every label of one of the sets. Any one match is
+	// enough; with none of them set every item matches.
+	Crew      string
+	Profile   []string
+	ClaimedBy []string
+	LabelSets [][]string
+	Limit     int
+}
+
+// owns reports whether it matches the query's crew fields.
+func (q Query) owns(it Item) bool {
+	if q.Crew == "" && len(q.Profile) == 0 && len(q.ClaimedBy) == 0 && len(q.LabelSets) == 0 {
+		return true
+	}
+	if it.ClaimedBy != "" && slices.Contains(q.ClaimedBy, it.ClaimedBy) {
+		return true
+	}
+	switch kind, name := ParseAssignee(it.Assignee); kind {
+	case AssigneeCrew:
+		if q.Crew != "" && name == q.Crew {
+			return true
+		}
+	case AssigneeProfile:
+		if slices.Contains(q.Profile, name) {
+			return true
+		}
+	}
+	for _, ls := range q.LabelSets {
+		if len(ls) > 0 && hasLabels(it, ls) {
+			return true
+		}
+	}
+	return false
 }
 
 // Errors.
@@ -549,6 +583,9 @@ func (s *Store) Search(q Query) ([]Item, error) {
 				continue
 			}
 			if q.Assignee != "" && it.Assignee != q.Assignee {
+				continue
+			}
+			if !q.owns(it) {
 				continue
 			}
 			if len(words) > 0 {
