@@ -343,11 +343,84 @@ type RCMember struct {
 	Replicas int    `json:"replicas"`
 }
 
+// RCTarget is a provider and model of a crew run's pool.
+type RCTarget struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+// RCCrewControl is a website change to a running crew run (a "crew_control"
+// request): one operation from a closed set, on the run Run, with the
+// operands that operation reads. Untrusted, like every dispatch: the daemon
+// checks every field's shape and refuses the rest (rc crewcontrol.go).
+type RCCrewControl struct {
+	Run string `json:"run"`
+	Op  string `json:"op"`
+	// Worker names the worker a worker_* operation changes; Dir the scope
+	// directory a scope_* operation changes; Profile the member a replicas
+	// operation changes.
+	Worker  string `json:"worker,omitempty"`
+	Dir     string `json:"dir,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	// The new values.
+	Weight         int        `json:"weight,omitempty"`
+	Paused         bool       `json:"paused,omitempty"`
+	Replicas       int        `json:"replicas,omitempty"`
+	Pool           []RCTarget `json:"pool,omitempty"`
+	Target         *RCTarget  `json:"target,omitempty"`
+	Effort         string     `json:"effort,omitempty"`
+	SwitchAfter    int        `json:"switchAfter,omitempty"`
+	FinalRetrySecs int        `json:"finalRetrySecs,omitempty"`
+	MaxWorkers     int        `json:"maxWorkers,omitempty"`
+}
+
+// RCScopeDir is one directory of a crew run's scope.
+type RCScopeDir struct {
+	Path   string `json:"path"`
+	Weight int    `json:"weight"`
+	Paused bool   `json:"paused,omitempty"`
+}
+
+// RCCrewRun is one crew run on the host (fleet.CrewRun, trimmed to its
+// settings and state): what the website's control room shows and edits.
+type RCCrewRun struct {
+	ID             string       `json:"id"`
+	Crew           string       `json:"crew"`
+	State          string       `json:"state"`
+	Reason         string       `json:"reason,omitempty"`
+	Scope          []RCScopeDir `json:"scope"`
+	Members        []RCMember   `json:"members"`
+	Pool           []RCTarget   `json:"pool,omitempty"`
+	SwitchAfter    int          `json:"switchAfter,omitempty"`
+	FinalRetrySecs int          `json:"finalRetrySecs,omitempty"`
+	Effort         string       `json:"effort,omitempty"`
+	MaxWorkers     int          `json:"maxWorkers,omitempty"`
+	Stay           bool         `json:"stay,omitempty"`
+	// WebControls says whether the website may change the run (the run was
+	// started with -web-controls and belai rc runs with --web-controls).
+	WebControls bool   `json:"webControls,omitempty"`
+	PoolPhase   string `json:"poolPhase,omitempty"`
+	SleepUntil  int64  `json:"sleepUntil,omitempty"`
+	PoolEpoch   int    `json:"poolEpoch,omitempty"`
+	LastSuccess int64  `json:"lastSuccess,omitempty"`
+	Restarts    int    `json:"restarts,omitempty"`
+	Started     int64  `json:"started"`
+	Stopped     int64  `json:"stopped,omitempty"`
+	Beat        int64  `json:"heartbeat,omitempty"`
+	Seq         int64  `json:"seq"`
+	UpdatedBy   string `json:"updatedBy,omitempty"`
+}
+
+// MaxRCRuns caps the crew runs a heartbeat carries.
+const MaxRCRuns = 20
+
 // RCWorker is one live fleet worker on the host (fleet.Record, trimmed).
 type RCWorker struct {
 	ID      string `json:"id"`
 	Profile string `json:"profile"`
 	Crew    string `json:"crew,omitempty"`
+	// Run is the crew run the worker belongs to.
+	Run     string `json:"run,omitempty"`
 	State   string `json:"state"`
 	Item    string `json:"item,omitempty"`
 	Project string `json:"project,omitempty"`
@@ -470,6 +543,8 @@ type Dispatch struct {
 	Fill bool `json:"fill,omitempty"`
 	// Worker is the worker id a "pause" or "resume" request names.
 	Worker string `json:"worker,omitempty"`
+	// Control is a "crew_control" request's change to a running crew run.
+	Control *RCCrewControl `json:"control,omitempty"`
 	// A "profile_install" request names a library profile and one of its
 	// versions, and says whether it may replace this host's profile of the same
 	// name and id. A "profile_backup" request names the host's profile in
@@ -961,13 +1036,17 @@ func (c *Client) Ack(ctx context.Context, promptID, status, reason, entryID stri
 		map[string]string{"status": status, "reason": reason, "entryId": entryID}, nil, requestTimeout)
 }
 
-// RCHeartbeat keeps an rc daemon online and reports how many sessions it runs.
-func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int, workers []RCWorker) error {
+// RCHeartbeat keeps an rc daemon online and reports how many sessions it
+// runs, its fleet workers and its crew runs.
+func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int, workers []RCWorker, runs []RCCrewRun) error {
 	if workers == nil {
 		workers = []RCWorker{}
 	}
+	if runs == nil {
+		runs = []RCCrewRun{}
+	}
 	return c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/heartbeat",
-		map[string]any{"running": running, "workers": workers}, nil, requestTimeout)
+		map[string]any{"running": running, "workers": workers, "runs": runs}, nil, requestTimeout)
 }
 
 // RCOffline marks the rc daemon stopped; requests still waiting expire.
