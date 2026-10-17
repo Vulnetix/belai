@@ -19,10 +19,9 @@ import (
 // crewEditorModes are the control room's one-line editors and their titles.
 var crewEditorModes = map[string]string{
 	"launch":     "launch a crew: CREW DIR[:WEIGHT] … (default this repository)",
-	"model":      "model for the selected worker: provider/model",
+	"model":      "model for the selected worker, pinned until A: provider/model",
 	"effort":     "effort for the selected worker",
-	"primary":    "the crew's primary model: provider/model (empty: each profile's)",
-	"fallbacks":  "fallbacks in order: provider/model provider/model …",
+	"pool":       "the crew's pool, first where workers start: provider/model provider/model … (empty: each profile's)",
 	"add-dir":    "add a directory to the scope: PATH[:WEIGHT]",
 	"move":       "move the marked cards to: backlog, review, blocked or done",
 	"labels":     "labels for the marked cards: +add -remove …",
@@ -152,33 +151,27 @@ func (a *App) crewTabKey(key string) {
 	case crProviders:
 		switch key {
 		case "P":
-			a.crewEdit("primary", cr.run.Primary.String())
-		case "F":
-			var fb []string
-			for _, t := range cr.run.Fallbacks {
-				fb = append(fb, t.String())
+			var pool []string
+			for _, t := range cr.run.Pool {
+				pool = append(pool, t.String())
 			}
-			a.crewEdit("fallbacks", strings.Join(fb, " "))
+			a.crewEdit("pool", strings.Join(pool, " "))
 		case "f":
-			if len(cr.run.Fallbacks) == 0 {
-				cr.errMsg = "this crew has no fallback: F sets one"
-				return
+			// Every worker onto the selected target; the pool keeps cycling
+			// from there.
+			if i := cr.sel[crProviders]; i < len(cr.run.Pool) {
+				t := cr.run.Pool[i]
+				a.crewControlRun("pool_target", map[string]string{"target": t.String()}, func(c *fleet.Control) { c.Target, c.Auto = t, true })
 			}
-			t := cr.run.Fallbacks[0]
-			if i := cr.sel[crProviders]; i > 0 && i <= len(cr.run.Fallbacks) {
-				t = cr.run.Fallbacks[i-1]
-			}
-			a.crewControlRun("force-fallback", map[string]string{"target": t.String()}, func(c *fleet.Control) { c.Target, c.Auto = t, false })
 		case "g":
-			t := cr.run.Primary
-			a.crewControlRun("to-primary", map[string]string{"target": t.String()}, func(c *fleet.Control) { c.Target, c.Auto = t, true })
+			a.crewControlRun("auto", nil, func(c *fleet.Control) { c.Target, c.Effort, c.Auto = fleet.Target{}, "", true })
 		case "<", ">":
 			d := 1
 			if key == "<" {
 				d = -1
 			}
-			a.crewUpdateRun("fallback-after", nil, func(r *fleet.CrewRun) error {
-				r.FallbackAfter = max(r.FallbackAfterOr()+d, 1)
+			a.crewUpdateRun("switch_after", nil, func(r *fleet.CrewRun) error {
+				r.SwitchAfter = max(r.SwitchAfterOr()+d, 1)
 				return nil
 			})
 		case "{", "}":
@@ -186,8 +179,8 @@ func (a *App) crewTabKey(key string) {
 			if key == "{" {
 				d = -60
 			}
-			a.crewUpdateRun("probe", nil, func(r *fleet.CrewRun) error {
-				r.ProbeSecs = max(int(r.Probe().Seconds())+d, 60)
+			a.crewUpdateRun("final_retry", nil, func(r *fleet.CrewRun) error {
+				r.FinalRetrySecs = max(int(r.FinalRetry().Seconds())+d, 60)
 				return nil
 			})
 		}
@@ -376,19 +369,13 @@ func (a *App) crewCommit(mode, text string) {
 		if rec, ok := a.crewWorker(); ok && text != "" {
 			a.crewControlWorker(rec, "effort", func(c *fleet.Control) { c.Effort = text })
 		}
-	case "primary":
-		t := parseCrewTarget(text)
-		a.crewUpdateRun("primary", map[string]string{"target": t.String()}, func(r *fleet.CrewRun) error {
-			r.Primary = t
-			return nil
-		})
-	case "fallbacks":
-		var fb []fleet.Target
+	case "pool":
+		var pool []fleet.Target
 		for _, f := range strings.Fields(strings.ReplaceAll(text, ",", " ")) {
-			fb = append(fb, parseCrewTarget(f))
+			pool = append(pool, parseCrewTarget(f))
 		}
-		a.crewUpdateRun("fallbacks", nil, func(r *fleet.CrewRun) error {
-			r.Fallbacks = fb
+		a.crewUpdateRun("pool", nil, func(r *fleet.CrewRun) error {
+			r.Pool = pool
 			return nil
 		})
 	case "add-dir":

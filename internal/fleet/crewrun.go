@@ -48,12 +48,24 @@ func (s RunState) Live() bool { return s == RunRunning || s == RunStopping }
 
 // Crew run limits.
 const (
-	MaxScopeDirs     = 16
-	MinWeight        = 1
-	MaxWeight        = 10
-	MaxFallbacks     = 4
-	DefaultFallAfter = 3
-	DefaultProbe     = 10 * time.Minute
+	MaxScopeDirs      = 16
+	MinWeight         = 1
+	MaxWeight         = 10
+	MaxPool           = 8
+	DefaultSwitch     = 3
+	DefaultFinalRetry = 15 * time.Minute
+)
+
+// Pool phases: the crew's state against its provider pool.
+const (
+	// PoolHealthy: workers cycle the pool as each target fails.
+	PoolHealthy = ""
+	// PoolSleeping: every target in the pool failed; nobody claims until
+	// SleepUntil, then the crew makes its final retry.
+	PoolSleeping = "sleeping"
+	// PoolFinalRetry: the crew's last pass over the pool. A success returns it
+	// to healthy; the whole pool failing again ends the run.
+	PoolFinalRetry = "final_retry"
 )
 
 // ScopeDir is one repository in a crew run's scope.
@@ -90,16 +102,16 @@ type CrewRun struct {
 	Crew    string                `json:"crew"`
 	Scope   []ScopeDir            `json:"scope"`
 	Members []agentprofile.Member `json:"members"`
-	// Primary is the provider and model every worker starts on; zero keeps
-	// each profile's own.
-	Primary Target `json:"primary,omitzero"`
-	Effort  string `json:"effort,omitempty"`
-	// Fallbacks are tried in order when the provider keeps failing: after
-	// FallbackAfter outages in a row a worker moves to the next target, and
-	// every ProbeSecs it goes back to the primary to see if it recovered.
-	Fallbacks     []Target `json:"fallbacks,omitempty"`
-	FallbackAfter int      `json:"fallback_after,omitempty"`
-	ProbeSecs     int      `json:"probe_secs,omitempty"`
+	// Pool is the providers and models the crew runs on. Workers start on
+	// the first; after SwitchAfter outages in a row on one, a worker moves to
+	// the next, wrapping round, so it comes back to a target that failed
+	// before. Empty keeps each profile's own model, with no switching.
+	Pool        []Target `json:"pool,omitempty"`
+	SwitchAfter int      `json:"switch_after,omitempty"`
+	// FinalRetrySecs is how long the crew sleeps once every target in the
+	// pool failed, before its final retry.
+	FinalRetrySecs int    `json:"final_retry_secs,omitempty"`
+	Effort         string `json:"effort,omitempty"`
 	// MaxWorkers caps the run's workers; zero is agents.max_workers.
 	MaxWorkers int `json:"max_workers,omitempty"`
 	// Stay keeps the run going when nothing is left to claim anywhere in
@@ -119,23 +131,45 @@ type CrewRun struct {
 	// "human", "supervisor").
 	Seq       int64  `json:"seq"`
 	UpdatedBy string `json:"updated_by,omitempty"`
+
+	// The pool's state, kept by the supervisor (supervisor.go, poolStep).
+	// PoolEpoch counts the final retries started: a worker that sees it move
+	// forgets which targets failed and starts the pool again. LastSuccess is
+	// the newest card any worker finished without a provider outage.
+	PoolPhase   string `json:"pool_phase,omitempty"`
+	SleepUntil  int64  `json:"sleep_until,omitempty"`
+	PoolEpoch   int    `json:"pool_epoch,omitempty"`
+	RetryFrom   int64  `json:"retry_from,omitempty"`
+	LastSuccess int64  `json:"last_success,omitempty"`
 }
 
-// FallbackAfterOr is the outage streak that moves a worker to a fallback.
-func (r CrewRun) FallbackAfterOr() int {
-	if r.FallbackAfter <= 0 {
-		return DefaultFallAfter
+// SwitchAfterOr is the outage streak that moves a worker to the next target
+// in the pool.
+func (r CrewRun) SwitchAfterOr() int {
+	if r.SwitchAfter <= 0 {
+		return DefaultSwitch
 	}
-	return r.FallbackAfter
+	return r.SwitchAfter
 }
 
-// Probe is how long a worker stays on a fallback before trying the primary.
-func (r CrewRun) Probe() time.Duration {
-	if r.ProbeSecs <= 0 {
-		return DefaultProbe
+// FinalRetry is how long the crew sleeps before its final retry.
+func (r CrewRun) FinalRetry() time.Duration {
+	if r.FinalRetrySecs <= 0 {
+		return DefaultFinalRetry
 	}
-	return time.Duration(r.ProbeSecs) * time.Second
+	return time.Duration(r.FinalRetrySecs) * time.Second
 }
+
+// First is the pool's first target, zero for an empty pool.
+func (r CrewRun) First() Target {
+	if len(r.Pool) == 0 {
+		return Target{}
+	}
+	return r.Pool[0]
+}
+
+// InPool reports whether t is one of the pool's targets.
+func (r CrewRun) InPool(t Target) bool { return slices.Contains(r.Pool, t) }
 
 // Dir returns the scope entry for path.
 func (r CrewRun) Dir(path string) (ScopeDir, bool) {
@@ -177,12 +211,20 @@ func (r *CrewRun) Normalize() {
 	for i := range r.Members {
 		r.Members[i].Replicas = min(max(r.Members[i].Replicas, 0), agentprofile.MaxReplicas)
 	}
-	if r.FallbackAfter <= 0 {
-		r.FallbackAfter = DefaultFallAfter
+	if r.SwitchAfter <= 0 {
+		r.SwitchAfter = DefaultSwitch
 	}
-	if r.ProbeSecs <= 0 {
-		r.ProbeSecs = int(DefaultProbe / time.Second)
+	if r.FinalRetrySecs <= 0 {
+		r.FinalRetrySecs = int(DefaultFinalRetry / time.Second)
 	}
+	// A target named twice would only be tried twice in a row.
+	var pool []Target
+	for _, t := range r.Pool {
+		if !t.Zero() && !slices.Contains(pool, t) {
+			pool = append(pool, t)
+		}
+	}
+	r.Pool = pool
 }
 
 // Validate checks a normalized run.
@@ -196,14 +238,14 @@ func (r CrewRun) Validate() error {
 		return fmt.Errorf("a crew run's scope holds at most %d directories", MaxScopeDirs)
 	case len(r.Members) == 0:
 		return errors.New("a crew run needs at least one member")
-	case len(r.Fallbacks) > MaxFallbacks:
-		return fmt.Errorf("a crew run takes at most %d fallbacks", MaxFallbacks)
+	case len(r.Pool) > MaxPool:
+		return fmt.Errorf("a crew run's pool holds at most %d targets", MaxPool)
 	case r.MaxWorkers < 0:
 		return errors.New("max workers cannot be negative")
 	}
-	for _, t := range r.Fallbacks {
+	for _, t := range r.Pool {
 		if t.Model == "" {
-			return errors.New("a fallback needs a model")
+			return errors.New("a pool target needs a model")
 		}
 	}
 	return nil

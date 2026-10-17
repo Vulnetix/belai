@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -152,6 +153,13 @@ func (w *Worker) applyControl() {
 			w.logf("control (%s): refused %s: %s", c.By, c.Target, sanitize.Line(err.Error(), 240))
 		} else {
 			w.logf("control (%s): next turn on %s", c.By, w.currentTarget())
+			// A pool target the control picked is where the pool cycles on
+			// from.
+			if run := w.crewRun; run != nil {
+				if i := slices.Index(run.Pool, w.currentTarget()); i >= 0 {
+					w.Record.PoolIndex = i
+				}
+			}
 			if c.By == "human" && !c.Auto {
 				w.pinned = true
 			}

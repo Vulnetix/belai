@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
 )
@@ -209,6 +210,10 @@ func (s *Supervisor) finish(run CrewRun, cancelled bool) error {
 // It returns a reason to end the run when the scope has run dry (a run that
 // does not stay ends after a quiet window with nothing to claim anywhere).
 func (s *Supervisor) Reconcile(run CrewRun) string {
+	run, why := s.poolStep(run)
+	if why != "" {
+		return why
+	}
 	demand := s.Demand
 	if demand == nil {
 		demand = s.boardDemand(run)
@@ -290,7 +295,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 				spawn = s.Registry.Spawn
 			}
 			id, err := spawn(SpawnOptions{Exe: s.Exe, Repo: k.Repo, Profile: k.Profile, Crew: run.Crew, Run: run.ID,
-				Provider: run.Primary.Provider, Model: run.Primary.Model, Effort: run.Effort, Stay: true,
+				Provider: run.First().Provider, Model: run.First().Model, Effort: run.Effort, Stay: true,
 				MaxWorkers: max, WebControls: run.WebControls})
 			if err != nil {
 				s.logf("start %s in %s: %v", k.Profile, k.Repo, err)
@@ -376,4 +381,78 @@ func (s *Supervisor) boardDemand(run CrewRun) func(profile, repo string) int {
 		n, _ := s.Store.Demand(r)
 		return n
 	}
+}
+
+// poolStep keeps the crew's pool phase. A worker that finds every target in
+// the pool failed since its last success, with no other worker getting a card
+// through after, puts the crew to sleep for FinalRetry; when the sleep ends
+// the crew makes its final retry (a new epoch: every worker starts the pool
+// again); a success in that pass makes the crew healthy again, and the pool
+// failing once more ends the run with a reason.
+func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
+	if len(run.Pool) == 0 {
+		return run, ""
+	}
+	now := s.clock().UnixMilli()
+	last := run.LastSuccess
+	for _, rec := range s.Registry.RunWorkers(run.ID) {
+		last = max(last, rec.LastSuccess)
+	}
+	exhausted := false
+	for _, rec := range s.Registry.RunWorkers(run.ID) {
+		if rec.PoolExhausted && rec.PoolEpoch == run.PoolEpoch && rec.PoolExhaustedAt > last {
+			exhausted = true
+		}
+	}
+	phase, action, why := run.PoolPhase, "", ""
+	switch run.PoolPhase {
+	case PoolHealthy:
+		if exhausted {
+			phase, action = PoolSleeping, "pool_sleep"
+			s.logf("every provider and model in the pool failed; the crew sleeps %s before its final retry", run.FinalRetry())
+		}
+	case PoolSleeping:
+		if now >= run.SleepUntil {
+			phase, action = PoolFinalRetry, "final_retry"
+			s.logf("final retry over the pool")
+		}
+	case PoolFinalRetry:
+		switch {
+		case last > run.RetryFrom:
+			phase, action = PoolHealthy, "pool_recovered"
+			s.logf("the pool recovered on the final retry")
+		case exhausted:
+			action = "pool_exhausted"
+			why = fmt.Sprintf("every provider and model in the pool failed, and again after the final retry (%s later)", run.FinalRetry())
+		}
+	}
+	if phase == run.PoolPhase && last == run.LastSuccess && action == "" {
+		return run, ""
+	}
+	next, err := s.Registry.UpdateRun(run.ID, "supervisor", func(cr *CrewRun) error {
+		cr.LastSuccess = max(cr.LastSuccess, last)
+		switch action {
+		case "pool_sleep":
+			cr.PoolPhase, cr.SleepUntil = PoolSleeping, s.clock().Add(cr.FinalRetry()).UnixMilli()
+		case "final_retry":
+			cr.PoolPhase, cr.PoolEpoch, cr.RetryFrom, cr.SleepUntil = PoolFinalRetry, cr.PoolEpoch+1, now, 0
+		case "pool_recovered":
+			cr.PoolPhase, cr.RetryFrom = PoolHealthy, 0
+		}
+		return nil
+	})
+	if err != nil {
+		s.logf("pool: %v", err)
+		return run, why
+	}
+	if action != "" {
+		recordPool(next, action)
+	}
+	if why != "" {
+		if l := openCrewLog(run.ID); l != nil {
+			_ = l.AppendFault(crewlog.Fault{Run: run.ID, Crew: run.Crew, Class: FaultPoolExhausted, Outcome: "terminated", Detail: why})
+			l.Close()
+		}
+	}
+	return next, why
 }
