@@ -67,9 +67,12 @@ func TestControlRoomShowsTheRun(t *testing.T) {
 			t.Errorf("the workers tab lacks %q:\n%s", want, out)
 		}
 	}
+	if _, _, err := a.kb.store.Add(kanban.ItemInput{Title: "another crew's card", Assignee: "crew:belai:other"}, a.kb.src.Get()); err != nil {
+		t.Fatal(err)
+	}
 	a.handleControlRoomKey(kkey("2"))
-	if out := roomText(a); !strings.Contains(out, "wire the login form") {
-		t.Fatalf("the board tab lacks the crew's card:\n%s", out)
+	if out := roomText(a); !strings.Contains(out, "wire the login form") || strings.Contains(out, "another crew's card") {
+		t.Fatalf("the board tab should hold only the crew's card:\n%s", out)
 	}
 	found := false
 	for _, e := range screenEntries {

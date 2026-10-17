@@ -233,38 +233,30 @@ func (a *App) crewCards() []kanban.Item {
 	if cr.done {
 		lists = append(lists, kanban.Done)
 	}
-	items, err := store.Search(kanban.Query{Lists: lists, Limit: kanban.MaxItems})
-	if err != nil {
-		return nil
-	}
+	q := kanban.Query{Lists: lists, Crew: cr.run.Crew, Limit: kanban.MaxItems}
 	workers := map[string]bool{}
 	for _, w := range cr.workers {
 		workers[w.ID] = true
+		q.ClaimedBy = append(q.ClaimedBy, w.ID)
 	}
-	var labelSets [][]string
-	profiles := map[string]bool{}
 	for _, m := range cr.run.Members {
-		profiles[m.Profile] = true
+		q.Profile = append(q.Profile, m.Profile)
 		if p, err := agentprofile.Load(m.Profile); err == nil && p.Kanban != nil && len(p.Kanban.Labels) > 0 {
-			labelSets = append(labelSets, p.Kanban.Labels)
+			q.LabelSets = append(q.LabelSets, p.Kanban.Labels)
 		}
 	}
+	items, err := store.Search(q)
+	if err != nil {
+		return nil
+	}
+	// The board is shared across projects: keep the cards in the run's scope,
+	// and any card one of its workers holds wherever it lives.
 	scope := a.crewScopeProjects()
 	var out []kanban.Item
 	for _, it := range items {
 		_, inKey := scope[it.ProjectKey]
 		_, inName := scope[strings.ToLower(it.Project)]
-		if !inKey && !inName && !workers[it.ClaimedBy] {
-			continue
-		}
-		kind, name := kanban.ParseAssignee(it.Assignee)
-		ours := workers[it.ClaimedBy] || (kind == kanban.AssigneeCrew && name == cr.run.Crew) || (kind == kanban.AssigneeProfile && profiles[name])
-		for _, ls := range labelSets {
-			if !ours && hasAll(it.Labels, ls) {
-				ours = true
-			}
-		}
-		if ours {
+		if inKey || inName || workers[it.ClaimedBy] {
 			out = append(out, it)
 		}
 	}
@@ -279,15 +271,6 @@ func (a *App) crewCards() []kanban.Item {
 		return out[i].Created < out[j].Created
 	})
 	return out
-}
-
-func hasAll(have, want []string) bool {
-	for _, w := range want {
-		if !slices.Contains(have, w) {
-			return false
-		}
-	}
-	return true
 }
 
 // targetHealth is one pool target's state across the run's live workers.
