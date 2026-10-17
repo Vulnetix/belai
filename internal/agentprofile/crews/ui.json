@@ -1,0 +1,10 @@
+{
+  "name": "belai:ui",
+  "description": "A designer, builders and a reviewer: a person approves the specified journeys before any code is written, and the reviewer checks them in the running app",
+  "one_per_repo": true,
+  "members": [
+    {"profile": "belai:designer", "replicas": 1},
+    {"profile": "belai:builder", "replicas": 2},
+    {"profile": "belai:reviewer", "replicas": 1}
+  ]
+}

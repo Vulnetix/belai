@@ -58,7 +58,11 @@ const (
 	maxLabels       = 128
 	maxWhyChars     = 240
 	maxCrewOffers   = 4
-	defaultAttempts = 2
+	// maxNewCrewOffers leaves room for the gap offers: several built-in crews
+	// share the builder, and four copies of one idea would crowd out "Nothing
+	// claims X".
+	maxNewCrewOffers = 2
+	defaultAttempts  = 2
 )
 
 // Request is what to draft from. Workers and Labels are facts from the
@@ -596,7 +600,7 @@ func CrewOffers(fields map[string]Field, workers []Worker, boardLabels []string,
 
 	out := []CrewOffer{}
 	for _, c := range crews {
-		if len(out) == maxCrewOffers || len(c.Members) >= agentprofile.MaxCrewMembers {
+		if len(out) == maxNewCrewOffers || len(c.Members) >= agentprofile.MaxCrewMembers {
 			continue
 		}
 		for _, m := range c.Members {

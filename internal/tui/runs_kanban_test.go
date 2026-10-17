@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/kanban"
 )
@@ -196,8 +197,14 @@ func TestCrewTabListsWorkersAndCyclesCrews(t *testing.T) {
 			t.Fatalf("crew tab lacks %q:\n%s", want, out)
 		}
 	}
+	// c moves to the crew listed after the chosen one.
+	crews := agentprofile.ListCrews()
+	at := slices.IndexFunc(crews, func(c agentprofile.Crew) bool { return c.Name == "belai:delivery" })
+	if at < 0 {
+		t.Fatal("no delivery crew listed")
+	}
 	a.handleRunsPanelKey(kkey("c"))
-	if c, _ := a.chosenCrew(); c.Name != "belai:security" {
+	if c, _ := a.chosenCrew(); c.Name != crews[(at+1)%len(crews)].Name {
 		t.Fatalf("c chose %s", c.Name)
 	}
 	a.agentState.fleet.ticking = false

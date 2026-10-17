@@ -463,6 +463,9 @@ A crew is a named set of profiles started together:
 |---|---|
 | `belai:delivery` | `belai:scout` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:security` | `belai:vuln-scout` ×1, `belai:patcher` ×2, `belai:verifier` ×1 |
+| `belai:feature` | `belai:planner` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
+| `belai:bug` | `belai:repro` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
+| `belai:ui` | `belai:designer` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 
 Each built-in member has a persona, so the console shows who is who. The
 security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
@@ -967,6 +970,34 @@ regression count against the base commit (or that none was compared) and how
 many request clauses have a task. It never sees the card's words, a gate title, a
 note or test output. With no fast model, an error or an empty reply, the harness
 writes the same facts as plain sentences. The note is at most 500 characters.
+
+### The flow crews
+
+`belai:feature`, `belai:bug` and `belai:ui` are the delivery crew with a
+different first stage and a person's decision before any code is written. Each
+has three stages, and each stage is one agent in its own worktree with its own
+context, so a stage sees the previous one only through the cards it filed:
+
+| Crew | Entry label | First stage | Checkpoint on its handoffs |
+|---|---|---|---|
+| `belai:feature` | `plan` | `belai:planner` records the request's clauses and files small `build` items, each with acceptance gates fixed before any code exists | `plan_approval` |
+| `belai:bug` | `repro` | `belai:repro` reproduces the bug with the project's own commands, names the root cause with its evidence, and files fix items that start from a failing test | `root_cause` |
+| `belai:ui` | `ui-design` | `belai:designer` specifies the user journeys and the states to check, and says how each is proved in the running app | `visual` |
+
+File an item with the entry label, or use `belai kanban add -flow feature`,
+`bug` or `ui`, which adds it. The first stage reads and runs checks but never
+changes code. Each handoff it files carries a **checkpoint** (see
+[Human checkpoints](kanban.md#human-checkpoints)): no builder takes it until a
+person runs `belai kanban checkpoint ID approve`, or sends it back with
+`reject`. After approval the ordinary `belai:builder` and `belai:reviewer` work
+it, and the reviewed branch arrives as a draft pull request, which is the last
+human gate.
+
+The three flows keep the chain short on purpose: each stage can fail, and a
+chain of stages that each succeed nine times in ten succeeds end to end far less
+often. The checkpoints sit where a wrong turn is cheapest to correct and most
+costly to carry forward: the plan, the diagnosis and the design. A stage that
+fails twice goes to `blocked` for a person rather than retrying without end.
 
 ### The security crew
 

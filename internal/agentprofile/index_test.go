@@ -64,7 +64,7 @@ func TestBuiltinsIndexMatchesTheEmbeddedSet(t *testing.T) {
 	for n := range have {
 		t.Errorf("profile %s is indexed but not embedded", n)
 	}
-	if len(idx.Crews) != 2 || len(idx.Skills) != 6 {
+	if len(idx.Crews) != 5 || len(idx.Skills) != 6 {
 		t.Errorf("crews = %d, skills = %d", len(idx.Crews), len(idx.Skills))
 	}
 }

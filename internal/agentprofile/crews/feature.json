@@ -1,0 +1,10 @@
+{
+  "name": "belai:feature",
+  "description": "A planner, builders and a reviewer: a person approves the plan before any code is written, and the reviewed branch arrives as a draft pull request",
+  "one_per_repo": true,
+  "members": [
+    {"profile": "belai:planner", "replicas": 1},
+    {"profile": "belai:builder", "replicas": 2},
+    {"profile": "belai:reviewer", "replicas": 1}
+  ]
+}

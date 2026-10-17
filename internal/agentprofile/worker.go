@@ -40,7 +40,12 @@ type KanbanSpec struct {
 	// from the harness's local repository index. It is for a worker that runs
 	// in a plain folder holding several repositories and finds work for each.
 	HandoffRepos bool `json:"handoff_repos,omitempty"`
-	MaxAttempts  int  `json:"max_attempts,omitempty"`
+	// HandoffCheckpoint holds every item the worker hands off for a person, one
+	// of kanban.CheckpointReasons: a planner's tasks wait for approval before a
+	// builder takes them. The harness adds the checkpoint label, the model never
+	// names it, and it is the reason a person's decision is asked for.
+	HandoffCheckpoint string `json:"handoff_checkpoint,omitempty"`
+	MaxAttempts       int    `json:"max_attempts,omitempty"`
 	// Lease is how long a claim holds without renewal; Poll how often an
 	// idle worker looks for work. Go durations.
 	Lease string `json:"lease,omitempty"`
@@ -447,6 +452,14 @@ func (p AgentProfile) validateWorker() error {
 		}
 		if k.Gates != nil {
 			return errors.New("kanban.handoff_repos cannot be combined with kanban.gates: a gate names a test suite of the worker's own repository")
+		}
+	}
+	if k.HandoffCheckpoint != "" {
+		if !kanban.ValidCheckpoint(k.HandoffCheckpoint) {
+			return fmt.Errorf("kanban.handoff_checkpoint %q is not one of %s", k.HandoffCheckpoint, strings.Join(kanban.CheckpointReasons, ", "))
+		}
+		if len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+			return errors.New("kanban.handoff_checkpoint needs handoff_to or handoff_labels: it holds the items the worker hands off")
 		}
 	}
 	if k.Lease != "" {

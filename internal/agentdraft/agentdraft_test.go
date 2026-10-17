@@ -256,7 +256,9 @@ func TestCrewOffers(t *testing.T) {
 	for _, o := range offers {
 		kinds = append(kinds, o.Kind+":"+o.Title)
 	}
-	want := []string{"new_crew:New crew: delivery-dep-reviewer", "fill_gap:Nothing claims docs", "fill_gap:Nothing claims triage"}
+	// Four built-in crews share the builder; two are offered, in name order, so
+	// the gaps keep their room.
+	want := []string{"new_crew:New crew: bug-dep-reviewer", "new_crew:New crew: delivery-dep-reviewer", "fill_gap:Nothing claims docs", "fill_gap:Nothing claims triage"}
 	if !reflect.DeepEqual(kinds, want) {
 		t.Fatalf("offers = %v", kinds)
 	}
