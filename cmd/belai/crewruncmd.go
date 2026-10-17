@@ -164,25 +164,10 @@ func joinCrewRun(reg *fleet.Registry, live fleet.CrewRun, scope []fleet.ScopeDir
 	return 1, fmt.Errorf("%w (%s)", fleet.ErrRunLive, live.ID)
 }
 
-// checkCrewDir checks every member can work in dir under dir's own settings.
+// checkCrewDir checks every member can work in dir under dir's own settings;
+// trustRepo already ran, granting trust when -trust-dir asked for it.
 func checkCrewDir(dir string, members []agentprofile.Member) error {
-	settings, pol, err := repoPolicy(dir)
-	if err != nil {
-		return fmt.Errorf("%s: %w", dir, err)
-	}
-	for _, m := range members {
-		p, err := agentprofile.Load(m.Profile)
-		if err != nil {
-			return err
-		}
-		if err := fleet.Preflight(p, settings, pol); err != nil {
-			return fmt.Errorf("%s in %s: %w", m.Profile, dir, err)
-		}
-		if err := fleet.CheckRepo(p, dir); err != nil {
-			return err
-		}
-	}
-	return nil
+	return fleet.CheckScopeDir(dir, members)
 }
 
 func plural(n int, one, many string) string {

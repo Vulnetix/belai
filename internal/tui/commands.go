@@ -620,6 +620,23 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("fleet: unknown subcommand " + sub + " (start, crew, stop)")
 		return nil
 	})
+	r.Register("crew", "the crew control room: a crew run's workers, cards, providers, scope, faults and audit", nil, func(a *App, arg string) tea.Cmd {
+		arg = strings.TrimSpace(arg)
+		if arg != "" {
+			// A run id or a crew name picks the run the room opens on.
+			if reg, err := a.fleetRegistry(); err == nil {
+				runs, _ := reg.ListRuns()
+				for _, r := range runs {
+					if r.ID == arg || (r.Crew == arg && r.State.Live()) {
+						a.crew.runID = r.ID
+						break
+					}
+				}
+			}
+		}
+		a.crew.loaded = time.Time{}
+		return a.push(viewControlRoom)
+	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
 	r.RegisterHiddenAlias("provider", "providers")
 	registerSessionControls(r)
