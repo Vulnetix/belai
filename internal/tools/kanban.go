@@ -82,6 +82,9 @@ type WorkerClaim struct {
 	// HandoffLabels the labels it may carry. Both empty disables handoffs.
 	HandoffTo     []string
 	HandoffLabels []string
+	// HandoffCheckpoint, when set, is the checkpoint every handoff is held at
+	// for a person. The harness sets it from the profile; it is not an argument.
+	HandoffCheckpoint string
 	// HandoffList, when set, is the list every handoff goes to whatever the
 	// model asks: a survey's self-found work waits in review for a human.
 	HandoffList kanban.List
@@ -580,6 +583,9 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 	}
 	if in.Assignee == "" && len(in.Labels) == 0 {
 		return Result{}, errors.New("a handoff needs an assignee or labels, or no agent will ever take it")
+	}
+	if c.HandoffCheckpoint != "" {
+		in.Labels = append(in.Labels, kanban.CheckpointLabel(c.HandoffCheckpoint))
 	}
 	if p, ok := argInt64(args, "priority"); ok {
 		in.Priority = kanban.ClampPriority(int(p))

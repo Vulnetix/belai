@@ -1,0 +1,10 @@
+{
+  "name": "belai:bug",
+  "description": "A bug investigator, builders and a reviewer: a person confirms the root cause before any fix is written, and each fix starts from a failing test",
+  "one_per_repo": true,
+  "members": [
+    {"profile": "belai:repro", "replicas": 1},
+    {"profile": "belai:builder", "replicas": 2},
+    {"profile": "belai:reviewer", "replicas": 1}
+  ]
+}

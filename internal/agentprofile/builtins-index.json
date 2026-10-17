@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 3,
   "profiles": [
     {
       "name": "belai:builder",
@@ -72,6 +72,11 @@
       "sha256": "63bee4df36ee14e54f955ebd371b0cbbb18b77a69fcbea0c216175a07e36f381"
     },
     {
+      "name": "belai:designer",
+      "path": "internal/agentprofile/builtin/designer.json",
+      "sha256": "a6bdfc0b0d55431d3a186b012f606e939de1f1f32c2718f5f76e9131cf871d62"
+    },
+    {
       "name": "belai:fanout",
       "path": "internal/agentprofile/builtin/fanout.json",
       "sha256": "1a117aa7c73b3fd52d3d4669162cfe975b605cc3c98e9db928bb22cb7aa17b59"
@@ -85,6 +90,16 @@
       "name": "belai:plan-handoff",
       "path": "internal/agentprofile/builtin/plan-handoff.json",
       "sha256": "dd697fa2f89cfc988c6c77aefe73c29124c14e0d2d7fdb4503d2a44f9943ca47"
+    },
+    {
+      "name": "belai:planner",
+      "path": "internal/agentprofile/builtin/planner.json",
+      "sha256": "8ca5aefc49338dafd81d6320347a455e3a341f941d7a7c14a6cf537961ed5156"
+    },
+    {
+      "name": "belai:repro",
+      "path": "internal/agentprofile/builtin/repro.json",
+      "sha256": "5f5735937556f4ef3d8ffc0e5b5e7cb3ee58bd49201a3d07bd508ceab6552e7f"
     },
     {
       "name": "belai:reviewer",
@@ -124,14 +139,29 @@
   ],
   "crews": [
     {
+      "name": "belai:bug",
+      "path": "internal/agentprofile/crews/bug.json",
+      "sha256": "a9727d2e786203ecd2ca43e31cfa21fb2ef2a6ce83c62bb4467d4ffc90097782"
+    },
+    {
       "name": "belai:delivery",
       "path": "internal/agentprofile/crews/delivery.json",
       "sha256": "7d9a07a22b7b9e86a26edfa4d35347fd690190bb2f6b5d8d471b632ea4b6c7ee"
     },
     {
+      "name": "belai:feature",
+      "path": "internal/agentprofile/crews/feature.json",
+      "sha256": "c68e9ea2c92df9b670d401cbfd9c06083c5ee93c5fe4950361d7d6095a1892d7"
+    },
+    {
       "name": "belai:security",
       "path": "internal/agentprofile/crews/security.json",
       "sha256": "29d06eb71644d683a10f0e85e14dddf8c0dde91b021068b5bb3c93ddb122beb1"
+    },
+    {
+      "name": "belai:ui",
+      "path": "internal/agentprofile/crews/ui.json",
+      "sha256": "07d83a44d60b122feb02318577ef8b6e03c8606e9f96b52e94ae8828f2dc8371"
     }
   ],
   "skills": [

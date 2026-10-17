@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ const kanbanUsage = `usage: belai kanban <command> [flags] [args]
       -body TEXT | -body-file FILE   details
       -list L                        backlog (default) or review
       -label L                       a routing label (repeat for more)
+      -flow feature|bug|ui           file it for that flow crew's first stage
       -priority N                    -2 to 3
       -assignee NAME                 route to one agent profile
       -depends K-xxxxxx              must be done first (repeat for more)
@@ -54,6 +56,19 @@ const kanbanUsage = `usage: belai kanban <command> [flags] [args]
 The board is global (~/.vulnetix/belai/kanban). Writes are stamped with this
 directory's project and a CLI session id. Nothing here runs a model.
 `
+
+// flowEntryLabels maps a flow to the label its crew's first stage claims
+// (belai:planner, belai:repro, belai:designer). A test ties them to the profiles.
+var flowEntryLabels = map[string]string{"feature": "plan", "bug": "repro", "ui": "ui-design"}
+
+func flowNames() []string {
+	names := make([]string, 0, len(flowEntryLabels))
+	for n := range flowEntryLabels {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // multiFlag collects a repeatable flag.
 type multiFlag []string
@@ -137,11 +152,19 @@ func (k *kanbanCLI) run(cmd string, rest []string, stdin io.Reader, stdout, stde
 		priority := fs.Int("priority", 0, "-2 to 3")
 		assignee := fs.String("assignee", "", "agent profile to route to")
 		project := fs.String("project", "", "project name (default: this directory's)")
+		flow := fs.String("flow", "", "feature, bug or ui: file it for that flow crew's first stage")
 		var labels, deps multiFlag
 		fs.Var(&labels, "label", "routing label (repeatable)")
 		fs.Var(&deps, "depends", "item that must be done first (repeatable)")
 		if err := parseInterleaved(fs, rest); err != nil {
 			return 2, nil
+		}
+		if *flow != "" {
+			label, ok := flowEntryLabels[*flow]
+			if !ok {
+				return 2, fmt.Errorf("-flow must be one of %s, not %q", strings.Join(flowNames(), ", "), *flow)
+			}
+			labels = append(labels, label)
 		}
 		title := strings.Join(fs.Args(), " ")
 		if *bodyFile != "" {

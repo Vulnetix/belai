@@ -401,6 +401,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.on_failure` | route | Where a failed attempt goes; default the list it was claimed from. |
 | `kanban.handoff_to`, `kanban.handoff_labels` | string[] | The profiles and labels `KanbanHandoff` may route new items to. |
 | `kanban.handoff_repos` | bool | Gives `KanbanHandoff` a `repo` argument that files the task under a repository the harness found beside or beneath the worker's directory, so a worker in a plain folder can send each finding to the repo that owns it. Off by default. See [Filing a handoff under another repository](fleet.md#filing-a-handoff-under-another-repository). |
+| `kanban.handoff_checkpoint` | string | Holds every item the worker hands off for a person: `plan_approval`, `root_cause`, `visual` or `pre_pr`. The harness adds the checkpoint label to each handoff, so a builder takes none until a person approves it. Needs `handoff_to` or `handoff_labels`. See [Human checkpoints](kanban.md#human-checkpoints). |
 | `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). |
 | `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
@@ -484,12 +485,18 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:scout` | backlog items labelled `scout`, including the `quality` cards the harness seeds from a test run on HEAD (failing suites, coverage, untested packages, property tests, fixtures, contract tests, mutation testing, docs against code) | `build` items for `belai:builder`: to backlog for a request, to review for a seeded card |
 | `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review`, once the harness has verified the card's gates on the branch |
 | `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR) only when the harness re-verifies the card's gates on the branch, or back to `build` with notes |
+| `belai:planner` | backlog items labelled `plan`, read-only | up to five `build` items for `belai:builder`, each with acceptance gates and held at the `plan_approval` checkpoint until a person approves it |
+| `belai:repro` | backlog items labelled `repro`, read-only | `build` fix items for `belai:builder`, with the reproduction and root cause, held at the `root_cause` checkpoint |
+| `belai:designer` | backlog items labelled `ui-design`, read-only | `build` items for `belai:builder`, with the user journeys and states to check, held at the `visual` checkpoint |
 | `belai:vuln-scout` | at start, a review sweep of HEAD (harness); backlog items labelled `vuln-scan` for a targeted look | a `vuln` card per finding (harness), and `vuln` items for `belai:patcher` |
 | `belai:patcher` | backlog `vuln` items, on a worktree branch; reconciles cards before each claim | review, labelled `needs-verify`: a fix, or a false positive, no known fix or needs-a-human verdict |
 | `belai:verifier` | review `needs-verify` items, including gone cards, on their branch | done (and a draft PR) or blocked, each with a VEX, or back to `vuln` when it rejects the claim |
 
 The crews `belai:delivery` and `belai:security` start one scout, two
-builders or patchers, and one reviewer or verifier.
+builders or patchers, and one reviewer or verifier. The flow crews `belai:feature`,
+`belai:bug` and `belai:ui` start a planner, investigator or designer in the
+scout's place, with the same builders and reviewer; see
+[The flow crews](fleet.md#the-flow-crews).
 ## Event flow
 
 ```mermaid

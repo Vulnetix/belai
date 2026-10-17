@@ -752,6 +752,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	if k := p.Kanban; k != nil {
 		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
 		claim.HandoffRepos = k.HandoffRepos
+		claim.HandoffCheckpoint = k.HandoffCheckpoint
 		if s := k.Security; s != nil {
 			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
 		}
