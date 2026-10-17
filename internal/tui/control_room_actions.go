@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/trustgate"
 )
 
 // crewEditorModes are the control room's one-line editors and their titles.
@@ -40,6 +42,8 @@ func crewConfirmText(cr *controlRoom) string {
 		return fmt.Sprintf("delete %d card(s)? (y/n)", len(cr.targets()))
 	case "remove-dir":
 		return "remove the selected directory from the scope? its workers finish their cards and leave (y/n)"
+	case "trust-dir":
+		return fmt.Sprintf("%s is not trusted. trust it and add it to the scope? the crew's workers read, edit and run commands there; the directories its settings propose stay unaccepted (y/n)", cr.trustDir.Path)
 	}
 	return ""
 }
@@ -384,18 +388,22 @@ func (a *App) crewCommit(mode, text string) {
 			cr.errMsg = err.Error()
 			return
 		}
-		d.Path = repoRootOf(expandHome(d.Path))
-		if err := fleet.CheckScopeDir(d.Path, cr.run.Members); err != nil {
-			cr.errMsg = err.Error()
-			return
+		d.Path = expandHome(d.Path)
+		if !filepath.IsAbs(d.Path) {
+			d.Path = filepath.Join(a.workdir, d.Path)
 		}
-		a.crewUpdateRun("add-dir", map[string]string{"repo": d.Path}, func(r *fleet.CrewRun) error {
-			if _, ok := r.Dir(d.Path); ok {
-				return errors.New(d.Path + " is already in the scope")
+		d.Path = repoRootOf(d.Path)
+		// An untrusted directory is offered for trust with its own
+		// confirmation, as -trust-dir does on the command line; nothing in it
+		// is read before the user says yes. A failed check fails closed in
+		// CheckScopeDir.
+		if st, err := trustgate.Check(d.Path); err == nil && !st.Trusted {
+			if fi, err := os.Stat(d.Path); err == nil && fi.IsDir() {
+				cr.trustDir, cr.mode = d, "trust-dir"
+				return
 			}
-			r.Scope = append(r.Scope, d)
-			return nil
-		})
+		}
+		a.crewAddDir(d)
 	case "maxworkers":
 		n, err := strconv.Atoi(text)
 		if err != nil || n < 0 {
@@ -457,6 +465,23 @@ func (a *App) crewCommit(mode, text string) {
 	}
 }
 
+// crewAddDir adds a trusted directory to the run's scope once every member
+// preflights there.
+func (a *App) crewAddDir(d fleet.ScopeDir) {
+	cr := &a.crew
+	if err := fleet.CheckScopeDir(d.Path, cr.run.Members); err != nil {
+		cr.errMsg = err.Error()
+		return
+	}
+	a.crewUpdateRun("add-dir", map[string]string{"repo": d.Path}, func(r *fleet.CrewRun) error {
+		if _, ok := r.Dir(d.Path); ok {
+			return errors.New(d.Path + " is already in the scope")
+		}
+		r.Scope = append(r.Scope, d)
+		return nil
+	})
+}
+
 // crewConfirm runs a confirmed action.
 func (a *App) crewConfirm(mode string) tea.Cmd {
 	cr := &a.crew
@@ -485,6 +510,19 @@ func (a *App) crewConfirm(mode string) tea.Cmd {
 			_, err := store.Delete(it.ID)
 			return err
 		})
+	case "trust-dir":
+		d := cr.trustDir
+		cr.trustDir = fleet.ScopeDir{}
+		if d.Path == "" {
+			return nil
+		}
+		// The directory only, never its proposed workspace_dirs.
+		if err := trustgate.Grant(d.Path, nil); err != nil {
+			cr.errMsg = err.Error()
+			return nil
+		}
+		fleet.RecordControl(cr.run.ID, cr.run.Crew, "trust", "", map[string]string{"repo": d.Path})
+		a.crewAddDir(d)
 	case "remove-dir":
 		i := cr.sel[crScope]
 		if i >= len(cr.run.Scope) {

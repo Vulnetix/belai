@@ -589,8 +589,8 @@ func RepoPolicy(repo string) (config.Settings, posture.Policy, error) {
 
 // CheckScopeDir checks a directory can join a crew run's scope: it is
 // trusted, and every member preflights under its own settings. The CLI trusts
-// a directory first when asked (-trust-dir); the control room only adds
-// directories already trusted.
+// a directory first when asked (-trust-dir); the control room asks the user
+// to trust an untrusted one before it calls this.
 func CheckScopeDir(dir string, members []agentprofile.Member) error {
 	st, err := trustgate.Check(dir)
 	if err != nil {
