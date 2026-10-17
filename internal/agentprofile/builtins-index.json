@@ -74,7 +74,7 @@
     {
       "name": "belai:designer",
       "path": "internal/agentprofile/builtin/designer.json",
-      "sha256": "a6bdfc0b0d55431d3a186b012f606e939de1f1f32c2718f5f76e9131cf871d62"
+      "sha256": "bf26bf68d1e5c35b415dbbd58dbc2a6d29001355c682e21cc97ab30cf60c5d6b"
     },
     {
       "name": "belai:fanout",
@@ -94,12 +94,12 @@
     {
       "name": "belai:planner",
       "path": "internal/agentprofile/builtin/planner.json",
-      "sha256": "8ca5aefc49338dafd81d6320347a455e3a341f941d7a7c14a6cf537961ed5156"
+      "sha256": "e81453b5cd2c686b437d8d1e5b512a69b43f4311c3f63cab1951e1189cccff80"
     },
     {
       "name": "belai:repro",
       "path": "internal/agentprofile/builtin/repro.json",
-      "sha256": "5f5735937556f4ef3d8ffc0e5b5e7cb3ee58bd49201a3d07bd508ceab6552e7f"
+      "sha256": "c3aa96214874c5263c6f735f1db1fb2278612165242335ce007b8f53fc5d73d7"
     },
     {
       "name": "belai:reviewer",
@@ -203,6 +203,11 @@
       "sha256": "652dc9edcfcca2cfd998dc791784554a093d1ab3667e53f7ea3048554616d467"
     },
     {
+      "name": "29a9b63a-1860-5ead-b39a-d4d463f39d0f",
+      "path": "internal/agentprofile/builtin/avatars/29a9b63a-1860-5ead-b39a-d4d463f39d0f.svg",
+      "sha256": "6289b3b7f58ec597a2b8fcacb156ba21b0425533f70fe30fab46d4718ddf1868"
+    },
+    {
       "name": "2c302f2e-3661-5878-81af-495e448f910f",
       "path": "internal/agentprofile/builtin/avatars/2c302f2e-3661-5878-81af-495e448f910f.svg",
       "sha256": "2c76030a28f28896650f12be89024daadcd91762bd06802cd4aca2f70e9c2005"
@@ -233,6 +238,11 @@
       "sha256": "dc8602f26e7b8146f65104fed82cbb85bdf70f7bdab66c071bac602bd267271f"
     },
     {
+      "name": "6bc0737b-f5a2-51b8-9857-fd8527c55b58",
+      "path": "internal/agentprofile/builtin/avatars/6bc0737b-f5a2-51b8-9857-fd8527c55b58.svg",
+      "sha256": "92db67d71b9a9911edee12d26ae586a69f6294fd5a22f29b7c35e93a5e0e586b"
+    },
+    {
       "name": "85d6dca1-af97-5646-9e64-a704a4677ce0",
       "path": "internal/agentprofile/builtin/avatars/85d6dca1-af97-5646-9e64-a704a4677ce0.svg",
       "sha256": "1e8d48004514ee846f68eb6efd50acfc8259beab3d299f778a84f858029cdc4d"
@@ -246,6 +256,11 @@
       "name": "c01d2efa-df5a-53b6-a64c-6393ea717267",
       "path": "internal/agentprofile/builtin/avatars/c01d2efa-df5a-53b6-a64c-6393ea717267.svg",
       "sha256": "9c98c405c0debb698f169045e103fccf443159c45bf17d915afbac7a8a1944d7"
+    },
+    {
+      "name": "f3975b72-74bd-5927-aee0-d7be0f73e6e2",
+      "path": "internal/agentprofile/builtin/avatars/f3975b72-74bd-5927-aee0-d7be0f73e6e2.svg",
+      "sha256": "37c68d95adb29299dadda463cf96416e05d8cd5ff205b8d1d5db16198539962a"
     }
   ]
 }
