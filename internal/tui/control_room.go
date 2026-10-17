@@ -396,11 +396,17 @@ func (a *App) controlRoomView() string {
 	}
 	var b strings.Builder
 	title := "crew control room"
-	sub := "no crew running"
+	// The longest subtitle that fits: crew, run and state; crew and state;
+	// the state alone.
+	subs := []string{"no crew running"}
 	if cr.hasRun {
-		sub = fmt.Sprintf("%s · %s · %s", cr.run.Crew, cr.run.ID, cr.run.State)
+		subs = []string{fmt.Sprintf("%s · %s · %s", cr.run.Crew, cr.run.ID, cr.run.State),
+			fmt.Sprintf("%s · %s", cr.run.Crew, cr.run.State), string(cr.run.State)}
 	}
-	b.WriteString(components.SectionHeader(title, sub, w) + "\n")
+	for i, s := range subs {
+		subs[i] = components.MutedStyle.Render(s)
+	}
+	b.WriteString(components.SectionHeaderChoose(title, subs, w) + "\n")
 	if !cr.hasRun {
 		b.WriteString("\n" + components.MutedStyle.Render("  n launches a crew over a scope of directories: CREW DIR[:WEIGHT] …") + "\n")
 		b.WriteString(components.MutedStyle.Render("  (`belai agent start -crew CREW -dir PATH[:WEIGHT]` does the same)") + "\n")
@@ -721,10 +727,10 @@ func (a *App) crewProvidersView(w int) string {
 			components.MutedStyle.Render(fmt.Sprintf(" workers %d · outages %d", h.workers, h.outages))
 		b.WriteString(ansi.Truncate(line, w, "…") + "\n")
 	}
-	b.WriteString("\n" + components.MutedStyle.Render(fmt.Sprintf("  a worker moves to the next target after %d outages in a row, round the pool; once every target failed the crew sleeps %s for a final retry, then stops if it fails again",
-		cr.run.SwitchAfterOr(), cr.run.FinalRetry())) + "\n")
+	b.WriteString("\n" + components.MutedStyle.Render(wrapIndent(fmt.Sprintf("a worker moves to the next target after %d outages in a row, round the pool; once every target failed the crew sleeps %s for a final retry, then stops if it fails again",
+		cr.run.SwitchAfterOr(), cr.run.FinalRetry()), w)) + "\n")
 	if phase, ok := a.poolPhaseText(); ok {
-		b.WriteString(components.WarnStyle.Render("  "+phase) + "\n")
+		b.WriteString(components.WarnStyle.Render(wrapIndent(phase, w)) + "\n")
 	}
 	return b.String()
 }
@@ -762,7 +768,7 @@ func (a *App) crewScopeView(w int) string {
 			open[dir]++
 		}
 	}
-	b.WriteString(components.MutedStyle.Render("  directories (weight · workers · open · in progress · blocked)") + "\n")
+	b.WriteString(components.MutedStyle.Render(ansi.Truncate("  directories (weight · workers · open · in progress · blocked)", w, "…")) + "\n")
 	for i, d := range cr.run.Scope {
 		selected := i == cr.sel[crScope]
 		name := truncateValue(d.Path, 44)
@@ -884,8 +890,19 @@ func (a *App) crewFooter(w int) string {
 	} else if cr.status != "" {
 		b.WriteString("\n" + components.MutedStyle.Render(ansi.Truncate("  "+cr.status, w, "…")) + "\n")
 	}
-	b.WriteString("\n" + crewHelp(cr.tab, cr.hasRun) + "\n")
+	// Every key stays on screen: a narrow terminal wraps the bar instead of
+	// cutting it.
+	b.WriteString("\n" + ansi.Wrap(crewHelp(cr.tab, cr.hasRun), w, "") + "\n")
 	return b.String()
+}
+
+// wrapIndent wraps text to w columns, each line indented two spaces.
+func wrapIndent(text string, w int) string {
+	lines := strings.Split(ansi.Wrap(text, max(w-2, 10), ""), "\n")
+	for i, l := range lines {
+		lines[i] = "  " + l
+	}
+	return strings.Join(lines, "\n")
 }
 
 // crewHelp is the footer for a tab.
