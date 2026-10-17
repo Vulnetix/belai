@@ -11,6 +11,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/crewlog"
+	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/proc"
 )
 
@@ -230,5 +231,31 @@ func TestASupervisorThatKeepsDyingFailsTheRun(t *testing.T) {
 	})
 	if did, _ := reg.AdoptRun(run2.ID, "rc", dies); did != AdoptRestarted {
 		t.Fatalf("an old window still counted: %q", did)
+	}
+}
+
+// A worker that finds its crew's supervisor beyond restarting tells the user.
+func TestAWorkerNotifiesWhenItsCrewFails(t *testing.T) {
+	_, reg := testEnv(t)
+	run, _ := reg.LaunchCrew(CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("builder", 1)},
+		func(CrewRun) (int, error) { return deadPID, nil })
+	_, _ = reg.UpdateRun(run.ID, "rc", func(cr *CrewRun) error {
+		cr.Restarts, cr.RestartWindow = MaxSupervisorRestarts, time.Now().UnixMilli()
+		return nil
+	})
+	got := make(chan string, 4)
+	w := &Worker{Registry: reg, Record: Record{ID: "t-builder-dddddd", Run: run.ID}, WatchEvery: 10 * time.Millisecond,
+		AdoptSupervisor: func(CrewRun) (int, error) { return deadPID, nil },
+		CrewNotify:      func(e string) { got <- e }}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.watchSupervisor(ctx)
+	select {
+	case e := <-got:
+		if e != notify.EventCrewStopped {
+			t.Fatalf("notified %q", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no notification")
 	}
 }

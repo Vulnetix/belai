@@ -28,6 +28,8 @@ terminal is in another window or on another desktop.
 | `worker_blocked` | a [fleet worker](fleet.md) moved an item to blocked for you (a permission it could not ask for, withheld item text, or too many failed attempts) |
 | `worker_failed` | a fleet worker process stopped with an error |
 | `crew_fault` | a crew worker hit a fatal fault on an item; the body names only the worker, and the fault class and detail are in [`belai crew log`](fleet.md#crew-log) |
+| `crew_sleeping` | every provider and model in a [crew run](fleet.md#the-provider-pool)'s pool failed, so the crew sleeps before its final retry; the body names only the crew |
+| `crew_stopped` | a crew run ended on its own: its pool failed again after the final retry, or its supervisor kept exiting; the body names only the crew, and why is in [`belai crew log`](fleet.md#crew-log) |
 
 Every trigger also fires the `notification` [hook](hooks.md) with the event
 name in the `notification` field, whether or not desktop notifications are
@@ -80,7 +82,7 @@ five-second timeout, off the UI goroutine.
 | --- | --- | --- |
 | `enabled` | `false` | dropped |
 | `backend` | `auto` (an unknown value also means `auto`) | dropped |
-| `events` | as above; add `turn_done`, `agent_done` or `crew_fault` to opt in. A [fleet](fleet.md) worker also notifies `worker_blocked` and `worker_failed` when `events` is left out | dropped |
+| `events` | as above; add `turn_done`, `agent_done` or `crew_fault` to opt in. A [fleet](fleet.md) worker also notifies `worker_blocked` and `worker_failed`, and a crew run's supervisor and workers `crew_sleeping` and `crew_stopped`, when `events` is left out | dropped |
 | `min_turn_seconds` | `30` | dropped |
 
 Notifications are a per-user preference, so the whole key is ignored in a

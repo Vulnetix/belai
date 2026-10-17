@@ -31,6 +31,7 @@ import (
 	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/otel"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -142,6 +143,9 @@ type Worker struct {
 	// launch.
 	AdoptSupervisor SupervisorStarter
 	WatchEvery      time.Duration
+	// CrewNotify sends a notification about the worker's crew, with the
+	// crew's name as subject (crew_stopped when its supervisor kept dying).
+	CrewNotify func(event string)
 	// Runner works one item; nil uses the real agent session.
 	Runner TurnRunner
 	// Review runs the review scanners over the repository for a sweep; nil
@@ -1693,7 +1697,9 @@ func (w *Worker) watchSupervisor(ctx context.Context) {
 			w.logf("the crew supervisor had exited; started a new one")
 		case did == AdoptFailed:
 			w.logf("the crew supervisor kept exiting; the crew run failed")
-			w.notify(notifyCrewStopped)
+			if w.CrewNotify != nil {
+				w.CrewNotify(notify.EventCrewStopped)
+			}
 		}
 	}
 }

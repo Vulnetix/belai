@@ -128,7 +128,3 @@ func recordSupervisor(run CrewRun, did Adoption) {
 	audit.Emit(f)
 	appendEntry(run.ID, f, "", "")
 }
-
-// notifyCrewStopped is the notification sent when a crew run ends on its own
-// (notify.EventCrewStopped).
-const notifyCrewStopped = "crew_stopped"
