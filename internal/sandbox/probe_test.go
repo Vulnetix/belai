@@ -185,3 +185,13 @@ func TestLandlockBelowABI4CannotCutTheNetworkOff(t *testing.T) {
 		t.Fatalf("Limits() = %v", l)
 	}
 }
+
+func TestAGoRuntimeThatCannotMakeAThreadIsTransient(t *testing.T) {
+	why := "runtime: failed to create new OS thread (have 2 already; errno=11) runtime: may need to increase max user processes (ulimit -u) fatal error: newosproc"
+	if !transientProbeFailure(why) {
+		t.Fatalf("%q was not taken as a machine out of processes", why)
+	}
+	if transientProbeFailure("bwrap: No permissions to create new namespace") {
+		t.Fatal("a bubblewrap that cannot work here was taken as transient")
+	}
+}
