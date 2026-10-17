@@ -493,6 +493,9 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
   effort, `max_workers`, and whether the run stays. The
   [control room](#the-control-room) edits the same file while the crew runs;
   every edit is numbered (`seq`) and says who made it.
+- **A scope has no limit on directories.** The supervisor only counts claimable
+  cards in each one every five seconds, and `max_workers` is what bounds the
+  workers, so a crew can be started in every repository of a host.
 - **A supervisor allocates the work.** `belai agent supervise -run ID`, started
   detached by the launch, counts every member profile's claimable cards in
   each directory every five seconds and shares the member's replicas between

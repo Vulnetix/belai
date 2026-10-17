@@ -533,3 +533,17 @@ func TestARunWorkerFaultReachesTheCrewLog(t *testing.T) {
 		t.Fatalf("chain broken at %d: %v", bad, err)
 	}
 }
+
+func TestARunTakesAsManyDirectoriesAsItIsGiven(t *testing.T) {
+	var dirs []ScopeDir
+	for i := 0; i < 64; i++ {
+		dirs = append(dirs, ScopeDir{Path: fmt.Sprintf("/src/repo%d", i), Weight: MinWeight})
+	}
+	run := NewCrewRun(agentprofile.Crew{Name: "c", Members: members("a", 1)}, dirs)
+	if err := run.Validate(); err != nil {
+		t.Fatalf("a scope of %d directories was refused: %v", len(dirs), err)
+	}
+	if err := (CrewRun{Crew: "c", Members: members("a", 1)}).Validate(); err == nil {
+		t.Fatal("a run with no directory was accepted")
+	}
+}
