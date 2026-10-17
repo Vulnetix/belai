@@ -92,8 +92,25 @@ func startCrewRun(l crewLaunch) (int, error) {
 			return 1, err
 		}
 	}
+	start := l.startSupervisor
+	if start == nil {
+		exe, err := os.Executable()
+		if err != nil {
+			return 1, err
+		}
+		start = reg.StartSupervisor(exe)
+	}
 	if live, ok := reg.LiveRun(c.Name); ok {
-		return joinCrewRun(reg, live, scope, l)
+		// A run that lost its supervisor gets a new one before it is joined.
+		switch did, err := reg.AdoptRun(live.ID, "launch", start); {
+		case err != nil:
+			fmt.Fprintf(l.stdout, "%s  crew %s: could not restart its supervisor: %v\n", live.ID, live.Crew, err)
+		case did == fleet.AdoptRestarted:
+			fmt.Fprintf(l.stdout, "%s  crew %s had lost its supervisor; started a new one\n", live.ID, live.Crew)
+		}
+		if live, ok = reg.LiveRun(c.Name); ok {
+			return joinCrewRun(reg, live, scope, l)
+		}
 	}
 	run := fleet.NewCrewRun(c, scope)
 	if l.model != "" {
@@ -104,14 +121,6 @@ func startCrewRun(l crewLaunch) (int, error) {
 	run.SwitchAfter, run.FinalRetrySecs = l.switchAfter, l.finalRetry
 	for _, t := range l.pool {
 		run.Pool = append(run.Pool, parseTarget(t))
-	}
-	start := l.startSupervisor
-	if start == nil {
-		exe, err := os.Executable()
-		if err != nil {
-			return 1, err
-		}
-		start = reg.StartSupervisor(exe)
 	}
 	run, err = reg.LaunchCrew(run, start)
 	if err != nil {
@@ -208,7 +217,9 @@ func agentSupervise(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	s := &fleet.Supervisor{Registry: reg, Store: store, RunID: run.ID, Exe: exe, Max: workerCap(settings, 0), Log: stdout}
-	if err := s.Run(ctx); err != nil {
+	if err := s.Run(ctx); errors.Is(err, fleet.ErrSupervised) {
+		fmt.Fprintf(stdout, "crew run %s already has a live supervisor\n", run.ID)
+	} else if err != nil {
 		return 1, err
 	}
 	return 0, nil

@@ -48,11 +48,28 @@ func (d *Daemon) scheduler(ctx context.Context) {
 	defer t.Stop()
 	for {
 		d.scheduleTick(ctx)
+		d.adoptCrews()
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
+	}
+}
+
+// adoptCrews starts a new supervisor for every crew run on this host whose
+// supervisor died, so a crew whose workers have all gone quiet is still
+// brought back (its workers adopt it too, fleet.AdoptRun).
+func (d *Daemon) adoptCrews() {
+	if d.o.Exe == "" {
+		return
+	}
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		return
+	}
+	for id, did := range reg.AdoptOrphans("rc", reg.StartSupervisor(d.o.Exe)) {
+		d.logf("crew run %s: %s", id, did)
 	}
 }
 

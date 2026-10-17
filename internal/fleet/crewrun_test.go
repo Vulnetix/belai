@@ -105,23 +105,6 @@ func TestLaunchCrewRunsOnceAndUpdatesBumpTheSeq(t *testing.T) {
 	}
 }
 
-// A run whose supervisor died is no longer live, so the crew can launch again.
-func TestARunWithADeadSupervisorIsFailed(t *testing.T) {
-	_, reg := testEnv(t)
-	run := CrewRun{Crew: "c", Scope: []ScopeDir{{Path: t.TempDir()}}, Members: members("builder", 1)}
-	launched, err := reg.LaunchCrew(run, func(CrewRun) (int, error) { return 1 << 30, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := reg.LiveRun("c"); ok {
-		t.Fatal("a run with a dead supervisor is still live")
-	}
-	got, _ := reg.GetRun(launched.ID)
-	if got.State != RunFailed {
-		t.Fatalf("state %s", got.State)
-	}
-}
-
 // The supervisor starts what the allocation lacks and drains the surplus,
 // idle workers first.
 func TestSupervisorReconciles(t *testing.T) {

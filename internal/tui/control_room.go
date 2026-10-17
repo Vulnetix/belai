@@ -114,6 +114,15 @@ func (a *App) reloadControlRoom() {
 		return
 	}
 	runs, _ := reg.ListRuns()
+	// A run that lost its supervisor gets a new one when the room looks.
+	for _, r := range runs {
+		if r.State == fleet.RunOrphaned {
+			if start, err := a.supervisorStarter(reg); err == nil && len(reg.AdoptOrphans("human", start)) > 0 {
+				runs, _ = reg.ListRuns()
+			}
+			break
+		}
+	}
 	// Live runs first, then the last few that ended.
 	var live, ended []fleet.CrewRun
 	for _, r := range runs {
