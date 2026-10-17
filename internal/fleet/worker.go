@@ -179,9 +179,7 @@ type Worker struct {
 	outages    int              // consecutive items released because the model provider was unavailable
 	ctlSeq     int64            // the last control applied (control.go)
 	pinned     bool             // a human picked the model; the fallback policy leaves it
-	primary    Target           // the target the worker returns to from a fallback
-	fbIdx      int              // the next fallback to try
-	fbSince    time.Time        // when the worker moved to its fallback
+	poolFailed map[Target]bool  // pool targets that failed since the last success (pool.go)
 	crewRun    *CrewRun         // the crew run as last read
 	liveTokens atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
 	coordMu    sync.Mutex
@@ -293,7 +291,6 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.Record.State = StateIdle
 	w.Record.Started = w.clock().UnixMilli()
 	w.syncTarget()
-	w.primary = w.currentTarget()
 	if w.Registry != nil {
 		max := w.Settings.MaxWorkers()
 		if w.MaxWorkers > 0 {
@@ -400,7 +397,23 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if why := w.refreshRun(); why != "" {
 			return why, nil
 		}
-		w.probeStep()
+		if d := w.poolWait(idle); d > 0 {
+			// The crew is asleep before its final retry, or this worker's
+			// pool is spent and the crew has not answered yet.
+			if !w.Record.Sleeping {
+				w.Record.Sleeping = true
+				w.save()
+			}
+			quietSince = w.clock()
+			if !sleep(ctx, d) {
+				return "stopped", nil
+			}
+			continue
+		}
+		if w.Record.Sleeping {
+			w.Record.Sleeping = false
+			w.save()
+		}
 		if w.Registry != nil && w.Registry.Paused(w.Record.ID) {
 			if w.Record.State != StatePaused {
 				w.logf("paused: claiming nothing until resumed")
@@ -480,7 +493,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if maxItems > 0 && n >= maxItems {
 			return fmt.Sprintf("worked max_items (%d)", maxItems), nil
 		}
-		if w.outages > 0 && !w.fallbackStep() {
+		if w.outages > 0 && !w.poolStep() {
 			// The provider is down, not the card: wait it out and claim the
 			// same card again, instead of hammering a failing endpoint or
 			// leaving the crew idle until the quiet window ends it.
@@ -1268,8 +1281,10 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		}
 		w.failures[it.ID] = at
 		w.outages = 0
+		w.poolSuccess()
 	default:
 		w.outages = 0
+		w.poolSuccess()
 	}
 	w.Record.Outages = w.outages
 	w.liveTokens.Store(0)

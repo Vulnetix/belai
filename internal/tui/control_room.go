@@ -188,7 +188,7 @@ func (a *App) crewRows(tab int) int {
 	case crBoard:
 		return len(cr.cards)
 	case crProviders:
-		return len(cr.run.Fallbacks) + 1
+		return len(cr.run.Pool)
 	case crScope:
 		return len(cr.run.Scope) + len(cr.run.Members)
 	case crFaults:
@@ -281,58 +281,90 @@ func hasAll(have, want []string) bool {
 	return true
 }
 
-// providerHealth is one provider's state across the run's live workers.
-type providerHealth struct {
-	provider string
-	workers  int
-	outages  int
-	down     bool
-	fallback int // workers on a fallback target of this provider
+// targetHealth is one pool target's state across the run's live workers.
+type targetHealth struct {
+	target  string
+	workers int
+	outages int
+	down    bool
 }
 
-func (a *App) crewHealth() []providerHealth {
+// crewHealth is the state of each target the live workers are on, pool
+// targets first, in pool order.
+func (a *App) crewHealth() []targetHealth {
 	cr := &a.crew
-	by := map[string]*providerHealth{}
+	by := map[string]*targetHealth{}
 	var order []string
+	add := func(t string) *targetHealth {
+		h, ok := by[t]
+		if !ok {
+			h = &targetHealth{target: t}
+			by[t] = h
+			order = append(order, t)
+		}
+		return h
+	}
+	for _, t := range cr.run.Pool {
+		add(t.String())
+	}
 	now := cr.clock().UnixMilli()
 	for _, w := range cr.workers {
 		if !w.State.Live() {
 			continue
 		}
-		p := w.Provider
-		if p == "" {
-			p = "default"
+		t := strings.Trim(w.Provider+"/"+w.Model, "/")
+		if t == "" {
+			t = "profile's model"
 		}
-		h, ok := by[p]
-		if !ok {
-			h = &providerHealth{provider: p}
-			by[p] = h
-			order = append(order, p)
-		}
+		h := add(t)
 		h.workers++
 		h.outages += w.Outages
-		if w.OutageUntil > now || w.Outages >= cr.run.FallbackAfterOr() {
+		if w.OutageUntil > now || w.Outages >= cr.run.SwitchAfterOr() {
 			h.down = true
 		}
-		if w.Fallback != "" {
-			h.fallback++
-		}
 	}
-	out := make([]providerHealth, 0, len(order))
-	for _, p := range order {
-		out = append(out, *by[p])
+	out := make([]targetHealth, 0, len(order))
+	for _, t := range order {
+		out = append(out, *by[t])
 	}
 	return out
 }
 
-func (h providerHealth) label() (string, string) {
+func (h targetHealth) label() (string, string) {
 	switch {
 	case h.down:
 		return "down", "failed"
 	case h.outages > 0:
 		return "degraded", "paused"
+	case h.workers == 0:
+		return "idle", "idle"
 	}
 	return "ok", "running"
+}
+
+// poolPhaseText says where the crew stands against its pool.
+func (a *App) poolPhaseText() (string, bool) {
+	cr := &a.crew
+	exhausted := 0
+	for _, w := range cr.workers {
+		if w.State.Live() && w.PoolExhausted {
+			exhausted++
+		}
+	}
+	switch cr.run.PoolPhase {
+	case fleet.PoolSleeping:
+		left := time.UnixMilli(cr.run.SleepUntil).Sub(cr.clock())
+		if left < 0 {
+			left = 0
+		}
+		return fmt.Sprintf("every target failed: the crew sleeps, final retry in %s", compactDuration(left)), true
+	case fleet.PoolFinalRetry:
+		return "final retry over the pool: the run ends if every target fails again", true
+	}
+	if exhausted > 0 {
+		return fmt.Sprintf("%d worker(s) found every target failing", exhausted), true
+	}
+	return "", false
 }
 
 // controlRoomStatus is the screen switcher's summary.
@@ -422,10 +454,6 @@ func (a *App) roomSummary(w int) string {
 	if capN <= 0 {
 		capN = a.settings.MaxWorkers()
 	}
-	primary := cr.run.Primary.String()
-	if primary == "" {
-		primary = "each profile's model"
-	}
 	line1 := fmt.Sprintf("  workers %d/%d (cap %d) · working %d", live, cr.run.Replicas(), capN, working)
 	if draining > 0 {
 		line1 += fmt.Sprintf(" · draining %d", draining)
@@ -434,22 +462,24 @@ func (a *App) roomSummary(w int) string {
 		line1 += " · " + components.FormatTokens(tokens) + " tokens in hand"
 	}
 	line1 += fmt.Sprintf(" · %d %s", len(cr.run.Scope), pluralWord(len(cr.run.Scope), "dir", "dirs"))
-	line2 := "  primary " + primary
-	if len(cr.run.Fallbacks) > 0 {
-		var fb []string
-		for _, t := range cr.run.Fallbacks {
-			fb = append(fb, t.String())
+	line2 := "  pool: each profile's model"
+	if len(cr.run.Pool) > 0 {
+		var pool []string
+		for _, t := range cr.run.Pool {
+			pool = append(pool, t.String())
 		}
-		line2 += " → " + strings.Join(fb, " → ")
+		line2 = "  pool " + strings.Join(pool, " → ") + " ↺"
 	}
 	var chips []string
 	for _, h := range a.crewHealth() {
-		word, st := h.label()
-		chip := fmt.Sprintf("%s %s", h.provider, word)
-		if h.fallback > 0 {
-			chip += fmt.Sprintf(" (%d on fallback)", h.fallback)
+		if h.workers == 0 {
+			continue
 		}
-		chips = append(chips, agentStateStyle(st).Render(chip))
+		word, st := h.label()
+		chips = append(chips, agentStateStyle(st).Render(fmt.Sprintf("%s %s ×%d", h.target, word, h.workers)))
+	}
+	if phase, ok := a.poolPhaseText(); ok {
+		chips = append(chips, components.WarnStyle.Render(phase))
 	}
 	var runs []string
 	for _, r := range cr.runs {
@@ -531,10 +561,12 @@ func (a *App) crewWorkersView(w int) string {
 			model = r.Provider + "/" + r.Model
 		}
 		if model != "" {
-			if r.Fallback != "" {
-				model += " ⤳"
-			}
 			parts = append(parts, components.MutedStyle.Render(model))
+		}
+		if r.Sleeping {
+			parts = append(parts, components.WarnStyle.Render("asleep"))
+		} else if r.PoolExhausted {
+			parts = append(parts, components.WarnStyle.Render("pool spent"))
 		}
 		if r.Outages > 0 {
 			o := fmt.Sprintf("outages %d", r.Outages)
@@ -561,8 +593,8 @@ func (a *App) crewWorkersView(w int) string {
 		if r.Branch != "" {
 			b.WriteString(components.MutedStyle.Render(ansi.Truncate("  branch "+r.Branch+" · session "+r.Session, w, "…")) + "\n")
 		}
-		if r.Fallback != "" {
-			b.WriteString(components.WarnStyle.Render(ansi.Truncate("  on fallback "+r.Fallback, w, "…")) + "\n")
+		if n := len(cr.run.Pool); n > 0 && r.PoolIndex < n {
+			b.WriteString(components.MutedStyle.Render(ansi.Truncate(fmt.Sprintf("  pool target %d of %d", r.PoolIndex+1, n), w, "…")) + "\n")
 		}
 		if ack, ok := cr.acks[r.ID]; ok {
 			line := fmt.Sprintf("  control %d %s", ack.Seq, ack.Status)
@@ -675,30 +707,29 @@ func window(sel, n, h int) (int, int) {
 func (a *App) crewProvidersView(w int) string {
 	cr := &a.crew
 	var b strings.Builder
-	rows := []string{"primary   " + orDefault(cr.run.Primary.String(), "each profile's model")}
-	for i, t := range cr.run.Fallbacks {
-		rows = append(rows, fmt.Sprintf("fallback %d %s", i+1, t))
+	if len(cr.run.Pool) == 0 {
+		b.WriteString(components.MutedStyle.Render("  no pool: each worker runs its profile's model, and an outage only backs it off. P sets a pool") + "\n")
 	}
-	for i, r := range rows {
+	health := map[string]targetHealth{}
+	for _, h := range a.crewHealth() {
+		health[h.target] = h
+	}
+	for i, t := range cr.run.Pool {
 		selected := i == cr.sel[crProviders]
-		if selected {
-			r = components.EmphStyle.Render(r)
-		}
-		b.WriteString(ansi.Truncate(components.Cursor(selected)+r, w, "…") + "\n")
-	}
-	b.WriteString("\n" + components.MutedStyle.Render(fmt.Sprintf("  move to the next fallback after %d outages in a row · probe the primary every %s",
-		cr.run.FallbackAfterOr(), cr.run.Probe())) + "\n")
-	health := a.crewHealth()
-	if len(health) > 0 {
-		b.WriteString("\n")
-	}
-	for _, h := range health {
+		h := health[t.String()]
 		word, st := h.label()
-		line := fmt.Sprintf("  %-14s %-9s workers %d · outages %d", h.provider, word, h.workers, h.outages)
-		if h.fallback > 0 {
-			line += fmt.Sprintf(" · %d on a fallback", h.fallback)
+		name := fmt.Sprintf("%d %-32s", i+1, truncateValue(t.String(), 32))
+		if selected {
+			name = components.EmphStyle.Render(name)
 		}
-		b.WriteString(agentStateStyle(st).Render(ansi.Truncate(line, w, "…")) + "\n")
+		line := components.Cursor(selected) + name + " " + agentStateStyle(st).Render(fmt.Sprintf("%-9s", word)) +
+			components.MutedStyle.Render(fmt.Sprintf(" workers %d · outages %d", h.workers, h.outages))
+		b.WriteString(ansi.Truncate(line, w, "…") + "\n")
+	}
+	b.WriteString("\n" + components.MutedStyle.Render(fmt.Sprintf("  a worker moves to the next target after %d outages in a row, round the pool; once every target failed the crew sleeps %s for a final retry, then stops if it fails again",
+		cr.run.SwitchAfterOr(), cr.run.FinalRetry())) + "\n")
+	if phase, ok := a.poolPhaseText(); ok {
+		b.WriteString(components.WarnStyle.Render("  "+phase) + "\n")
 	}
 	return b.String()
 }
@@ -875,7 +906,7 @@ func crewHelp(tab int, hasRun bool) string {
 	case crBoard:
 		keys = []string{"space", "mark", "a", "all", "m", "move", "b", "block", "u", "unblock", "+/-", "priority", "L", "labels", "A", "assign", "R", "release", "d", "delete", "o", "done"}
 	case crProviders:
-		keys = []string{"P", "primary", "F", "fallbacks", "f", "force fallback", "g", "to primary", "</>", "after", "{/}", "probe"}
+		keys = []string{"P", "pool", "f", "all to target", "g", "to the pool", "</>", "switch after", "{/}", "final retry"}
 	case crScope:
 		keys = []string{"+/-", "weight/replicas", "space", "pause dir", "a", "add dir", "D", "remove dir", "c", "max workers"}
 	case crFaults:
