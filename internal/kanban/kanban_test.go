@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -199,6 +200,34 @@ func TestSearchFilters(t *testing.T) {
 	counts, _ := s.Counts("belai")
 	if counts[Review] != 1 || counts[Blocked] != 1 || counts[Backlog] != 0 {
 		t.Fatalf("counts %v", counts)
+	}
+}
+
+// The crew fields keep the cards a crew owns: assigned to it or to one of its
+// profiles, claimed by one of its workers, or labelled for one of them.
+func TestSearchCrewFields(t *testing.T) {
+	s := testStore(t)
+	s.Add(ItemInput{Title: "for the crew", Assignee: "crew:sec"}, prov)
+	s.Add(ItemInput{Title: "for a profile", Assignee: "builder"}, prov)
+	s.Add(ItemInput{Title: "labelled", Labels: []string{"build", "go"}}, prov)
+	s.Add(ItemInput{Title: "half labelled", Labels: []string{"build"}}, prov)
+	s.Add(ItemInput{Title: "another crew", Assignee: "crew:other"}, prov)
+	s.Add(ItemInput{Title: "claimed", List: Review}, prov)
+	if _, err := s.Claim(ClaimRequest{Worker: "w1", Profile: "reviewer", Lease: time.Minute, Lists: []List{Review}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Search(Query{Crew: "sec", Profile: []string{"builder"}, ClaimedBy: []string{"w1"},
+		LabelSets: [][]string{{"build", "go"}}, Limit: MaxItems})
+	var titles []string
+	for _, it := range got {
+		titles = append(titles, it.Title)
+	}
+	slices.Sort(titles)
+	if strings.Join(titles, ",") != "claimed,for a profile,for the crew,labelled" {
+		t.Fatalf("crew cards %v", titles)
+	}
+	if got, _ := s.Search(Query{Limit: MaxItems}); len(got) != 6 {
+		t.Fatalf("no crew fields: %d", len(got))
 	}
 }
 
