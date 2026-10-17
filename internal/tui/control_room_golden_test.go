@@ -39,7 +39,7 @@ func TestControlRoomGolden(t *testing.T) {
 			a.width, a.height = width, 40
 			a.push(viewControlRoom)
 			var b strings.Builder
-			for tab := 1; tab <= 4; tab++ {
+			for tab := 1; tab <= 6; tab++ {
 				a.handleControlRoomKey(kkey(fmt.Sprint(tab)))
 				fmt.Fprintf(&b, "=== tab %d\n%s\n", tab, roomText(a))
 			}
