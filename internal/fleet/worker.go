@@ -1273,6 +1273,12 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	if out.To == "" {
 		out.To, _ = kanban.ParseList(route.List)
 		out.AddLabels, out.DropLabels = route.Labels, route.DropLabels
+		if route.Checkpoint != "" {
+			// The harness holds the card: it is the profile that names the
+			// checkpoint, never the model, and the note names only that reason.
+			out.AddLabels = append(slices.Clone(route.Labels), kanban.CheckpointLabel(route.Checkpoint))
+			out.Note += "; held for a person at checkpoint " + route.Checkpoint
+		}
 	}
 	out.Verdict, out.VEX = o.verdict, o.vex
 	if o.failed {

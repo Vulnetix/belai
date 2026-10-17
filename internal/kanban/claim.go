@@ -308,6 +308,8 @@ func (r ClaimRequest) matches(b *Board, it Item, now int64) bool {
 	switch {
 	case it.Deleted, it.Claimed(now), it.ClaimedBy != "":
 		return false
+	case isHeld(it):
+		return false
 	case !slices.Contains(r.lists(), it.List):
 		return false
 	case !hasLabels(it, NormLabels(r.Labels)):
@@ -525,7 +527,7 @@ func (s *Store) Release(ref, worker string, o Outcome) (Item, error) {
 		}
 		releaseLocked(it, o.To, o.Note, o.SessionID, s.nowMs(), o.Failed)
 		labels := slices.DeleteFunc(slices.Clone(it.Labels), func(l string) bool {
-			return slices.Contains(NormLabels(o.DropLabels), l)
+			return slices.Contains(NormLabels(keepCheckpoints(o.DropLabels)), l)
 		})
 		it.Labels = NormLabels(append(labels, o.AddLabels...))
 		if o.Branch != "" {

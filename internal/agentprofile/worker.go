@@ -181,6 +181,12 @@ type Route struct {
 	List       string   `json:"list,omitempty"`
 	Labels     []string `json:"labels,omitempty"`
 	DropLabels []string `json:"drop_labels,omitempty"`
+	// Checkpoint holds the card for a person when this route sends it on: one
+	// of kanban.CheckpointReasons. The harness adds the checkpoint label, no
+	// worker claims the card while it carries one, and a person's decision
+	// (kanban.Store.Decide) lets it go on or sends it back. Only on_success may
+	// hold a card, and only into backlog or review, the lists a stage claims.
+	Checkpoint string `json:"checkpoint,omitempty"`
 }
 
 // WorkspaceSpec says where a worker makes its changes.
@@ -378,10 +384,25 @@ func validateRoute(name string, r Route, required bool) error {
 		if required {
 			return fmt.Errorf("kanban.%s.list is required", name)
 		}
+		if r.Checkpoint != "" {
+			return fmt.Errorf("kanban.%s.checkpoint needs a list to hold the card in", name)
+		}
 		return nil
 	}
-	if _, ok := kanban.ParseList(r.List); !ok {
+	l, ok := kanban.ParseList(r.List)
+	if !ok {
 		return fmt.Errorf("kanban.%s.list %q is not a list", name, r.List)
+	}
+	if r.Checkpoint == "" {
+		return nil
+	}
+	switch {
+	case name != "on_success":
+		return fmt.Errorf("kanban.%s.checkpoint: only on_success holds a card for a person; a failure is retried, then blocked", name)
+	case !kanban.ValidCheckpoint(r.Checkpoint):
+		return fmt.Errorf("kanban.%s.checkpoint %q is not one of %s", name, r.Checkpoint, strings.Join(kanban.CheckpointReasons, ", "))
+	case l != kanban.Backlog && l != kanban.Review:
+		return fmt.Errorf("kanban.%s.checkpoint holds a card in backlog or review, not %s", name, l)
 	}
 	return nil
 }
