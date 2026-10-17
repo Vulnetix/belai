@@ -43,6 +43,10 @@ const kanbanUsage = `usage: belai kanban <command> [flags] [args]
                            to the list the profile claims from
       -host this|ID|none             pin to this host, a sync host id, or unpin
       -start                         also start the worker (or crew) here
+  checkpoint ID approve|reject [-to LIST] [-note T]
+                           decide a card a flow stage holds for a person:
+                           approve lets the next stage take it, reject clears
+                           the hold and returns it to -to (default backlog)
   delete ID                delete an item
   import FILE.jsonl        file one item per line: {"title", "body", "list",
                            "labels", "priority", "assignee", "depends_on"}
@@ -278,6 +282,27 @@ func (k *kanbanCLI) run(cmd string, rest []string, stdin io.Reader, stdout, stde
 			return 2, errors.New("usage: belai kanban assign ID PROFILE | -crew CREW [-host this|ID|none] [-start]")
 		}
 		return k.assign(fs.Arg(0), fs.Arg(1), *crew, *host, *start, stdout)
+
+	case "checkpoint":
+		to := fs.String("to", "backlog", "list a rejected card returns to")
+		note := fs.String("note", "", "why")
+		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 2 || (fs.Arg(1) != "approve" && fs.Arg(1) != "reject") {
+			return 2, errors.New("usage: belai kanban checkpoint ID approve|reject [-to LIST] [-note TEXT]")
+		}
+		d := kanban.Decision{Approve: fs.Arg(1) == "approve", Note: *note}
+		if !d.Approve {
+			back, ok := kanban.ParseList(*to)
+			if !ok {
+				return 2, fmt.Errorf("unknown list %q", *to)
+			}
+			d.Back = back
+		}
+		it, err := k.store.Decide(fs.Arg(0), d, k.prov.SessionID)
+		if err != nil {
+			return 1, err
+		}
+		fmt.Fprintf(stdout, "%s %sd, now in %s\n", it.Short(), fs.Arg(1), it.List)
+		return 0, nil
 
 	case "delete":
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {

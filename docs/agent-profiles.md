@@ -397,7 +397,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.labels` | string[] | Labels an item must all carry. |
 | `kanban.assigned_only` | bool | Claim only items assigned to this profile. |
 | `kanban.project` | string | `current` (default), `all`, or a project name. |
-| `kanban.on_success` | route | Required. Where a completed item goes: `{list, labels, drop_labels}`. |
+| `kanban.on_success` | route | Required. Where a completed item goes: `{list, labels, drop_labels, checkpoint}`. `checkpoint` (`plan_approval`, `root_cause`, `visual` or `pre_pr`) holds the card for a person in `backlog` or `review` until they approve or reject it; see [Human checkpoints](kanban.md#human-checkpoints). Only `on_success` takes one. |
 | `kanban.on_failure` | route | Where a failed attempt goes; default the list it was claimed from. |
 | `kanban.handoff_to`, `kanban.handoff_labels` | string[] | The profiles and labels `KanbanHandoff` may route new items to. |
 | `kanban.handoff_repos` | bool | Gives `KanbanHandoff` a `repo` argument that files the task under a repository the harness found beside or beneath the worker's directory, so a worker in a plain folder can send each finding to the repo that owns it. Off by default. See [Filing a handoff under another repository](fleet.md#filing-a-handoff-under-another-repository). |

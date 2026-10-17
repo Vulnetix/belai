@@ -249,10 +249,31 @@ clears one. The `vuln`, `gone` and
 `needs-verify` labels route a card through the
 [security crew](fleet.md#the-security-crew).
 
+### Human checkpoints
+
+A flow stage can hand its card on **held for a person**. The stage's profile
+names a checkpoint on its `on_success` route (`kanban.on_success.checkpoint`),
+one of `plan_approval`, `root_cause`, `visual` or `pre_pr`. When the stage
+succeeds, the harness adds the label `checkpoint:<reason>` and records a note
+that names only the reason. No worker claims a card that carries a checkpoint
+label, whatever its other labels or assignee, so the next stage waits.
+
+Only a person clears it, with `belai kanban checkpoint ID approve` or `reject`
+(or the same decision on the website). Approve removes the label and leaves the
+card in its list for the next stage to claim. Reject removes it too and returns
+the card to the list you name (backlog by default), counts one bounce, and
+resets the stage's attempts. A worker's outcome can drop its own labels but
+never a checkpoint, and a label from a newer Belai that this one does not know
+holds the card all the same. A failed stage is retried and then blocked as
+before; it never holds a card. A held card is not claimed, so a decision on a
+card a worker holds is refused.
+
 From the command line:
 
 ```sh
 belai kanban add "Add a -json flag to agent ps" -label build -priority 2
+belai kanban checkpoint K-3f9a2c approve -note "scope is right"
+belai kanban checkpoint K-3f9a2c reject -to backlog -note "tests missing"
 belai kanban list -label build
 belai kanban show K-3f9a2c
 belai kanban move K-3f9a2c done -note "shipped"

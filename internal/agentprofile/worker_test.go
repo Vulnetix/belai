@@ -50,6 +50,11 @@ func TestWorkerValidation(t *testing.T) {
 		"no on_success":      func(p *AgentProfile) { p.Kanban.OnSuccess = Route{} },
 		"claims in_progress": func(p *AgentProfile) { p.Kanban.Lists = []string{"in_progress"} },
 		"bad route":          func(p *AgentProfile) { p.Kanban.OnFailure = Route{List: "nowhere"} },
+		"checkpoint unknown": func(p *AgentProfile) { p.Kanban.OnSuccess = Route{List: "review", Checkpoint: "sign_off"} },
+		"checkpoint to done": func(p *AgentProfile) { p.Kanban.OnSuccess = Route{List: "done", Checkpoint: "pre_pr"} },
+		"checkpoint on a failure": func(p *AgentProfile) {
+			p.Kanban.OnFailure = Route{List: "backlog", Checkpoint: "root_cause"}
+		},
 		"short lease":        func(p *AgentProfile) { p.Kanban.Lease = "10s" },
 		"fast poll":          func(p *AgentProfile) { p.Kanban.Poll = "1s" },
 		"bad handoff":        func(p *AgentProfile) { p.Kanban.HandoffTo = []string{"has space"} },
@@ -76,6 +81,11 @@ func TestWorkerValidation(t *testing.T) {
 		if err := p.Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+	held := worker()
+	held.Kanban.OnSuccess = Route{List: "review", Checkpoint: "plan_approval"}
+	if err := held.Validate(); err != nil {
+		t.Fatalf("a checkpoint into review: %v", err)
 	}
 	p := worker()
 	p.Tools = []string{"Read", "Write"}
