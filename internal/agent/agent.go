@@ -416,6 +416,10 @@ type Session struct {
 	sealMu  sync.Mutex
 	sealKey string
 	sealed  string
+	// sent is the conversation as the provider last saw it, ending in the
+	// final text reply; see SentHistory.
+	sentMu sync.Mutex
+	sent   []run.Turn
 	// kanban is the board wiring (see kanban.go); never nil after NewSession.
 	// turnKanbanLoop latches the working loop's KanbanMove for an agent, goal
 	// or plan-execute turn; kanbanWrapUpPass adds the wrap-up's KanbanAdd and

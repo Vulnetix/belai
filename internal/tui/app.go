@@ -366,6 +366,9 @@ type App struct {
 	// cacheStats sums how much of the agent's prompts came from the
 	// provider's prompt cache.
 	cacheStats cacheStats
+	// sent is the agent's last sent conversation, continued by the next
+	// prompt while the transcript is unchanged (senthistory.go).
+	sent sentHistory
 	// intelSyncAt and intelSyncSig are when the last intel_state entry was
 	// written and what it said, so the next is written only when it differs
 	// (intel_sync.go).
@@ -1779,7 +1782,7 @@ func (a *App) echoUserMessage(m components.Message) {
 // turn.
 func (a *App) sendTurnNoEcho(input string, atts []run.Attachment, directive string) tea.Cmd {
 	a.lastPrompt = &promptRec{input: input, atts: atts, directive: directive}
-	turns := a.buildTurns()
+	turns := a.continueSentHistory(a.buildTurns())
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		turns[n-1].Attachments = atts
 		turns[n-1].Directive = directive
@@ -4272,6 +4275,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if last := a.trailingReasoning(); last >= 0 {
 			a.messages[last].Materialise()
 		}
+		a.captureSentHistory(m.Result)
 		if m.Result.Usage != nil {
 			a.usage = m.Result.Usage
 			a.usageStale = false
