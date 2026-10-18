@@ -67,8 +67,6 @@ const (
 const (
 	// maxAskArgsBytes caps the tool arguments an ask records.
 	maxAskArgsBytes = 32 << 10
-	// maxAskPlanBytes caps the plan text a plan-review ask carries.
-	maxAskPlanBytes = 64 << 10
 	// maxAnswerNoteBytes caps a web answer's per-group note.
 	maxAnswerNoteBytes = 2 << 10
 )
@@ -283,22 +281,20 @@ func (a *App) recordPermissionAsk(ask *agent.AskRequest) string {
 }
 
 // recordPlanReviewAsk writes a plan review, carrying the plan text so the
-// website can show what it is approving.
+// website can show what it is approving, the models an approval may switch
+// to and the estimate of what each approve route re-sends.
 func (a *App) recordPlanReviewAsk(name, path string) string {
-	meta := map[string]any{
-		"plan_name": name,
-		"plan_path": path,
-		"options":   []string{planChoiceApproveHere, planChoiceApproveNew, planChoiceRefine, planChoiceStay},
+	body := ""
+	if data, err := os.ReadFile(path); err == nil {
+		body = string(data)
 	}
-	if body, err := os.ReadFile(path); err == nil {
-		text := string(body)
-		if len(text) > maxAskPlanBytes {
-			text = truncateUTF8(text, maxAskPlanBytes)
-			meta["plan_truncated"] = true
-		}
-		meta["plan"] = text
-	}
-	return a.recordAsk(askPlanReview, "plan written: "+path, meta)
+	est := a.planEstimate(body)
+	content, meta := webask.PlanReviewAsk(name, path, body, webask.PlanOffer{
+		Options:  []string{planChoiceApproveHere, planChoiceApproveNew, planChoiceRefine, planChoiceStay},
+		Models:   a.planReview.models,
+		Estimate: &est,
+	})
+	return a.recordAsk(askPlanReview, content, meta)
 }
 
 // ── Resolving asks (host keys and web answers share these) ───────────────
@@ -373,6 +369,9 @@ func (a *App) recordPlanChoice(choice, source, remoteID, notes string) string {
 	meta := map[string]any{"plan_choice": choice}
 	if notes != "" {
 		meta["notes"] = notes
+	}
+	if choice == planChoiceApproveHere || choice == planChoiceApproveNew {
+		meta["plan_model"] = a.planTarget().label()
 	}
 	id := a.recordAskAnswer(a.planReview.askID, askPlanReview, source, remoteID, text, meta)
 	a.planReview.askID = ""
@@ -485,24 +484,27 @@ func (a *App) handleRemoteAnswer(ans sessionsync.RemoteAnswer) tea.Cmd {
 		if a.working() || a.preSend {
 			return refuse("the plan turn is still finishing on the host; try again in a moment")
 		}
-		var p struct {
-			Choice string `json:"choice"`
-			Notes  string `json:"notes"`
+		pa, err := webask.ParsePlanAnswer(ans.Payload, a.planReview.models)
+		if err != nil {
+			return refuse(err.Error())
 		}
-		if err := json.Unmarshal(ans.Payload, &p); err != nil {
-			return refuse("the answer could not be read")
-		}
-		return a.applyWebPlanChoice(ans, p.Choice, p.Notes)
+		return a.applyWebPlanChoice(ans, pa)
 	}
 	return refuse("this question is no longer open on the host: it was answered there, or the turn moved on")
 }
 
 // applyWebPlanChoice runs a web plan-review choice through the same arms the
-// host's keys use. Refinement notes are a prompt from the web, so they are
-// cleaned and take the web-prompt path (never a slash or shell command).
-func (a *App) applyWebPlanChoice(ans sessionsync.RemoteAnswer, choice, notes string) tea.Cmd {
+// host's keys use. An approval may name the model to execute on, one the
+// review offered (webask.ParsePlanAnswer). Refinement notes are a prompt from
+// the web, already cleaned, and take the web-prompt path (never a slash or
+// shell command).
+func (a *App) applyWebPlanChoice(ans sessionsync.RemoteAnswer, pa webask.PlanAnswer) tea.Cmd {
+	choice := pa.Choice
 	switch choice {
 	case planChoiceApproveHere, planChoiceApproveNew, planChoiceStay:
+		if pa.Model != "" {
+			a.planReview.model = modelTarget{pa.Provider, pa.Model}
+		}
 		entryID := a.recordPlanChoice(choice, answerFromWeb, ans.ID, "")
 		a.syncer.AckAnswer(ans.ID, sessionsync.AckAccepted, "", entryID)
 		a.dropView(viewPlanReview)
@@ -519,7 +521,7 @@ func (a *App) applyWebPlanChoice(ans sessionsync.RemoteAnswer, choice, notes str
 			return a.submitPlanStay()
 		}
 	case planChoiceRefine:
-		text := sessionsync.CleanPrompt(notes)
+		text := pa.Notes
 		if text == "" {
 			a.syncer.AckAnswer(ans.ID, sessionsync.AckRefused, "refinement notes were empty after cleaning", "")
 			return nil

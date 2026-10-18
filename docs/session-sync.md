@@ -85,8 +85,8 @@ website never disagree.
 | `turn_state` | A turn starts, and after its last rows are written | `turn_id`, `state` (`started`, `ended`, `error`, `interrupted`), `started_at`, `duration_ms` |
 | `tool_start` | A main-thread tool call starts | `tool_call_id`, `tool_name`, `tool_args`, `started_at` |
 | `tool` (`meta.diff`) | A tool that changed files returns | The rendered diff rows per file (`filediff.Change.Wire`), capped at 256 KiB. Every path keeps its header past the cap |
-| `ask` | The host stops to ask | Entry id = ask id. `kind`: `permission` (tool, subject, args, the `rule` allow-always would add, the diff), `clarify` / `mode_choice` (the questionnaire), `plan_review` (the plan name and path, the plan text up to 64 KiB, and `options`: the TUI offers `approve_here`, `approve_new`, `refine` and `stay`, a `belai rc` session `approve_here`, `refine` and `stay`) |
-| `ask_answer` | The ask is resolved, closed with its turn, or cancelled | Entry id = `answer-` + ask id. `source` (`host` or `web`), then `decision`, `answers`, or `plan_choice` and `notes` |
+| `ask` | The host stops to ask | Entry id = ask id. `kind`: `permission` (tool, subject, args, the `rule` allow-always would add, the diff), `clarify` / `mode_choice` (the questionnaire), `plan_review` (the plan name and path, the plan text up to 64 KiB, `options`: the TUI offers `approve_here`, `approve_new`, `refine` and `stay`, a `belai rc` session `approve_here`, `refine` and `stay`; `models`: up to 64 `{provider, model, label, context_window, current, fast}` an approval may execute on, the session's own first, absent when it cannot switch; `estimates`: `{plan, base, here, new}`, the approximate tokens (chars/4) the plan adds and each approve route's first request sends, `here` absent when unknown) |
+| `ask_answer` | The ask is resolved, closed with its turn, or cancelled | Entry id = `answer-` + ask id. `source` (`host` or `web`), then `decision`, `answers`, or `plan_choice`, `notes` and, on an approval, `plan_model` (`provider/model` it executes on) |
 | `rolemanager` | Every role-manager or classifier decision | The existing summary and outcome, plus `verdict`, `verdict_label`, `subject` and `pass`. Decisions the live feed does not show (mode selection, goal and plan evaluation) carry `hidden: true` |
 | `todo_list` | The todo list changes: the model reports it with `Todo` (or `update_plan` in plan mode), a `[DONE:n]` marker in its own text completes an item, or a goal ends. Written by the TUI and, through `turnlog`, by headless, rc, fleet and ACP sessions | `content` is the list as JSON: `id`, `items[{n, text, status}]` (`pending`, `active`, `done`), `prompt` and `cleared`. Append-only, latest wins; an unchanged list is not written again. The website's Todo panel draws the latest one |
 | `vuln` | A turn ends having shown an advisory identifier, once per identifier per session (at most 3 a turn, 40 a session) | The canonical identifier in `content`; `meta` holds `vuln_id`, `url` (the console page), `command` (the `vulnetix vdb vuln` lookup) and `prompt` (the prepared remediation prompt), each composed from the identifier by the harness ([vulnerability row](vuln-row.md)). The website draws the row from it, and a remediate button sends `prompt` as an ordinary web prompt |
@@ -178,7 +178,11 @@ offers the same choices the host screen does:
 - **Clarify questions and the mode choice:** the same groups and options,
   single or multiple choice, with a note per question, skip, or decline all.
 - **Plan review:** approve here, approve in a new session, refine with notes,
-  or keep planning.
+  or keep planning; only the choices the ask lists in `options`. An approval
+  may pick the model the plan executes on from the ask's `models`, and the page
+  shows each route's `estimates` against that model's context window. The
+  answer is `{"choice", "notes"?, "model"?: {"provider", "model"}}`; a model the
+  ask did not offer, or one on `refine` or `stay`, is refused.
 
 A web answer is untrusted input:
 

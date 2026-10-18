@@ -4121,6 +4121,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventPlanFileKind:
 		a.planReview = newPlanReviewState(m.PlanName, m.PlanPath)
+		a.planReview.models = a.planModelOffer()
 		a.planReview.askID = a.recordPlanReviewAsk(m.PlanName, m.PlanPath)
 		if a.planReview.askID != "" {
 			a.addEphemeralSystem("plan written: " + m.PlanPath)

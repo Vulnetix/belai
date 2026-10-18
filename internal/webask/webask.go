@@ -17,6 +17,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/planest"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -211,14 +212,48 @@ const (
 // MaxPlanBytes caps the plan text a plan-review ask carries.
 const MaxPlanBytes = 64 << 10
 
+// MaxPlanModels caps the models a plan-review ask offers, the same as the
+// models one provider may advertise for a remote session.
+const MaxPlanModels = 64
+
+// PlanModel is one model a plan review offers to execute the plan on. Current
+// marks the model the session runs now, the default; Fast its fast tier.
+type PlanModel struct {
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	Label         string `json:"label,omitempty"`
+	ContextWindow int    `json:"context_window,omitempty"`
+	Current       bool   `json:"current,omitempty"`
+	Fast          bool   `json:"fast,omitempty"`
+}
+
+// PlanOffer is what a plan review offers beyond the plan itself: the choices,
+// the models an approval may switch to (current first), and the estimate of
+// what each approve route re-sends.
+type PlanOffer struct {
+	Options  []string
+	Models   []PlanModel
+	Estimate *planest.Estimate
+}
+
 // PlanReviewAsk is the content and metadata of a plan-review ask entry: the
-// plan's name and path, the choices on offer and the plan text itself, so the
-// website can show what it is approving. body is the recorded plan file.
-func PlanReviewAsk(name, path, body string, options []string) (string, map[string]any) {
+// plan's name and path, the choices and models on offer, the estimate, and the
+// plan text itself, so the website can show what it is approving. body is the
+// recorded plan file.
+func PlanReviewAsk(name, path, body string, offer PlanOffer) (string, map[string]any) {
 	meta := map[string]any{
 		"plan_name": name,
 		"plan_path": path,
-		"options":   options,
+		"options":   offer.Options,
+	}
+	if models := offer.Models; len(models) > 0 {
+		if len(models) > MaxPlanModels {
+			models = models[:MaxPlanModels]
+		}
+		meta["models"] = models
+	}
+	if offer.Estimate != nil {
+		meta["estimates"] = *offer.Estimate
 	}
 	if body != "" {
 		if len(body) > MaxPlanBytes {
@@ -230,30 +265,63 @@ func PlanReviewAsk(name, path, body string, options []string) (string, map[strin
 	return "plan written: " + path, meta
 }
 
-// ParsePlanChoice reads a web plan-review answer: one of the fixed choices
-// and, for a refinement, the notes. The notes are untrusted web text, so they
-// are cleaned like a web prompt and capped; a refinement with no notes left
-// is refused.
-func ParsePlanChoice(raw json.RawMessage) (choice, notes string, err error) {
+// PlanAnswer is a validated web plan-review answer. Provider and Model are set
+// only on an approval that picked a model to execute on.
+type PlanAnswer struct {
+	Choice   string
+	Notes    string
+	Provider string
+	Model    string
+}
+
+// ParsePlanAnswer reads a web plan-review answer: one of the fixed choices,
+// for a refinement the notes, and for an approval an optional model, which
+// must be one of offered (a web answer may not name a model the host did not
+// offer). The notes are untrusted web text, so they are cleaned like a web
+// prompt and capped; a refinement with no notes left is refused.
+func ParsePlanAnswer(raw json.RawMessage, offered []PlanModel) (PlanAnswer, error) {
 	var p struct {
 		Choice string `json:"choice"`
 		Notes  string `json:"notes"`
+		Model  *struct {
+			Provider string `json:"provider"`
+			Model    string `json:"model"`
+		} `json:"model"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return "", "", fmt.Errorf("the answer could not be read")
+		return PlanAnswer{}, fmt.Errorf("the answer could not be read")
 	}
+	ans := PlanAnswer{Choice: p.Choice}
 	switch p.Choice {
-	case PlanApproveHere, PlanApproveNew, PlanStay:
-		return p.Choice, "", nil
+	case PlanApproveHere, PlanApproveNew:
+		if p.Model != nil && (p.Model.Provider != "" || p.Model.Model != "") {
+			if !offersModel(offered, p.Model.Provider, p.Model.Model) {
+				return PlanAnswer{}, fmt.Errorf("the model %s/%s was not offered for this plan", p.Model.Provider, p.Model.Model)
+			}
+			ans.Provider, ans.Model = p.Model.Provider, p.Model.Model
+		}
+		return ans, nil
+	case PlanStay:
+		return ans, nil
 	case PlanRefine:
-		notes = sessionsync.CleanPrompt(p.Notes)
+		notes := sessionsync.CleanPrompt(p.Notes)
 		if notes == "" {
-			return "", "", fmt.Errorf("refinement notes were empty after cleaning")
+			return PlanAnswer{}, fmt.Errorf("refinement notes were empty after cleaning")
 		}
 		if len(notes) > MaxNoteBytes*4 {
 			notes = Truncate(notes, MaxNoteBytes*4)
 		}
-		return p.Choice, notes, nil
+		ans.Notes = notes
+		return ans, nil
 	}
-	return "", "", fmt.Errorf("unknown plan choice; expected approve_here, refine or stay")
+	return PlanAnswer{}, fmt.Errorf("unknown plan choice; expected approve_here, approve_new, refine or stay")
+}
+
+func offersModel(offered []PlanModel, provider, model string) bool {
+	for _, m := range offered {
+		if m.Provider == provider && m.Model == model {
+			return true
+		}
+	}
+	return false
 }

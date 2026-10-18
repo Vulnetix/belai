@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/planest"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/turnlog"
@@ -244,6 +245,9 @@ type planReview struct {
 	askID string
 	name  string
 	path  string
+	// models are the models the review offered to execute on; a web answer
+	// may only pick one of them.
+	models []webask.PlanModel
 }
 
 // planReviewOptions are the choices a remote session offers. approve_new needs
@@ -251,29 +255,35 @@ type planReview struct {
 var planReviewOptions = []string{webask.PlanApproveHere, webask.PlanRefine, webask.PlanStay}
 
 // recordPlanReview writes the plan-review ask for a plan file the turn just
-// recorded and returns it, or nil when nothing was written.
-func (b *askBridge) recordPlanReview(name, path string) *planReview {
+// recorded and returns it, or nil when nothing was written. models are the
+// models an approval may switch to (none when the session cannot switch);
+// historyTokens estimates what approving here re-sends, 0 when unknown.
+func (b *askBridge) recordPlanReview(name, path string, models []webask.PlanModel, historyTokens int) *planReview {
 	body := ""
 	if data, err := os.ReadFile(path); err == nil {
 		body = string(data)
 	}
-	content, meta := webask.PlanReviewAsk(name, path, body, planReviewOptions)
+	est := planest.Compute(body, 0, historyTokens)
+	content, meta := webask.PlanReviewAsk(name, path, body, webask.PlanOffer{Options: planReviewOptions, Models: models, Estimate: &est})
 	id := b.record(webask.KindPlanReview, content, meta)
 	if id == "" {
 		return nil
 	}
-	return &planReview{askID: id, name: name, path: path}
+	return &planReview{askID: id, name: name, path: path, models: models}
 }
 
 // settlePlanReview writes the ask_answer entry for the open plan review.
-func (b *askBridge) settlePlanReview(p *planReview, source, remoteID, choice, notes string) string {
-	text := "plan review: " + strings.ReplaceAll(choice, "_", " ")
+func (b *askBridge) settlePlanReview(p *planReview, source, remoteID string, ans webask.PlanAnswer) string {
+	text := "plan review: " + strings.ReplaceAll(ans.Choice, "_", " ")
 	if source == webask.FromWeb {
 		text += " (answered on the web)"
 	}
-	meta := map[string]any{"plan_choice": choice}
-	if notes != "" {
-		meta["notes"] = notes
+	meta := map[string]any{"plan_choice": ans.Choice}
+	if ans.Notes != "" {
+		meta["notes"] = ans.Notes
+	}
+	if ans.Model != "" {
+		meta["plan_model"] = ans.Provider + "/" + ans.Model
 	}
 	return b.settle(p.askID, webask.KindPlanReview, source, remoteID, text, meta)
 }
@@ -288,13 +298,13 @@ func (b *askBridge) closePlanReview(p *planReview, reason string) {
 }
 
 // answerPlanReview applies one web answer to the open plan review. It returns
-// the accepted choice and notes, or ok=false after acking a refusal, so the
+// the accepted answer, or ok=false after acking a refusal, so the
 // session loop acts only on an answer that validated against the review open
 // now. p may be nil: an answer to nothing open is refused.
-func (b *askBridge) answerPlanReview(p *planReview, ans sessionsync.RemoteAnswer) (choice, notes string, ok bool) {
-	refuse := func(why string) (string, string, bool) {
+func (b *askBridge) answerPlanReview(p *planReview, ans sessionsync.RemoteAnswer) (webask.PlanAnswer, bool) {
+	refuse := func(why string) (webask.PlanAnswer, bool) {
 		b.mirror.AckAnswer(ans.ID, sessionsync.AckRefused, why, "")
-		return "", "", false
+		return webask.PlanAnswer{}, false
 	}
 	if p == nil || ans.AskID != p.askID {
 		return refuse("this question is no longer open on the host: it was answered there, or the turn moved on")
@@ -302,14 +312,14 @@ func (b *askBridge) answerPlanReview(p *planReview, ans sessionsync.RemoteAnswer
 	if ans.Kind != webask.KindPlanReview {
 		return refuse("the answer does not fit a plan review")
 	}
-	choice, notes, err := webask.ParsePlanChoice(ans.Payload)
+	pa, err := webask.ParsePlanAnswer(ans.Payload, p.models)
 	if err != nil {
 		return refuse(err.Error())
 	}
-	if choice == webask.PlanApproveNew {
+	if pa.Choice == webask.PlanApproveNew {
 		return refuse("a remote session cannot fork; approve the plan here instead")
 	}
-	entryID := b.settlePlanReview(p, webask.FromWeb, ans.ID, choice, notes)
+	entryID := b.settlePlanReview(p, webask.FromWeb, ans.ID, pa)
 	b.mirror.AckAnswer(ans.ID, sessionsync.AckAccepted, "", entryID)
-	return choice, notes, true
+	return pa, true
 }
