@@ -63,7 +63,7 @@ const facts: Record<string, string[]> = {
   ],
   Afterwards: [
     'The next prompt',
-    'Approve, refine or cancel the plan. An approved plan runs like a goal and ends on the same report',
+    'Approve, refine or cancel the plan, and pick the model it runs on. An approved plan runs like a goal and ends on the same report',
     'With `auto-commit per task` on, one conventional commit of exactly the files it changed. With `tests.post_end` on, the detected tests run: a pass gets a short report and a failure starts a bounded fix loop',
     'The next prompt',
   ],
@@ -220,16 +220,20 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
   </div>
 
   <SubHead title="Reviewing a plan" surfaces={['tui', 'acp', 'pix sandbox']}>
-    The plan is saved as a structured document. You approve it, send it back with notes, or cancel it.
+    The plan is saved as a structured document. You approve it here or in a new session, send it back with notes, or cancel it. Approving can also switch the model the plan runs on.
   </SubHead>
   <Shot
     class="mt-8"
     shot={planReviewShot}
     title="plan review"
-    alt="The plan review pane with two steps, each naming its files and its check, then Approve, Refine and Cancel"
-    rows={[2, 18]}
-    marks={[{ row: 9, col: 40 }, { row: 19, col: 33 }]}
-    notes={['Each step names its files and the check that proves it.', 'Approve, refine with notes, or cancel.']}
+    alt="The plan review pane with two steps, each naming its files and its check, the model the plan will run on, the estimated tokens each approval re-sends, then Approve, Refine and Cancel"
+    rows={[2, 20]}
+    marks={[{ row: 9, col: 40 }, { row: 19, col: 60 }, { row: 21, col: 33 }]}
+    notes={[
+      'Each step names its files and the check that proves it.',
+      'm picks the model the plan runs on. Approving puts the plan in the system prompt, so the first request is not served from cache on any model: here re-sends the planning history and the plan, a new session only the system prompt, tools and plan. Both are estimates against the picked model\'s context window.',
+      'Approve, refine with notes, or cancel.',
+    ]}
   />
 
   <Limits items={limits} />
