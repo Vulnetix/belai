@@ -251,7 +251,8 @@ func roleManager() string {
 	return components.MessageList{Messages: msgs, Width: width, InternalWork: rolemanager.LevelAll}.View()
 }
 
-// planReview renders the plan review pane with Approve / Refine / Cancel.
+// planReview renders the plan review pane with Approve / Refine / Cancel, the
+// model the plan will execute on and what each approve route re-sends.
 func planReview() string {
 	doc := "Refactor the classifier\n" +
 		"──────────────────────────\n" +
@@ -268,12 +269,15 @@ func planReview() string {
 
 	head := components.SectionHeader("plan review", "golden-plan · /tmp/golden-plan.md", width)
 	body := components.Panel{Title: "plan", Width: width, Body: doc}.View()
+	model := "model: cloudflare-workers-ai/@cf/moonshotai/kimi-k2.6 (current, 262.1k window)" +
+		components.MutedStyle.Render("  ·  m change")
+	estimates := components.MutedStyle.Render("here ≈ 84k tok · 32% of 262.1k   ·   new session ≈ 9k tok · 3% of 262.1k")
 	actions := components.Chip("approve", components.ColorTeal) + "  " +
 		components.Chip("refine", components.ColorAmber) + "  " +
 		components.Chip("cancel", components.ColorDanger)
 
-	return head + body + "\n" + actions + "\n\n" +
-		components.HelpBar("enter", "approve", "e", "refine", "esc", "cancel", "d", "diff")
+	return head + body + "\n" + model + "\n" + estimates + "\n" + actions + "\n\n" +
+		components.HelpBar("enter", "approve", "m", "model", "e", "refine", "esc", "cancel", "d", "diff")
 }
 
 // approvalDiff renders the tool-permission approval prompt showing a diff.

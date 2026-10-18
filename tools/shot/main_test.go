@@ -121,9 +121,9 @@ func TestFrameContent(t *testing.T) {
 		}
 	})
 
-	t.Run("plan review shows the three actions", func(t *testing.T) {
+	t.Run("plan review shows the three actions, the model and the estimates", func(t *testing.T) {
 		got := planReview()
-		for _, want := range []string{"approve", "refine", "cancel"} {
+		for _, want := range []string{"approve", "refine", "cancel", "model:", "m change", "new session ≈"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("plan review missing %q", want)
 			}
