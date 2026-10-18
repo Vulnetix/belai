@@ -158,11 +158,15 @@ func TestPlanReviewViewShowsStructuredSections(t *testing.T) {
 }
 
 // goldenPlanModel pins the session's model so the model row and the estimates'
-// window do not depend on the machine's settings.
+// window do not depend on the machine's settings, and empties the thread so the
+// estimates do not count the startup notices a machine happens to print (a
+// missing ledger, a credential note).
 func goldenPlanModel(a *App) {
 	a.cfg.Provider, a.cfg.Model = "anthropic", "claude-opus-5-5"
 	a.cfg.Routing.Fast = nil
 	a.settings.ContextWindows = nil
+	a.messages = nil
+	a.intelReq = intelRequest{}
 }
 
 // goldenPlanModels is a fixed offer for the model list.
