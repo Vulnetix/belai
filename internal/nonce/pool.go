@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,9 @@ type Pool struct {
 	// remote is the endpoint the pool was seeded from; nil for a local pool.
 	remote *Endpoint
 	client *http.Client
+	// modes are the nonce modes the remote endpoint advertised; empty for a
+	// local pool or an endpoint that predates the field.
+	modes []string
 }
 
 // New returns an empty pool. Reserve mints on demand.
@@ -197,14 +201,14 @@ func BearerEndpoint(label, baseURL, apiKey string) Endpoint {
 // failure propagates. The pool becomes remote when the endpoint answers.
 func (p *Pool) SeedFromProvider(client *http.Client, baseURL, apiKey string, fallbackN int) error {
 	ep := BearerEndpoint("", baseURL, apiKey)
-	nonces, err := FetchFrom(client, ep, 0)
+	resp, err := fetchFrom(client, ep, 0)
 	if errors.Is(err, ErrUnsupported) {
 		return p.Seed(fallbackN)
 	}
 	if err != nil {
 		return err
 	}
-	p.adopt(client, ep, nonces)
+	p.adopt(client, ep, resp)
 	return nil
 }
 
@@ -217,20 +221,21 @@ func (p *Pool) SeedFromEndpoints(client *http.Client, eps []Endpoint, fallbackN 
 		if ep.BaseURL == "" {
 			continue
 		}
-		nonces, err := FetchFrom(client, ep, 0)
-		if err != nil || len(nonces) == 0 {
+		resp, err := fetchFrom(client, ep, 0)
+		if err != nil || len(resp.Nonces) == 0 {
 			continue
 		}
-		p.adopt(client, ep, nonces)
+		p.adopt(client, ep, resp)
 		return ep.Label, nil
 	}
 	return "", p.Seed(fallbackN)
 }
 
-func (p *Pool) adopt(client *http.Client, ep Endpoint, nonces []string) {
+func (p *Pool) adopt(client *http.Client, ep Endpoint, resp NonceResponse) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.avail = append(p.avail, nonces...)
+	p.avail = append(p.avail, resp.Nonces...)
+	p.modes = resp.Modes
 	p.remote, p.client = &ep, client
 }
 
@@ -259,6 +264,9 @@ type NonceResponse struct {
 	Nonces    []string `json:"nonces"`
 	Count     int      `json:"count"`
 	ExpiresAt string   `json:"expires_at,omitempty"`
+	// Modes lists the X-Vulnetix-Nonce-Mode values the gateway accepts. A
+	// gateway that omits it accepts observe and enforce only.
+	Modes []string `json:"modes,omitempty"`
 }
 
 // FetchNonces GETs {base_url}/v1/nonces with the key as a Bearer token.
@@ -277,11 +285,17 @@ var errNoRedirect = errors.New("nonce endpoint redirected; refusing to follow")
 // without a request. Redirects are never followed. The request is bounded by
 // a 3s deadline so a hanging endpoint cannot freeze session construction.
 func FetchFrom(client *http.Client, ep Endpoint, count int) ([]string, error) {
+	resp, err := fetchFrom(client, ep, count)
+	return resp.Nonces, err
+}
+
+// fetchFrom is FetchFrom returning the whole response, modes included.
+func fetchFrom(client *http.Client, ep Endpoint, count int) (NonceResponse, error) {
 	if knownUnsupported(ep.BaseURL) {
-		return nil, ErrUnsupported
+		return NonceResponse{}, ErrUnsupported
 	}
 	if knownTransient(ep.BaseURL) {
-		return nil, ErrUnavailable
+		return NonceResponse{}, ErrUnavailable
 	}
 	if client == nil {
 		client = httpclient.Default()
@@ -296,7 +310,7 @@ func FetchFrom(client *http.Client, ep Endpoint, count int) ([]string, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, err
+		return NonceResponse{}, err
 	}
 	req.Header.Set("user-agent", version.UserAgent())
 	if ep.Authorize != nil {
@@ -305,25 +319,25 @@ func FetchFrom(client *http.Client, ep Endpoint, count int) ([]string, error) {
 	resp, err := nr.Do(req)
 	if err != nil {
 		rememberTransient(ep.BaseURL)
-		return nil, fmt.Errorf("fetch nonces: %w", err)
+		return NonceResponse{}, fmt.Errorf("fetch nonces: %w", err)
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusMethodNotAllowed:
 		rememberUnsupported(ep.BaseURL)
-		return nil, ErrUnsupported
+		return NonceResponse{}, ErrUnsupported
 	case http.StatusOK:
 		// ok
 	default:
 		rememberTransient(ep.BaseURL)
-		return nil, fmt.Errorf("nonce endpoint returned %d", resp.StatusCode)
+		return NonceResponse{}, fmt.Errorf("nonce endpoint returned %d", resp.StatusCode)
 	}
 	var out NonceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		rememberTransient(ep.BaseURL)
-		return nil, fmt.Errorf("decode nonce response: %w", err)
+		return NonceResponse{}, fmt.Errorf("decode nonce response: %w", err)
 	}
-	return out.Nonces, nil
+	return out, nil
 }
 
 // RemoteFor reports whether the pool is remote and seeded from baseURL.
@@ -331,4 +345,20 @@ func (p *Pool) RemoteFor(baseURL string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.remote != nil && p.remote.BaseURL == baseURL
+}
+
+// ModeFor returns the X-Vulnetix-Nonce-Mode to send on a request to baseURL:
+// "canonical" when the pool was seeded from that gateway and it advertised
+// canonical mode, "enforce" when it was seeded from that gateway otherwise,
+// and "" when the nonces in use did not come from it.
+func (p *Pool) ModeFor(baseURL string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.remote == nil || p.remote.BaseURL != baseURL {
+		return ""
+	}
+	if slices.Contains(p.modes, "canonical") {
+		return "canonical"
+	}
+	return "enforce"
 }

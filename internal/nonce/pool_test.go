@@ -426,3 +426,41 @@ func TestFetchNoncesRefusesRedirect(t *testing.T) {
 		t.Fatal("credential reached the redirect target")
 	}
 }
+
+// ModeFor asks for canonical only from the gateway that seeded the pool and
+// advertised it; a gateway without the modes field gets enforce, and a local
+// pool or another base URL gets no mode at all.
+func TestModeFor(t *testing.T) {
+	serve := func(modes []string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"n"}, Modes: modes})
+		}))
+	}
+	canon, old := serve([]string{"observe", "enforce", "canonical"}), serve(nil)
+	defer canon.Close()
+	defer old.Close()
+	seed := func(s *httptest.Server) *Pool {
+		p := New()
+		if _, err := p.SeedFromEndpoints(s.Client(), []Endpoint{BearerEndpoint("gw", s.URL, "k")}, 1); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	local := New()
+	_ = local.Seed(1)
+	for _, tc := range []struct {
+		name string
+		p    *Pool
+		base string
+		want string
+	}{
+		{"canonical gateway", seed(canon), canon.URL, "canonical"},
+		{"older gateway", seed(old), old.URL, "enforce"},
+		{"other base URL", seed(canon), "https://elsewhere.example", ""},
+		{"local pool", local, canon.URL, ""},
+	} {
+		if got := tc.p.ModeFor(tc.base); got != tc.want {
+			t.Errorf("%s: ModeFor = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

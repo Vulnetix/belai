@@ -11,8 +11,9 @@ import (
 	"github.com/vulnetix/belai/internal/nonce"
 )
 
-// The enforce header goes out only on a Vulnetix route whose gateway issued
-// every nonce the pool holds.
+// The nonce-mode header goes out only on a Vulnetix route whose gateway
+// issued every nonce the pool holds: canonical when that gateway advertised
+// it, enforce otherwise.
 func TestApplyFirewallNonceMode(t *testing.T) {
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(nonce.NonceResponse{Nonces: []string{"n1"}})
@@ -20,6 +21,14 @@ func TestApplyFirewallNonceMode(t *testing.T) {
 	defer gw.Close()
 	remote := nonce.New()
 	if _, err := remote.SeedFromEndpoints(gw.Client(), []nonce.Endpoint{nonce.BearerEndpoint("vulnetix", gw.URL, "k")}, 1); err != nil {
+		t.Fatal(err)
+	}
+	cgw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(nonce.NonceResponse{Nonces: []string{"n1"}, Modes: []string{"observe", "enforce", "canonical"}})
+	}))
+	defer cgw.Close()
+	canon := nonce.New()
+	if _, err := canon.SeedFromEndpoints(cgw.Client(), []nonce.Endpoint{nonce.BearerEndpoint("vulnetix", cgw.URL, "k")}, 1); err != nil {
 		t.Fatal(err)
 	}
 	local := nonce.New()
@@ -33,6 +42,7 @@ func TestApplyFirewallNonceMode(t *testing.T) {
 		want string
 	}{
 		{"remote pool from this gateway", Config{BaseURL: gw.URL, Firewall: vx}, remote, "enforce"},
+		{"gateway advertising canonical", Config{BaseURL: cgw.URL, Firewall: vx}, canon, "canonical"},
 		{"local pool", Config{BaseURL: gw.URL, Firewall: vx}, local, ""},
 		{"remote pool from elsewhere", Config{BaseURL: "https://other.example", Firewall: vx}, remote, ""},
 		{"custom firewall", Config{BaseURL: gw.URL, Firewall: &firewall.Route{AdapterID: "custom"}}, remote, ""},

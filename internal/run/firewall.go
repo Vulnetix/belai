@@ -109,7 +109,9 @@ func withNoncePool(ctx context.Context, pool *nonce.Pool) context.Context {
 // applyFirewall sets a routed request's firewall headers. The nonce-mode
 // header opts into the gateway stripping blocks it cannot verify; it is sent
 // only while the call's pool is remote, i.e. every nonce came from the
-// gateway this request goes to.
+// gateway this request goes to. A gateway that advertised canonical mode
+// also forwards verified blocks without their nonce, so the provider sees
+// the same prompt bytes from every session and can serve them from cache.
 func applyFirewall(ctx context.Context, cfg Config, h http.Header) {
 	if cfg.Firewall == nil {
 		return
@@ -118,8 +120,10 @@ func applyFirewall(ctx context.Context, cfg Config, h http.Header) {
 	if cfg.Firewall.AdapterID != "vulnetix" {
 		return
 	}
-	if pool, ok := ctx.Value(noncePoolKey{}).(*nonce.Pool); ok && pool.RemoteFor(cfg.BaseURL) {
-		h.Set(firewall.HeaderNonceMode, "enforce")
+	if pool, ok := ctx.Value(noncePoolKey{}).(*nonce.Pool); ok {
+		if mode := pool.ModeFor(cfg.BaseURL); mode != "" {
+			h.Set(firewall.HeaderNonceMode, mode)
+		}
 	}
 }
 

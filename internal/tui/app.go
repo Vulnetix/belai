@@ -735,6 +735,8 @@ type App struct {
 	// the session pipeline; the TUI owns the instance so explore and background
 	// agents share the same ceiling.
 	agentPool *agentpool.Pool
+	// noncePools keeps the seeded nonce pool across agent session rebuilds.
+	noncePools *noncePools
 	// caps caches detected native-tool capabilities so the supervised-process
 	// manager and the session use the same catalogue.
 	caps tools.Capabilities
@@ -1067,6 +1069,7 @@ func New(opts Options) *App {
 		bannerW:           -1,
 		footerW:           -1,
 		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
+		noncePools:        &noncePools{},
 		activity:          activity.NewRegistry(),
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
@@ -2112,6 +2115,8 @@ type sessionBuildParams struct {
 	// agentPool is the shared FIFO fan-out ceiling the session's explore
 	// subagents acquire a lease from.
 	agentPool *agentpool.Pool
+	// noncePools is the App's pool cache; shared, not snapshotted.
+	noncePools *noncePools
 	// repoMap is the harness-computed repository map handed to the session's
 	// system block.
 	repoMap repomap.Map
@@ -2167,6 +2172,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		toolAllow:     a.engagedAgentTools(),
 		skillAllow:    a.engagedAgentSkills(),
 		agentPool:     a.agentPool,
+		noncePools:    a.noncePools,
 		repoMap:       a.repoMap,
 		forge:         a.forgeCache,
 		workspaceDirs: a.workspaceDirs,
@@ -2250,7 +2256,8 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewSession(agent.Options{
+	sess, err := agent.NewSession(agent.Options{
+		NoncePool:     p.noncePools.get(cfg),
 		AskDecider:    p.askDecider,
 		Knowledge:     p.knowledge,
 		GitSync:       p.gitSync,
@@ -2296,6 +2303,11 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// TUI is interactive, so live language servers are allowed.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(p.settings, reg.Cwd().Roots(), true),
 	})
+	if err != nil {
+		return nil, err
+	}
+	p.noncePools.keep(cfg, sess.NoncePool())
+	return sess, nil
 }
 
 // agentSession returns the cached session, building it from the live App state

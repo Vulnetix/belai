@@ -143,7 +143,12 @@ A session's delimiter nonces are fetched from the active firewall first, then
 the provider, then minted locally (see
 [nonce-endpoint-spec.md](nonce-endpoint-spec.md)). When every nonce comes from
 the Vulnetix gateway, requests carry `X-Vulnetix-Nonce-Mode: enforce`, and the
-gateway strips sealed blocks it cannot verify. The `/firewall` screen and
+gateway strips sealed blocks it cannot verify. When the gateway advertises
+canonical mode, Belai sends `canonical` instead: the gateway also forwards
+verified blocks without their nonce, so the provider sees the same prompt
+bytes from every session and serves the shared prefix from its cache.
+Explore subagents seal with their parent's pool, and the TUI keeps its pool
+across session rebuilds, so their blocks verify at the gateway as well. The `/firewall` screen and
 `/vulnetix configure` show where the session's nonces come from.
 
 ## Commands
