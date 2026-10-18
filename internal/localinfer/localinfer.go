@@ -79,6 +79,10 @@ func Args(opts ArgsOptions) []string {
 		"-fa", "on",
 		"--n-gpu-layers", strconv.Itoa(ngl),
 		"--ctx-size", strconv.Itoa(ctx),
+		// Reuse cached KV chunks of at least 256 tokens even where the new
+		// prompt shifts them, so a turn that changes the middle of the
+		// conversation (a cleared tool result) re-evaluates only what moved.
+		"--cache-reuse", "256",
 	}
 
 	if opts.ModelPath != "" {
