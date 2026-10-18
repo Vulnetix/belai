@@ -94,6 +94,12 @@ type SessionOptions struct {
 	// turn's result and the paths its tools changed: the post-end test pass
 	// and auto-commit, each when its control is on.
 	AfterTurn func(ctx context.Context, prompt string, res run.Result, paths []string)
+	// Models is what this host can run a session on (LocalModels). With web
+	// controls a plan review offers these models to execute the plan on; nil
+	// offers none. ContextWindows are the user's context-window overrides
+	// (config.Settings.ContextWindows), for the share each model would use.
+	Models         func() *sessionsync.RCModels
+	ContextWindows map[string]int
 }
 
 // CheckoutRunner switches a session's checkout to branch (gitsync
@@ -218,15 +224,16 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					planAnswers = nil
 					continue
 				}
-				choice, notes, accepted := bridge.answerPlanReview(open, ans)
+				pa, accepted := bridge.answerPlanReview(open, ans)
 				if !accepted {
 					continue
 				}
 				review := open
 				open = nil
 				resetIdle()
-				switch choice {
+				switch pa.Choice {
 				case webask.PlanApproveHere:
+					applyPlanModel(o, pa)
 					// Approval leaves plan mode, as it does in the TUI: the
 					// session's mode follows, so later prompts are not planned.
 					if o.Controls != nil {
@@ -241,7 +248,7 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 					p = sessionsync.RemotePrompt{Content: executePlanPrompt, Origin: "plan_review"}
 				case webask.PlanRefine:
 					tp = turnPlan{refine: true}
-					p = sessionsync.RemotePrompt{Content: notes, Origin: "plan_review"}
+					p = sessionsync.RemotePrompt{Content: pa.Notes, Origin: "plan_review"}
 				default:
 					// Leave it: the plan file stays and the session stays in plan mode.
 					o.Mirror.Nudge()
@@ -679,7 +686,7 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 				if review != nil {
 					bridge.closePlanReview(review, "a newer plan replaced it")
 				}
-				review = bridge.recordPlanReview(e.PlanName, e.PlanPath)
+				review = bridge.recordPlanReview(e.PlanName, e.PlanPath, planModels(o), historyTokens(history, text))
 			}
 			recorded := review != nil
 			reviewMu.Unlock()

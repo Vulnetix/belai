@@ -247,9 +247,12 @@ a control rather than a prompt, and the keys work while the page has focus.
   until the turn ends and the session is rebuilt with ask off.
 - **Plan review.** A plan-mode turn ends with a plan file, and with ask on (or in
   a session without web controls) that plan is offered to the web as a `plan_review` ask that carries the plan text
-  (up to 64 KiB) and the choices `approve_here`, `refine` and `stay`; there is
-  no `approve_new`, because a remote session has no second session to fork
-  into. Unlike a permission ask it holds nothing: the plan outlives its turn and
+  (up to 64 KiB), the choices `approve_here`, `refine` and `stay`, and the
+  estimate of what approving re-sends; there is no `approve_new`, because a
+  remote session has no second session to fork into. With web controls the ask
+  also offers the host's models (`models`, the session's own first), and an
+  approval that picks one applies `/model <provider> <model>` before the plan
+  runs; a model the review did not offer is refused. Unlike a permission ask it holds nothing: the plan outlives its turn and
   is answered while the session is idle. *Approve* switches the session to agent
   mode, as it does in the TUI, and runs the plan as an autonomous turn on the
   full tool surface (`Execute the approved plan.`). *Refine* takes the notes
@@ -869,7 +872,7 @@ avatar id, so the website can draw the agent. They are presentation only.
 | A web command expands the host's own installed file with its arguments and runs it as a turn; the project layer wins, an unknown or malformed name, `sync.commands` off, oversized arguments and a mixed command are refused, and a web prompt that starts with `/` stays plain text | `TestWebCommandExpandsTheHostsOwnFile`, `TestWebCommandProjectLayerWinsAndIsReadAtInvocation`, `TestWebCommandRefusals`, `TestWebPromptStartingWithASlashIsStillPlainText` |
 | The advertisement lists commands by name, description and argument hint only, never a template, and changes the catalogue hash when a command is added or `sync.commands` goes off | `TestInventoryAdvertisesCommandsWithoutTemplates`, `TestSlashCommandWireForm` |
 | The knowledge catalogue carries each document's address, size, SHA-256, labels and topics, never text or a source path, and an unchanged index file is not loaded again | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes` |
-| A plan turn is offered to the web as a `plan_review` ask with the plan text and the choices a remote session can honour; approving runs the plan on the full surface in agent mode, refining sends the notes to the planner in plan mode, staying runs nothing; a wrong ask, a fork, empty notes, an unknown choice or another kind is refused and leaves the review open; without ask only the path is recorded | `TestPlanTurnOffersTheReviewToTheWeb`, `TestApprovingThePlanExecutesItOnTheFullSurface`, `TestRefiningThePlanSendsTheNotesBackToThePlanner`, `TestLeavingThePlanRunsNothing`, `TestPlanReviewRefusesWhatDoesNotFit`, `TestPlanTurnWithoutAsksRecordsThePath`, `TestPlainRemoteSessionOffersAndExecutesThePlan`, `TestParsePlanChoice` |
+| A plan turn is offered to the web as a `plan_review` ask with the plan text and the choices a remote session can honour; approving runs the plan on the full surface in agent mode, refining sends the notes to the planner in plan mode, staying runs nothing; a wrong ask, a fork, empty notes, an unknown choice or another kind is refused and leaves the review open; without ask only the path is recorded | `TestPlanTurnOffersTheReviewToTheWeb`, `TestApprovingThePlanExecutesItOnTheFullSurface`, `TestRefiningThePlanSendsTheNotesBackToThePlanner`, `TestLeavingThePlanRunsNothing`, `TestPlanReviewRefusesWhatDoesNotFit`, `TestPlanTurnWithoutAsksRecordsThePath`, `TestPlainRemoteSessionOffersAndExecutesThePlan`, `TestApprovingThePlanOnAnotherModel`, `TestPlainRemoteSessionOffersNoModels`, `TestParsePlanAnswer` |
 
 ## Files
 

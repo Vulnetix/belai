@@ -12,6 +12,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/webask"
 )
 
 // goldenPlanReviewDoc is the fixed structured plan the golden fixture renders,
@@ -55,6 +56,7 @@ func TestPlanReviewGolden(t *testing.T) {
 		_ = tc.edited
 		a := New(Options{Workdir: t.TempDir()})
 		a.width, a.height = 100, 40
+		goldenPlanModel(a)
 		a.planReview = newPlanReviewState("golden-plan", "/tmp/golden-plan.md")
 		a.planReview.doc = goldenPlanReviewDoc()
 		if tc.prev != nil {
@@ -74,6 +76,7 @@ func TestPlanReviewGolden(t *testing.T) {
 	// Diff view over a previous revision.
 	a := New(Options{Workdir: t.TempDir()})
 	a.width, a.height = 100, 40
+	goldenPlanModel(a)
 	a.planReview = newPlanReviewState("golden-plan", "/tmp/golden-plan.md")
 	a.planReview.doc = goldenPlanReviewDoc()
 	prev := goldenPlanReviewDoc()
@@ -85,6 +88,20 @@ func TestPlanReviewGolden(t *testing.T) {
 	a.planReview.vp = viewport.New(w, h)
 	a.planReview.setContent()
 	fmt.Fprintf(&got, "=== diff\n%s\n", a.planReviewView())
+
+	// The model list, opened over the plan with a filter typed.
+	a = New(Options{Workdir: t.TempDir()})
+	a.width, a.height = 100, 40
+	goldenPlanModel(a)
+	a.planReview = newPlanReviewState("golden-plan", "/tmp/golden-plan.md")
+	a.planReview.doc = goldenPlanReviewDoc()
+	a.planReview.models = goldenPlanModels()
+	a.planReview.vp = viewport.New(a.planReviewWidth(), a.planReviewHeight())
+	a.planReview.setContent()
+	a.openPlanPick()
+	a.planReview.pickFilter = "claude"
+	a.planReview.pickSel = 1
+	fmt.Fprintf(&got, "=== model list\n%s\n", a.planReviewView())
 
 	if os.Getenv("UPDATE_GOLDEN") != "" {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
@@ -124,7 +141,7 @@ func TestPlanReviewGolden(t *testing.T) {
 // not the raw model message.
 func TestPlanReviewViewShowsStructuredSections(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.width, a.height = 100, 40
+	a.width, a.height = 100, 41
 	a.planReview = newPlanReviewState("plan", "/tmp/plan.md")
 	a.planReview.doc = goldenPlanReviewDoc()
 	w := a.planReviewWidth()
@@ -137,5 +154,23 @@ func TestPlanReviewViewShowsStructuredSections(t *testing.T) {
 		if !strings.Contains(v, want) {
 			t.Fatalf("review pane missing %q:\n%s", want, v)
 		}
+	}
+}
+
+// goldenPlanModel pins the session's model so the model row and the estimates'
+// window do not depend on the machine's settings.
+func goldenPlanModel(a *App) {
+	a.cfg.Provider, a.cfg.Model = "anthropic", "claude-opus-5-5"
+	a.cfg.Routing.Fast = nil
+	a.settings.ContextWindows = nil
+}
+
+// goldenPlanModels is a fixed offer for the model list.
+func goldenPlanModels() []webask.PlanModel {
+	return []webask.PlanModel{
+		{Provider: "anthropic", Model: "claude-opus-5-5", ContextWindow: 1_000_000, Current: true},
+		{Provider: "anthropic", Model: "claude-haiku-5-5", ContextWindow: 200_000, Fast: true},
+		{Provider: "anthropic", Model: "claude-sonnet-5-5", ContextWindow: 1_000_000},
+		{Provider: "openrouter", Model: "openrouter/free", ContextWindow: 32_000},
 	}
 }

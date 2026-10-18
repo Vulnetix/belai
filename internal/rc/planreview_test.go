@@ -57,6 +57,13 @@ type planHarness struct {
 
 func startPlanSession(t *testing.T, withAsks bool) *planHarness {
 	t.Helper()
+	return startPlanSessionWith(t, withAsks, sessionctl.Env{}, nil)
+}
+
+// startPlanSessionWith is startPlanSession with the controls' environment and
+// the host's model advertisement.
+func startPlanSessionWith(t *testing.T, withAsks bool, env sessionctl.Env, models func() *sessionsync.RCModels) *planHarness {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "plan-20260101-000000-demo.md")
 	body := "# Plan: demo\n\n## Summary\n\nDo it.\n\n## Key Changes\n\n1. Change a\n   - Files: a.go\n   - Verify: go test ./...\n"
@@ -67,7 +74,7 @@ func startPlanSession(t *testing.T, withAsks bool) *planHarness {
 	st := testState()
 	st.Mode = "plan"
 	st.Ask = withAsks
-	ctl, err := NewController(st, sessionctl.Env{}, func(sessionctl.State) (Runner, error) { return r, nil })
+	ctl, err := NewController(st, env, func(sessionctl.State) (Runner, error) { return r, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +92,7 @@ func startPlanSession(t *testing.T, withAsks bool) *planHarness {
 			Log: h.log, Mirror: m, Prompt: "plan the demo", Idle: time.Hour, AskWait: time.Hour,
 			Controls: ctl, Commands: make(chan sessionsync.RemoteCommand), AckCommand: (&cmdAcks{}).ack,
 			Answers: h.answers,
+			Models:  models,
 		})
 	}()
 	t.Cleanup(func() { cancel(); <-h.done })
@@ -261,5 +269,48 @@ func TestPlainRemoteSessionOffersAndExecutesThePlan(t *testing.T) {
 	}
 	if n := len(planner.turns()); n != 1 {
 		t.Fatalf("the planning session ran %d turns, want only the plan turn", n)
+	}
+}
+
+// With web controls the review offers the host's models and estimates what
+// each route re-sends; an approval that picks one switches the session to it
+// before the plan executes, and a model the review did not offer is refused.
+func TestApprovingThePlanOnAnotherModel(t *testing.T) {
+	env := sessionctl.Env{CheckModel: func(string, string, string) string { return "" }}
+	models := func() *sessionsync.RCModels {
+		return &sessionsync.RCModels{Providers: []sessionsync.RCProvider{{Name: "anthropic", Models: []string{"claude-x", "claude-y"}}}}
+	}
+	h := startPlanSessionWith(t, true, env, models)
+	askID := openAsk(t, h.log, 1)
+	ask := h.entries("ask")[0]
+	raw, _ := json.Marshal(ask["models"])
+	var offered []webask.PlanModel
+	_ = json.Unmarshal(raw, &offered)
+	if len(offered) != 2 || offered[0] != (webask.PlanModel{Provider: "anthropic", Model: "claude-x", Current: true}) || offered[1].Model != "claude-y" {
+		t.Fatalf("models = %s, want the current model once and first, then the host's others", raw)
+	}
+	est, _ := json.Marshal(ask["estimates"])
+	if !strings.Contains(string(est), `"here":`) || !strings.Contains(string(est), `"new":`) {
+		t.Fatalf("estimates = %s", est)
+	}
+
+	h.answer("bad", askID, `{"choice":"approve_here","model":{"provider":"openai","model":"gpt"}}`)
+	eventuallyRC(t, "the refusal", func() bool { return strings.Contains(h.acks(), "bad:refused") })
+
+	h.answer("a1", askID, `{"choice":"approve_here","model":{"provider":"anthropic","model":"claude-y"}}`)
+	eventuallyRC(t, "the execute turn", func() bool { return len(h.runner.turns()) == 2 })
+	if st := h.ctl.State(); st.Provider != "anthropic" || st.Model != "claude-y" {
+		t.Fatalf("model = %s/%s, want anthropic/claude-y", st.Provider, st.Model)
+	}
+	if ans := h.entries("ask_answer"); len(ans) != 1 || ans[0]["plan_model"] != "anthropic/claude-y" {
+		t.Fatalf("ask_answer = %v", ans)
+	}
+}
+
+// Without web controls a remote session cannot switch model, so its review
+// offers none.
+func TestPlainRemoteSessionOffersNoModels(t *testing.T) {
+	if got := planModels(SessionOptions{Models: func() *sessionsync.RCModels { return &sessionsync.RCModels{} }}); got != nil {
+		t.Fatalf("models = %v, want none without controls", got)
 	}
 }

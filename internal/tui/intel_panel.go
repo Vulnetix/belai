@@ -46,6 +46,10 @@ type intelRequest struct {
 	toolDefs    int
 	history     int
 	toolResults map[string]int
+	// lastBase is the last main-turn call's system prompt and tool
+	// definitions, the part of a request a fresh session sends again (plan
+	// approval); lastSent is everything that call sent.
+	lastBase, lastSent int
 }
 
 // addRequest folds one agent call's request shape in.
@@ -54,6 +58,15 @@ func (r *intelRequest) add(ev run.UsageEvent) {
 		return
 	}
 	r.calls++
+	// Only a main-turn call carries tool definitions; a probe or a tool-less
+	// side call must not stand in for what the next turn sends.
+	if ev.Request.ToolDefs > 0 {
+		r.lastBase = ev.Request.System + ev.Request.ToolDefs
+		r.lastSent = r.lastBase + ev.Request.History
+		for _, n := range ev.Request.ToolResults {
+			r.lastSent += n
+		}
+	}
 	r.system += ev.Request.System
 	r.toolDefs += ev.Request.ToolDefs
 	r.history += ev.Request.History

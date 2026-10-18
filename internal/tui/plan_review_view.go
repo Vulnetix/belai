@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tui/components"
+	"github.com/vulnetix/belai/internal/webask"
 )
 
 // Plan-review actions, in render order.
@@ -44,6 +45,16 @@ type planReviewState struct {
 	edited   bool
 	vp       viewport.Model
 	askID    string // the ask entry id, for web answers (web_asks.go)
+
+	// models are the models the review offers to execute on (plan_model.go);
+	// model is the one picked, zero for the session's own.
+	models []webask.PlanModel
+	model  modelTarget
+	// picking shows the model list in place of the plan, filtered by
+	// pickFilter, with pickSel the highlighted row.
+	picking    bool
+	pickFilter string
+	pickSel    int
 }
 
 // planEditedMsg carries the result of an external $EDITOR round-trip.
@@ -110,9 +121,9 @@ func (a *App) planReviewWidth() int {
 }
 
 // planReviewHeight is the number of rows available for the plan body.
-// planReviewChrome is every non-body row: padding, header, filename, the five
-// actions, and the help bar.
-const planReviewChrome = 14
+// planReviewChrome is every non-body row: padding, header, filename, the model
+// row, the five actions, and the help bar.
+const planReviewChrome = 15
 
 func (a *App) planReviewHeight() int {
 	h := a.height - planReviewChrome
@@ -138,18 +149,33 @@ func (a *App) planReviewView() string {
 
 	a.planReview.vp.Width = w
 	a.planReview.vp.Height = a.planReviewHeight()
-	if a.planReview.showDiff && a.planReview.prev != nil {
-		a.planReview.setContent()
+	if a.planReview.picking {
+		body := a.planPickView(a.planReview.vp.Height)
+		if n := strings.Count(body, "\n") + 1; n < a.planReview.vp.Height {
+			body += strings.Repeat("\n", a.planReview.vp.Height-n)
+		}
+		b.WriteString(body)
+	} else {
+		if a.planReview.showDiff && a.planReview.prev != nil {
+			a.planReview.setContent()
+		}
+		b.WriteString(a.planReview.vp.View())
 	}
-	b.WriteString(a.planReview.vp.View())
 	b.WriteString("\n")
+	b.WriteString(a.planModelLine(w) + "\n")
 
+	est := a.planEstimate(a.planReview.planText())
+	window := a.planTargetWindow()
 	labels := []string{
 		"approve — execute here",
 		"approve — execute in a new session",
 		"edit — open in $EDITOR, then approve",
 		"refine — send notes back to the planner",
 		"cancel — keep the file and stay in plan mode",
+	}
+	notes := map[int]string{
+		planReviewApproveHere: planRouteNote(est.Here, window),
+		planReviewApproveNew:  planRouteNote(est.New, window),
 	}
 	for i, label := range labels {
 		selected := i == a.planReview.selected
@@ -161,14 +187,19 @@ func (a *App) planReviewView() string {
 		if selected {
 			line = components.EmphStyle.Render(line)
 		}
+		if n, ok := notes[i]; ok {
+			line += "   " + n
+		}
 		b.WriteString(line + "\n")
 	}
 
-	if a.planReview.noteMode {
+	if a.planReview.picking {
+		b.WriteString("\n" + components.HelpBar("type", "filter", "↑↓", "move", "enter", "pick", "esc", "back") + "\n")
+	} else if a.planReview.noteMode {
 		b.WriteString("\n" + a.renderFieldEditor("notes", w) + "\n")
 		b.WriteString(components.HelpBar("enter", "save", "esc", "cancel") + "\n")
 	} else {
-		pairs := []string{"↑↓", "move", "enter", "confirm", "pgup/pgdn", "page", "shift+↑↓", "line", "ctrl+home/end", "top/bottom", "wheel", "scroll"}
+		pairs := []string{"↑↓", "move", "enter", "confirm", "m", "model", "pgup/pgdn", "page", "shift+↑↓", "line", "ctrl+home/end", "top/bottom", "wheel", "scroll"}
 		if a.planReview.prev != nil {
 			pairs = append(pairs, "d", "diff")
 		}
@@ -180,6 +211,9 @@ func (a *App) planReviewView() string {
 }
 
 func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.planReview.picking {
+		return a.handlePlanPickKey(m)
+	}
 	if a.planReview.noteMode {
 		switch m.String() {
 		case "esc":
@@ -214,6 +248,9 @@ func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.planReview.selected < planReviewCancel {
 			a.planReview.selected++
 		}
+		return a, nil
+	case "m":
+		a.openPlanPick()
 		return a, nil
 	case "d":
 		if a.planReview.prev != nil {
@@ -286,6 +323,9 @@ func (a *App) submitPlanApproveNew() tea.Cmd {
 	// The fork keeps the history on disk for provenance; the live transcript
 	// starts at the execute turn.
 	a.messages = nil
+	// A compacted parent's summary would otherwise prefix the child's first
+	// request (buildTurns): the new session starts from the plan alone.
+	a.summary = ""
 	a.todos = nil
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
@@ -307,6 +347,7 @@ func (a *App) executeApprovedPlan(opt modes.PlanOption) tea.Cmd {
 		a.addSystem("plan route failed: " + err.Error())
 		return nil
 	}
+	a.applyPlanModel()
 	a.state.ActivePlan = a.planReview.name
 	_ = config.SaveState(a.state)
 
