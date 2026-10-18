@@ -74,7 +74,8 @@ A JSON object with a list of nonces:
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   ],
   "count": 2,
-  "expires_at": "2026-09-28T10:00:00Z"
+  "expires_at": "2026-09-28T10:00:00Z",
+  "modes": ["observe", "enforce", "canonical"]
 }
 ```
 
@@ -82,6 +83,9 @@ A JSON object with a list of nonces:
 - `count` — number of nonces in the list.
 - `expires_at` — optional; when the issuer stops accepting them (the
   Vulnetix gateway: 24 hours after issue).
+- `modes` — optional; the `X-Vulnetix-Nonce-Mode` values a gateway accepts
+  (see [Gateway verification](#gateway-verification-vulnetix-ai-firewall)).
+  Absent means `observe` and `enforce` only.
 
 `nonces` is authoritative. `count` is decoded but never enforced, so a
 response whose `count` disagrees with the array length is accepted and the
@@ -143,6 +147,12 @@ What happens next depends on the client's request header:
   tampered blocks before forwarding. Belai sends it only while its pool is
   remote and was seeded by this gateway, i.e. every nonce it reserved came from
   there.
+- `X-Vulnetix-Nonce-Mode: canonical` is enforce plus **canonical
+  forwarding**: each verified block goes upstream as
+  `<kind integrity="…">…</kind>`, its nonce removed. Belai sends it under the
+  same condition as enforce, and only when the gateway listed `canonical` in
+  the nonce response's `modes`. A gateway that predates canonical mode reads
+  the header as observe, so sending it there would switch stripping off.
 - Without the header the gateway **observes**: it counts, and strips nothing.
   A client that mints its own nonces is never broken.
 - An organisation guardrail of rule type `delimiter_integrity` with action
@@ -154,6 +164,41 @@ The gateway reports the result on every response:
 ```
 X-Vulnetix-Firewall-Nonce: mode=enforce;verified=12;unknown=0;tampered=1;stripped=1
 ```
+
+In canonical mode the value ends with `;canonical=N`, the number of verified
+blocks forwarded without their nonce.
+
+### Canonical forwarding and prompt caching
+
+A nonce protects one hop: from the harness to the gateway, where it proves a
+block was sealed by the harness and not forged by text in the conversation.
+Once the gateway has verified it, the random bytes only change the prompt. A
+provider caches a prompt by its prefix, so a nonce near the start of the
+system prompt makes every session's prompt unique from its first block, and
+no session, fleet worker or explore subagent can read a prefix another one
+wrote. Canonical forwarding removes that randomness. What the provider
+receives depends only on the block's kind and content, so identical system
+prompts and history are identical bytes upstream. That holds for Anthropic
+`cache_control` breakpoints, the automatic prefix caching of
+OpenAI-compatible providers, and a local server's KV cache.
+
+The rules that keep this safe:
+
+- Only a **verified** block is rewritten. Its canonical form is
+  `<kind integrity="H">` where `H` is the block's own hash; every other
+  attribute is dropped. A verified block without a hash becomes `<kind>`.
+- Unknown and tampered blocks are **stripped**, as in enforce. That includes
+  a known-kind tag without a nonce, so a forged copy of a canonical block that
+  arrives from the client never reaches the model looking like a real one.
+- The rewrite is deterministic. Two requests sealed with different nonces
+  from the same principal reach the provider as the same bytes, and
+  `cache_control` markers, thinking blocks and the tools array pass through
+  unchanged.
+- The model is never told a nonce. No instruction refers to one, so removing
+  it changes nothing the model was asked to do.
+
+A direct request, one through another firewall, or one whose pool is local
+keeps its nonces; only the Vulnetix gateway canonicalises.
 
 Belai shows a card when an enforcing gateway stripped or found tampered
 blocks.

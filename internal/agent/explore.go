@@ -12,7 +12,6 @@ import (
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/modes"
-	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -377,10 +376,19 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 		Caps:          s.caps,
 		RepoIndex:     s.repoIndex,
 		Cache:         s.cache, // share the session verdict cache across fan-out
-		SkipNonceSeed: true,    // the subagent re-seeds locally below
-		RepoMap:       s.repoMap,
-		SessionID:     s.sessionID,
-		Hooks:         s.hookSet, // tool hooks see subagent calls too
+		// The subagent seals with the parent's pool. Its nonces then come from
+		// the same gateway, so a firewall in canonical mode verifies the
+		// child's blocks and forwards them without the nonce, and sibling
+		// subagents share one cached prompt prefix at the provider. A fresh
+		// local pool would make every child's prefix unique and, under enforce
+		// or canonical, have its sealed system prompt stripped as unknown. The
+		// pool is safe to share: it is locked, nothing rotates it in a
+		// session, and the child's finding is sanitised before the parent
+		// seals it, so no child block reaches the parent's history.
+		NoncePool: s.pool,
+		RepoMap:   s.repoMap,
+		SessionID: s.sessionID,
+		Hooks:     s.hookSet, // tool hooks see subagent calls too
 	})
 	if err != nil {
 		return ""
@@ -396,14 +404,6 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 			return ""
 		}
 	}
-	// One fresh, locally-seeded pool per subagent: a child's nonces are unknown
-	// to the parent pool, and a child Rotate cannot invalidate the parent's
-	// already-sealed system block.
-	sub.pool = nonce.New()
-	if err := sub.pool.Seed(8); err != nil {
-		return ""
-	}
-
 	// The subagent runs on the blocking transport with a live emitter so its
 	// tool activity streams into the parent transcript. Its finding still comes
 	// from the reply, and the classify route below is unchanged.

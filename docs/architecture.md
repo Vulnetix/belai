@@ -372,8 +372,14 @@ Harness-generated blocks use tags such as:
   unknown tag untouched and the block would reach the provider unsealed. The
   tool briefing uses this to seal as its own `<tools>` block.
 
+- **Canonical forwarding**: behind a Vulnetix gateway that advertises it, the
+  gateway verifies each block and forwards it as `<kind integrity="…">` with
+  the nonce removed, so the provider sees the same prompt bytes from every
+  session and can serve the prefix from cache. Belai's own egress still
+  requires a nonce; only the gateway's upstream copy drops it.
+
 See [nonce-endpoint-spec.md](nonce-endpoint-spec.md) for the provider nonce GET
-spec (`GET {base_url}/v1/nonces`).
+spec (`GET {base_url}/v1/nonces`) and canonical forwarding.
 
 ## Resilience
 
@@ -2086,7 +2092,9 @@ working directory). An unchanged key reuses the previous turn's sealed
 system and tools blocks and their nonces — safe because the nonce pool never
 rotates within a session — so the first bytes of every request stay
 identical and a provider can cache them. A mode switch, a skills change, an
-added root, a `Cd` or a model switch changes the key and re-seals. The
+added root, a `Cd` or a model switch changes the key and re-seals. The TUI
+also keeps one nonce pool per endpoint across session rebuilds, and an
+explore subagent seals with its parent's pool. The
 volatile repository facts ride the user turn instead (see
 [Repository map](#repository-map)).
 

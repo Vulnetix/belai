@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -613,5 +614,67 @@ func TestReviewFindingsSkipTheirSubagent(t *testing.T) {
 	parent := bodies[1]
 	if !strings.Contains(parent, "fix: escape the query") || !strings.Contains(parent, "fix: rotate the key") {
 		t.Fatalf("parent turn lacks a scanner report: %s", parent)
+	}
+}
+
+// Explore subagents seal with the parent session's pool, so every nonce on
+// the wire came from the one source the parent seeded: a firewall in
+// canonical mode then verifies the children's blocks too, rather than
+// stripping a locally minted system prompt.
+func TestExploreSubagentsShareParentNoncePool(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	mock := mockSecurityServer("Read", `{"path":"f.txt"}`, "finding")
+	defer mock.Close()
+	var mu sync.Mutex
+	var seen []string
+	nonceRe := regexp.MustCompile(`nonce=\\?"([0-9a-f]+)\\?"`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		for _, m := range nonceRe.FindAllStringSubmatch(string(body), -1) {
+			seen = append(seen, m[1])
+		}
+		mu.Unlock()
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		mock.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	on := true
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		SkipNonceSeed: true,
+		AllowExplore:  true,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2, PlanExplore: &on}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	var subagents int
+	if _, err := sess.run(context.Background(), nil, TurnInput{Prompt: "survey the repo", ForceMode: modes.ModePlan}, false, func(e Event) {
+		if e.Kind == EventSubagentKind && e.Subagent != nil && e.Subagent.State == "done" {
+			subagents++
+		}
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if subagents == 0 {
+		t.Fatal("setup: expected an explore fan-out")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 {
+		t.Fatal("setup: no sealed block reached the provider")
+	}
+	for _, n := range seen {
+		if !sess.pool.Valid(n) {
+			t.Fatalf("nonce %s on the wire was not reserved from the parent pool", n)
+		}
 	}
 }

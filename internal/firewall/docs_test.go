@@ -48,7 +48,7 @@ func TestFirewallPageNamesEveryMode(t *testing.T) {
 func TestFirewallPageNamesTheVulnetixHeaders(t *testing.T) {
 	doc := docparity.Read(t, "docs/firewall.md")
 	for _, h := range []string{
-		"X-Vulnetix-Firewall-Decision", "-Rules", "-Redactions", "-Stripped", "-Request-Id", "-Nonce", "X-Vulnetix-Nonce-Mode: enforce",
+		"X-Vulnetix-Firewall-Decision", "-Rules", "-Redactions", "-Stripped", "-Request-Id", "-Nonce", "X-Vulnetix-Nonce-Mode: enforce", "canonical",
 	} {
 		if !strings.Contains(doc, h) {
 			t.Errorf("docs/firewall.md does not name the header %q", h)

@@ -137,9 +137,14 @@ type Options struct {
 	// per-turn status. nil leaves the forge block out.
 	Forge *forge.Cache
 	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
-	// A subagent sets this: it discards the provider-seeded pool one line later
-	// in favour of a fresh local pool, so the GET is a wasted round trip.
+	// Ignored when NoncePool is set.
 	SkipNonceSeed bool
+	// NoncePool, when set, is the pool the session seals with instead of
+	// seeding its own: an explore subagent shares its parent's, and the TUI
+	// keeps one per nonce endpoint across session rebuilds. A shared pool
+	// keeps sealed prefixes identical, so a provider can serve them from
+	// cache, and skips a nonce GET per build.
+	NoncePool *nonce.Pool
 	// SessionID is the transcript session this agent runs under. It is
 	// stamped on every provider request and tool call (X-Belai-Session-Id,
 	// traceparent, BELAI_SESSION_ID) through calltrace. Empty inherits any
@@ -493,6 +498,10 @@ func wireTools(reg *tools.Registry) ([]wire.OpenAITool, []wire.AnthropicToolDef)
 // it.
 func (s *Session) Cwd() *tools.Cwd { return s.registry.Cwd() }
 
+// NoncePool returns the pool the session seals with, so a rebuilt session
+// can keep it (Options.NoncePool).
+func (s *Session) NoncePool() *nonce.Pool { return s.pool }
+
 // toolDocs renders the current mode's tool surface as the sealed briefing the
 // system prompt carries.
 func (s *Session) toolDocs() prompt.ToolsOptions {
@@ -606,13 +615,18 @@ func NewSession(o Options) (*Session, error) {
 	if maxIter <= 0 {
 		maxIter = o.Settings.Resilience.MaxIterationsOr(config.DefaultMaxIterations)
 	}
-	pool := nonce.New()
-	if o.SkipNonceSeed {
-		if err := pool.Seed(16); err != nil {
+	pool := o.NoncePool // already seeded by its owner
+	if pool == nil {
+		pool = nonce.New()
+		var err error
+		if o.SkipNonceSeed {
+			err = pool.Seed(16)
+		} else {
+			_, err = pool.SeedFromEndpoints(o.Client, nonceEndpoints(o.Cfg), 16)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("seed nonce pool: %w", err)
 		}
-	} else if _, err := pool.SeedFromEndpoints(o.Client, nonceEndpoints(o.Cfg), 16); err != nil {
-		return nil, fmt.Errorf("seed nonce pool: %w", err)
 	}
 	reg := o.Registry
 	if reg == nil {

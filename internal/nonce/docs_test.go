@@ -26,3 +26,21 @@ func TestNonceSpecStatesTheCacheAndPoolNumbers(t *testing.T) {
 		}
 	}
 }
+
+// TestNonceSpecDescribesCanonicalForwarding pins the canonical-mode rules the
+// spec gives to the names the pool uses: the advertised modes field, the
+// mode value ModeFor returns, and the forwarded form of a verified block.
+func TestNonceSpecDescribesCanonicalForwarding(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/nonce-endpoint-spec.md")), " ")
+	for _, want := range []string{
+		"`modes`",
+		"`X-Vulnetix-Nonce-Mode: canonical`",
+		`<kind integrity="…">…</kind>`,
+		"reads the header as observe",
+		"`;canonical=N`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/nonce-endpoint-spec.md does not say %q", want)
+		}
+	}
+}
