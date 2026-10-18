@@ -488,6 +488,15 @@ what keeps a request both valid and cacheable.
   `prompt_cache_key` hashed from the stable block without its nonce, so the
   sessions, fleet workers and explore subagents of one repository are routed
   to the cache that holds their shared prefix.
+- **The next prompt continues the sent conversation.** At the end of an
+  agent-mode turn the TUI keeps the session's `SentHistory`: the last
+  request's turns as sent, with sealed directives and attachments, signed
+  thinking, raw tool arguments and cleared results, plus the final reply. The
+  next prompt sends that, followed by what the transcript gained since, so
+  the provider reads the whole earlier conversation from its cache. Any edit,
+  rewind, resume or compaction of the transcript, or a rebuilt session, falls
+  back to the history rebuilt from the transcript. Plan and goal turns always
+  rebuild.
 - **Cache hits are visible.** The session intelligence screen shows the
   share of the last call's and the session's prompt that the provider served
   from cache, from Anthropic `cache_read_input_tokens`, OpenAI

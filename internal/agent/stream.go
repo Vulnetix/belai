@@ -361,6 +361,7 @@ func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []ru
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		assistant, err := s.streamTurn(ctx, system, turns, streaming, emit)
 		if err == nil {
+			s.noteSent(turns, assistant)
 			return assistant, nil
 		}
 		lastErr = err
