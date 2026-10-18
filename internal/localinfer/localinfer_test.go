@@ -128,7 +128,7 @@ func TestArgsDefaultsQuantAndPort(t *testing.T) {
 func TestArgsLoopbackAndSamplingFlags(t *testing.T) {
 	args := Args(ArgsOptions{Repo: "org/model", Port: 18080})
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"--host 127.0.0.1", "--port 18080", "--ctx-size", "--jinja"} {
+	for _, want := range []string{"--host 127.0.0.1", "--port 18080", "--ctx-size", "--jinja", "--cache-reuse 256"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("args missing %q: %v", want, args)
 		}
