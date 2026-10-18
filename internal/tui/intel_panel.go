@@ -648,6 +648,7 @@ func (a *App) intelView() string {
 	}
 	b.WriteString("\n" + components.LowStyle.Render("  sent this session, estimated") + "\n")
 	b.WriteString(a.intelCompositionLine(inner) + "\n")
+	b.WriteString(ansi.Truncate(a.cacheStats.line(a.cfg.Provider), inner, "…") + "\n")
 	b.WriteString("\n" + components.HelpBar("↑↓", "select", "←→", "window", "m", "models", "r", "roles", "b", "budgets", "R", "re-read ledger", "esc", "back") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }

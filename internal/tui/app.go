@@ -363,6 +363,9 @@ type App struct {
 	// intelReq sums what this session's agent calls sent, by part.
 	intelState intelViewState
 	intelReq   intelRequest
+	// cacheStats sums how much of the agent's prompts came from the
+	// provider's prompt cache.
+	cacheStats cacheStats
 	// intelSyncAt and intelSyncSig are when the last intel_state entry was
 	// written and what it said, so the next is written only when it differs
 	// (intel_sync.go).

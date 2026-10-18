@@ -33,6 +33,8 @@ Metrics (cumulative):
 | --- | --- | --- |
 | `belai.tokens` | counter | `belai.provider`, `belai.model`, `belai.tokens.estimated` |
 | `belai.model_calls` | counter | `belai.provider`, `belai.model` |
+| `belai.cache_read_tokens` | counter | `belai.provider`, `belai.model` — prompt tokens the provider served from its prompt cache (Anthropic `cache_read_input_tokens`, OpenAI `cached_tokens`, llama-server `timings.cache_n`) |
+| `belai.cache_write_tokens` | counter | `belai.provider`, `belai.model` — prompt tokens written to the cache (Anthropic `cache_creation_input_tokens`) |
 | `belai.tool_calls` | counter | `belai.tool.kind`, `belai.outcome` |
 | `belai.role_decisions` | counter | `belai.role` (the role-manager decision, such as `security_sentinel` or `mode_classify`), `belai.verdict` |
 | `belai.hook_runs`, `belai.hook_failures` | counter | `belai.hook.event`, `belai.decision` |

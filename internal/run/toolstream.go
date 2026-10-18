@@ -160,7 +160,7 @@ func decodeOpenAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 			PromptTokens:     chunk.Usage.PromptTokens,
 			CompletionTokens: chunk.Usage.CompletionTokens,
 			TotalTokens:      chunk.Usage.TotalTokens,
-			CacheReadTokens:  chunk.Usage.CachedTokens(),
+			CacheReadTokens:  wire.CachedPromptTokens(*chunk.Usage, chunk.Timings),
 		}
 	}
 	if len(chunk.Choices) == 0 {
