@@ -161,13 +161,57 @@ func explorePreamble(tools []string, goalSurvey bool) string {
 		"Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
 }
 
-// System renders the system prompt. Exactly one carrier may be active: if
-// Carrier is set, only that carrier's text may be non-empty; if Carrier is
-// none, no carrier text may be provided.
+// System renders the system prompt: SystemParts' stable part followed by its
+// session part.
 func System(opts Options) (string, error) {
-	carrier, text, err := resolveCarrier(opts)
+	stable, session, err := SystemParts(opts)
 	if err != nil {
 		return "", err
+	}
+	return stable + session, nil
+}
+
+// SystemParts renders the system prompt in two parts, sealed as two blocks.
+//
+// Providers cache a prompt by its prefix, and a sealed block's opening tag
+// carries the hash of its whole content, so any change inside a block changes
+// the block from its first bytes. Stable comes first: the repository and
+// workspace maps, the work contracts and the voice. It is the same for every
+// session in a repository and every turn of a session, so a provider can
+// serve it from cache across sessions, fleet workers and sibling explore
+// subagents. Session follows: the identity, the carrier (goal, plan or
+// profile), the persona, the skills list, the exploration note and preamble
+// and the sandbox environment, which differ between agents and can change
+// within a session; a change there leaves the stable block cached.
+//
+// Exactly one carrier may be active: if Carrier is set, only that carrier's
+// text may be non-empty; if Carrier is none, no carrier text may be provided.
+func SystemParts(opts Options) (stable, session string, err error) {
+	carrier, text, err := resolveCarrier(opts)
+	if err != nil {
+		return "", "", err
+	}
+
+	var st strings.Builder
+	if opts.RepoMap != "" {
+		st.WriteString(opts.RepoMap + "\n")
+	}
+	if opts.WorkspaceBlock != "" {
+		st.WriteString(opts.WorkspaceBlock + "\n")
+	}
+	if opts.WorkDiscipline && !opts.Explore {
+		st.WriteString(workDiscipline())
+	}
+	if opts.CodeMode && !opts.Explore {
+		st.WriteString(codeContract())
+	}
+	if opts.DecisionTools && !opts.Explore {
+		st.WriteString(decisionContract())
+	}
+	if opts.Caveman {
+		st.WriteString(CavemanVoice)
+	} else {
+		st.WriteString(normalVoice)
 	}
 
 	var b strings.Builder
@@ -193,30 +237,10 @@ func System(opts Options) (string, error) {
 	if opts.Explore {
 		b.WriteString(explorePreamble(opts.ExploreTools, opts.ExploreGoal))
 	}
-	if opts.RepoMap != "" {
-		b.WriteString(opts.RepoMap + "\n")
-	}
-	if opts.WorkspaceBlock != "" {
-		b.WriteString(opts.WorkspaceBlock + "\n")
-	}
 	if opts.Environment != "" {
 		b.WriteString(opts.Environment + "\n")
 	}
-	if opts.WorkDiscipline && !opts.Explore {
-		b.WriteString(workDiscipline())
-	}
-	if opts.CodeMode && !opts.Explore {
-		b.WriteString(codeContract())
-	}
-	if opts.DecisionTools && !opts.Explore {
-		b.WriteString(decisionContract())
-	}
-	if opts.Caveman {
-		b.WriteString(CavemanVoice)
-	} else {
-		b.WriteString(normalVoice)
-	}
-	return b.String(), nil
+	return st.String(), b.String(), nil
 }
 
 func resolveCarrier(opts Options) (Carrier, string, error) {

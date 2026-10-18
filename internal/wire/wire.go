@@ -147,6 +147,9 @@ type OpenAIChatRequest struct {
 	ToolChoice          string               `json:"tool_choice,omitempty"`
 	ReasoningEffort     string               `json:"reasoning_effort,omitempty"`
 	StreamOptions       *OpenAIStreamOptions `json:"stream_options,omitempty"`
+	// PromptCacheKey groups requests that share a prompt prefix so OpenAI
+	// routes them to the same prompt cache. Sent to OpenAI only.
+	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 }
 
 // OpenAIStreamOptions requests usage accounting on a streamed response.

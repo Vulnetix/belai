@@ -5,12 +5,15 @@ package run
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1014,15 +1017,24 @@ func ThinkingSource(cfg Config) string {
 	return cfg.Provider + "/" + cfg.Model
 }
 
-// applyCacheBreakpoints marks three of Anthropic's four cache breakpoints:
-// the system block, the last tool definition, and the last content block of
-// the newest message. Tool order and the system text are stable within a
-// session, so the first two cache the fixed prefix; the third caches the
-// conversation so far for the next iteration of the tool loop. The shared
-// tool slice is copied, never marked in place.
+// applyCacheBreakpoints marks Anthropic's four cache breakpoints: the last
+// tool definition, the first sealed system block (the stable part, see
+// prompt.SystemParts), the last system block, and the last content block of
+// the newest message. The system prompt goes out as one text block per
+// sealed block, so a change to the session block or the tools briefing still
+// reads the tools and the stable block from cache; the message breakpoint
+// caches the conversation so far for the next iteration of the tool loop.
+// The shared tool slice is copied, never marked in place.
 func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest) {
 	if s, ok := req.System.(string); ok && s != "" {
-		req.System = []wire.AnthropicSystemBlock{{Type: "text", Text: s, CacheControl: wire.EphemeralCache()}}
+		parts := splitSealedBlocks(s)
+		blocks := make([]wire.AnthropicSystemBlock, len(parts))
+		for i, p := range parts {
+			blocks[i] = wire.AnthropicSystemBlock{Type: "text", Text: p}
+		}
+		blocks[0].CacheControl = wire.EphemeralCache()
+		blocks[len(blocks)-1].CacheControl = wire.EphemeralCache()
+		req.System = blocks
 	}
 	if n := len(req.Tools); n > 0 {
 		tools := make([]wire.AnthropicToolDef, n)
@@ -1046,6 +1058,42 @@ func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest) {
 			}
 		}
 	}
+}
+
+// sealedBlockEnd matches the close of a sealed system-prompt block as
+// rolemanager.BuildSystemPrompt writes it, newline included.
+var sealedBlockEnd = regexp.MustCompile(`</(?:system|tools)>\n`)
+
+// splitSealedBlocks cuts a sealed system prompt after each block, so the
+// pieces concatenate back to s exactly. Text with no block close is one piece.
+func splitSealedBlocks(s string) []string {
+	var parts []string
+	start := 0
+	for _, loc := range sealedBlockEnd.FindAllStringIndex(s, -1) {
+		parts = append(parts, s[start:loc[1]])
+		start = loc[1]
+	}
+	if start < len(s) {
+		parts = append(parts, s[start:])
+	}
+	return parts
+}
+
+// sealNonceAttr matches a sealed block's nonce attribute.
+var sealNonceAttr = regexp.MustCompile(` nonce="[^"]*"`)
+
+// promptCacheKey derives an OpenAI prompt_cache_key from the stable block of
+// a sealed system prompt (prompt.SystemParts), nonce removed: every session,
+// fleet worker and explore subagent in one repository that shares the stable
+// block shares the key, so OpenAI routes them to the cache that holds it. It
+// is a hash, so no prompt text leaves in the key. Empty for no system prompt.
+func promptCacheKey(system string) string {
+	parts := splitSealedBlocks(system)
+	if len(parts) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(sealNonceAttr.ReplaceAllString(parts[0], "")))
+	return "belai-" + hex.EncodeToString(sum[:8])
 }
 
 // WireModel returns the model id as it is sent on the wire for a provider.
@@ -2027,11 +2075,17 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	if opts.Environment == "" && toolsText != "" && environmentFacts != nil {
 		opts.Environment = environmentFacts()
 	}
-	sysText, err := prompt.System(opts)
+	stable, session, err := prompt.SystemParts(opts)
 	if err != nil {
 		return "", fmt.Errorf("build system prompt: %w", err)
 	}
-	blocks := []rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}
+	// Two system blocks, stable first, so a change to the session part
+	// leaves the stable block's bytes, and its cache entry, intact
+	// (applyCacheBreakpoints marks the end of each).
+	blocks := []rolemanager.SystemBlock{
+		{Source: rolemanager.SourceHarness, Content: stable},
+		{Source: rolemanager.SourceHarness, Content: session},
+	}
 	// The tool briefing is sealed as its own <tools> block. It is harness
 	// text like the system block, but it describes a surface the harness
 	// enforces elsewhere (the registry and the plan-mode gate), so keeping it
@@ -2189,6 +2243,9 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			}
 			if d.maxCompletion {
 				req.MaxCompletionTokens, req.MaxTokens = req.MaxTokens, 0
+			}
+			if cfg.Provider == "openai" {
+				req.PromptCacheKey = promptCacheKey(system)
 			}
 			httpReq, err := d.chatRequest(p, req)
 			if err == nil && p.Auth() == provider.AuthCopilot && requestHasImages(req.Messages) {
@@ -2575,6 +2632,16 @@ func buildAnthropicMessages(turns []Turn, replayFor string) []wire.AnthropicMess
 					result.Parts = append(result.Parts, wire.NewAnthropicImageBlock(a.MediaType, a.Data))
 				}
 			}
+			// The results of one assistant turn's parallel calls share one
+			// user message, as the API asks. Separate messages teach the
+			// model to stop calling tools in parallel, and each one is a
+			// position the cache breakpoint's 20-position lookback must
+			// cross to find the previous request's entry.
+			if n := len(msgs); n > 0 && isToolResultMessage(msgs[n-1]) {
+				prev := msgs[n-1].Content.([]wire.AnthropicRequestBlock)
+				msgs[n-1].Content = append(prev[:len(prev):len(prev)], result)
+				continue
+			}
 			msgs = append(msgs, wire.NewAnthropicBlockMessage("user", []wire.AnthropicRequestBlock{result}))
 		default:
 			if imgs := imageAttachments(t.Attachments); len(imgs) > 0 {
@@ -2594,6 +2661,21 @@ func buildAnthropicMessages(turns []Turn, replayFor string) []wire.AnthropicMess
 		}
 	}
 	return msgs
+}
+
+// isToolResultMessage reports whether m is a user message of tool_result
+// blocks only, the shape a run of tool turns renders as.
+func isToolResultMessage(m wire.AnthropicMessage) bool {
+	blocks, ok := m.Content.([]wire.AnthropicRequestBlock)
+	if m.Role != "user" || !ok || len(blocks) == 0 {
+		return false
+	}
+	for _, b := range blocks {
+		if b.Type != "tool_result" {
+			return false
+		}
+	}
+	return true
 }
 
 // chatMessages builds an OpenAI-style message list with an optional system
