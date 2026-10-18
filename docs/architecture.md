@@ -465,12 +465,29 @@ what keeps a request both valid and cacheable.
   `[result cleared — re-Read if needed]`. The replacement is written to the
   conversation, so the prefix stays byte-stable between jumps, and a jump
   needs at least ten new results since the last one.
+- **The system prompt is two sealed blocks, stable first**
+  (`prompt.SystemParts`). A sealed block's opening tag carries the hash of
+  its whole content, so a change anywhere inside a block changes it from its
+  first bytes. The stable block holds the repository and workspace maps, the
+  work, code and decision contracts and the voice: the same for every session
+  in a repository. The session block follows with the identity, the carrier,
+  the persona, the skills, the exploration note and preamble and the sandbox
+  environment. The tools briefing is the third block.
 - **Cache breakpoints** (native Anthropic, `Descriptor.PromptCache`): the
-  system prompt is sent as a block array with `cache_control:
-  {type:"ephemeral"}`, and the last tool definition and the last content
-  block of the newest message carry one too — three of the four allowed
-  breakpoints. The shared tool slice is copied, never marked in place. A
+  system prompt is sent as one text block per sealed block. The stable block,
+  the last system block, the last tool definition and the last content block
+  of the newest message carry `cache_control: {type:"ephemeral"}`, all four
+  allowed breakpoints. A change to the session block or the tools briefing (a
+  goal, a skills change, a `Cd`) still reads the tools and the stable block
+  from cache. The shared tool slice is copied, never marked in place. A
   gateway or custom Anthropic-shaped server gets no `cache_control`.
+- **Tool results share a message.** On the Anthropic route the results of
+  one assistant turn's tool calls go in one user message, as the API asks,
+  so they count as one position in the breakpoint's 20-position lookback.
+- **OpenAI prompt cache key.** A request to OpenAI carries a
+  `prompt_cache_key` hashed from the stable block without its nonce, so the
+  sessions, fleet workers and explore subagents of one repository are routed
+  to the cache that holds their shared prefix.
 
 ### Outbound identification and trace headers
 

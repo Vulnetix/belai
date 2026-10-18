@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/prompt"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -337,5 +338,132 @@ func TestOpenAIRouteSendsTheCatalogueCap(t *testing.T) {
 	cfg = Config{Provider: "github-copilot", BaseURL: "https://c.example", APIKey: "k", Model: "claude-sonnet-4-5"}
 	if body = requestBody(t, cfg, hi, true, nil); body["max_tokens"] != nil {
 		t.Fatalf("relay without a catalogue cap must leave it to the provider: %v", body["max_tokens"])
+	}
+}
+
+// The results of one assistant turn's parallel tool calls share one user
+// message on the Anthropic route, in call order; a later turn's results start
+// a new message after the assistant turn between them.
+func TestAnthropicToolResultsShareOneMessage(t *testing.T) {
+	call := func(id string) rolemanager.ToolCall { return rolemanager.ToolCall{ID: id, Name: "Read"} }
+	turns := []Turn{
+		{Role: "user", Content: "go"},
+		{Role: "assistant", ToolCalls: []rolemanager.ToolCall{call("a"), call("b"), call("c")}},
+		{Role: "tool", ToolCallID: "a", ToolName: "Read", Content: "A"},
+		{Role: "tool", ToolCallID: "b", ToolName: "Read", Content: "B"},
+		{Role: "tool", ToolCallID: "c", ToolName: "Read", Content: "C"},
+		{Role: "assistant", ToolCalls: []rolemanager.ToolCall{call("d")}},
+		{Role: "tool", ToolCallID: "d", ToolName: "Read", Content: "D"},
+	}
+	body := requestBody(t, anthropicCfg("claude-opus-4-5", ""), turns, true, nil)
+	msgs := body["messages"].([]any)
+	if len(msgs) != 5 {
+		t.Fatalf("messages = %d, want 5: %v", len(msgs), msgs)
+	}
+	ids := func(m any) (out []string) {
+		for _, b := range m.(map[string]any)["content"].([]any) {
+			out = append(out, b.(map[string]any)["tool_use_id"].(string))
+		}
+		return out
+	}
+	if got := strings.Join(ids(msgs[2]), ","); got != "a,b,c" {
+		t.Fatalf("first result message = %s", got)
+	}
+	if got := strings.Join(ids(msgs[4]), ","); got != "d" {
+		t.Fatalf("second result message = %s", got)
+	}
+}
+
+// A sealed system prompt goes to Anthropic as one text block per sealed
+// block, stable first. The stable block and the last block carry
+// breakpoints, so a change to the session block or the tools briefing still
+// reads the stable block from cache, and the stable block's bytes do not
+// depend on the session's goal, persona or skills.
+func TestAnthropicSealedSystemSplitsAtBlocks(t *testing.T) {
+	pool := nonce.New()
+	_ = pool.Seed(8)
+	cfg := anthropicCfg("claude-opus-4-5", "")
+	opts := prompt.Options{WorkDiscipline: true, RepoMap: "Repository map: belai", Tools: prompt.ToolsOptions{Tools: []prompt.ToolDoc{{Name: "Read"}}, Workdir: "/repo"}}
+	sealed, err := SealSystem(cfg, pool, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(splitSealedBlocks(sealed), "") != sealed {
+		t.Fatal("split pieces must concatenate back to the prompt")
+	}
+	req, _, err := buildRequest(context.Background(), cfg, sealed, []Turn{{Role: "user", Content: "hi"}}, true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	var body struct {
+		System []struct {
+			Text         string `json:"text"`
+			CacheControl any    `json:"cache_control"`
+		} `json:"system"`
+	}
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.System) != 3 {
+		t.Fatalf("system blocks = %d, want stable, session and tools", len(body.System))
+	}
+	if !strings.Contains(body.System[0].Text, "Repository map: belai") || strings.Contains(body.System[0].Text, "Active goal") {
+		t.Fatalf("first block is not the stable part: %s", body.System[0].Text)
+	}
+	if !strings.HasPrefix(body.System[2].Text, "<tools ") {
+		t.Fatalf("last block is not the tools briefing: %s", body.System[2].Text)
+	}
+	if body.System[0].CacheControl == nil || body.System[1].CacheControl != nil || body.System[2].CacheControl == nil {
+		t.Fatal("breakpoints belong on the stable block and the last block")
+	}
+
+	// A different goal changes only the session block.
+	goal := opts
+	goal.Carrier, goal.GoalText = prompt.CarrierGoal, "ship the release"
+	other, err := SealSystem(cfg, pool, goal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stableOf := func(s string) string { return stripNonce(splitSealedBlocks(s)[0]) }
+	if stableOf(sealed) != stableOf(other) {
+		t.Fatal("the stable block must not depend on the goal")
+	}
+}
+
+// An OpenAI request carries a prompt_cache_key derived from the stable system
+// block without its nonce, so sessions sealed with different nonces, or with
+// different goals, share it; other providers get none.
+func TestOpenAIPromptCacheKey(t *testing.T) {
+	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	opts := prompt.Options{WorkDiscipline: true, RepoMap: "Repository map: belai"}
+	seal := func(o prompt.Options) string {
+		pool := nonce.New()
+		_ = pool.Seed(4)
+		s, err := SealSystem(cfg, pool, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	goal := opts
+	goal.Carrier, goal.GoalText = prompt.CarrierGoal, "ship it"
+	a, b := promptCacheKey(seal(opts)), promptCacheKey(seal(goal))
+	if a == "" || a != b {
+		t.Fatalf("keys = %q, %q; want one non-empty key", a, b)
+	}
+	req, _, err := buildRequest(context.Background(), cfg, seal(opts), []Turn{{Role: "user", Content: "hi"}}, true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(req.Body)
+	if !strings.Contains(string(body), `"prompt_cache_key":"`+a+`"`) {
+		t.Fatalf("openai body lacks the key: %s", body)
+	}
+	other := Config{Provider: "groq", BaseURL: "https://api.groq.com/openai/v1", APIKey: "k", Model: "llama"}
+	req, _, _ = buildRequest(context.Background(), other, seal(opts), []Turn{{Role: "user", Content: "hi"}}, true, nil, nil)
+	body, _ = io.ReadAll(req.Body)
+	if strings.Contains(string(body), "prompt_cache_key") {
+		t.Fatalf("only openai gets the key: %s", body)
 	}
 }
