@@ -488,6 +488,12 @@ what keeps a request both valid and cacheable.
   `prompt_cache_key` hashed from the stable block without its nonce, so the
   sessions, fleet workers and explore subagents of one repository are routed
   to the cache that holds their shared prefix.
+- **Cache hits are visible.** The session intelligence screen shows the
+  share of the last call's and the session's prompt that the provider served
+  from cache, from Anthropic `cache_read_input_tokens`, OpenAI
+  `cached_tokens` or llama-server `timings.cache_n`; OpenTelemetry exports
+  `belai.cache_read_tokens` and `belai.cache_write_tokens`. A low share means
+  something rewrote the prompt prefix.
 
 ### Outbound identification and trace headers
 

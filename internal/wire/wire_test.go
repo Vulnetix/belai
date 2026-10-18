@@ -106,3 +106,22 @@ func TestAssistantWithToolCallsOmitsEmptyContent(t *testing.T) {
 		t.Fatalf("assistant tool-call message carries a content field: %s", b)
 	}
 }
+
+// Cached prompt tokens come from prompt_tokens_details when the provider
+// reports them, else from llama-server's timings.cache_n.
+func TestCachedPromptTokens(t *testing.T) {
+	var cr OpenAIChatResponse
+	if err := json.Unmarshal([]byte(`{"choices":[],"usage":{"prompt_tokens":100,"total_tokens":110},"timings":{"cache_n":80,"prompt_n":20}}`), &cr); err != nil {
+		t.Fatal(err)
+	}
+	if got := CachedPromptTokens(cr.Usage, cr.Timings); got != 80 {
+		t.Fatalf("llama-server cache_n = %d, want 80", got)
+	}
+	cr.Usage.PromptTokensDetails = &OpenAIPromptTokensDetails{CachedTokens: 64}
+	if got := CachedPromptTokens(cr.Usage, cr.Timings); got != 64 {
+		t.Fatalf("reported cached_tokens = %d, want 64", got)
+	}
+	if got := CachedPromptTokens(OpenAIChatUsage{}, nil); got != 0 {
+		t.Fatalf("nothing reported = %d", got)
+	}
+}

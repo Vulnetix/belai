@@ -163,6 +163,26 @@ type OpenAIChatResponse struct {
 	Object  string             `json:"object"`
 	Choices []OpenAIChatChoice `json:"choices"`
 	Usage   OpenAIChatUsage    `json:"usage"`
+	// Timings is llama-server's per-request report; nil from other servers.
+	Timings *LlamaTimings `json:"timings,omitempty"`
+}
+
+// LlamaTimings is the timings object llama-server adds to a chat completion.
+// CacheN is the prompt tokens it reused from the slot's KV cache rather than
+// evaluating again.
+type LlamaTimings struct {
+	CacheN  int `json:"cache_n"`
+	PromptN int `json:"prompt_n"`
+}
+
+// CachedPromptTokens returns the prompt tokens served from cache: the
+// provider's prompt_tokens_details when it reports them, else llama-server's
+// timings.cache_n, else zero.
+func CachedPromptTokens(u OpenAIChatUsage, t *LlamaTimings) int {
+	if n := u.CachedTokens(); n > 0 || t == nil {
+		return n
+	}
+	return t.CacheN
 }
 
 // OpenAIChatChoice is one completion choice.
@@ -210,6 +230,8 @@ type OpenAIChatStreamChunk struct {
 		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
 	Usage *OpenAIChatUsage `json:"usage,omitempty"`
+	// Timings is llama-server's per-request report, on the final chunk.
+	Timings *LlamaTimings `json:"timings,omitempty"`
 }
 
 // OpenAIToolCallDelta is one tool-call fragment in an OpenAI stream delta.

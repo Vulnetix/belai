@@ -103,6 +103,7 @@ func (a *App) closeBudgets() {
 // print one line for each of that model's budgets that is amber or red.
 func (a *App) handleUsage(ev run.UsageEvent) {
 	a.intelReq.add(ev)
+	a.cacheStats.add(ev)
 	a.refreshFooter()
 	a.syncIntel(time.Now())
 	if a.budgets == nil || !a.settings.BudgetWarnEnabled() {

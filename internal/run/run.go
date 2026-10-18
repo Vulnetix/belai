@@ -2435,7 +2435,7 @@ func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assis
 			PromptTokens:     cr.Usage.PromptTokens,
 			CompletionTokens: cr.Usage.CompletionTokens,
 			TotalTokens:      cr.Usage.TotalTokens,
-			CacheReadTokens:  cr.Usage.CachedTokens(),
+			CacheReadTokens:  wire.CachedPromptTokens(cr.Usage, cr.Timings),
 		}
 	}
 	return Assistant{Text: msg.Content, Reasoning: msg.ReasoningContent, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
