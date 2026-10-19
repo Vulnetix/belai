@@ -5,6 +5,10 @@ Firewall. It runs Vulnetix review subcommands, surfaces CLI capability state,
 keeps a history of projects found on this machine, and toggles the AI Firewall
 for LLM traffic.
 
+For how to run a review, what it costs and how to read its report, see
+[Vulnetix code review](vulnetix-review.md). This page holds the implementation
+rules behind it.
+
 ## Business rules
 
 - **Never promote arbitrary repository bytes.** SARIF, CycloneDX, and OpenVEX

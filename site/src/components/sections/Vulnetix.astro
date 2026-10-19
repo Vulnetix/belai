@@ -10,6 +10,8 @@ import Walkthrough from '../ui/Walkthrough.astro';
 // fix, where each stage can change more than the one before it. The firewall
 // and the MCP server follow the review.
 
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
 const sealText =
   'Vulnetix integration: /vulnetix review runs nine code scanners, eight at once in lanes of their own, and each posts a card in the thread as it finishes. A read-only background agent per scanner checks every finding against the repository. The session then reads every report together, asks you when a finding has more than one fix, plans dependency fixes as a dry run, patches code under the permission prompts and writes a code-review report. Report blocks are size-limited, sanitised and classified. The AI Firewall routes model traffic through a filtering gateway, and its verdicts are shown to you only. The scanners, the firewall and the MCP server are free for everyone. Dependency checks while the agent edits: a manifest a turn changes is matched against the table ported from the Vulnetix CLI, checked once per turn against the net change, judged by the fast tier, scanned with vulnetix sca, and any finding goes to a read-only background agent for that ecosystem, so no install script runs. A repository cannot turn the check off. The AI Firewall has seven adapters: Vulnetix, Fastly AI Runtime Control, Kong AI Gateway and the AI Security Gateway (the last three in beta), a custom proxy, and read-only OpenRouter and Cloudflare AI Gateway entries, in transparent, authorization or header mode, routed per provider, with nonces fetched from the firewall first.';
 
@@ -262,6 +264,10 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
     <span>changes code, behind your permission prompts</span>
   </div>
+  <p class="mt-4 text-sm text-vx-ink/75">
+    Read <a class="text-vx-ink underline" href={`${docBase}vulnetix-review.md`}>docs/vulnetix-review.md</a> for
+    what a review runs, what it costs, the report it writes and how to fix a review that goes wrong.
+  </p>
 
   <!-- A review as it runs -->
   <SubHead title="What you see while it runs">

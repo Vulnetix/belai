@@ -49,6 +49,8 @@ behaviour, and implementation details.
 
 - [Kiro](kiro.md): the `kiro` provider, AWS Builder ID and IAM Identity
   Center sign-in, token refresh, and the Kiro wire surface.
+- [Vulnetix code review](vulnetix-review.md): `/vulnetix review`, what it runs and
+  costs, the report it writes, its settings and troubleshooting.
 - [Vulnetix](vulnetix.md): review scanners, artifact handling, project history,
   and the Vulnetix AI Firewall.
 - [AI Firewall](firewall.md): the adapter-based firewall (Vulnetix, beta
@@ -157,6 +159,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 - **Recover from provider trouble:** [classification](resilience.md#error-classification-internalresilience) →
   [transport retry](resilience.md#pre-first-byte-boundary) →
   [turn retry](resilience.md#turn-retry-and-state-invariants).
-- **Integrate Vulnetix:** [business rules](vulnetix.md#business-rules) →
+- **Integrate Vulnetix:** [code review](vulnetix-review.md) →
+  [business rules](vulnetix.md#business-rules) →
   [command surface](vulnetix.md#command-surface) →
   [AI Firewall](vulnetix.md#ai-firewall-vulnetix-firewall-and-f10).
