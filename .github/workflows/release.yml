@@ -85,6 +85,8 @@ jobs:
         with:
           name: models
           path: internal/mlclassify/assets/*
+          # Only the build job below reads these, in this same run.
+          retention-days: 1
 
   # Belai is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
   # Linux box. Each variant family is built for all six targets.
@@ -174,6 +176,8 @@ jobs:
         with:
           name: binaries
           path: bin/*
+          # About 4 GB a release: only the release job reads it, in this same run.
+          retention-days: 1
 
   release:
     needs: [version, build]
