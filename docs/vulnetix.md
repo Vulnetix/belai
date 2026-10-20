@@ -318,7 +318,7 @@ looks idle while the scanners work (`internal/tui/review.go`).
   the classifier withheld, and the background agent reviewing it. An
   activity without a template falls back to a finding count.
 - **Snapshot links.** When the CLI is logged in to an organisation (not the
-  shared community credentials) it prints a link to each scan's snapshot on
+  shared [community](https://www.vulnetix.com/features/community) credentials) it prints a link to each scan's snapshot on
   the Vulnetix website. The review keeps every such link that is https on
   `vulnetix.com` and lists it on the scanner's card as `snapshot · <url>`.
   Hover the line (or anywhere on a card with one link) and press `ctrl+y` to
