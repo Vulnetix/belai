@@ -15,6 +15,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -52,6 +53,9 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	case "worker":
 		if !workerName.MatchString(r.Profile) {
 			return "", "that is not a profile name"
+		}
+		if r.Profile == schedule.RotateProfile {
+			return "", schedule.RotateProfile + " only runs from a schedule"
 		}
 		if !slices.ContainsFunc(inv.Profiles, func(p sessionsync.RCProfile) bool { return p.Name == r.Profile }) {
 			return "", "this host has no worker profile " + r.Profile

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/run"
@@ -161,6 +162,63 @@ func TestWorkerWithoutSurveyFilesNothing(t *testing.T) {
 	runFor(t, w, 5*time.Second)
 	if len(turns) != 0 || len(surveyItems(t, store)) != 0 {
 		t.Fatalf("%d turns", len(turns))
+	}
+}
+
+// agents.auto_survey gives a worker with no way to find its own work a survey
+// written from its role; it is off unless the settings turn it on, and a
+// profile that already finds its own work keeps its own.
+func TestAutoSurveyFindsWorkForAClaimOnlyWorker(t *testing.T) {
+	store, reg := testEnv(t)
+	p := scoutProfile()
+	p.Kanban.Survey = nil
+	p.Description = "Keeps the docs in step with the code"
+	var turns []Turn
+	w := newWorker(t, store, reg, p, handoffRunner(store, &turns))
+	w.Once = false
+	on := true
+	w.Settings.Agents = &config.AgentsSettings{AutoSurvey: &on}
+	runFor(t, w, 5*time.Second)
+	sv := surveyItems(t, store)
+	if len(turns) != 1 || len(sv) != 1 {
+		t.Fatalf("%d turns, survey items %+v", len(turns), sv)
+	}
+	if !strings.HasPrefix(sv[0].Title, "t-scout: find work in ") || strings.Contains(sv[0].Title+sv[0].Body, "{project}") ||
+		!strings.Contains(sv[0].Body, "Keeps the docs in step with the code") || !strings.Contains(sv[0].Body, "handoff") {
+		t.Fatalf("auto survey item %+v", sv[0])
+	}
+	if turns[0].Claim.HandoffList != kanban.Review {
+		t.Fatalf("claim handoff list %q", turns[0].Claim.HandoffList)
+	}
+}
+
+func TestAutoSurveyLeavesAWorkerThatFindsItsOwnWorkAlone(t *testing.T) {
+	p := scoutProfile()
+	on := true
+	w := &Worker{Profile: p, Settings: config.Settings{Agents: &config.AgentsSettings{AutoSurvey: &on}}}
+	if got := w.surveySpec(); got != p.Kanban.Survey {
+		t.Fatalf("own survey replaced: %+v", got)
+	}
+	p.Kanban.Survey = nil
+	p.Kanban.Quality = &agentprofile.QualitySpec{Sweep: true}
+	w.Profile = p
+	if got := w.surveySpec(); got != nil {
+		t.Fatalf("a sweeping worker got an auto survey: %+v", got)
+	}
+	p.Kanban.Quality = nil
+	w.Profile, w.Settings = p, config.Settings{}
+	if got := w.surveySpec(); got != nil {
+		t.Fatalf("auto survey without the setting: %+v", got)
+	}
+}
+
+// A worker that may not hand work on is told to do what it finds itself.
+func TestAutoSurveyWithoutHandoffsDoesTheWork(t *testing.T) {
+	p := scoutProfile()
+	p.Kanban.HandoffLabels = nil
+	sv := agentprofile.AutoSurvey(p)
+	if !strings.Contains(sv.Body, "end to end") || sv.EveryOr() != agentprofile.AutoSurveyEvery {
+		t.Fatalf("%+v", sv)
 	}
 }
 

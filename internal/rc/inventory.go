@@ -108,6 +108,9 @@ func LocalInventory() Inventory {
 			inv.Profiles = append(inv.Profiles, sum)
 		}
 	}
+	if e, ok := rotationEntry(inv); ok && len(inv.Profiles) < maxInvProfiles {
+		inv.Profiles = append(inv.Profiles, e)
+	}
 	sort.Slice(inv.Profiles, func(a, b int) bool { return inv.Profiles[a].Name < inv.Profiles[b].Name })
 	for _, c := range agentprofile.ListCrews() {
 		if len(inv.Crews) >= maxInvCrews {

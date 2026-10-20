@@ -51,7 +51,18 @@ type Record struct {
 	// push that was in flight while the record changed again leaves it dirty.
 	Dirty bool `json:"dirty,omitempty"`
 	Rev   int  `json:"rev,omitempty"`
+	// For a rotating schedule (RotateProfile): how many times it has fired,
+	// and the profile and directory its last firing started. Host-local:
+	// never pushed, and kept across a pulled definition change.
+	Turn       int    `json:"turn,omitempty"`
+	RanProfile string `json:"ran_profile,omitempty"`
+	RanDir     string `json:"ran_dir,omitempty"`
 }
+
+// RotateProfile is the profile name of a rotating schedule: each firing starts
+// the next worker profile in the next directory the host offers, instead of
+// one named profile in one directory (internal/rc rotation.go).
+const RotateProfile = "belai:rotate"
 
 // Run outcomes a host reports (the server accepts exactly these).
 const (

@@ -540,12 +540,13 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 // so hosts surveying the same repository on the same day share one.
 func (w *Worker) survey(project string) (kanban.Item, bool) {
 	k := w.Profile.Kanban
-	if k == nil || k.Survey == nil || w.surveyed || w.Once || w.Item != "" {
+	spec := w.surveySpec()
+	if k == nil || spec == nil || w.surveyed || w.Once || w.Item != "" {
 		return kanban.Item{}, false
 	}
 	w.surveyed = true
 	stamp := w.surveyStamp()
-	if fi, err := os.Stat(stamp); err == nil && w.clock().Sub(fi.ModTime()) < k.Survey.EveryOr()-k.Survey.SurveyGrace() {
+	if fi, err := os.Stat(stamp); err == nil && w.clock().Sub(fi.ModTime()) < spec.EveryOr()-spec.SurveyGrace() {
 		w.logf("survey skipped: last one here was %s ago", w.clock().Sub(fi.ModTime()).Round(time.Minute))
 		return kanban.Item{}, false
 	}
@@ -554,9 +555,10 @@ func (w *Worker) survey(project string) (kanban.Item, bool) {
 	if name == "" {
 		name = "this repository"
 	}
-	title := strings.ReplaceAll(k.Survey.Title, "{project}", name) + " (" + w.clock().Format("2006-01-02") + ")"
+	title := strings.ReplaceAll(spec.Title, "{project}", name) + " (" + w.clock().Format("2006-01-02") + ")"
+	body := strings.ReplaceAll(spec.Body, "{project}", name)
 	labels := append(slices.Clone(k.Labels), agentprofile.SurveyLabel)
-	it, _, err := w.Store.Add(kanban.ItemInput{Title: title, Body: k.Survey.Body, List: kanban.Backlog, Labels: labels}, prov)
+	it, _, err := w.Store.Add(kanban.ItemInput{Title: title, Body: body, List: kanban.Backlog, Labels: labels}, prov)
 	if err != nil {
 		w.logf("survey: %v", err)
 		return kanban.Item{}, false
@@ -576,6 +578,24 @@ func (w *Worker) survey(project string) (kanban.Item, bool) {
 	}
 	w.logf("surveying: nothing to claim, so filed %s", got.Short())
 	return got, true
+}
+
+// surveySpec is the survey this worker runs when the board has nothing for
+// it: the profile's own kanban.survey, or, with agents.auto_survey on, one
+// written from the profile's role for a worker that has no other way to find
+// work. Nil: the worker only takes items someone filed.
+func (w *Worker) surveySpec() *agentprofile.SurveySpec {
+	k := w.Profile.Kanban
+	if k == nil {
+		return nil
+	}
+	if k.Survey != nil {
+		return k.Survey
+	}
+	if !w.Settings.AgentsAutoSurveyEnabled() || agentprofile.FindsOwnWork(k) {
+		return nil
+	}
+	return agentprofile.AutoSurvey(w.Profile)
 }
 
 // surveyStamp is the file whose mtime records this profile's last survey of
@@ -765,10 +785,11 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
 			list := kanban.Review
-			if k.Survey != nil {
-				list = k.Survey.HandoffList()
+			spec := w.surveySpec()
+			if spec != nil {
+				list = spec.HandoffList()
 			}
-			claim.HandoffAuto = k.Survey != nil && k.Survey.Auto()
+			claim.HandoffAuto = spec != nil && spec.Auto()
 			claim.HandoffList = list
 		}
 	}

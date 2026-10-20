@@ -171,6 +171,45 @@ func (s SurveySpec) EveryOr() time.Duration {
 	return DefaultSurveyEvery
 }
 
+// AutoSurveyEvery is how often an automatic survey (agents.auto_survey) may
+// run for the same profile and repository on one machine: the stored schedule
+// that starts the worker sets the real cadence, so this only stops two starts
+// in the same hour from surveying twice.
+const AutoSurveyEvery = time.Hour
+
+// FindsOwnWork reports whether a worker's kanban block lets it find work when
+// the board has none for it: a survey, a security sweep or a quality sweep.
+func FindsOwnWork(k *KanbanSpec) bool {
+	return k != nil && (k.Survey != nil || (k.Security != nil && k.Security.Sweep) || (k.Quality != nil && k.Quality.Sweep))
+}
+
+// AutoSurvey is the survey agents.auto_survey gives a worker that has no way
+// to find its own work, written from the profile's role. A worker that may hand
+// work on files what it finds for a person to confirm (review); one that may
+// not does the single most useful piece of work it finds itself.
+func AutoSurvey(p AgentProfile) *SurveySpec {
+	role := strings.TrimSpace(p.Description)
+	if role == "" {
+		role = "the work this agent profile exists for"
+	}
+	name := p.DisplayName
+	if name == "" {
+		name = p.Name
+	}
+	body := "Nothing was filed for you, so find your own work in {project}.\n\n" +
+		"Your role: " + role + "\n\n" +
+		"Look over the repository (recent commits, open TODOs, failing or missing tests, " +
+		"the README and issue notes) and pick the single most valuable piece of work your role covers. "
+	if k := p.Kanban; k != nil && (len(k.HandoffTo) > 0 || len(k.HandoffLabels) > 0) {
+		body += "File each concrete task you find as a handoff, clear enough for another agent to do without asking. " +
+			"File nothing that is not worth a person's time."
+	} else {
+		body += "Do it end to end, as you would a card someone filed, and keep the change small enough to review. " +
+			"If nothing is worth doing, say so and finish without changing anything."
+	}
+	return &SurveySpec{Title: name + ": find work in {project}", Body: body, Every: AutoSurveyEvery.String()}
+}
+
 // SurveyGrace is how early a start may be and still survey. The interval is
 // measured from the stamp the previous survey wrote, which is written after the
 // item is filed, so a start exactly one interval later (an hourly cron, an

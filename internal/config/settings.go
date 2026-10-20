@@ -2204,6 +2204,12 @@ type AgentsSettings struct {
 	// Publish allows a worker profile's workspace.publish (push a branch and
 	// open a draft pull request). Default on.
 	Publish *bool `json:"publish,omitempty"`
+	// AutoSurvey lets a worker whose profile has no way to find its own work
+	// (no kanban.survey, security sweep or quality sweep) survey the
+	// repository from its own role when the board has nothing for it, as if
+	// the profile carried a kanban.survey. Default off; a Pix sandbox turns it
+	// on unless its owner opts out.
+	AutoSurvey *bool `json:"auto_survey,omitempty"`
 }
 
 // tighten applies a project layer: it may turn Enabled and Publish off and
@@ -2223,6 +2229,9 @@ func (a *AgentsSettings) tighten(proj *AgentsSettings) *AgentsSettings {
 	}
 	if proj.Publish != nil && !*proj.Publish {
 		out.Publish = &f
+	}
+	if proj.AutoSurvey != nil && !*proj.AutoSurvey {
+		out.AutoSurvey = &f
 	}
 	if proj.MaxWorkers != nil {
 		cur := DefaultMaxWorkers
@@ -2247,11 +2256,20 @@ func (a *AgentsSettings) merge(o *AgentsSettings) {
 	if o.Publish != nil {
 		a.Publish = o.Publish
 	}
+	if o.AutoSurvey != nil {
+		a.AutoSurvey = o.AutoSurvey
+	}
 }
 
 // AgentsEnabled reports whether fleet workers may run. Default on.
 func (s Settings) AgentsEnabled() bool {
 	return s.Agents == nil || s.Agents.Enabled == nil || *s.Agents.Enabled
+}
+
+// AgentsAutoSurveyEnabled reports whether a worker with no way to find its
+// own work may survey from its role (AgentsSettings.AutoSurvey). Default off.
+func (s Settings) AgentsAutoSurveyEnabled() bool {
+	return s.Agents != nil && s.Agents.AutoSurvey != nil && *s.Agents.AutoSurvey
 }
 
 // AgentsPublishEnabled reports whether workers may push and open draft pull

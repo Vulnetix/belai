@@ -353,6 +353,21 @@ func (s *Store) SetStatus(id, status string) error {
 	})
 }
 
+// RecordTurn stores what a rotating schedule's firing started. It is
+// host-local bookkeeping, so the record is not marked for a push.
+func (s *Store) RecordTurn(id string, turn int, profile, dir string) error {
+	return s.mutate(func(f *File) (bool, error) {
+		for i := range f.Records {
+			r := &f.Records[i]
+			if r.ID == id && !r.Deleted {
+				r.Turn, r.RanProfile, r.RanDir = turn, profile, dir
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+}
+
 // Refuse disables a schedule the host cannot accept and records why. It is a
 // change to the definition, so Updated moves and the website sees the
 // schedule turn off with its reason.

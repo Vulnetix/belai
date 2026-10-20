@@ -213,6 +213,12 @@ func (d *Daemon) checkSchedule(r schedule.Record) (cron.Schedule, string) {
 	if _, ok := Allowed(d.o.Dirs, r.Dir); !ok {
 		return sched, schedule.StatusRefusedDir
 	}
+	if r.Profile == schedule.RotateProfile {
+		if len(rotationProfiles(d.o.Inventory())) == 0 {
+			return sched, schedule.StatusRefusedProfile
+		}
+		return sched, ""
+	}
 	if !schedule.ValidProfileName(r.Profile) ||
 		!slices.ContainsFunc(d.o.Inventory().Profiles, func(p sessionsync.RCProfile) bool { return p.Name == r.Profile }) {
 		return sched, schedule.StatusRefusedProfile
@@ -239,6 +245,9 @@ func (d *Daemon) fire(r schedule.Record) string {
 	cwd, ok := Allowed(d.o.Dirs, r.Dir)
 	if !ok {
 		return schedule.StatusRefusedDir
+	}
+	if r.Profile == schedule.RotateProfile {
+		return d.fireRotation(r)
 	}
 	if d.o.Busy(r.Profile, cwd) {
 		d.logf("schedule %s: %s is still working in %s, skipped", short(r.ID), r.Profile, cwd)
@@ -299,11 +308,12 @@ func (d *Daemon) observeScheduleRuns(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		profile, dir := ranAs(r)
 		var match *fleet.Record
 		stillLive := false
 		for i := range fleetRecs {
 			fr := &fleetRecs[i]
-			if fr.Profile != r.Profile || !sameRepo(fr.Repo, r.Dir) {
+			if fr.Profile != profile || !sameRepo(fr.Repo, dir) {
 				continue
 			}
 			if fr.Started < r.LastRunAt {

@@ -552,6 +552,18 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
   pulls before its profiles are installed and its repositories cloned, and
   turning them off then would lose them for good. The page shows the reason. The page checks the same things first for a quick answer,
   and the host checks again.
+- **Rotating schedules.** A schedule whose profile is `belai:rotate` names no
+  one worker. Each run starts the next worker profile in the next directory this
+  host offers: every directory with the first profile, then every directory with
+  the next, so each repository sees each kind of worker in turn. It rotates the
+  host's own worker profiles when it has any, and Belai's built-in workers
+  otherwise, the ones that find their own work first (`belai:vuln-scout`,
+  `belai:scout`, then the rest). The host advertises `belai:rotate` in its
+  inventory whenever there is something to rotate, so the website can offer it.
+  Its directory must be one the host offers; the rotation visits all of them.
+  The turn and what it started are kept on the host only, and the run status is
+  read from the worker that turn started. A worker request (not a schedule)
+  cannot start `belai:rotate`.
 - **Audit.** Each firing and each refusal is a `host.schedule` event with the
   schedule's id, the profile and the outcome (see [audit.md](audit.md)).
 

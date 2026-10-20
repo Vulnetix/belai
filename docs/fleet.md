@@ -174,6 +174,25 @@ Limits:
 - **Handoffs required.** A survey needs `handoff_to` or `handoff_labels`,
   because it reports what it finds as handoffs.
 
+#### Automatic surveys: `agents.auto_survey`
+
+With `"agents": {"auto_survey": true}` in the settings, a worker whose profile
+has no way to find its own work (no `kanban.survey`, no `security.sweep`, no
+`quality.sweep`) surveys anyway when the board has nothing for it, from a survey
+the harness writes from the profile:
+
+- **Title.** `<display name or name>: find work in {project}`, dated as above.
+- **Body.** The profile's `description` as the role, and what to look at. A
+  worker with `handoff_to` or `handoff_labels` files what it finds as handoffs
+  (to review); one without does the single most useful piece of work itself and
+  keeps the change small enough to review, or finishes having changed nothing.
+- **Interval.** `1h` (`agentprofile.AutoSurveyEvery`). The stored schedule that
+  starts the worker sets the real cadence.
+
+A profile's own `kanban.survey` always wins, and a sweeping profile never gets
+one. The setting is off by default. A project's settings may turn it off, never
+on. Pix sandboxes turn it on unless their owner opts out.
+
 After the survey the worker is idle again. It exits after the quiet window
 unless `-stay` or a `schedule` keeps it.
 
