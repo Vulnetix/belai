@@ -23,7 +23,9 @@ import (
 // cap. A schedule can start nothing a worker request could not.
 //
 // The website edits the definitions and never runs one. A definition the host
-// cannot accept is disabled with the reason, never applied. A run missed while
+// can never accept (a cron it cannot read) is disabled with the reason, never
+// applied; one whose profile or directory is missing for now keeps its place,
+// records why it did not run and is checked again at its next run. A run missed while
 // the daemon was down is skipped, a schedule fires at most once per cron tick,
 // and its last run and next run are facts this host writes, in the host's local
 // time.
@@ -149,7 +151,8 @@ func (d *Daemon) fireDue(ctx context.Context, now time.Time) {
 			continue
 		}
 		sched, refusal := d.checkSchedule(r)
-		if refusal != "" {
+		next := sched.Next(now)
+		if refusal != "" && (next.IsZero() || !retryableRefusal(refusal, r)) {
 			d.logf("schedule %s for %s turned off: %s", short(r.ID), r.Profile, refusal)
 			if err := st.Refuse(r.ID, refusal, now); err != nil {
 				d.logf("schedules: %v", err)
@@ -157,7 +160,23 @@ func (d *Daemon) fireDue(ctx context.Context, now time.Time) {
 			d.auditSchedule(r, refusal)
 			continue
 		}
-		next := sched.Next(now)
+		if refusal != "" {
+			// The profile or the directory may only be missing for now: a fresh
+			// machine checks its schedules before its profiles are installed and
+			// its repositories cloned. The schedule stays on, says why it did not
+			// run, and is checked again at its next run.
+			if r.LastStatus != refusal {
+				d.logf("schedule %s for %s cannot run yet: %s; trying again at %s", short(r.ID), r.Profile, refusal, next.Format(time.RFC3339))
+				d.auditSchedule(r, refusal)
+			}
+			if err := st.SetStatus(r.ID, refusal); err != nil {
+				d.logf("schedules: %v", err)
+			}
+			if err := st.SetNext(r.ID, next); err != nil {
+				d.logf("schedules: %v", err)
+			}
+			continue
+		}
 		if r.NextRunAt == 0 {
 			// New, edited or just rebased: set the next run, fire nothing.
 			if err := st.SetNext(r.ID, next); err != nil {
@@ -181,22 +200,38 @@ func (d *Daemon) fireDue(ctx context.Context, now time.Time) {
 	}
 }
 
-// checkSchedule decides whether this host can run the schedule at all: the
-// cron must parse, the profile must be a worker profile in this host's
-// catalogue and the directory one it offers. The refusal is a status.
+// checkSchedule decides whether this host can run the schedule now: the cron
+// must parse, the profile must be a worker profile in this host's catalogue
+// and the directory one it offers. The refusal is a status. The parsed cron is
+// returned with a directory or profile refusal, so the caller can set the
+// next run to check again.
 func (d *Daemon) checkSchedule(r schedule.Record) (cron.Schedule, string) {
 	sched, err := cron.Parse(r.Cron)
 	if err != nil {
 		return cron.Schedule{}, schedule.StatusRefusedCron
 	}
 	if _, ok := Allowed(d.o.Dirs, r.Dir); !ok {
-		return cron.Schedule{}, schedule.StatusRefusedDir
+		return sched, schedule.StatusRefusedDir
 	}
 	if !schedule.ValidProfileName(r.Profile) ||
 		!slices.ContainsFunc(d.o.Inventory().Profiles, func(p sessionsync.RCProfile) bool { return p.Name == r.Profile }) {
-		return cron.Schedule{}, schedule.StatusRefusedProfile
+		return sched, schedule.StatusRefusedProfile
 	}
 	return sched, ""
+}
+
+// retryableRefusal reports whether a refusal can clear without an edit: a
+// profile that is not installed yet, or a directory not offered yet. A cron
+// that does not parse, an empty directory or a name that is not a profile name
+// never will, so those schedules are turned off.
+func retryableRefusal(refusal string, r schedule.Record) bool {
+	switch refusal {
+	case schedule.StatusRefusedDir:
+		return r.Dir != ""
+	case schedule.StatusRefusedProfile:
+		return schedule.ValidProfileName(r.Profile)
+	}
+	return false
 }
 
 // fire starts the schedule's worker and returns the outcome.

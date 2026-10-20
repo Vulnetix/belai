@@ -543,10 +543,14 @@ edit, pause and delete them; a change reaches the host within about 30 seconds.
   a `started` run to `worked` (it finished items), `drained` (nothing was left to
   claim) or `worker_failed` (it stopped with an error). A refused run waits for
   the next tick.
-- **What it refuses.** A schedule whose cron does not parse, whose directory is
-  not offered or whose profile is not a worker profile in this host's catalogue
-  is turned off with `refused_cron`, `refused_dir` or `refused_profile`, and the
-  page shows the reason. The page checks the same things first for a quick answer,
+- **What it refuses.** A schedule whose cron does not parse is turned off with
+  `refused_cron`, and so is one with no directory or a profile name that cannot
+  be one. A schedule whose directory is not offered, or whose profile is not a
+  worker profile in this host's catalogue, stays on: the run is recorded as
+  `refused_dir` or `refused_profile` and the host checks again at the next run.
+  A machine that starts fresh (a relaunched Pix sandbox) checks the schedules it
+  pulls before its profiles are installed and its repositories cloned, and
+  turning them off then would lose them for good. The page shows the reason. The page checks the same things first for a quick answer,
   and the host checks again.
 - **Audit.** Each firing and each refusal is a `host.schedule` event with the
   schedule's id, the profile and the outcome (see [audit.md](audit.md)).
