@@ -22,7 +22,7 @@ classification, card rendering, severity parsing) are in
 - **A model provider.** The scanner agents and the triage turn run on the
   session's model, so the session needs a working provider like any other turn.
 - **A Vulnetix credential (optional).** With no credential the CLI runs on its
-  built-in Community key. The review still works, but the key's daily quota is
+  built-in [Community](https://www.vulnetix.com/features/community) key. The review still works, but the key's daily quota is
   shared with everyone else using it and scans leave no snapshot on the
   Vulnetix website. Log in from Getting started, or run `vulnetix auth login`,
   for a key of your own. `/vulnetix status` shows what the CLI is logged in as.
@@ -136,7 +136,7 @@ reference for the limits and headers.
 ## What it costs
 
 - **The scanners and the Vulnetix MCP server are free.** They work on the
-  Community plan.
+  [Community plan](https://www.vulnetix.com/features/community).
 - **Your model provider bills the model work.** The scanner agents, any explore
   subagents the triage turn starts, and the triage turn itself use your
   configured provider and are billed by it at its rates. With the

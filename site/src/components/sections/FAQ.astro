@@ -15,8 +15,8 @@ const sealText =
   'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced, what happens to a prompt injection in a file, what is free, which platforms and editors are supported, and how it runs unattended.';
 
 // Product questions. Each answer is a list of paragraphs, and text between
-// backticks renders as code.
-const product: { q: string; a: string[] }[] = [
+// backticks renders as code. An optional link renders as a last paragraph.
+const product: { q: string; a: string[]; link?: { href: string; label: string } }[] = [
   {
     q: 'Does Belai send my code to anyone?',
     a: [
@@ -61,6 +61,7 @@ const product: { q: string; a: string[] }[] = [
     a: [
       'Belai is Apache-2.0. The Vulnetix scanners, the AI Firewall and the MCP server it works with are free for everyone.',
     ],
+    link: { href: 'https://www.vulnetix.com/features/community', label: 'See everything included on the free Community tier.' },
   },
   {
     q: 'Which platforms and editors does it support?',
@@ -178,6 +179,9 @@ const faqs = [
           {item.a.map((para) => (
             <p class="text-vx-ink/85">{split(para).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
           ))}
+          {item.link && (
+            <p class="text-vx-ink/85"><a class="underline" href={item.link.href}>{item.link.label}</a></p>
+          )}
         </div>
       </details>
     ))}
