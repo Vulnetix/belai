@@ -240,14 +240,12 @@ func TestBusyAndCapAreRecordedAndNotRetriedUntilTheNextTick(t *testing.T) {
 	}
 }
 
-func TestSchedulesTheHostCannotAcceptAreTurnedOff(t *testing.T) {
+func TestSchedulesTheHostCanNeverAcceptAreTurnedOff(t *testing.T) {
 	h := newSchedHarness(t)
 	cases := []struct {
 		id, profile, cron, dir, status string
 	}{
 		{schedA, "builder", "61 * * * *", h.dir, schedule.StatusRefusedCron},
-		{schedB, "builder", "* * * * *", filepath.Dir(h.dir), schedule.StatusRefusedDir},
-		{"77777777-7777-4777-8777-777777777777", "ghost", "* * * * *", h.dir, schedule.StatusRefusedProfile},
 		{"88888888-8888-4888-8888-888888888888", "--trust-dir", "* * * * *", h.dir, schedule.StatusRefusedProfile},
 		{"99999999-9999-4999-8999-999999999999", "builder", "* * * * *", "", schedule.StatusRefusedDir},
 	}
@@ -268,6 +266,53 @@ func TestSchedulesTheHostCannotAcceptAreTurnedOff(t *testing.T) {
 		if !got.Dirty {
 			t.Errorf("%s: the refusal must be pushed so the website shows it", c.profile)
 		}
+	}
+}
+
+// A fresh machine (a relaunched Pix sandbox) checks the schedules it pulls
+// before its profiles are installed and its repositories cloned. Those
+// schedules stay on, say why they did not run, and run once the profile and
+// the directory are there.
+func TestSchedulesMissingAProfileOrDirectoryForNowStayOnAndRunLater(t *testing.T) {
+	h := newSchedHarness(t)
+	var mu sync.Mutex
+	profiles := []sessionsync.RCProfile{{Name: "builder"}}
+	h.d.o.Inventory = func() Inventory { mu.Lock(); defer mu.Unlock(); return Inventory{Profiles: profiles} }
+	const ghost, elsewhere = "77777777-7777-4777-8777-777777777777", "66666666-6666-4666-8666-666666666666"
+	if _, err := h.st.Add(schedule.Record{ID: ghost, Profile: "ghost", Cron: "*/15 * * * *", Dir: h.dir, Enabled: true}, h.now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.st.Add(schedule.Record{ID: elsewhere, Profile: "builder", Cron: "*/15 * * * *", Dir: filepath.Dir(h.dir), Enabled: true}, h.now); err != nil {
+		t.Fatal(err)
+	}
+	h.d.fireDue(context.Background(), h.now)
+	next := time.Date(2026, 10, 1, 9, 15, 0, 0, time.Local).UnixMilli()
+	for id, status := range map[string]string{ghost: schedule.StatusRefusedProfile, elsewhere: schedule.StatusRefusedDir} {
+		got := h.get(id)
+		if !got.Enabled || got.LastStatus != status || got.NextRunAt != next || !got.Dirty {
+			t.Errorf("%s: %+v, want on with %s and the next run set", id, got, status)
+		}
+	}
+	if h.starting() != 0 {
+		t.Fatalf("a schedule without its profile or directory started a worker: %+v", h.starts)
+	}
+	// Not checked again before its next run.
+	h.at(9, 5, 0)
+	h.d.fireDue(context.Background(), h.now)
+	if h.starting() != 0 {
+		t.Fatal("a refused schedule was retried before its next run")
+	}
+	// The profile is installed; at the next run it fires.
+	mu.Lock()
+	profiles = append(profiles, sessionsync.RCProfile{Name: "ghost"})
+	mu.Unlock()
+	h.at(9, 15, 1)
+	h.d.fireDue(context.Background(), h.now)
+	if got := h.get(ghost); h.starting() != 1 || got.LastStatus != schedule.StatusStarted || !got.Enabled {
+		t.Fatalf("installed profile: starts=%d %+v", h.starting(), got)
+	}
+	if got := h.get(elsewhere); !got.Enabled || got.LastStatus != schedule.StatusRefusedDir {
+		t.Fatalf("still no directory: %+v", got)
 	}
 }
 
