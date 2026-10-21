@@ -45,6 +45,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
+| Firewall | `permission offers`, `auto-apply permissions` |
 | Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents` |
 | Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics`, `jev agent pick`, `jev teleport verify` |
 | Jev thresholds | one slider per cut-off, in the sections below |
@@ -78,6 +79,19 @@ keys as standard function keys* in macOS Keyboard settings, the keys work withou
 Unset, the setting follows the platform: shown on macOS, hidden on Linux and
 Windows. Set it on to see the hints in a virtual machine or a remote session
 running on Mac hardware, or off to hide them on a Mac. It is display only.
+
+### Firewall permissions
+
+`firewall.permission_offers` (the `permission offers` row) shows the card
+belai adds when a prompt states a permission the Vulnetix AI Firewall can
+enforce. It is on by default. Off, the card is hidden from the thread, but the
+offer is still written to the session record, so the console's sandbox
+Permissions tab can still apply it.
+
+`firewall.permission_auto_apply` (the `auto-apply permissions` row) applies an
+offer's rules as soon as they are written, with no click. It is off by
+default. Both rows are saved to your global settings. A project layer may only
+turn either one off. See [firewall-permissions.md](firewall-permissions.md).
 
 ### Empty composer pane
 
@@ -143,7 +157,8 @@ movement, edit and back always stay.
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
   the scope chip shows: `auto-commit per task`, `plan limits`, every `test …`,
-  `voice …`, `read aloud …` and `knowledge …` row, and every Jev threshold. Other rows follow
+  `voice …`, `read aloud …` and `knowledge …` row, `permission offers`,
+  `auto-apply permissions`, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session
   once chosen.
 - **A higher layer wins.** After an edit, if another layer sets the same key and

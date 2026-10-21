@@ -574,6 +574,8 @@ func routingUseCaseKeys() []string {
 		rolemanager.UseCaseDeliveryReport,
 		rolemanager.UseCaseTeleportDistill,
 		rolemanager.UseCaseTeleportVerify,
+		rolemanager.UseCaseFirewallPermDetect,
+		rolemanager.UseCaseFirewallPermWrite,
 	}
 }
 

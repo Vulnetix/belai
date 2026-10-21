@@ -140,30 +140,57 @@ func (a *App) dismissSubagent(id string) {
 // A background agent's thread is its own conversation, so the main view leaves
 // it out; the footer pulse says what the agent is doing, and following it
 // shows the whole thread.
+//
+// With firewall.permission_offers off, the permission cards are left out too;
+// the session record keeps them either way.
 func (a *App) filteredMessages() []components.Message {
-	if a.threadFilter == "" {
-		if !a.hasBackgroundRows() {
-			return a.messages
-		}
-		out := make([]components.Message, 0, len(a.messages))
-		for _, m := range a.messages {
-			if !strings.HasPrefix(m.SubagentID, "bg:") {
-				out = append(out, m)
-			}
-		}
-		return out
+	msgs, _ := a.filteredMessagesIdx()
+	return msgs
+}
+
+// filteredMessagesIdx is filteredMessages with each row's index in a.messages
+// (-1 for the filter banner), so a click on a rendered row reaches the message
+// that drew it. A nil index means the rows are a.messages itself.
+func (a *App) filteredMessagesIdx() ([]components.Message, []int) {
+	hidePerm := !a.settings.FirewallPermissionOffersShown()
+	if a.threadFilter == "" && !a.hasBackgroundRows() && (!hidePerm || !a.hasPermRows()) {
+		return a.messages, nil
 	}
-	var out []components.Message
-	out = append(out, components.Message{
-		Role:    "system",
-		Content: "following " + subagentGutterLabel(a.threadFilter) + " · esc returns to main",
-	})
-	for _, m := range a.messages {
-		if m.SubagentID == a.threadFilter {
+	keep := func(m components.Message) bool {
+		if hidePerm && m.Role == components.PermRole {
+			return false
+		}
+		if a.threadFilter == "" {
+			return !strings.HasPrefix(m.SubagentID, "bg:")
+		}
+		return m.SubagentID == a.threadFilter
+	}
+	out := make([]components.Message, 0, len(a.messages)+1)
+	idx := make([]int, 0, len(a.messages)+1)
+	if a.threadFilter != "" {
+		out = append(out, components.Message{
+			Role:    "system",
+			Content: "following " + subagentGutterLabel(a.threadFilter) + " · esc returns to main",
+		})
+		idx = append(idx, -1)
+	}
+	for i, m := range a.messages {
+		if keep(m) {
 			out = append(out, m)
+			idx = append(idx, i)
 		}
 	}
-	return out
+	return out, idx
+}
+
+// hasPermRows reports whether the thread holds a firewall permission card.
+func (a *App) hasPermRows() bool {
+	for _, m := range a.messages {
+		if m.Role == components.PermRole {
+			return true
+		}
+	}
+	return false
 }
 
 // hasBackgroundRows reports whether any transcript row belongs to a

@@ -9,6 +9,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // goldenFixtures exercise every shape the transcript renderers can produce: a
@@ -55,6 +57,13 @@ func goldenFixtures() []struct {
 			{Role: "system", Content: "second notice"},
 			{Role: "system", Content: "third notice"}}}},
 		{"mixed", mixedTranscript()},
+		{"permission_card", MessageList{Messages: []Message{{Role: PermRole, Ephemeral: true, Perm: &PermCard{
+			Offer: rolemanager.PermissionOffer{ID: "fwp-1", Summary: "Keep Bash out and mask emails", Rules: []rolemanager.FirewallRule{
+				{Key: "r1", Name: "belai-deny-bash", RuleType: "tool_deny", Action: "strip", Pattern: "Bash", Priority: 100, Enabled: true, Variant: "deny", Intent: "never use Bash"},
+				{Key: "r2", Name: "belai-pii", RuleType: "pii_redact", Action: "redact", Priority: 100, Enabled: true, Intent: "mask emails"},
+			}, Notes: []string{"no allowlist form for never use Bash"}},
+			States: map[string]string{"r2": PermApplied}, Errors: map[string]string{},
+		}}}}},
 	}
 }
 

@@ -22,6 +22,26 @@ type FirewallSettings struct {
 	// Instances are the configured firewalls, keyed by instance name. The
 	// "vulnetix" instance always exists implicitly.
 	Instances map[string]FirewallInstance `json:"instances,omitempty"`
+	// PermissionOffers shows the firewall permission card in the thread
+	// (docs/firewall-permissions.md). Default true; off, the offer is still
+	// recorded in the session. It does not depend on Enabled: an offer writes
+	// org policy, it does not route traffic.
+	PermissionOffers *bool `json:"permission_offers,omitempty"`
+	// PermissionAutoApply applies an offer's rules as soon as it is written,
+	// with no click. Default false. A project layer may only turn it off.
+	PermissionAutoApply *bool `json:"permission_auto_apply,omitempty"`
+}
+
+// FirewallPermissionOffersShown reports whether the permission card shows in
+// the thread.
+func (s Settings) FirewallPermissionOffersShown() bool {
+	return s.Firewall == nil || s.Firewall.PermissionOffers == nil || *s.Firewall.PermissionOffers
+}
+
+// FirewallPermissionAutoApply reports whether offered rules are applied with
+// no click.
+func (s Settings) FirewallPermissionAutoApply() bool {
+	return s.Firewall != nil && s.Firewall.PermissionAutoApply != nil && *s.Firewall.PermissionAutoApply
 }
 
 // FirewallInstance is one configured firewall. Its secret (a gateway key or a
@@ -159,6 +179,14 @@ func normalizeFirewall(s Settings) Settings {
 func mergeFirewall(dst *FirewallSettings, src *FirewallSettings, project bool) (droppedProject bool) {
 	if src.Enabled != nil && (!*src.Enabled || !project) {
 		dst.Enabled = src.Enabled
+	}
+	// A repository may hide the permission card or stop auto-apply, never
+	// make Belai write org policy without a click.
+	if src.PermissionOffers != nil && (!*src.PermissionOffers || !project) {
+		dst.PermissionOffers = src.PermissionOffers
+	}
+	if src.PermissionAutoApply != nil && (!*src.PermissionAutoApply || !project) {
+		dst.PermissionAutoApply = src.PermissionAutoApply
 	}
 	if project {
 		return src.Active != "" || len(src.Instances) > 0

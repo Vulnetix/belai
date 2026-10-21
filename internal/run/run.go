@@ -645,6 +645,9 @@ var fastUseCases = map[string]bool{
 	rolemanager.UseCaseDeliveryReport:  true,
 	rolemanager.UseCaseTeleportDistill: true,
 	rolemanager.UseCaseTeleportVerify:  true,
+	// The permission detector is a one-word sentinel; the writer stays on the
+	// main model because its rules become org policy.
+	rolemanager.UseCaseFirewallPermDetect: true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.

@@ -17,7 +17,7 @@ import (
 var roles = map[string]lipgloss.AdaptiveColor{
 	"ColorLine": ColorLine, "ColorLow": ColorLow, "ColorMuted": ColorMuted, "ColorText": ColorText,
 	"ColorCream": ColorCream, "ColorTeal": ColorTeal, "ColorTealSoft": ColorTealSoft, "ColorYou": ColorYou,
-	"ColorVoice": ColorVoice, "ColorAmber": ColorAmber, "ColorDanger": ColorDanger,
+	"ColorVoice": ColorVoice, "ColorPolicy": ColorPolicy, "ColorAmber": ColorAmber, "ColorDanger": ColorDanger,
 	"ColorDiffAddBg": ColorDiffAddBg, "ColorDiffDelBg": ColorDiffDelBg,
 }
 
@@ -81,7 +81,7 @@ func contrast(a, b string) float64 {
 // deliberately below it.
 func TestTUIDesignContrastClaim(t *testing.T) {
 	const darkBG, lightBG = "#1E1E1E", "#FFFFFF"
-	readable := []string{"ColorMuted", "ColorText", "ColorCream", "ColorTeal", "ColorTealSoft", "ColorYou", "ColorVoice", "ColorAmber", "ColorDanger"}
+	readable := []string{"ColorMuted", "ColorText", "ColorCream", "ColorTeal", "ColorTealSoft", "ColorYou", "ColorVoice", "ColorPolicy", "ColorAmber", "ColorDanger"}
 	for _, name := range readable {
 		c := roles[name]
 		if r := contrast(c.Dark, darkBG); r < 4.5 {

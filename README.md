@@ -361,6 +361,7 @@ Highlights — full reference in [docs/README.md](docs/README.md):
 - [Agent Stores](docs/agent-stores.md): read-only context search with confinement guarantees
 - [Vulnetix](docs/vulnetix.md): review scanners, the Vulnetix AI Firewall, project history
 - [AI Firewall](docs/firewall.md): adapters (Vulnetix, Fastly ARC, Kong, AI Security Gateway, custom), modes, cards
+- [Firewall permissions](docs/firewall-permissions.md): permissions you state in a prompt, offered as AI Firewall guardrails to apply
 - [Nonce endpoint](docs/nonce-endpoint-spec.md): provider/gateway `GET /v1/nonces` contract
 - [Image attachments (deferred)](docs/image-attachments.md): multimodal design considerations
 - [Marketing site](docs/site.md): source for belai.vulnetix.com

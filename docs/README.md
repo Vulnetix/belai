@@ -56,6 +56,8 @@ behaviour, and implementation details.
 - [AI Firewall](firewall.md): the adapter-based firewall (Vulnetix, beta
   Fastly ARC, Kong and AI Security Gateway, custom proxies, read-only
   OpenRouter and Cloudflare), modes, key storage and event cards.
+- [Firewall permissions](firewall-permissions.md): permissions stated in a
+  prompt, offered as AI Firewall guardrail rules on a card you apply.
 - [Git sync](git-sync.md): rebasing a session's branch onto upstream main before
   its turns, turning it off per session or globally, and the git state the
   website shows

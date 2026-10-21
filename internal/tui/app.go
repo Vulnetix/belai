@@ -341,6 +341,13 @@ type App struct {
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents *rmQueue
 	rmCancel func()
+
+	// fwPerm carries firewall permission offers from the pass's goroutine;
+	// fwPermHeld holds the cards of offers that arrived during a turn until
+	// it ends (fwperm.go).
+	fwPerm     *fwPermBridge
+	fwPermHeld []*components.PermCard
+
 	// fwEvents carries AI Firewall verdicts from the run observer into the
 	// render loop; fwCancel detaches it. fwPasses counts routed responses
 	// with no event; fwEventCount counts cards shown; fwLastKey/fwLastAt
@@ -1085,6 +1092,7 @@ func New(opts Options) *App {
 		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
 		rmEvents:          newRMQueue(),
+		fwPerm:            newFwPermBridge(workdir),
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
@@ -1323,7 +1331,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	a.startupPending = true
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextUsage(), a.importHistory()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextFwPermOffer(), a.nextUsage(), a.importHistory()}
 	if cmd := a.watchRemote(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -2150,6 +2158,9 @@ type sessionBuildParams struct {
 	// askDecider answers asks in the user's place above the user's threshold;
 	// nil asks the user every time.
 	askDecider agent.AskDecider
+	// fwPerm runs the firewall permission pass over admitted prompts
+	// (fwperm.go); nil leaves it off.
+	fwPerm *agent.FirewallPermissionHook
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2190,6 +2201,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		knowledge:     a.knowledgeStoreForBuild(),
 		gitSync:       a.gitSync,
 		askDecider:    askDeciderFor(a.settings, credentialSourceOf(a.resolver)),
+		fwPerm:        a.fwPerm.hook(),
 	}
 }
 
@@ -2294,6 +2306,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
+		// Top-level TUI session: admitted prompts are read for AI Firewall
+		// permissions the user can apply (fwperm.go).
+		FirewallPermissions: p.fwPerm,
 		// Jev intent detection when the user already sends traffic to
 		// OpenRouter/Jev; otherwise the LLM classifier handles mode selection.
 		ModeDetector: run.NewModeDetector(cfg),
@@ -2459,6 +2474,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case firewallVerdictMsg:
 		a.addFirewallCard(firewall.Verdict(m))
 		return a, a.nextFirewall()
+	case fwPermOfferMsg:
+		cmd := a.handleFwPermOffer(rolemanager.PermissionOffer(m))
+		return a, tea.Batch(cmd, a.nextFwPermOffer())
+	case fwPermBatchMsg:
+		a.handleFwPermApplied(m)
+		return a, nil
 
 	case activityEventMsg:
 		return a, a.handleActivityEvent(m)
@@ -2712,6 +2733,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					if hit, hcmd := a.vulnMouse(p); hit {
+						vpCmd = hcmd
+						break
+					}
+					if hit, hcmd := a.permMouse(p); hit {
 						vpCmd = hcmd
 						break
 					}
@@ -3928,6 +3953,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.testPass.fixing = false
 		// Edits made before the failure are on disk all the same.
 		a.flushVulnRows()
+		a.flushFwPermOffers()
 		return a.flushDepWatch()
 	case agent.EventTextKind:
 		a.setPhaseWorking()
@@ -4325,6 +4351,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.observeVulnText(m.Result.Reply)
 		a.flushVulnRows()
+		a.flushFwPermOffers()
 		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone, a.ttsAutoRead(m.Result.Reply), a.decidePlanReviewCmd())
 	}
 	return nil
@@ -4418,8 +4445,9 @@ func (a *App) View() string {
 func (a *App) chatView() string {
 	renderStart := time.Now()
 	a.relayout()
+	shown, shownIdx := a.filteredMessagesIdx()
 	body, lm := components.MessageList{
-		Messages:      a.filteredMessages(),
+		Messages:      shown,
 		Width:         a.contentWidth(),
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
@@ -4428,6 +4456,15 @@ func (a *App) chatView() string {
 		InternalWork:  rolemanager.ParseLevel(a.settings.InternalWorkLevel()),
 		Chronological: a.chronological(),
 	}.Render()
+	// The list numbered the rows it was given; every reader of a line's owner
+	// (hover, clicks on cards, links) indexes a.messages.
+	if shownIdx != nil {
+		for i := range lm {
+			if o := lm[i].Owner; o >= 0 && o < len(shownIdx) {
+				lm[i].Owner = shownIdx[o]
+			}
+		}
+	}
 	// The banner is the first entry of the scrollable transcript. Prepending it
 	// here — before the content compare, Highlight and SetContent — keeps the
 	// line map aligned: each prepended screen row gets a Chrome provenance
@@ -6723,6 +6760,8 @@ func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
 	if m.err != nil {
 		a.vulnetixConfigState.errorMsg = m.err.Error()
 	}
+	// The firewall permission pass runs only while the CLI is signed in.
+	a.fwPerm.setSignedIn(m.err == nil && m.cap.Auth.Authenticated)
 	return nil
 }
 

@@ -68,6 +68,7 @@ const (
 	EventAgentPick                 Event = "agent_pick"
 	EventTeleportDistill           Event = "teleport_distill"
 	EventTeleportVerify            Event = "teleport_verify"
+	EventFirewallPermission        Event = "firewall_permission"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -389,6 +390,8 @@ func Describe(a Activity) (Description, bool) {
 		return teleportDistillDescription(a), true
 	case EventTeleportVerify:
 		return teleportVerifyDescription(a), true
+	case EventFirewallPermission:
+		return firewallPermissionDescription(a), true
 	case EventGateDraft:
 		return gateDraftDescription(a), true
 	case EventDeliveryReport:

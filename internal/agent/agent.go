@@ -164,6 +164,9 @@ type Options struct {
 	// ModeDetector is the optional intent detector used instead of the LLM
 	// mode classifier. nil means use the LLM fallback.
 	ModeDetector rolemanager.IntentDetector
+	// FirewallPermissions runs the firewall permission pass over each admitted
+	// prompt (docs/firewall-permissions.md). nil leaves it off.
+	FirewallPermissions *FirewallPermissionHook
 	// Jev runs the relevance jobs that use a decision backend (docs/jev-jobs.md).
 	// nil, or a Jobs with no client, runs none of them.
 	Jev *jev.Jobs
@@ -323,6 +326,7 @@ type Session struct {
 	codeAnthropicTools []wire.AnthropicToolDef
 	turnCode           bool
 	modeDetector       rolemanager.IntentDetector
+	fwPerm             *FirewallPermissionHook
 	// jev runs the relevance jobs; swapped remembers the Bash commands already
 	// run as a builtin once, so a repeated command runs as Bash.
 	jev *jev.Jobs
@@ -790,6 +794,7 @@ func NewSession(o Options) (*Session, error) {
 		codeOpenAITools:      codeOpenAITools,
 		codeAnthropicTools:   codeAnthropicTools,
 		modeDetector:         o.ModeDetector,
+		fwPerm:               o.FirewallPermissions,
 		jev:                  o.Jev,
 		askDecider:           o.AskDecider,
 		swapped:              map[string]bool{},
@@ -1161,6 +1166,12 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	}
 	if dec.Action != rolemanager.ActionProceed {
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
+	}
+	// Only an admitted prompt the user typed is read for firewall
+	// permissions; a fleet card or a teleport replay is not the user stating
+	// policy.
+	if in.KanbanItem == "" && in.TeleportReplay == nil && !s.exploreSubagent {
+		s.offerFirewallPermissions(admissionText(clean, in.HarnessPrompt))
 	}
 
 	// A fleet worker's claimed item rides as a gated attachment, never as

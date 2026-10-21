@@ -141,6 +141,7 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 	dropped := 0
 	live := map[string]bool{}
 	emitted := map[string]bool{}
+	permCards := map[string]*components.PermCard{}
 	for i, e := range emit {
 		switch e.Type {
 		case "user":
@@ -263,6 +264,29 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				continue
 			}
 			msgs = append(msgs, components.Message{Role: "system", Content: e.Content})
+		case fwPermEntryType:
+			// The permission card comes back with what was applied since, so
+			// Apply offers only what is still pending.
+			if o, ok := fwPermOfferFromMeta(e.Meta); ok {
+				permCards[o.ID] = &components.PermCard{Offer: o, States: map[string]string{}, Errors: map[string]string{}}
+				msgs = append(msgs, components.Message{Role: components.PermRole, Ephemeral: true, Perm: permCards[o.ID]})
+			}
+		case fwPermAppliedEntryType:
+			card := permCards[metaString(e.Meta, "offer_id")]
+			key := metaString(e.Meta, "rule_key")
+			if card == nil || key == "" {
+				continue
+			}
+			if msg := metaString(e.Meta, "error"); msg != "" {
+				card.States[key] = components.PermFailed
+				card.Errors[key] = msg
+			} else {
+				card.States[key] = components.PermApplied
+				delete(card.Errors, key)
+			}
+			if metaString(e.Meta, "source") == "auto" {
+				card.Auto = true
+			}
 		}
 	}
 	return msgs, dropped

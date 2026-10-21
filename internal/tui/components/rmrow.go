@@ -51,7 +51,7 @@ func RMMetaOf(act rolemanager.Activity) RMMeta {
 // stay aligned.
 var rmGlyphs = map[string]string{
 	"shield": "◈", "shield_unclear": "◇", "phase": "▸", "shield_fallback": "◊",
-	"recall": "↺", "recall_bad": "↯", "seal": "⊕", "seal_broken": "⊘", "mismatch": "≠",
+	"recall": "↺", "recall_bad": "↯", "seal": "⊕", "seal_broken": "⊘", "mismatch": "≠", "permission": "⊶",
 	"mode": "◐", "intent": "◎", "pin": "⊙", "limit": "⊤", "goal": "◉", "goal_repair": "↻",
 	"plan": "≡", "agent": "◍", "agentpick": "◈", "draft": "✎",
 	"compact": "⊟", "prune": "⊠", "page": "▤", "deps": "⊡", "tests": "⊨", "voice": "◖", "voicecmd": "◗",

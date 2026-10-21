@@ -148,6 +148,7 @@ var presentations = map[Event]presentation{
 	EventBoundarySeal:              {CategorySecurity, "seal"},
 	EventBoundaryVerifyFailure:     {CategorySecurity, "seal_broken"},
 	EventToolCallMismatch:          {CategorySecurity, "mismatch"},
+	EventFirewallPermission:        {CategorySecurity, "permission"},
 	EventModeClassify:              {CategoryMode, "mode"},
 	EventModeDetect:                {CategoryMode, "intent"},
 	EventModeForced:                {CategoryMode, "pin"},

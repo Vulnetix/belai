@@ -495,3 +495,63 @@
     fourth line
   · retrying (2/3) after 800ms — rate limited
   · switched provider to mock
+=== permission_card w=32
+── permission change detected ──
+  Keep Bash out and mask email
+    ◆ tool_deny strip Bash  de
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form fo
+    runs  vulnetix ai-firewall
+    [ apply all ]  [ dismiss ]
+=== permission_card w=41
+── permission change detected ───────────
+  Keep Bash out and mask emails
+    ◆ tool_deny strip Bash  deny varian
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form for never u
+    runs  vulnetix ai-firewall policy g
+    [ apply all ]  [ dismiss ]  nothing
+=== permission_card w=53
+── permission change detected  AI Firewall ──────────
+  Keep Bash out and mask emails
+    ◆ tool_deny strip Bash  deny variant · on  [ ap
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form for never use Bash
+    runs  vulnetix ai-firewall policy guardrail bel
+    [ apply all ]  [ dismiss ]  nothing changes unt
+=== permission_card w=60
+── permission change detected  AI Firewall ─────────────────
+  Keep Bash out and mask emails
+    ◆ tool_deny strip Bash  deny variant · on  [ apply ]
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form for never use Bash
+    runs  vulnetix ai-firewall policy guardrail belai-deny
+    [ apply all ]  [ dismiss ]  nothing changes until you
+=== permission_card w=80
+── permission change detected  AI Firewall ────────────── 2 rules · 1 applied ──
+  Keep Bash out and mask emails
+    ◆ tool_deny strip Bash  deny variant · on  [ apply ]
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form for never use Bash
+    runs  vulnetix ai-firewall policy guardrail belai-deny-bash --rule-type to
+    [ apply all ]  [ dismiss ]  nothing changes until you apply
+=== permission_card w=120
+── permission change detected  AI Firewall ────────────────────────────────────────────────────── 2 rules · 1 applied ──
+  Keep Bash out and mask emails
+    ◆ tool_deny strip Bash  deny variant · on  [ apply ]
+      never use Bash
+    ✓ pii_redact redact
+      mask emails
+    note  no allowlist form for never use Bash
+    runs  vulnetix ai-firewall policy guardrail belai-deny-bash --rule-type tool_deny --action strip --pattern=Bash --
+    [ apply all ]  [ dismiss ]  nothing changes until you apply

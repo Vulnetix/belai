@@ -252,7 +252,7 @@ Business rules and edge cases:
   available on the classifier picker only.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
-  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill` and `teleport_verify`. Unknown keys may be stored
+  `compaction`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill`, `teleport_verify`, `fwperm_detect` and `fwperm_write`. Unknown keys may be stored
   but are not consulted.
 - **Candidates are validated.** A use-case target must set at least one of
   `provider` or `model`. Provider names are validated against the built-in and

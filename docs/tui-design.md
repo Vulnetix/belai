@@ -56,6 +56,7 @@ unreadable on a light background.
 | `ColorTealSoft` | `#76E0CD` | `#178574` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
 | `ColorYou` | `#F49AC8` | `#B23C7E` | The `you` title of a prompt you typed. |
 | `ColorVoice` | `#C9B0F2` | `#7B5BBE` | The `you` title of a dictated prompt, and the composer frame while the speech or fast model works. |
+| `ColorPolicy` | `#5FB3F0` | `#1F6AA8` | The AI Firewall permission card: its frame, the rules belai offers to write as org policy, and its apply buttons ([firewall-permissions.md](firewall-permissions.md)). |
 | `ColorAmber` | `#E8912B` | `#A95A0B` | Needs you, or you stepped in: permission asks, steering, `!` shell, goal mode, YOLO, context over 80%. **Not** routine tool activity. |
 | `ColorDanger` | `#E2564E` | `#B8322A` | Failed rows, errors, guardrails off. |
 | `ColorDiffAddBg` | `#11301F` | `#DFF1E6` | Background of added diff lines. |
@@ -211,6 +212,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊕` | boundary sealed | `security` |
 | `⊘` | boundary check failed | `security` |
 | `≠` | tool call mismatch | `security` |
+| `⊶` | AI Firewall permissions in a prompt | `security` |
 | `◐` | mode chosen | `mode` |
 | `◎` | intent detected | `mode` |
 | `⊙` | mode pinned | `mode` |

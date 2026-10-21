@@ -161,6 +161,10 @@ type Message struct {
 	// render-only and never persisted.
 	Vuln *VulnCard
 
+	// Perm is the AI Firewall permission card's state, set on a PermRole row.
+	// The offer and each apply are their own session entries.
+	Perm *PermCard
+
 	// Ephemeral marks a row whose durable record is written separately (an
 	// ask or its answer, see the TUI's web_asks.go): it shows in the
 	// transcript but never produces a session entry of its own.
@@ -233,6 +237,7 @@ type renderKey struct {
 	attachMeta   *FileMeta
 	player       string
 	vuln         string
+	perm         string
 	// theme is ThemeGeneration: a rendered row is ANSI text with the persona's
 	// colours baked in, so a switch of agent must miss the cache.
 	theme uint64
@@ -284,6 +289,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		attachMeta:   m.AttachMeta,
 		player:       m.Player.Key(),
 		vuln:         m.Vuln.Key(),
+		perm:         m.Perm.Key(),
 		theme:        ThemeGeneration(),
 	}
 }
@@ -517,9 +523,9 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
-		case PlayerRole, VulnRole:
-			// The card has no text: it is drawn from Message.Player or
-			// Message.Vuln.
+		case PlayerRole, VulnRole, PermRole:
+			// The card has no text: it is drawn from Message.Player,
+			// Message.Vuln or Message.Perm.
 			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
@@ -564,6 +570,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = playerPanel(*msg, width)
 				case VulnRole:
 					s, sub = vulnPanel(*msg, width)
+				case PermRole:
+					s, sub = permPanel(*msg, width)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}

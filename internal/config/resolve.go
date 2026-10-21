@@ -234,11 +234,15 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Settings.Firewall = &FirewallSettings{}
 		}
 		before := e.Settings.Firewall.Enabled
+		offersBefore, autoBefore := e.Settings.Firewall.PermissionOffers, e.Settings.Firewall.PermissionAutoApply
 		if mergeFirewall(e.Settings.Firewall, s.Firewall, src == SourceProject) {
 			e.Notes = append(e.Notes, "project firewall instances and active choice ignored (firewalls are configured in /firewall)")
 		}
 		if e.Settings.Firewall.Enabled != before {
 			e.Origin["firewall_enabled"] = src
+		}
+		if e.Settings.Firewall.PermissionOffers != offersBefore || e.Settings.Firewall.PermissionAutoApply != autoBefore {
+			e.Origin["firewall_permissions"] = src
 		}
 		if src != SourceProject && (s.Firewall.Active != "" || len(s.Firewall.Instances) > 0) {
 			e.Origin["firewall"] = src

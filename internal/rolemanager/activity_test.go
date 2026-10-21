@@ -56,6 +56,7 @@ var allEvents = []Event{
 	EventRequestCoverage,
 	EventToolSelect,
 	EventLSPTriage,
+	EventFirewallPermission,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

@@ -144,6 +144,7 @@ var settingsGroupDefs = []struct{ key, title string }{
 	{"budgets", "Budgets"},
 	{"voice", "Voice"},
 	{"readaloud", "Read aloud"},
+	{"firewall", "Firewall"},
 	{"knowledge", "Knowledge"},
 	{"jevjobs", "Jev jobs"},
 	{"jevthresholds", "Jev thresholds"},
@@ -158,6 +159,8 @@ func settingsGroupOf(key string) string {
 		return "voice"
 	case strings.HasPrefix(key, "tts."):
 		return "readaloud"
+	case strings.HasPrefix(key, "firewall."):
+		return "firewall"
 	case strings.HasPrefix(key, knowledgeRowPrefix):
 		return "knowledge"
 	case strings.HasPrefix(key, jevRowPrefix):
@@ -187,6 +190,7 @@ func settingsWritesGlobalOnly(key string) bool {
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
+		strings.HasPrefix(key, "firewall."),
 		strings.HasPrefix(key, knowledgeRowPrefix),
 		strings.HasPrefix(key, jevThresholdRowPrefix):
 		return true
@@ -425,6 +429,10 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "tts.cache_mb", label: "read aloud cache", kind: "choose", opts: []string{"0", "64", "256", "1024"}, value: strconv.Itoa(s.TTS.TTSCacheMBOr()), src: sourceLabel(origin["tts"]), help: "megabytes of audio kept for replay, least recently used out first; 0 keeps none"},
 		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
+	rows = append(rows,
+		settingsRow{key: "firewall.permission_offers", label: "permission offers", kind: "toggle", value: boolLabel(s.FirewallPermissionOffersShown()), src: sourceLabel(origin["firewall_permissions"]), help: "show the card belai adds when a prompt states an AI Firewall permission (never use Bash, mask emails); off, the offer is still kept in the session record and on the console — global only"},
+		settingsRow{key: "firewall.permission_auto_apply", label: "auto-apply permissions", kind: "toggle", value: boolLabel(s.FirewallPermissionAutoApply()), src: sourceLabel(origin["firewall_permissions"]), help: "apply offered permission rules to your org's AI Firewall at once, with no click; off by default — global only"},
+	)
 	rows = append(rows, knowledgeRows(s, origin)...)
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.
@@ -920,6 +928,9 @@ func (a *App) cycleToggle(key string) error {
 	if strings.HasPrefix(key, "tts.") {
 		return a.ttsToggle(key)
 	}
+	if strings.HasPrefix(key, "firewall.") {
+		return a.firewallPermToggle(key)
+	}
 	if key == "plan_limits" {
 		// Global only: a repository must not change what a user learns about
 		// their own account limits.
@@ -1095,6 +1106,9 @@ func (a *App) unsetSetting(key string) error {
 	}
 	if strings.HasPrefix(key, "tts.") {
 		return a.ttsUnset(key)
+	}
+	if strings.HasPrefix(key, "firewall.") {
+		return a.firewallPermUnset(key)
 	}
 	if key == "plan_limits" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {

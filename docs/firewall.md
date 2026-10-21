@@ -84,7 +84,13 @@ consulted for a firewall key.
 - **A repository cannot opt you in.** The project layer
   (`.vulnetix/settings.json`) may set `firewall.enabled: false` and nothing
   else. Its `instances` and `active` are dropped with a note, the same way
-  `mcp` is.
+  `mcp` is. It may also set `firewall.permission_offers` or
+  `firewall.permission_auto_apply` to `false`, never to `true`.
+- **Permission offers write policy only on a click.** When a prompt states a
+  permission the gateway can enforce, belai offers guardrail rules on a card
+  and runs `vulnetix ai-firewall policy guardrail` only when you apply them
+  (or with `firewall.permission_auto_apply` on). The offer does not depend on
+  `firewall.enabled`. See [firewall-permissions.md](firewall-permissions.md).
 - **A firewall key goes only to its own URL.** It is sent only in the
   configured header, to the instance's URL. A routed request never follows a
   redirect: model calls, model lists and nonce fetches all refuse one.
