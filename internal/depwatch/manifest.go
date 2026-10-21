@@ -84,10 +84,11 @@ var manifestFiles = map[string]Info{
 	"composer.json": m("composer.json", "composer"),
 	"composer.lock": lock("composer.lock", "composer"),
 	// .NET
-	"packages.lock.json": lock("packages.lock.json", "nuget"),
-	"packages.config":    m("packages.config", "nuget"),
-	"paket.dependencies": m("paket.dependencies", "nuget"),
-	"paket.lock":         lock("paket.lock", "nuget"),
+	"packages.lock.json":       lock("packages.lock.json", "nuget"),
+	"packages.config":          m("packages.config", "nuget"),
+	"Directory.Packages.props": m("Directory.Packages.props", "nuget"),
+	"paket.dependencies":       m("paket.dependencies", "nuget"),
+	"paket.lock":               lock("paket.lock", "nuget"),
 	// Apple
 	"Package.swift":     m("Package.swift", "swift"),
 	"Package.resolved":  lock("Package.resolved", "swift"),
