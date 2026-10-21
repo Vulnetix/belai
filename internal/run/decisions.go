@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 )
@@ -450,7 +451,10 @@ func NewJevJobs(cfg Config, on func(config.JevJob) bool) *jev.Jobs {
 	var client *jev.Client
 	switch {
 	case cfg.ClassifierOrDefault().Decisions.On():
-		client = jevClientFor(cfg, nil, nil)
+		// The shared client: its transport keeps 16 idle connections per
+		// host, where a nil client's default keeps 2 against the jobs' 8
+		// concurrent requests and reconnects for the rest.
+		client = jevClientFor(cfg, nil, httpclient.Default())
 	case cfg.Routing.JevToken != nil &&
 		cfg.Classifier.Provider == "openrouter" && strings.HasPrefix(cfg.Classifier.Model, "typesafe/jev"):
 		client = jev.New(cfg.Routing.JevToken)

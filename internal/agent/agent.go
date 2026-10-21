@@ -145,6 +145,10 @@ type Options struct {
 	// keeps sealed prefixes identical, so a provider can serve them from
 	// cache, and skips a nonce GET per build.
 	NoncePool *nonce.Pool
+	// SealMemo, when set, is the sealed-system-prompt memo the session uses
+	// instead of its own: the TUI keeps one beside the nonce pool it keeps,
+	// so a rebuilt session reuses the sealed prefix and the provider cache.
+	SealMemo *SealMemo
 	// SessionID is the transcript session this agent runs under. It is
 	// stamped on every provider request and tool call (X-Belai-Session-Id,
 	// traceparent, BELAI_SESSION_ID) through calltrace. Empty inherits any
@@ -233,6 +237,8 @@ type Session struct {
 	allowPassLoop bool
 	maxIter       int
 	cache         *rolemanager.Cache
+	// pipe is the classifier pipeline reused across turns (pipeline.go).
+	pipe sessionPipeline
 	// flagged holds the files whose Read result was withheld, so a Grep over
 	// the same file cannot hand the lines back unclassified.
 	flagged flaggedFiles
@@ -248,15 +254,19 @@ type Session struct {
 	repoIndex       repoindex.Index
 	planSurface     tools.PlanSurface
 	repoMap         *repomap.Map
-	workspaceMaps   []repomap.Map
-	forge           *forge.Cache
-	opts            prompt.Options
-	workdir         string
-	state           config.State
-	settings        config.Settings
-	pool            *nonce.Pool
-	openAITools     []wire.OpenAITool
-	anthropicTools  []wire.AnthropicToolDef
+	// repoStatusTurn is repoMap with this turn's git status, refreshed once
+	// per turn (turnRepoStatus).
+	repoStatusMu   sync.Mutex
+	repoStatusTurn *repomap.Map
+	workspaceMaps  []repomap.Map
+	forge          *forge.Cache
+	opts           prompt.Options
+	workdir        string
+	state          config.State
+	settings       config.Settings
+	pool           *nonce.Pool
+	openAITools    []wire.OpenAITool
+	anthropicTools []wire.AnthropicToolDef
 	// plan*Tools is the same registry narrowed by Registry.Plan: no mutating
 	// tools and no Bash. A plan-mode turn advertises these instead.
 	planOpenAITools    []wire.OpenAITool
@@ -333,6 +343,8 @@ type Session struct {
 	// askDecider answers asks in the user's place above the user's threshold.
 	askDecider AskDecider
 	swapped    map[string]bool
+	// swappedMu guards swapped: a response's Bash calls are checked at once.
+	swappedMu sync.Mutex
 	// loc caches the working directory's inventory for explore locate.
 	loc locateState
 	// lastCompactionPruned says the latest compaction kept the conversation
@@ -415,11 +427,9 @@ type Session struct {
 	offload          *offload.Store
 	offloadThreshold int
 	offloadPreview   int
-	// sealKey/sealed memoise the sealed system prompt across turns; see
-	// sealSystem.
-	sealMu  sync.Mutex
-	sealKey string
-	sealed  string
+	// seal memoises the sealed system prompt across turns, and across
+	// rebuilds when the owner keeps it; see sealmemo.go.
+	seal *SealMemo
 	// sent is the conversation as the provider last saw it, ending in the
 	// final text reply; see SentHistory.
 	sentMu sync.Mutex
@@ -774,6 +784,7 @@ func NewSession(o Options) (*Session, error) {
 		gitSync:            o.GitSync,
 		sandboxEnv:         o.SandboxEnv,
 		pool:               pool,
+		seal:               o.SealMemo,
 		openAITools:        openAITools,
 		anthropicTools:     anthropicTools,
 		planOpenAITools:    planOpenAITools,
@@ -1064,13 +1075,26 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.askWithheld = nil
 	s.askMu.Unlock()
 	s.lastTurns = nil
-	// Before any model I/O, bring the branch up to date with upstream main
-	// when that is due and the tree is clean; what it did is a system line.
+	s.repoStatusMu.Lock()
+	s.repoStatusTurn = nil
+	s.repoStatusMu.Unlock()
+	// Bring the branch up to date with upstream main when that is due and the
+	// tree is clean; what it did is a system line. It can fetch over the
+	// network, so it runs beside admission and mode detection, which read only
+	// the prompt, and is joined before anything reads the working tree: a
+	// prompt hook, an @file attachment, or the rest of the turn.
+	joinGitSync := func() {}
 	if s.gitSync != nil {
-		if res := s.gitSync.BeforeTurn(ctx); res != nil {
-			emit(Event{Kind: EventWarningKind, Warning: res.Line()})
-			s.gitSync.Kick()
-		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if res := s.gitSync.BeforeTurn(ctx); res != nil {
+				emit(Event{Kind: EventWarningKind, Warning: res.Line()})
+				s.gitSync.Kick()
+			}
+		}()
+		joinGitSync = sync.OnceFunc(func() { <-done })
+		defer joinGitSync()
 	}
 	// turnIntent is set when the mode decision is finalised below.
 
@@ -1079,6 +1103,9 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// user_prompt_submit hooks run before any model I/O. A deny ends the turn
 	// here; context a hook adds joins the prompt ahead of admission, so the
 	// prompt classifier reads it too.
+	if s.hookSet.Has(hooks.EventUserPromptSubmit) {
+		joinGitSync()
+	}
 	hookNote, err := s.promptHooks(ctx, in.Prompt, emit)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, err
@@ -1086,19 +1113,16 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	clean += hookNote
 	defer s.stopHooks(ctx, emit)
 
-	onClassifierRetry := func(a resilience.Attempt) {
-		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
-	}
-	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, onClassifierRetry)
-	// The Role Manager owns the FIFO fan-out pool and reaches it through the
-	// pipeline so queue admission is traced with the rolemanager record helper.
-	pipe.Pool = s.agentPool
+	pipe := s.pipeline(emit)
 
 	// Non-interactive callers (CLI -prompt) do not build formal attachments:
 	// parse @file references from the prompt, read them through the Read tool,
 	// and classify them so the rest of the turn treats them like TUI
 	// attachments.
 	if len(in.Attachments) == 0 {
+		if strings.Contains(clean, "@") {
+			joinGitSync()
+		}
 		if atts := s.attachFromPrompt(ctx, clean, pipe); len(atts) > 0 {
 			in.Attachments = atts
 			in.HasReferences = true
@@ -1141,6 +1165,20 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// channel while RunStream closes it — a close/send race.
 	var selectWG sync.WaitGroup
 	defer selectWG.Wait()
+	// The agent pick and the scale rating read only the cleaned prompt, so
+	// they start now, beside admission and detection, instead of one after
+	// another once the intent is known. Whichever the turn does not use is
+	// cancelled with the turn and never recorded.
+	earlyCtx, cancelEarly := context.WithCancel(ctx)
+	defer cancelEarly()
+	var pickEarly *early[string]
+	var scaleEarly *early[bool]
+	if selectMode {
+		pickEarly = startEarly(func() (string, func()) { return s.pickAgentHeld(earlyCtx, clean) })
+	}
+	if (selectMode || in.ForceMode == modes.ModeGoal) && !in.NoGoalDraft {
+		scaleEarly = startEarly(func() (bool, func()) { return s.rateScaleHeld(earlyCtx, clean) })
+	}
 	if selectMode {
 		selectWG.Add(1)
 		go func() {
@@ -1167,6 +1205,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	if dec.Action != rolemanager.ActionProceed {
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
 	}
+	joinGitSync()
 	// Only an admitted prompt the user typed is read for firewall
 	// permissions; a fleet card or a teleport replay is not the user stating
 	// policy.
@@ -1235,7 +1274,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		if intent == rolemanager.IntentAgent {
 			// A general request may be carried by one of the user's profiles
 			// when the backend is sure of it (docs/jev-jobs.md#agent-pick).
-			if name := s.pickAgent(ctx, clean); name != "" {
+			if name := pickEarly.use(func() string { return s.pickAgent(ctx, clean) }); name != "" {
 				modeDec.AgentName = name
 				modeDec.AppendCarrier = true
 			}
@@ -1359,6 +1398,17 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// @agent:belai:fanout pre-send override.
 	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut || modeDec.AgentName == "belai:fanout"
 	defer func() { s.turnFanOut = savedFanOut; s.turnIntent = savedIntent }()
+	// Tool selection needs only the request, the mode and the surface, all
+	// known now, so its rating starts here and overlaps exploration, the goal
+	// draft and prefetch instead of following them. The pool is read on this
+	// goroutine; the rating touches no session state.
+	var surfaceEarly *early[surfaceRating]
+	if _, ok := s.registry.Find("Skill"); ok {
+		if pool, ok := s.surfacePool(s.turnPrompt, s.modelSkills()); ok {
+			req, mode := s.turnPrompt, string(modeDec.Mode)
+			surfaceEarly = startEarly(func() (surfaceRating, func()) { return s.rateSurface(earlyCtx, req, mode, pool), nil })
+		}
+	}
 	if s.turnFanOut && s.fanOutTask != nil {
 		s.fanOutTask.Runner = s.runTask
 	}
@@ -1424,7 +1474,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		}
 		// A simple request is worked as it was written: rating it costs one
 		// fast call and saves the draft, the prefetch and the test run.
-		if s.rateScale(ctx, clean) {
+		if scaleEarly.use(func() bool { return s.rateScale(ctx, clean) }) {
 			s.turnSimple = true
 			loopGoal = clean
 			break
@@ -1559,17 +1609,22 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// Skill tool is on the surface to load them; the bodies are read by that
 	// tool and classify as KindSkill. A user-only skill is not listed.
 	if _, ok := s.registry.Find("Skill"); ok {
-		var all []tools.Candidate
-		for _, e := range tools.SkillEntries(s.registry) {
-			if !e.DisableModelInvocation {
-				all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Line(e.Description, 1024), Skill: true})
-			}
-		}
+		all := s.modelSkills()
 		s.skillCands = all
 		// With a decision backend, list only the skills the request needs
 		// and load the deferred tools it will likely use; the rest are found
-		// with ToolSearch.
-		listed, more := s.selectSurface(ctx, s.turnPrompt, string(modeDec.Mode), all)
+		// with ToolSearch. The rating started when the mode was known; it is
+		// used if the surface it rated is still the surface, and asked again
+		// otherwise.
+		listed, more := all, 0
+		if pool, ok := s.surfacePool(s.turnPrompt, all); ok {
+			mode := string(modeDec.Mode)
+			r := surfaceEarly.use(func() surfaceRating { return s.rateSurface(ctx, s.turnPrompt, mode, pool) })
+			if !samePool(r.pool, pool) {
+				r = s.rateSurface(ctx, s.turnPrompt, mode, pool)
+			}
+			listed, more = s.applySurface(s.turnPrompt, all, r)
+		}
 		for _, c := range listed {
 			opts.Skills = append(opts.Skills, c.Name+": "+c.Description)
 		}
@@ -1586,8 +1641,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		// HEAD, changed paths) are refreshed every turn (one bounded git
 		// status) and ride on this turn's user message instead, so they
 		// include this session's own edits without changing the system bytes.
-		m := *s.repoMap
-		m.RefreshStatus(ctx)
+		m := s.turnRepoStatus(ctx)
 		opts.RepoMap = prompt.RepoMapBlock(m)
 		repoStatus = prompt.RepoStatusBlock(m)
 	}
@@ -1673,29 +1727,6 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec
 	return res, err
-}
-
-// sealSystem returns the sealed system and tools blocks for opts, reusing the
-// previous turn's sealed bytes when nothing that feeds them changed. Sealing
-// reserves fresh nonces, so re-sealing an identical prompt every turn changed
-// the first bytes of every request and no provider could cache any of it.
-// The pool never rotates in a session, so the earlier nonces stay valid.
-//
-// The key is the provider, the model and every prompt input: a mode switch,
-// a skills change, an added root, a Cd, or a model switch all re-seal.
-func (s *Session) sealSystem(opts prompt.Options) (string, error) {
-	key := fmt.Sprintf("%s\x00%s\x00%#v", s.cfg.Provider, s.cfg.Model, opts)
-	s.sealMu.Lock()
-	defer s.sealMu.Unlock()
-	if s.sealed != "" && s.sealKey == key {
-		return s.sealed, nil
-	}
-	system, err := run.SealSystem(s.cfg, s.pool, opts)
-	if err != nil {
-		return "", err
-	}
-	s.sealKey, s.sealed = key, system
-	return system, nil
 }
 
 // stampEvents wraps emit so every event carries the time it was emitted. The
@@ -2191,11 +2222,17 @@ func (s *Session) promoteResult(ctx context.Context, call rolemanager.ToolCall, 
 		}
 	}
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
-	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
-		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
-	})
+	pipe := s.pipeline(emit)
 	cStart := time.Now()
-	dec, err := pipe.Process(ctx, res)
+	var dec rolemanager.Decision
+	var err error
+	if swapped {
+		// A swap never lowers scrutiny: the whole result is classified as
+		// Bash output would be.
+		dec, err = pipe.Process(ctx, res)
+	} else {
+		dec, err = s.classifyRead(ctx, pipe, res)
+	}
 	s.trace.Event("agent", "tool_result_classify", time.Since(cStart))
 	if err != nil {
 		// The placeholder carries the abbreviated detail; surface the full
@@ -2237,9 +2274,7 @@ func (s *Session) answerWebFetch(ctx context.Context, res tools.Result, prompt, 
 	if ref.Cached {
 		note = " " + tools.CacheNote(ref.Age)
 	}
-	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
-		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
-	})
+	pipe := s.pipeline(emit)
 	if pipe.Classifier == nil {
 		if ref.Cached {
 			res.Content = tools.CacheNote(ref.Age) + "\n\n" + res.Content

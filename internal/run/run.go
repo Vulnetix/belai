@@ -109,6 +109,9 @@ type ClassifierConfig struct {
 	// classifier.provider. When set, Provider/Model stay the main chat model:
 	// it is the fallback the decision checks hand off to.
 	Decisions DecisionsConfig
+	// CodeScanFull is classifier.code_scan "full": the security classifier
+	// reads whole code files, not only their comments.
+	CodeScanFull bool
 }
 
 // SecurityClassifierConfig is the resolved ML classifier-stack config. It is
@@ -199,6 +202,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.Effort = cls.Effort
 	}
 	out.Tier = cls.Tier
+	out.CodeScanFull = cls.CodeScan == config.CodeScanFull
 	out.Explicit = cls.Provider != "" || cls.Model != ""
 	if cls.Chunk.MaxBytesOr() > 0 {
 		out.Chunk.MaxBytes = cls.Chunk.MaxBytesOr()
@@ -1943,6 +1947,9 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 	})
 	p.Cache = cache
 	p.SetSecurityModelLabel(guardLabel)
+	// Code comments and prose are read by the guardrail sentinel, which a
+	// decision backend answers when one is set; never by the ML stack.
+	p.SetText(guard, guardLabel, cc.Decisions.Backend == decisions.BackendSystemOne)
 	if cfg.Security.Kind == "models" {
 		var phase3 rolemanager.Classifier
 		if cfg.Security.Phase3On {

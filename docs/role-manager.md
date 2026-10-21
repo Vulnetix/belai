@@ -92,12 +92,49 @@ line, and anything else fails closed. See [Sentinel parsing](#sentinel-parsing).
 | `MODEL_EXTRACTION` | Model extraction / model stealing | **Warn** — do not promote | Live |
 | _anything else_ | Malformed output (not one token) | **Warn** — fail closed | Live |
 
+### What reads a file
+
+A Read result is classified by content class: only the comments, docstrings
+and multi-line strings of a code file; the whole of a prose file, by a
+SystemOne decision backend when one is set; the whole of anything else. Code
+comments never go to the BERT gates: they go to SystemOne, else the LLM
+sentinel. `classifier.code_scan: "full"` reads whole code files instead. The
+rules, the per-file verdict cache and session-start doc warming are in
+[architecture.md](architecture.md#how-much-of-a-read-is-classified).
+
+### Batched SystemOne checks
+
+A SystemOne server answers many questions in one forward pass, so security
+checks bound for one are batched (`internal/rolemanager/jev/securitybatch.go`).
+
+- **Gathering.** The first check waits 8 ms for others. Checks that arrive in
+  that window go out as one request: `state.items` holds each item's content,
+  and each item gets one noul question per threat category, keyed
+  `<item>:<category>` and naming the item it is about. The results of one
+  pass's parallel tool calls, a prefetch, attachments and doc warming all
+  arrive together.
+- **Limits.** At most 250 items and 64 KiB of content per request, and never
+  more questions than the backend's `MaxQuestions` (Clef takes 64, so 16
+  items of four questions) or half its `MaxBodyBytes`. A larger item, or a
+  full batch, is sent on its own.
+- **A batch is trusted only if it is clean.** When every item comes back
+  plainly `SAFE`, each gets its answers. When any item is flagged or
+  undecided, that item keeps its own answers and every other item in the
+  batch is asked again alone: an injection in one item must not sway the
+  verdict on its neighbours.
+- **Failure.** A batch request that fails is asked item by item. From there
+  each check follows the usual rules: an undecided answer or an unavailable
+  endpoint hands the item to the fallback classifier.
+- **Only SystemOne.** A local letter reader asks its questions one at a time,
+  so batching would only add the wait; it is not batched.
+
 ### Three-phase classification (ML stack)
 
 The default install embeds the phase-1 model and classifies in-process with no
-provider or API key configured. Phases 1 and 2 run **concurrently** over the
-same token windows; phase 3 is a narrowed LLM sentinel that runs only when the
-first two clear and it is configured.
+provider or API key configured. Phases 1 and 2 run **concurrently** with each
+other, each walking its own token windows in order (phase 1 in 95-token
+windows, phase 2 in 508-token windows); phase 3 is a narrowed LLM sentinel
+that runs only when the first two clear and it is configured.
 
 | Phase | Model | Runs | Verdicts | Off switch |
 | ----- | ----- | ---- | -------- | ---------- |
@@ -107,7 +144,8 @@ first two clear and it is configured.
 
 Rules:
 
-- **Ordering.** Run phase 1 + phase 2 in parallel over each window. If either
+- **Ordering.** Run phase 1 and phase 2 in parallel, each over its own
+  windows in turn. If either
   fires, fold and return immediately — phase 3 is skipped, because the content
   already fails closed and an extra LLM round trip cannot change the outcome.
   Only when both return `SAFE`, and phase 3 is configured, run it.

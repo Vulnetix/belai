@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewPool(t *testing.T) {
@@ -376,18 +378,22 @@ func TestSeedFromEndpoints(t *testing.T) {
 	}
 }
 
-// A remote pool refills from its endpoint, and turns local for good when a
-// refill fails.
+// A remote pool refills from its endpoint in the background when it runs
+// low, and turns local for good when a refill fails.
 func TestRemotePoolRefillsThenFallsBack(t *testing.T) {
+	var mu sync.Mutex
 	calls := 0
 	fail := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		calls++
-		if fail {
+		n, failing := calls, fail
+		mu.Unlock()
+		if failing {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{hex.EncodeToString([]byte{byte(calls)})}})
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{hex.EncodeToString([]byte{byte(n)})}})
 	}))
 	defer srv.Close()
 	p := New()
@@ -397,13 +403,58 @@ func TestRemotePoolRefillsThenFallsBack(t *testing.T) {
 	if _, err := p.Reserve(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Reserve(); err != nil || calls != 2 || !p.Remote() {
-		t.Fatalf("refill err=%v calls=%d remote=%v", err, calls, p.Remote())
+	p.waitTopUp()
+	mu.Lock()
+	got := calls
+	mu.Unlock()
+	if got != 2 || !p.Remote() || p.Available() != 1 {
+		t.Fatalf("top-up calls=%d remote=%v avail=%d", got, p.Remote(), p.Available())
 	}
+	mu.Lock()
 	fail = true
-	if _, err := p.Reserve(); err != nil || p.Remote() {
-		t.Fatalf("failed refill err=%v remote=%v, want a local nonce and a local pool", err, p.Remote())
+	mu.Unlock()
+	if _, err := p.Reserve(); err != nil {
+		t.Fatal(err)
 	}
+	p.waitTopUp()
+	if p.Remote() {
+		t.Fatal("a failed refill left the pool remote")
+	}
+	if _, err := p.Reserve(); err != nil {
+		t.Fatalf("a local pool could not mint: %v", err)
+	}
+}
+
+// A Reserve with nonces in hand never waits on the endpoint: the low-water
+// top-up runs in the background.
+func TestReserveDoesNotWaitOnATopUp(t *testing.T) {
+	release := make(chan struct{})
+	var seeded atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if seeded.Swap(true) {
+			<-release
+		}
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"aa", "bb", "cc", "dd", "ee", "ff", "a1", "b1", "c1", "d1", "e1", "f1", "a2", "b2", "c2", "d2", "e2", "f2"}})
+	}))
+	defer srv.Close()
+	p := New()
+	if _, err := p.SeedFromEndpoints(srv.Client(), []Endpoint{BearerEndpoint("gw", srv.URL, "")}, 18); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 5; i++ {
+			_, _ = p.Reserve()
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Reserve waited on the endpoint with nonces in hand")
+	}
+	close(release)
+	p.waitTopUp()
 }
 
 // A nonce fetch never follows a redirect: its credential is for that

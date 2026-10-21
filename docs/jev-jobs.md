@@ -134,9 +134,11 @@ gate stricter; raising `allow_at` makes it looser. `drop_at` cannot exceed
 How a request is sent:
 
 - **Batching.** Items are packed by size. A remote backend takes up to 128 items
-  and about 38,000 bytes per request, with up to 8 requests in flight. The local
-  model answers one question per request, so its batches are at most 24 items
-  and about 12,000 bytes and run one at a time.
+  and about 38,000 bytes per request, with up to 8 requests in flight, and never
+  more than a backend that caps its questions or its body takes (Clef: 64
+  questions; Ollama: 64 KiB, so half that of content), so no batch is refused
+  before it is sent. The local model answers one question per request, so its
+  batches are at most 24 items and about 12,000 bytes and run one at a time.
 - **Failures.** A batch that fails is split in half and retried, except after
   HTTP 429, where retrying harder makes it worse. An item whose own request
   fails is unknown. A refused credential (401 or 403) stops the call. A call
@@ -185,6 +187,10 @@ run as written:
 5. The builtin must be allowed in this mode (plan mode's surface included) and
    must not be denied by a permission rule. A Bash allow rule does not carry
    over; the builtin's own rules and ask gate apply.
+
+The Bash calls of one response are checked at the same time, within 8 seconds;
+a check still running then leaves its command to run as written. The same
+command twice in one response swaps once.
 
 **What the model and the user see.**
 
@@ -332,6 +338,11 @@ are ready before the model has to ask and only the relevant skills are listed.
   the request is empty, or the backend cannot answer.
 - **Cache-friendly.** The choice is made once per turn, before the system block
   is sealed. Loading only appends to the tool list, so the cached prefix holds.
+- **Started early.** The rating starts as soon as the mode is known, beside
+  exploration, the goal draft and prefetch, and is bounded by 8 seconds. It is
+  used when the surface it rated is still the surface when the system block is
+  built; a surface that changed in between (a goal turn that turned on fan-out)
+  is rated again.
 
 Recorded as a `tool_select` event: the tools loaded, the skills listed and left
 out, and an estimate of the tokens saved by the omitted skill lines. Never the
@@ -516,7 +527,9 @@ only delays a small one: a contract drafted by the fast model, a prefetch of
 every changed file, a planning list, a verification pass before the goal may
 end, and the repository's test suite as the verification surface. With a
 decision backend the harness rates the request once at the start of a goal
-turn, so a request such as "commit and push" starts at once.
+turn, so a request such as "commit and push" starts at once. The rating starts
+beside admission and intent detection, since it reads only the prompt; on a
+turn that is not a goal its answer is dropped and not recorded.
 
 - **What the backend sees.** The cleaned prompt as `DecisionText`, nothing
   else. It rates two items against one criterion: a simple request (a few
@@ -547,8 +560,8 @@ score in percent. Never the request.
 In Auto mode the role manager decides the mode for each prompt. When it
 resolves a prompt to the general agent intent, `agent_pick` also decides which
 of your own agent profiles, if any, carries the turn. Intent detection is
-unchanged: the profile is a second question asked only after the intent is
-agent. A website prompt that arrives while the host is in agent mode with no
+unchanged: the profile is a second question, and its answer applies only when
+the intent is agent. A website prompt that arrives while the host is in agent mode with no
 agent selected moves the live session to Auto (it saves no preference) and is
 decided the same way.
 
@@ -568,6 +581,9 @@ decided the same way.
 - **What it never changes.** The mode, permissions, hooks, the ask gate, the
   classifier and the sandbox. It engages a carrier for this turn only: the next
   Auto prompt is decided again. It never asks a chat model.
+- **When it is asked.** The pick reads only the prompt, so it is asked beside
+  admission and intent detection rather than after them. Its answer is used only
+  when the intent is agent; otherwise it is dropped and not recorded.
 
 Recorded as an `agent_pick` event: `engaged`, `default` or `unknown` and how many
 profiles were offered. Never the request or a profile's name.

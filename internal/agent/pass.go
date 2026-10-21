@@ -498,6 +498,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		// Parse and permission-check every call up front so the concurrent run
 		// can be decided without reordering.
 		units := make([]callUnit, len(filtered))
+		callArgs := make([]map[string]any, len(filtered))
+		var bashCalls []int
 		for i, call := range filtered {
 			args, parseErr := parseToolArgs(call)
 			u := callUnit{call: call, args: args, parseErr: parseErr}
@@ -507,29 +509,32 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					if call.Name == "Bash" {
 						u.args, u.rewriteNote = s.rewriteBashArgs(args)
 						args = u.args
+						bashCalls = append(bashCalls, i)
 					}
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
-					if call.Name == "Bash" {
-						// A builtin tool that fully replaces the command runs
-						// instead, under the same call id (docs/jev-jobs.md).
-						if sw := s.trySwap(ctx, pipe, args); sw != nil {
-							u.swap, u.tool, u.args, u.decision = sw, sw.tool, sw.args, sw.decision
-						}
-					}
 				}
 			}
+			callArgs[i] = args
+			units[i] = u
+		}
+		// A builtin tool that fully replaces a command runs instead, under
+		// the same call id (docs/jev-jobs.md). Each check is a decision call
+		// and maybe a model call, so the Bash calls of one response are
+		// checked together rather than one after another.
+		s.swapAll(ctx, pipe, units, bashCalls)
+		for i, call := range filtered {
+			u := &units[i]
 			// A Read the index already answers is not run again. Only an
 			// allowed call on the advertised surface qualifies, so a deny
 			// rule or the final plan pass's narrowing still applies.
 			if u.tool != nil && u.decision == permissions.DecisionAllow {
 				if _, refusal := s.execTool(call.Name); refusal == "" {
-					if key, ok := s.readKey(call.Name, args); ok {
+					if key, ok := s.readKey(call.Name, callArgs[i]); ok {
 						u.readKey, u.isRead = key, true
 						u.repeat = s.repeatedRead(key, turns)
 					}
 				}
 			}
-			units[i] = u
 		}
 
 		// The concurrent group is the leading run of read-only, permission-

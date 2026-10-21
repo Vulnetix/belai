@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
 	"github.com/vulnetix/belai/internal/readindex"
+	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -128,8 +129,7 @@ func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, histo
 		return nil
 	}
 	root := s.registry.Cwd().Root()
-	m := *s.repoMap
-	m.RefreshStatus(ctx)
+	m := s.turnRepoStatus(ctx)
 
 	var raw []string
 	for _, f := range m.AgentsFiles {
@@ -234,7 +234,7 @@ func (s *Session) prefetchOne(ctx context.Context, pipe *rolemanager.Pipeline, t
 	if s.live.Level(posture.ToolResultUnsafe) == posture.Ignore {
 		return &prefetchResult{att: run.Attachment{Kind: "file", Label: rel, Body: sanitize.Sanitize(res.Content)}, key: key}
 	}
-	dec, err := pipe.Process(ctx, res)
+	dec, err := s.classifyRead(ctx, pipe, res)
 	if err != nil {
 		return nil
 	}
@@ -292,4 +292,19 @@ func (s *Session) forgeStatus() string {
 		return ""
 	}
 	return prompt.ForgeStatusBlock(snap, age)
+}
+
+// turnRepoStatus returns the repo map with this turn's git status: one bounded
+// git status per turn, shared by prefetch and the turn's status block. No tool
+// has run between the two, so the second read would see the same tree.
+func (s *Session) turnRepoStatus(ctx context.Context) repomap.Map {
+	s.repoStatusMu.Lock()
+	defer s.repoStatusMu.Unlock()
+	if s.repoStatusTurn != nil {
+		return *s.repoStatusTurn
+	}
+	m := *s.repoMap
+	m.RefreshStatus(ctx)
+	s.repoStatusTurn = &m
+	return m
 }

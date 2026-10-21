@@ -59,6 +59,8 @@ behaviour, and implementation details.
   OpenRouter and Cloudflare), modes, key storage and event cards.
 - [Firewall permissions](firewall-permissions.md): permissions stated in a
   prompt, offered as AI Firewall guardrail rules on a card you apply.
+- [Turn latency](performance.md): what runs before the first token and between
+  passes, what is classified of a file, and what stays serial on purpose.
 - [Git sync](git-sync.md): rebasing a session's branch onto upstream main before
   its turns, turning it off per session or globally, and the git state the
   website shows

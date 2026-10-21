@@ -1053,6 +1053,10 @@ type ClassifierSettings struct {
 	// Decision tunes the decision backend (a local decision model or a
 	// self-hosted Jev) when classifier.provider names one.
 	Decision ClassifierDecisionSettings `json:"decision,omitempty"`
+	// CodeScan is how much of a code file the security classifier reads:
+	// "comments" (default) reads only its comments and docstrings, "full"
+	// reads the whole file. A project layer may set "full", never "comments".
+	CodeScan string `json:"code_scan,omitempty"`
 }
 
 // ClassifierPhaseSettings configures one local BERT gate.
@@ -1126,6 +1130,9 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from.Decision.MaxStateBytes != 0 {
 		c.Decision.MaxStateBytes = from.Decision.MaxStateBytes
 	}
+	if from.CodeScan != "" {
+		c.CodeScan = from.CodeScan
+	}
 }
 
 // merge folds from over c, taking any non-zero field from from.
@@ -1153,7 +1160,7 @@ func (c *ClassifierSettings) IsZero() bool {
 		c.Caveman == nil &&
 		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0 &&
 		c.Phase1.IsZero() && c.Phase2.IsZero() &&
-		c.Decision.TimeoutMS == 0 && c.Decision.MaxStateBytes == 0
+		c.Decision.TimeoutMS == 0 && c.Decision.MaxStateBytes == 0 && c.CodeScan == ""
 }
 
 // IsZero reports whether the phase settings carry no overrides.
@@ -2033,6 +2040,13 @@ func (s Settings) Override(proj Settings) Settings {
 			*merged = *out.Classifier
 		}
 		merged.merge(proj.Classifier)
+		// A repository may read more of a code file, never less.
+		if proj.Classifier.CodeScan != "" && proj.Classifier.CodeScan != CodeScanFull {
+			merged.CodeScan = ""
+			if out.Classifier != nil {
+				merged.CodeScan = out.Classifier.CodeScan
+			}
+		}
 		out.Classifier = merged
 	}
 	if proj.LSP != nil {
@@ -2277,4 +2291,16 @@ func (s Settings) KanbanEnabled() bool {
 // on demand through ToolSearch rather than on every request. Default on.
 func (s Settings) DeferToolsEnabled() bool {
 	return s.DeferTools == nil || *s.DeferTools
+}
+
+// Classifier code-scan values (classifier.code_scan).
+const (
+	CodeScanComments = "comments"
+	CodeScanFull     = "full"
+)
+
+// ClassifierCodeScanFull reports whether the security classifier reads whole
+// code files rather than only their comments.
+func (s Settings) ClassifierCodeScanFull() bool {
+	return s.Classifier != nil && s.Classifier.CodeScan == CodeScanFull
 }

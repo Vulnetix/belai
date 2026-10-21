@@ -11,8 +11,10 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 )
 
-// defaultSafeCacheSize bounds the session LRU of SAFE verdicts.
-const defaultSafeCacheSize = 512
+// defaultSafeCacheSize bounds the session LRU of SAFE verdicts. It holds a
+// session start's warmed docs (docs/architecture.md) with room to spare; a
+// key is 64 bytes.
+const defaultSafeCacheSize = 4096
 
 // Cache memoises classifier verdicts keyed by the SHA-256 of the sanitized
 // content. SAFE verdicts live in a bounded session LRU; non-SAFE hashes are

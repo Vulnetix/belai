@@ -84,6 +84,13 @@ type Pipeline struct {
 	// classifier, recorded on security sentinel activities so the TUI shows
 	// which classifier ran rather than the agent model.
 	securityModelLabel string
+	// text reads scanned text: code comments and prose (see Scan). It is the
+	// guardrail sentinel, which a SystemOne decision backend answers when one
+	// is set, and never the ML stack. textIdentity keys its verdicts and
+	// textSystemOne reports that a SystemOne backend answers.
+	text          Classifier
+	textIdentity  string
+	textSystemOne bool
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over
@@ -203,7 +210,12 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 // the verdicts fail-closed: any non-SAFE sentinel makes the whole content
 // unsafe, and any malformed classifier reply makes the whole result malformed.
 func (p *Pipeline) classifyChunked(ctx context.Context, content string) (Sentinel, bool, error) {
-	chunks := splitChunks(content, p.Chunk.MaxBytes, p.Chunk.Overlap)
+	return p.classifyChunkedWith(ctx, p.classifier(), content, p.Chunk.MaxBytes)
+}
+
+// classifyChunkedWith is classifyChunked through a given classifier.
+func (p *Pipeline) classifyChunkedWith(ctx context.Context, c Classifier, content string, maxBytes int) (Sentinel, bool, error) {
+	chunks := splitChunks(content, maxBytes, p.Chunk.Overlap)
 	concurrency := p.Chunk.Concurrency
 	if concurrency <= 0 {
 		concurrency = 4
@@ -225,7 +237,7 @@ func (p *Pipeline) classifyChunked(ctx context.Context, content string) (Sentine
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			raw, err := p.classifier().Classify(ctx, BuildClassifierPayload(chunk))
+			raw, err := c.Classify(ctx, BuildClassifierPayload(chunk))
 			if err != nil {
 				errMu.Lock()
 				if firstErr == nil {

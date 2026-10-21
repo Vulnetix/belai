@@ -3,6 +3,7 @@ package tui
 import (
 	"sync"
 
+	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -16,6 +17,9 @@ import (
 type noncePools struct {
 	mu sync.Mutex
 	m  map[string]*nonce.Pool
+	// memos keep each endpoint's sealed system prompt beside its pool:
+	// sealing draws fresh nonces, so the pool alone did not keep the bytes.
+	memos map[string]*agent.SealMemo
 }
 
 func noncePoolKey(cfg run.Config) string {
@@ -44,4 +48,22 @@ func (n *noncePools) keep(cfg run.Config, p *nonce.Pool) {
 		n.m = map[string]*nonce.Pool{}
 	}
 	n.m[noncePoolKey(cfg)] = p
+}
+
+// memo returns the sealed-prompt memo kept for cfg's endpoint, creating it on
+// first use. A nil receiver keeps nothing.
+func (n *noncePools) memo(cfg run.Config) *agent.SealMemo {
+	if n == nil {
+		return nil
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.memos == nil {
+		n.memos = map[string]*agent.SealMemo{}
+	}
+	k := noncePoolKey(cfg)
+	if n.memos[k] == nil {
+		n.memos[k] = &agent.SealMemo{}
+	}
+	return n.memos[k]
 }

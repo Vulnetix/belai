@@ -152,3 +152,16 @@ func Language(name string) string {
 	}
 	return "text"
 }
+
+// SkipPath reports whether a slash-separated path relative to a root is not
+// eligible, by the same name rules as a walk: a hidden or dependency
+// directory anywhere on the path, or a sensitive, hidden or binary file name.
+func SkipPath(rel string) (string, bool) {
+	parts := strings.Split(rel, "/")
+	for _, dir := range parts[:len(parts)-1] {
+		if reason, skip := skipDir(dir); skip {
+			return reason, true
+		}
+	}
+	return skipFile(parts[len(parts)-1])
+}

@@ -27,22 +27,30 @@ const scaleTimeout = 8 * time.Second
 
 // rateScale sizes the turn's request and reports whether it is simple.
 func (s *Session) rateScale(ctx context.Context, request string) bool {
+	simple, record := s.rateScaleHeld(ctx, request)
+	record()
+	return simple
+}
+
+// rateScaleHeld is rateScale with its activity record held back: record
+// emits it. A rating started before the mode is known is recorded only if it
+// is used.
+func (s *Session) rateScaleHeld(ctx context.Context, request string) (bool, func()) {
 	if s.jev == nil || !s.jev.Enabled(config.JevRequestScale) || request == "" {
-		return false
+		return false, func() {}
 	}
 	ctx, cancel := context.WithTimeout(ctx, scaleTimeout)
 	defer cancel()
 	start := time.Now()
 	scores, res, err := s.jev.RateScale(ctx, request)
+	took := time.Since(start)
 	if err != nil || len(scores) == 0 {
-		rolemanager.RecordRequestScale("unknown", -1, res.Identity, time.Since(start))
-		return false
+		return false, func() { rolemanager.RecordRequestScale("unknown", -1, res.Identity, took) }
 	}
 	verdict, score := jev.PickScale(scores)
 	name := string(verdict)
 	if verdict == jev.ScaleUnknown {
 		name = "unknown"
 	}
-	rolemanager.RecordRequestScale(name, int(score*100), res.Identity, time.Since(start))
-	return verdict == jev.ScaleSimple
+	return verdict == jev.ScaleSimple, func() { rolemanager.RecordRequestScale(name, int(score*100), res.Identity, took) }
 }

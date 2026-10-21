@@ -362,6 +362,7 @@ Highlights — full reference in [docs/README.md](docs/README.md):
 - [Vulnetix](docs/vulnetix.md): review scanners, the Vulnetix AI Firewall, project history
 - [AI Firewall](docs/firewall.md): adapters (Vulnetix, Fastly ARC, Kong, AI Security Gateway, custom), modes, cards
 - [Firewall permissions](docs/firewall-permissions.md): permissions you state in a prompt, offered as AI Firewall guardrails to apply
+- [Turn latency](docs/performance.md): what runs before the first token and between passes, and how classification stays cheap
 - [Nonce endpoint](docs/nonce-endpoint-spec.md): provider/gateway `GET /v1/nonces` contract
 - [Image attachments (deferred)](docs/image-attachments.md): multimodal design considerations
 - [Marketing site](docs/site.md): source for belai.vulnetix.com

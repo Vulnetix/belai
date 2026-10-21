@@ -555,14 +555,12 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	if len(p.Categories) == 0 {
 		return s.fallback.Classify(ctx, p)
 	}
-	questions := make(map[string]decisions.Question, len(p.Categories))
-	for _, cat := range p.Categories {
-		questions[string(cat)] = decisions.Noul(categoryProposition(cat))
-	}
-	req := decisions.Request{Questions: questions, State: map[string]any{"content": p.User}}
+	req := singleSecurityRequest(p.User, p.Categories)
 	var answers map[string]decisions.Answer
 	var err error
-	if s.backend != nil {
+	if batchable(s.backend) {
+		answers, err = batcherFor(s.backend).decide(ctx, p.User, p.Categories)
+	} else if s.backend != nil {
 		var res decisions.Result
 		res, err = s.backend.Decide(ctx, req)
 		answers = res.Answers

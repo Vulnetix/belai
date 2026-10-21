@@ -48,6 +48,8 @@ type Pool struct {
 	// modes are the nonce modes the remote endpoint advertised; empty for a
 	// local pool or an endpoint that predates the field.
 	modes []string
+	// refilling is set while a background top-up is in flight.
+	refilling bool
 }
 
 // New returns an empty pool. Reserve mints on demand.
@@ -130,7 +132,39 @@ func (p *Pool) Reserve() (string, error) {
 	s := p.avail[len(p.avail)-1]
 	p.avail = p.avail[:len(p.avail)-1]
 	p.active[s] = true
+	p.topUpLocked()
 	return s, nil
+}
+
+// refillLowWater is how few nonces a remote pool may hold before it fetches
+// more in the background.
+const refillLowWater = 16
+
+// topUpLocked starts a background fetch when a remote pool runs low, so a
+// Reserve almost never waits on the endpoint under the lock: sealing a tool
+// result used to pay a network round trip whenever the pool ran dry. A
+// failed fetch turns the pool local, exactly as a failed refill in Reserve
+// does; Reserve still refills in place if the pool empties first.
+func (p *Pool) topUpLocked() {
+	if p.remote == nil || p.refilling || len(p.avail) > refillLowWater {
+		return
+	}
+	p.refilling = true
+	ep, client := *p.remote, p.client
+	go func() {
+		got, err := FetchFrom(client, ep, refillBatch)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.refilling = false
+		if p.remote == nil || p.remote.BaseURL != ep.BaseURL {
+			return
+		}
+		if err != nil || len(got) == 0 {
+			p.remote = nil
+			return
+		}
+		p.avail = append(p.avail, got...)
+	}()
 }
 
 // Release returns a reserved nonce to the available pool. Unknown nonces are
@@ -361,4 +395,17 @@ func (p *Pool) ModeFor(baseURL string) string {
 		return "canonical"
 	}
 	return "enforce"
+}
+
+// waitTopUp waits for a background top-up to finish, for tests.
+func (p *Pool) waitTopUp() {
+	for {
+		p.mu.Lock()
+		busy := p.refilling
+		p.mu.Unlock()
+		if !busy {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

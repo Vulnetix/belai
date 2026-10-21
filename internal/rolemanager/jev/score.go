@@ -219,7 +219,20 @@ func (c *Client) limits() (items, bytes, workers int) {
 	if c.Local() {
 		return maxItemsLocal, maxBytesLocal, 1
 	}
-	return maxItemsRemote, maxBytesRemote, scoreWorkers
+	items, bytes, workers = maxItemsRemote, maxBytesRemote, scoreWorkers
+	// A backend that caps its questions or its body (Clef takes 64
+	// questions, Ollama 64 KiB) is sent batches it will take: a larger one is
+	// refused before it is sent and then split, which spent a request of the
+	// budget on nothing.
+	if s, ok := c.backend.(*decisions.SystemOne); ok {
+		if s.MaxQuestions > 0 && s.MaxQuestions < items {
+			items = s.MaxQuestions
+		}
+		if s.MaxBodyBytes > 0 && s.MaxBodyBytes/2 < bytes {
+			bytes = s.MaxBodyBytes / 2
+		}
+	}
+	return items, bytes, workers
 }
 
 // Score rates every item against the criterion. It answers each item with a

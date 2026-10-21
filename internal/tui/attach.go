@@ -449,7 +449,7 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 			return attachValidatedMsg{id: id, body: body, meta: meta.SetBodyTokens(body), sentinel: rolemanager.SentinelSafe, diff: diff}
 		}
 		pipe := run.NewPipeline(cfg, client, a.cache)
-		dec, perr := pipe.Process(ctx, res)
+		dec, perr := pipe.ProcessRead(ctx, res, cfg.ClassifierOrDefault().CodeScanFull)
 		body := res.Content
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content

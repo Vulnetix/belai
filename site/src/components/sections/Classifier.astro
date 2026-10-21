@@ -261,6 +261,16 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           are cached for the session and blocked content is remembered by hash. The cache key includes the
           classifier's identity, so a verdict from one engine is never reused by another.
         </p>
+        <p>
+          A file is read for what a reader would read. In a code file only the comments, docstrings and
+          multi-line strings are classified, by a systemone model or else the LLM sentinel, never the BERT
+          windows, and a file with none costs no call. Prose such as markdown goes to a systemone model when
+          one is set. A verdict covers the whole file, so reading another part of the same bytes costs nothing,
+          and with a systemone model the project's docs are classified in the background when a session
+          starts. Checks that reach a systemone model together share one request of up to 250 items; if any
+          item is flagged, the others are asked again on their own. <code class="mono">classifier.code_scan: full</code>{' '}
+          reads whole code files instead.
+        </p>
       </div>
     </details>
   </article>

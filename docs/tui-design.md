@@ -213,6 +213,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊘` | boundary check failed | `security` |
 | `≠` | tool call mismatch | `security` |
 | `⊶` | AI Firewall permissions in a prompt | `security` |
+| `≋` | project docs classified ahead of any Read | `security` |
 | `◐` | mode chosen | `mode` |
 | `◎` | intent detected | `mode` |
 | `⊙` | mode pinned | `mode` |

@@ -151,33 +151,86 @@ func mergeSearch(det, pool []tools.Candidate, scores map[string]float64, limit i
 // and more is how many were left out. With the job off, no backend, or a
 // failure, every skill is listed and nothing is loaded, exactly as without it.
 func (s *Session) selectSurface(ctx context.Context, request, mode string, skills []tools.Candidate) (listed []tools.Candidate, more int) {
+	pool, ok := s.surfacePool(request, skills)
+	if !ok {
+		return skills, 0
+	}
+	return s.applySurface(request, skills, s.rateSurface(ctx, request, mode, pool))
+}
+
+// surfaceTimeout bounds the tool-selection rating, like the other pre-prompt
+// decision jobs: a verdict is worth having only before the request goes out.
+const surfaceTimeout = 8 * time.Second
+
+// surfaceRating is one rating of a candidate pool.
+type surfaceRating struct {
+	pool   []tools.Candidate
+	rated  []tools.Candidate
+	scores map[string]float64
+	model  string
+	err    error
+	start  time.Time
+}
+
+// surfacePool is what tool selection rates: the deferred tools of the current
+// surface plus the skills. ok is false when the job does not run. It reads
+// the session's surface, so it runs on the turn's goroutine.
+func (s *Session) surfacePool(request string, skills []tools.Candidate) ([]tools.Candidate, bool) {
 	if s.jev == nil || !s.jev.Enabled(config.JevToolSelection) || s.deferral == nil ||
 		strings.TrimSpace(request) == "" {
-		return skills, 0
+		return nil, false
 	}
 	if _, ok := s.registry.Find(tools.ToolSearchName); !ok {
 		// Without ToolSearch an unlisted skill would be unreachable.
-		return skills, 0
+		return nil, false
 	}
-	start := time.Now()
 	var pool []tools.Candidate
 	for _, d := range s.Deferred() {
 		pool = append(pool, tools.Candidate{Name: d.Name, Description: d.Description})
 	}
 	pool = append(pool, skills...)
-	if len(pool) == 0 {
-		return skills, 0
-	}
-	rated := searchPool(request, nil, pool, s.poolCap())
-	items := make([]jev.SurfaceItem, len(rated))
-	for i, c := range rated {
+	return pool, len(pool) > 0
+}
+
+// rateSurface asks the backend about a pool. It touches no session state but
+// the decision client, so it may run ahead of the turn (agent.go starts it as
+// soon as the mode is known).
+func (s *Session) rateSurface(ctx context.Context, request, mode string, pool []tools.Candidate) surfaceRating {
+	r := surfaceRating{pool: pool, start: time.Now()}
+	r.rated = searchPool(request, nil, pool, s.poolCap())
+	items := make([]jev.SurfaceItem, len(r.rated))
+	for i, c := range r.rated {
 		items[i] = jev.SurfaceItem{ID: c.Key(), Name: c.Name, Description: firstSentence(c.Description)}
 	}
-	scores, res, err := s.jev.RateSurface(ctx, request, mode, items)
-	if err != nil || len(scores) == 0 {
-		rolemanager.RecordToolSelect("fallback", 0, len(skills), 0, 0, res.Identity, time.Since(start))
+	ctx, cancel := context.WithTimeout(ctx, surfaceTimeout)
+	defer cancel()
+	var res jev.ScoreResult
+	r.scores, res, r.err = s.jev.RateSurface(ctx, request, mode, items)
+	r.model = res.Identity
+	return r
+}
+
+// samePool reports whether two pools hold the same candidates in order.
+func samePool(a, b []tools.Candidate) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Key() != b[i].Key() {
+			return false
+		}
+	}
+	return true
+}
+
+// applySurface loads the tools a rating chose and returns the skills to list.
+func (s *Session) applySurface(request string, skills []tools.Candidate, r surfaceRating) (listed []tools.Candidate, more int) {
+	start := r.start
+	if r.err != nil || len(r.scores) == 0 {
+		rolemanager.RecordToolSelect("fallback", 0, len(skills), 0, 0, r.model, time.Since(start))
 		return skills, 0
 	}
+	rated, scores, res := r.rated, r.scores, jev.ScoreResult{Identity: r.model}
 	preload, kept := chooseSurface(request, rated, scores)
 	loaded := s.Load(preload)
 	for _, c := range skills {
@@ -238,4 +291,16 @@ func chooseSurface(request string, rated []tools.Candidate, scores map[string]fl
 		}
 	}
 	return preload, kept
+}
+
+// modelSkills are the installed skills a model may invoke, as candidates. A
+// user-only skill is not one.
+func (s *Session) modelSkills() []tools.Candidate {
+	var all []tools.Candidate
+	for _, e := range tools.SkillEntries(s.registry) {
+		if !e.DisableModelInvocation {
+			all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Line(e.Description, 1024), Skill: true})
+		}
+	}
+	return all
 }

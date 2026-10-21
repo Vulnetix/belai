@@ -59,16 +59,26 @@ func eligibleAgents(list []agentprofile.AgentProfile) []agentOffer {
 
 // pickAgent returns the profile that is a clear fit for the request, or "".
 func (s *Session) pickAgent(ctx context.Context, request string) string {
+	name, record := s.pickAgentHeld(ctx, request)
+	record()
+	return name
+}
+
+// pickAgentHeld is pickAgent with its activity record held back: record emits
+// it. A pick started before the intent is known is recorded only if it is
+// used.
+func (s *Session) pickAgentHeld(ctx context.Context, request string) (string, func()) {
+	none := func() {}
 	if s.jev == nil || !s.jev.Enabled(config.JevAgentPick) || request == "" {
-		return ""
+		return "", none
 	}
 	list, err := agentprofile.List()
 	if err != nil {
-		return ""
+		return "", none
 	}
 	offers := eligibleAgents(list)
 	if len(offers) == 0 {
-		return ""
+		return "", none
 	}
 	items := make([]jev.ScoreItem, len(offers))
 	byID := make(map[string]string, len(offers))
@@ -81,17 +91,16 @@ func (s *Session) pickAgent(ctx context.Context, request string) string {
 	defer cancel()
 	start := time.Now()
 	res, err := s.jev.PickAgent(ctx, request, items)
+	took := time.Since(start)
 	if err != nil {
-		rolemanager.RecordAgentPick("unknown", len(offers), res.Identity, time.Since(start))
-		return ""
+		return "", func() { rolemanager.RecordAgentPick("unknown", len(offers), res.Identity, took) }
 	}
 	name, ok := clearAgent(res.Probs, byID)
 	verdict := "default"
 	if ok {
 		verdict = "engaged"
 	}
-	rolemanager.RecordAgentPick(verdict, len(offers), res.Identity, time.Since(start))
-	return name
+	return name, func() { rolemanager.RecordAgentPick(verdict, len(offers), res.Identity, took) }
 }
 
 // clearAgent reports the profile that leads the pick by the same cut-offs a

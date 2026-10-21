@@ -186,7 +186,7 @@ Business rules:
 - **Verdict cache**: verdicts are memoised by the SHA-256 of the *sanitized*
   content plus the classifier identity (kind + model ids + thresholds +
   phase-3 on/off), so switching classifier never serves a verdict produced by
-  a different one. SAFE verdicts live in a bounded session LRU (512); non-SAFE
+  a different one. SAFE verdicts live in a bounded session LRU (4096); non-SAFE
   hashes persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load
   at session start. The bad-hash set stays small: memory is bounded and I/O is
   one read at startup plus an append per new bad verdict.
@@ -704,7 +704,7 @@ was well formed:
 | ---- | ---------- | --- |
 | `bash` | **Always** | An arbitrary command string: neither what runs nor what comes back is constrained by the harness |
 | `web_fetch`, `web_search` | **Always** | Text written by someone off this machine with no relationship to the task — the shape a prompt injection takes |
-| `read` | **Always** | The call is confined, but the bytes are not: a repository can carry a poisoned file exactly as a page can carry a poisoned paragraph |
+| `read` | **Always**, by content class (below) | The call is confined, but the bytes are not: a repository can carry a poisoned file exactly as a page can carry a poisoned paragraph |
 | `screenshot` | Text: no. Pixels: never | The text is composed by the harness. A text classifier cannot read pixels, so an image is admitted by `internal/imageguard` (decode, bound, re-encode) instead, and only this kind may carry one (see [images](image-attachments.md)) |
 | `grep`, `glob`, `write`, `edit`, `native` | No | Shaped *and* controlled: matching lines for a pattern passed as one argument, paths, a confirmation the harness wrote itself, a fixed argv the harness built |
 
@@ -752,6 +752,52 @@ Business rules and edge cases:
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.
+
+#### How much of a Read is classified
+
+A `Read` hands the classifier the whole file it scanned (`tools.Result.Whole`,
+up to 1 MiB, with its SHA-256), never shown to a model or an event. What the
+classifier reads of it depends on the file's content class
+(`rolemanager.ClassOf`, by name alone), and the model always receives the
+result in full, sanitised and sealed:
+
+| Class | Examples | What is classified | By |
+| ----- | -------- | ------------------ | -- |
+| code | `.go`, `.ts`, `.py`, `.sh`, `Makefile`, `Dockerfile` | Only its comments, docstrings and multi-line or triple-quoted strings (`rolemanager.ExtractComments`, chroma's lexer), each run prefixed with its line number. No such text means no classifier call. | The text classifier: a SystemOne decision backend when one is set, else the LLM sentinel. Never the BERT gates. |
+| prose | `.md`, `.rst`, `.txt`, `README`, `LICENSE`, `AGENTS.md` | The whole file. | The SystemOne decision backend when one is set; otherwise the usual classifier. |
+| other | `.json`, `.yaml`, `.html`, unknown extensions | The whole file. | The usual classifier. |
+
+- **Code is judged by what is written for a reader.** An instruction to a
+  model hides where a person reads: a comment, a docstring, a long string. A
+  short string literal is not read, which is the accepted trade-off of
+  comments-only scanning; `classifier.code_scan: "full"` reads the whole file
+  through the usual classifier instead. A project layer may set `full` (it
+  tightens) and never `comments`.
+- **Every class applies wherever the file is**: in the repository, a
+  dependency directory, or outside the session roots.
+- **Fail closed.** A file no lexer recognises, or one its lexer reports an
+  error on, is classified whole.
+- **One verdict per file.** A verdict is also stored under the file's path and
+  digest, so any later read of the same bytes (another window, an offset, a
+  warmed doc) reuses it with no call. Changed bytes are a new key. A Read's
+  knowledge passages were classified when they were indexed.
+- **The old path stays where it must.** A file over 1 MiB, or a whole file
+  the usual classifier would have to read past a default Read's 64 KiB (the
+  BERT gates refuse content past their window cap), is classified from the
+  result exactly as before. Text the text classifier reads past 64 KiB is
+  classified in overlapping 64 KiB chunks.
+- **A swap keeps full scrutiny.** A builtin that replaced a Bash command is
+  classified in full, as the command's output would have been.
+- **Docs are warmed at session start.** While a SystemOne backend answers, the
+  TUI classifies the prose files git tracks (`agent.WarmDocs`: at most 500, each
+  up to 64 KiB, skipping dependency, hidden and sensitive paths, within 60
+  seconds) in large batches in the background, so reading them later costs no
+  call. One `≋` activity row says how many. With no SystemOne backend nothing
+  is warmed.
+- **SystemOne checks are batched.** Checks that reach a SystemOne backend
+  within 8 ms of each other share one request: the results of a pass's
+  parallel tool calls, a prefetch, attachments, warming. See
+  [role-manager.md](role-manager.md#batched-systemone-checks).
 
 ### File attachments (`@path`)
 

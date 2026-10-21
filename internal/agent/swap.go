@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
@@ -94,7 +95,10 @@ func (s *Session) trySwap(ctx context.Context, pipe *rolemanager.Pipeline, args 
 		return nil
 	}
 	key := commandHash(cmd)
-	if s.swapped[key] {
+	s.swappedMu.Lock()
+	done := s.swapped[key]
+	s.swappedMu.Unlock()
+	if done {
 		return nil
 	}
 
@@ -144,7 +148,18 @@ func (s *Session) trySwap(ctx context.Context, pipe *rolemanager.Pipeline, args 
 		rolemanager.RecordBashSwap("refused", winner, pct, identity, time.Since(start))
 		return nil
 	}
+	// The same command twice in one response swaps once, as when the checks
+	// ran in order: the second runs as written.
+	s.swappedMu.Lock()
+	if s.swapped[key] {
+		s.swappedMu.Unlock()
+		return nil
+	}
+	if s.swapped == nil {
+		s.swapped = map[string]bool{}
+	}
 	s.swapped[key] = true
+	s.swappedMu.Unlock()
 	rolemanager.RecordBashSwap("swapped", winner, pct, identity, time.Since(start))
 	return &bashSwap{name: winner, args: replan, tool: tool, decision: dec, scorePct: pct}
 }
@@ -251,4 +266,28 @@ func enumHas(enum []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// swapTimeout bounds one Bash swap check: past it the command runs as written.
+const swapTimeout = 8 * time.Second
+
+// swapAll runs the swap check for the Bash calls at idx concurrently and
+// applies each swap to its unit. A unit is written only by its own check.
+func (s *Session) swapAll(ctx context.Context, pipe *rolemanager.Pipeline, units []callUnit, idx []int) {
+	if len(idx) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, swapTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for _, i := range idx {
+		wg.Add(1)
+		go func(u *callUnit) {
+			defer wg.Done()
+			if sw := s.trySwap(ctx, pipe, u.args); sw != nil {
+				u.swap, u.tool, u.args, u.decision = sw, sw.tool, sw.args, sw.decision
+			}
+		}(&units[i])
+	}
+	wg.Wait()
 }

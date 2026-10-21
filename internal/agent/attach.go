@@ -10,7 +10,6 @@ import (
 	"github.com/vulnetix/belai/internal/plans"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
-	"github.com/vulnetix/belai/internal/tools"
 )
 
 // attachTokenRe matches @file references. It does not match quoted paths with
@@ -76,7 +75,7 @@ func (s *Session) attachFromPrompt(ctx context.Context, prompt string, pipe *rol
 			continue
 		}
 
-		dec, err := pipe.Process(ctx, tools.Result{Kind: tools.KindRead, Content: res.Content})
+		dec, err := s.classifyRead(ctx, pipe, res)
 		if err != nil || dec.Action != rolemanager.ActionProceed {
 			continue
 		}

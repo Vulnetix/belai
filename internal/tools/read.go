@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -119,7 +121,11 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 			return Result{}, err
 		}
 		r.Reads.Note(full)
-		return ReadResultMeta(content, meta), nil
+		out := ReadResultMeta(content, meta)
+		if info.Size() <= int64(len(content)) {
+			out.setWhole([]byte(content))
+		}
+		return out, nil
 	}
 
 	start := int64(1)
@@ -141,7 +147,15 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		}
 	}
 
-	w, err := readWindow(f, start, limit, max)
+	// A file small enough to classify whole is kept as it streams past, so
+	// the verdict covers the file and not only this window.
+	var src io.Reader = f
+	var whole *bytes.Buffer
+	if info.Size() <= WholeMaxBytes {
+		whole = bytes.NewBuffer(make([]byte, 0, info.Size()))
+		src = io.TeeReader(f, whole)
+	}
+	w, err := readWindow(src, start, limit, max)
 	if err != nil {
 		return Result{}, err
 	}
@@ -159,7 +173,21 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if k := knowledgeFor(ctx, r.Knowledge); k != nil && w.first > 0 {
 		body += knowledgeRelated(k.Search(readQuery(w.body)), full)
 	}
-	return ReadResultMeta(body, meta), nil
+	out := ReadResultMeta(body, meta)
+	if whole != nil {
+		out.setWhole(whole.Bytes())
+	}
+	return out, nil
+}
+
+// setWhole records the whole file for the classifier, when it fits.
+func (r *Result) setWhole(b []byte) {
+	if len(b) > WholeMaxBytes {
+		return
+	}
+	sum := sha256.Sum256(b)
+	r.Whole = string(b)
+	r.WholeSHA256 = hex.EncodeToString(sum[:])
 }
 
 // readWindowResult is one numbered slice of a file.

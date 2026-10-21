@@ -166,7 +166,17 @@ type Result struct {
 	// KindScreenshot result may carry them: the agent admits them through
 	// internal/imageguard and drops them from any other kind.
 	Images []Image
+	// Whole is the entire file a Read scanned, set when the file is small
+	// enough (WholeMaxBytes) for the security classifier to judge all of it at
+	// once. It never reaches a model or an event: the classifier reads it so a
+	// verdict covers the file, and every later slice of the same bytes reuses
+	// that verdict. WholeSHA256 is its hex digest.
+	Whole       string
+	WholeSHA256 string
 }
+
+// WholeMaxBytes is the largest file a Read hands the classifier whole.
+const WholeMaxBytes = 1 << 20
 
 // Image is one captured image, as the tool produced it (PNG or JPEG bytes)
 // before admission.

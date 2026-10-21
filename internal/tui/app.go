@@ -1331,7 +1331,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	a.startupPending = true
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextFwPermOffer(), a.nextUsage(), a.importHistory()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextFwPermOffer(), a.nextUsage(), a.importHistory(), a.warmDocs()}
 	if cmd := a.watchRemote(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -2276,6 +2276,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	sess, err := agent.NewSession(agent.Options{
 		NoncePool:     p.noncePools.get(cfg),
+		SealMemo:      p.noncePools.memo(cfg),
 		AskDecider:    p.askDecider,
 		Knowledge:     p.knowledge,
 		GitSync:       p.gitSync,
