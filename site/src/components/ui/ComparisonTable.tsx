@@ -51,6 +51,7 @@ export const ROWS: Row[] = [
   row('boundaries', 'plan mode does not offer Bash to the model', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'one guardrails switch reaching every surface: session, !cmd, @file, background agents, CLI', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'posture gates with provenance, down to the model behind each classifier phase', 'yes', 'no', 'no', 'no', 'no'),
+  row('boundaries', 'permissions stated in a prompt offered as AI Firewall guardrails, enforced at the gateway', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'skills and hooks load only after strict schema validation', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
 
   // autonomy

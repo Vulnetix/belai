@@ -36,7 +36,7 @@ func TestSitePageListsTheSectionsInOrder(t *testing.T) {
 	}
 	alias := map[string]string{
 		"hero": "intro", "agents & crews": "agents", "session intelligence": "intel",
-		"web sessions": "web", "pix sandbox": "pix-sandbox",
+		"web sessions": "web", "pix sandbox": "pix-sandbox", "prompt to policy": "prompt-policy",
 	}
 	var got []string
 	for _, name := range strings.Split(strings.Join(strings.Fields(block[1]), " "), " · ") {

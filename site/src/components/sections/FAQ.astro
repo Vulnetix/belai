@@ -12,7 +12,7 @@ interface Props {
 const { chapter = true } = Astro.props;
 
 const sealText =
-  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced, what happens to a prompt injection in a file, what is free, which platforms and editors are supported, and how it runs unattended.';
+  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced, what happens to a prompt injection in a file, how a permission in a prompt becomes firewall policy, what is free, which platforms and editors are supported, and how it runs unattended.';
 
 // Product questions. Each answer is a list of paragraphs, and text between
 // backticks renders as code. An optional link renders as a last paragraph.
@@ -55,6 +55,13 @@ const product: { q: string; a: string[]; link?: { href: string; label: string } 
     a: [
       'Anything the model did not write itself is untrusted text. Belai strips delimiter markup from it and, unless the tool\'s output has a shape Belai controls, the security classifier judges it before the model sees it. A flagged result is withheld, and Belai says so.',
     ],
+  },
+  {
+    q: 'Can a permission I type in a prompt be enforced outside the session?',
+    a: [
+      'Yes. While you are signed in to Vulnetix, a prompt such as "never run Bash" or "mask customer emails" is read again in the background, and Belai offers the AI Firewall guardrails that enforce it on a card. Nothing is written until you click Apply, unless you turn on `auto-apply permissions` in your own settings. An applied rule is enforced at the gateway for every session in your organisation.',
+    ],
+    link: { href: '/#prompt-policy', label: 'How a prompt becomes policy.' },
   },
   {
     q: 'Is it free?',

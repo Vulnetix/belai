@@ -1,0 +1,100 @@
+---
+// Prompt to policy: a permission stated in a prompt becomes an AI Firewall
+// guardrail, offered on a card and applied only on a click. The prose here
+// follows docs/firewall-permissions.md; change the two together.
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Limits from '../ui/Limits.astro';
+
+const sealText =
+  'Prompt to policy: a permission you state in a prompt, such as never run Bash or mask emails, becomes an AI Firewall guardrail enforced at the gateway for every session in your organisation. While you are signed in to Vulnetix, a copy of each admitted prompt is read in the background. SystemOne decides whether it states a rule the firewall can enforce, with the fast model as fallback, and the main model writes the rule as a vulnetix ai-firewall guardrail. Every field is validated and rules already live are dropped. A card offers the rules with Apply, and nothing changes until you click. Allow and deny variants are both written, and only the one that fits your current rules is switched on. The Pix Sandbox Permissions tab lists every offer and the live rules.';
+
+const steps = [
+  { n: '01', name: 'Word gate', key: 'free', lead: 'A prompt with no permission-like word (never, only use, redact, mask, PII, secret…) stops here and costs nothing.' },
+  { n: '02', name: 'Detect', key: 'fwperm_detect', lead: 'SystemOne answers one question: does this prompt state a rule a network AI firewall could enforce? With no backend, no answer or an unclear score, the fast model answers instead.' },
+  { n: '03', name: 'Read live rules', key: 'ai-firewall get', lead: 'Your organisation\'s guardrails are read through the Vulnetix CLI, so a rule already in force is never offered again and each family\'s mode is known.' },
+  { n: '04', name: 'Write', key: 'fwperm_write', lead: 'The main model writes the rules as calls to one tool, vulnetix_ai_firewall_guardrail. Belai checks every field against the firewall\'s grammar and drops any call that fails.' },
+  { n: '05', name: 'Offer', key: 'Apply', lead: 'A card in the thread shows each rule, the words it came from and the exact CLI command. Nothing reaches the firewall until you click.' },
+];
+
+const stances: [string, string, string][] = [
+  ['"never use Bash"', 'restrict', 'the deny variant, tool_deny Bash'],
+  ['"only use Read and Grep"', 'only', 'the allow variants: allowlist mode is what you asked for'],
+  ['"you may use WebFetch"', 'grant', 'the allow variant, only if the family is already in allowlist mode'],
+  ['"mask customer emails"', 'content', 'pii_redact, always: content rules have one form'],
+];
+
+const limits = [
+  ['Runs only while signed in', 'The pass runs only while the Vulnetix CLI is signed in. Signed out, no model is asked and no card appears. It runs whether or not this session routes through the firewall, because a rule is organisation policy.'],
+  ['The turn never waits', 'The pass reads a copy of the prompt in its own goroutine with its own deadline. The turn never waits, and an offer that arrives mid-reply is shown when the turn ends.'],
+  ['Model output, validated', 'Rule types, actions, RE2 patterns, capability globs and names are checked against the firewall\'s own rules. At most 12 rules an offer, all named `belai-…`.'],
+  ['A click, unless you say otherwise', '`auto-apply permissions` applies offers with no click. It is off by default and lives only in your global settings: a repository can turn it off, never on.'],
+  ['Hidden, still recorded', 'Turn `permission offers` off and the card leaves the thread, but each offer and each apply is still written to the session and synced.'],
+  ['Org-wide by design', 'An AI Firewall rule covers every session in your organisation, in every harness that routes through it. The card and the Permissions tab both say so.'],
+];
+---
+
+<SealedSection label="prompt-policy" sealText={sealText} id="prompt-policy">
+  <SectionHead title="Prompt to policy" surfaces={['tui', 'pix sandbox', 'vulnetix only']}>
+    Say "never run Bash" or "mask customer emails" and Belai turns it into an AI Firewall guardrail,
+    enforced at the gateway for every session in your organisation. No other coding harness turns a
+    permission you type into policy the network enforces.
+  </SectionHead>
+
+  <div class="mt-10 overflow-x-auto rounded-xl bg-tui-ink p-5 text-tui-cream md:p-7" role="img" aria-label="A prompt asking the agent never to run Bash and to mask customer emails, and the permission card Belai shows after the turn: a tool_deny rule for Bash waiting for apply, and a pii_redact rule already applied">
+    <pre class="mono m-0 text-[13px] leading-7"><span class="opacity-60">you type</span>
+&gt; fix the flaky test. never let the agent run Bash, and mask any customer emails
+
+<span class="opacity-60">belai offers, after the turn</span>
+<span class="text-tui-policy">⊶ permission change detected</span>                    <span class="opacity-60">AI Firewall</span>
+  Keep Bash out and mask customer emails
+  <span class="text-tui-policy">◆</span> tool_deny   strip   Bash   deny variant · on   <span class="text-tui-policy">[ apply ]</span>
+      <span class="opacity-60">never let the agent run Bash</span>
+  <span class="text-tui-teal">✓</span> pii_redact  redact         applied
+      <span class="opacity-60">mask any customer emails</span>
+  <span class="opacity-60">runs vulnetix ai-firewall policy guardrail belai-deny-bash …</span>
+  <span class="text-tui-policy">[ apply all ]  [ dismiss ]</span>  <span class="opacity-60">nothing changes until you apply</span></pre>
+  </div>
+
+  <SubHead title="From a sentence to a guardrail">
+    A second role-manager pass reads each prompt after it is admitted, off the turn's path. Each step
+    can stop the pass, and every step after the first is cheaper to skip than to run.
+  </SubHead>
+  <ol class="mt-8 grid list-none gap-6 p-0 @3xl:grid-cols-5">
+    {steps.map((s) => (
+      <li class="border-t border-vx-ink pt-3">
+        <p class="mono m-0 text-xs text-vx-ink/70">{s.n} · <code class="mono">{s.key}</code></p>
+        <p class="m-0 mt-1 font-semibold">{s.name}</p>
+        <p class="m-0 mt-1 text-sm text-vx-ink/80">{s.lead}</p>
+      </li>
+    ))}
+  </ol>
+
+  <SubHead title="Allowlist or denylist, decided when you apply">
+    Any enabled allow rule puts a family into allowlist mode, and a deny always wins. So Belai writes
+    both variants of a capability permission and switches on only the one that fits your rules at the
+    moment you click Apply. The other is created switched off, ready for the day your mode changes.
+  </SubHead>
+  <details class="deep deep--wide">
+    <summary>Which variant each kind of sentence switches on</summary>
+    <div class="deep__body">
+      <table class="mini">
+        <thead><tr><th scope="col">You said</th><th scope="col">Stance</th><th scope="col">Switched on</th></tr></thead>
+        <tbody>
+          {stances.map(([said, stance, on]) => (
+            <tr><td>{said}</td><td class="whitespace-nowrap"><code class="mono">{stance}</code></td><td>{on}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <SubHead title="Every offer, in the console">
+    Each offer and each apply is recorded in the session. In a Pix Sandbox, the console's Permissions
+    tab lists your organisation's live guardrails, which you can switch on, off or delete, and every
+    rule any of the sandbox's sessions has offered, marked Applied or Pending, with Apply beside it.
+  </SubHead>
+
+  <Limits items={limits} />
+</SealedSection>

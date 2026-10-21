@@ -1,10 +1,39 @@
-# Firewall permissions
+# Firewall permissions: prompt to policy
 
 People often state permissions in plain words: "never run Bash in this repo",
 "don't send customer emails to the model", "only use the GitHub MCP". When a
 prompt states a permission the Vulnetix AI Firewall can enforce, belai writes
 guardrail rules for it. It shows them on a card in the thread, and applies them
 to your organisation's AI Firewall only when you click **Apply**.
+
+A permission typed in a prompt normally lasts as long as the model remembers
+it, and binds only that one session. An AI Firewall guardrail is enforced at the
+gateway, outside any model, for every session in the organisation that routes
+through it. Belai is the first coding harness to turn the first into the
+second.
+
+## An example
+
+```text
+> fix the flaky test. never let the agent run Bash, and mask any customer emails
+```
+
+The turn goes ahead at once. When it ends, the thread shows:
+
+```text
+⊶ permission change detected                        AI Firewall
+  Keep Bash out and mask customer emails
+  ◆ tool_deny   strip   Bash   deny variant · on   [ apply ]
+      never let the agent run Bash
+  ◆ pii_redact  redact                              [ apply ]
+      mask any customer emails
+  runs vulnetix ai-firewall policy guardrail belai-deny-bash --rule-type tool_deny …
+  [ apply all ]  [ dismiss ]  nothing changes until you apply
+```
+
+**Apply all** writes both guardrails. From then on the gateway strips `Bash`
+from every request's tool list and redacts PII, for every session in the
+organisation, whichever harness sent it.
 
 ## When it runs
 
@@ -107,11 +136,29 @@ policy without a click.
 
 Each offer is a `firewall_permission` session entry, and each rule applied (or
 failed) is a `firewall_permission_applied` entry. The fields are listed in
-[session-sync.md](session-sync.md#what-the-session-records). In a Pix Sandbox,
-the console's **Permissions** tab lists the org's live guardrails and every
-offer from that sandbox's sessions, and applies them there. AI Firewall rules
-are org-wide: applying one from a sandbox applies it to every session in the
-organisation.
+[session-sync.md](session-sync.md#what-the-session-records).
+
+## The console's Permissions tab
+
+Each Pix Sandbox in the Vulnetix console has a **Permissions** tab, right after
+**Launch**. It reads the synced entries through
+`GET /v1/belai/sandboxes/{id}/permission-offers`, which returns only sessions of
+that sandbox in the caller's organisation.
+
+- **Active rules** lists the organisation's live guardrails. Each can be
+  switched on or off, or deleted. Rules belai wrote (named `belai-…`) are
+  labelled.
+- **Offered by sessions** lists every offer from the sandbox's sessions, newest
+  first, each linked to its session. A rule is **Applied** when a live
+  guardrail has the same type, pattern and action, and **Pending** otherwise.
+  **Apply** creates it with the same variant choice the card makes. On a plan
+  without guardrails, the tab shows the upgrade instead of Apply.
+- The tab keeps no state of its own: there is no dismiss, and the status is
+  worked out again from the live rules every time it loads. The tab header
+  shows how many rules are pending.
+
+AI Firewall rules are org-wide: applying one from a sandbox applies it to every
+session in the organisation, and the tab says so.
 
 ## What never happens
 

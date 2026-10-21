@@ -19,7 +19,7 @@ each section all read it, so a section's number is its position in that list.
 
 Section order:
 
-hero · beliefs · trust · classifier · sealed · modes · tools · diagnostics · permissions · agents & crews ·
+hero · beliefs · trust · classifier · sealed · modes · tools · diagnostics · permissions · prompt to policy · agents & crews ·
 pix sandbox · kanban · web sessions · memory · processes · budgets · session intelligence · providers ·
 routing · vulnetix · extend · cli · qol · start · compare · faq
 
@@ -59,6 +59,16 @@ These keep the page readable. Follow them when you add or change a section.
   `Base.astro`). Folding hides text from a first look and never removes it.
 - **Prose.** No em dash, en dash or curly quote, and titles say what happens, not what is
   absent. Check each new claim against the code or docs before writing it.
+
+The prompt to policy section (`site/src/components/sections/PromptPolicy.astro`,
+id `prompt-policy`) follows permissions. It opens with a prompt and the
+permission card Belai shows for it, drawn as terminal text in the card's own
+`tui-policy` blue (`ColorPolicy` in `internal/tui/components/theme.go`). Then
+come the five steps from a sentence to a guardrail, the allow and deny variants
+with a folded table of which one each kind of sentence switches on, the
+console's Permissions tab, and the Limits block. Every claim comes from
+[firewall-permissions.md](firewall-permissions.md); change the two together.
+The comparison table carries a matching row, and the FAQ links to the section.
 
 The agents section (`site/src/components/sections/Agents.astro`, rendered
 from `Features.astro`) is one ladder: helpers, background agents, workers and crews.

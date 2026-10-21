@@ -12,6 +12,7 @@ export const sections = [
   ['tools', 'tools & sandbox'],
   ['diagnostics', 'diagnostics'],
   ['permissions', 'permissions'],
+  ['prompt-policy', 'prompt to policy'],
   ['agents', 'agents & crews'],
   ['pix-sandbox', 'pix sandbox'],
   ['kanban', 'kanban'],
