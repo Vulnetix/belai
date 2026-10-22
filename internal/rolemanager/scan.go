@@ -182,3 +182,11 @@ func docsWarmedDescription(a Activity) Description {
 
 // TextLabel names the classifier that reads scanned text, for the trace.
 func (p *Pipeline) TextLabel() string { return p.textLabel() }
+
+// SetTextBatched records that the text classifier batches checks that arrive
+// together (classifier.decision.batch), which decides how many a bulk caller
+// such as doc warming sends at once.
+func (p *Pipeline) SetTextBatched(on bool) { p.textBatched = on }
+
+// TextBatched reports whether the text classifier batches checks.
+func (p *Pipeline) TextBatched() bool { return p.textBatched }

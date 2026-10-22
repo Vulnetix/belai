@@ -800,10 +800,12 @@ result in full, sanitised and sealed:
   seconds) in large batches in the background, so reading them later costs no
   call. One `≋` activity row says how many. With no SystemOne backend nothing
   is warmed.
-- **SystemOne checks are batched.** Checks that reach a SystemOne backend
-  within 8 ms of each other share one request: the results of a pass's
-  parallel tool calls, a prefetch, attachments, warming. See
-  [role-manager.md](role-manager.md#batched-systemone-checks).
+- **SystemOne checks can be batched.** With `classifier.decision.batch: true`,
+  checks that reach a SystemOne backend within 8 ms of each other share one
+  request. It is off by default; see
+  [role-manager.md](role-manager.md#batched-systemone-checks). Warming sends
+  four single checks at a time without it, and up to 250 waiting checks with
+  it.
 
 ### File attachments (`@path`)
 

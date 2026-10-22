@@ -91,6 +91,7 @@ type Pipeline struct {
 	text          Classifier
 	textIdentity  string
 	textSystemOne bool
+	textBatched   bool
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over

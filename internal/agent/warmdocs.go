@@ -29,10 +29,13 @@ const (
 	WarmDocsMaxBytes = rolemanager.ScanChunkBytes
 	// WarmDocsTimeout bounds the whole warm-up.
 	WarmDocsTimeout = 60 * time.Second
-	// warmDocsInFlight is how many checks wait at once. The SystemOne batcher
-	// gathers them into requests, so this is the batch width, not a count of
-	// concurrent requests.
-	warmDocsInFlight = 250
+	// warmDocsBatched is how many checks wait at once when the backend
+	// batches (classifier.decision.batch): the batcher gathers them into
+	// requests, so it is the batch width, not a count of requests.
+	warmDocsBatched = 250
+	// warmDocsSingle is how many single checks are in flight at once when it
+	// does not, so warming never crowds out the session's own checks.
+	warmDocsSingle = 4
 )
 
 // WarmDocs classifies the prose files git tracks under root through pipe's
@@ -49,7 +52,11 @@ func WarmDocs(ctx context.Context, pipe *rolemanager.Pipeline, root string) int 
 	files := warmDocFiles(ctx, root)
 	var done atomic.Int32
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, warmDocsInFlight)
+	inFlight := warmDocsSingle
+	if pipe.TextBatched() {
+		inFlight = warmDocsBatched
+	}
+	sem := make(chan struct{}, inFlight)
 	for _, abs := range files {
 		if ctx.Err() != nil {
 			break

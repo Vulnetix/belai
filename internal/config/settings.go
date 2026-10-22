@@ -1080,6 +1080,11 @@ type ClassifierDecisionSettings struct {
 	// MaxStateBytes is the largest content sent to a local decision model;
 	// larger content goes to the fallback. Zero uses 16 KiB.
 	MaxStateBytes int `json:"max_state_bytes,omitempty"`
+	// Batch, when true, sends security checks that arrive together to a
+	// systemone server as one request. Off by default: measured on Clef, a
+	// shared request answered less decisively and cost more round trips than
+	// it saved (docs/performance.md).
+	Batch *bool `json:"batch,omitempty"`
 }
 
 // ClassifierChunkSettings bounds chunked classification of oversized content.
@@ -1130,6 +1135,9 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from.Decision.MaxStateBytes != 0 {
 		c.Decision.MaxStateBytes = from.Decision.MaxStateBytes
 	}
+	if from.Decision.Batch != nil {
+		c.Decision.Batch = from.Decision.Batch
+	}
 	if from.CodeScan != "" {
 		c.CodeScan = from.CodeScan
 	}
@@ -1160,7 +1168,7 @@ func (c *ClassifierSettings) IsZero() bool {
 		c.Caveman == nil &&
 		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0 &&
 		c.Phase1.IsZero() && c.Phase2.IsZero() &&
-		c.Decision.TimeoutMS == 0 && c.Decision.MaxStateBytes == 0 && c.CodeScan == ""
+		c.Decision.TimeoutMS == 0 && c.Decision.MaxStateBytes == 0 && c.Decision.Batch == nil && c.CodeScan == ""
 }
 
 // IsZero reports whether the phase settings carry no overrides.

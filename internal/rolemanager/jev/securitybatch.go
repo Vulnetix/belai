@@ -74,11 +74,16 @@ func batcherFor(d decisions.Decider) *securityBatcher {
 	return v.(*securityBatcher)
 }
 
-// batchable reports whether a backend's checks are batched: only a SystemOne
-// server answers many questions in one forward pass. A local letter reader
-// asks them one at a time, so batching would only add the linger.
+// batchable reports whether a backend's checks are batched: only a systemone
+// server that classifier.decision.batch turned on. It is off by default:
+// measured live on Clef, a request carrying several items answered less
+// decisively (more checks fell back to the chat model), and any undecided
+// item sends its neighbours back alone, so batching cost round trips rather
+// than saving them (docs/performance.md). A local letter reader asks its
+// questions one at a time, so batching would only add the linger.
 func batchable(d decisions.Decider) bool {
-	return d != nil && d.Backend() == decisions.BackendSystemOne
+	b, ok := d.(interface{ BatchesChecks() bool })
+	return ok && b.BatchesChecks()
 }
 
 // decide queues one check and waits for its answers, keyed by category as a

@@ -585,6 +585,9 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 func (c Config) ClassifierOrDefault() ClassifierConfig {
 	if c.Classifier.Provider == "" && c.Classifier.Model == "" {
 		cc, _ := ResolveClassifier(c, nil, nil)
+		// The resolved defaults know nothing of the settings already folded
+		// in: a user who asked for whole-file code scanning keeps it.
+		cc.CodeScanFull = cc.CodeScanFull || c.Classifier.CodeScanFull
 		return cc
 	}
 	return c.Classifier
@@ -1950,6 +1953,7 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 	// Code comments and prose are read by the guardrail sentinel, which a
 	// decision backend answers when one is set; never by the ML stack.
 	p.SetText(guard, guardLabel, cc.Decisions.Backend == decisions.BackendSystemOne)
+	p.SetTextBatched(cc.Decisions.Batch)
 	if cfg.Security.Kind == "models" {
 		var phase3 rolemanager.Classifier
 		if cfg.Security.Phase3On {

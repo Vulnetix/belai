@@ -168,3 +168,16 @@ func TestScoreBatchesFitTheBackendCaps(t *testing.T) {
 		t.Fatalf("an uncapped backend got %d items", items)
 	}
 }
+
+func (b *batchDecider) BatchesChecks() bool { return true }
+
+// Batching is opt-in: a systemone server sends each check alone unless
+// classifier.decision.batch turned batching on for it.
+func TestBatchingIsOptIn(t *testing.T) {
+	if batchable(&decisions.SystemOne{Name: "clef", Model: "clef"}) {
+		t.Fatal("a default systemone server batches")
+	}
+	if !batchable(&decisions.SystemOne{Name: "ts", Model: "m", BatchChecks: true}) {
+		t.Fatal("classifier.decision.batch did not turn batching on")
+	}
+}

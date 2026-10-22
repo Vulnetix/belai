@@ -105,7 +105,14 @@ rules, the per-file verdict cache and session-start doc warming are in
 ### Batched SystemOne checks
 
 A SystemOne server answers many questions in one forward pass, so security
-checks bound for one are batched (`internal/rolemanager/jev/securitybatch.go`).
+checks bound for one can be batched (`internal/rolemanager/jev/securitybatch.go`).
+Batching is **opt-in**: `classifier.decision.batch: true`. Measured live
+against Clef on Workers AI, a request carrying five files answered less
+decisively than five single requests (more checks fell back to the chat
+model), and every undecided item sends its neighbours back alone, so the
+batch added a round trip rather than saving one. Turn it on for a server that
+keeps its answers sharp with many items in one state, and measure it there
+(see [performance.md](performance.md#measured)).
 
 - **Gathering.** The first check waits 8 ms for others. Checks that arrive in
   that window go out as one request: `state.items` holds each item's content,
@@ -127,6 +134,11 @@ checks bound for one are batched (`internal/rolemanager/jev/securitybatch.go`).
   endpoint hands the item to the fallback classifier.
 - **Only SystemOne.** A local letter reader asks its questions one at a time,
   so batching would only add the wait; it is not batched.
+- **Question keys on the wire.** Clef refuses a question key outside
+  `[A-Za-z0-9_.-]{1,100}` with HTTP 422. `decisions.SystemOne` sends any
+  other key (a batch's `0:PROMPT_INJECTION`, a relevance job's `s:a1`) as a
+  stand-in such as `q0` and maps the answers back, so every decision job
+  works against Clef; keys already in that form go out unchanged.
 
 ### Three-phase classification (ML stack)
 

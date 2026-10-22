@@ -267,9 +267,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           windows, and a file with none costs no call. Prose such as markdown goes to a systemone model when
           one is set. A verdict covers the whole file, so reading another part of the same bytes costs nothing,
           and with a systemone model the project's docs are classified in the background when a session
-          starts. Checks that reach a systemone model together share one request of up to 250 items; if any
-          item is flagged, the others are asked again on their own. <code class="mono">classifier.code_scan: full</code>{' '}
-          reads whole code files instead.
+          starts. <code class="mono">classifier.decision.batch: true</code> lets checks that arrive together
+          share one request of up to 250 items, and if any item is flagged the others are asked again on their
+          own; it is off by default, because on Clef single checks measured faster.{' '}
+          <code class="mono">classifier.code_scan: full</code> reads whole code files instead.
         </p>
       </div>
     </details>

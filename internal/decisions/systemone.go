@@ -68,6 +68,9 @@ type SystemOne struct {
 	// (Ollama's is 64 KiB); a larger one is never sent and fails as
 	// unavailable, so the fallback answers instead of the server refusing it.
 	MaxBodyBytes int
+	// BatchChecks lets the security classifier send checks that arrive
+	// together as one request (classifier.decision.batch).
+	BatchChecks bool
 	// Envelope reads Cloudflare's API envelope ({"result": …, "success": …,
 	// "errors": […]}) around the answers. A bare answer body is read too.
 	Envelope bool
@@ -430,3 +433,7 @@ func wireQuestionIDs(qs map[string]Question) questionIDs {
 	}
 	return ids
 }
+
+// BatchesChecks reports whether security checks to this server may share a
+// request (classifier.decision.batch).
+func (s *SystemOne) BatchesChecks() bool { return s.BatchChecks }

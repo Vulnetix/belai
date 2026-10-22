@@ -58,6 +58,9 @@ type DecisionsConfig struct {
 	// the backend default.
 	Timeout       time.Duration
 	MaxStateBytes int
+	// Batch is classifier.decision.batch: security checks to a systemone
+	// server are batched (decisions.SystemOne.BatchChecks).
+	Batch bool
 }
 
 // On reports whether a local or self-hosted decision backend is configured.
@@ -101,6 +104,7 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 			MaxBodyBytes:   d.MaxBodyBytes,
 			Envelope:       d.Envelope,
 			ExtraHeaders:   d.ExtraHeaders,
+			BatchChecks:    d.Batch,
 		}
 		if d.Decider != nil {
 			sup := deciderserver.Shared(*d.Decider)
@@ -151,6 +155,7 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		Model:         cls.Model,
 		Timeout:       time.Duration(cls.Decision.TimeoutMS) * time.Millisecond,
 		MaxStateBytes: cls.Decision.MaxStateBytes,
+		Batch:         cls.Decision.Batch != nil && *cls.Decision.Batch,
 	}
 	switch backend {
 	case decisions.BackendLocal:

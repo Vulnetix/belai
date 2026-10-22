@@ -1546,6 +1546,12 @@ func TestClassifierOrDefault(t *testing.T) {
 	if got := cfg.ClassifierOrDefault(); got.Provider != "openai" || got.Model != "gpt-5-mini" {
 		t.Fatalf("stored classifier not honoured: %+v", got)
 	}
+	// A user who asked for whole-file code scanning keeps it when the
+	// classifier resolves to the defaults (no provider or model set).
+	full := Config{Classifier: ClassifierConfig{CodeScanFull: true}}
+	if got := full.ClassifierOrDefault(); !got.CodeScanFull {
+		t.Fatalf("CodeScanFull not kept through the defaults: %+v", got)
+	}
 }
 
 // TestNewClassifierWithRetryEmitsRetryEvents verifies that the classifier path

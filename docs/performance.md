@@ -16,9 +16,10 @@ critical path should change this page too.
   so reading another window of the same bytes costs nothing.
 - **Docs are warmed.** With a SystemOne backend, the project's prose files are
   classified in the background at startup.
-- **Checks are batched.** SystemOne checks arriving within 8 ms share one
-  request, up to 250 items
-  ([role-manager.md](role-manager.md#batched-systemone-checks)).
+- **Checks are single unless you batch them.** `classifier.decision.batch:
+  true` lets SystemOne checks arriving within 8 ms share one request, up to
+  250 items ([role-manager.md](role-manager.md#batched-systemone-checks)).
+  It is off by default because on Clef it measured slower (below).
 - **One pipeline per session.** The classifier pipeline is built once per
   config (`internal/agent/pipeline.go`), not once per turn and once per tool
   result. A routed role classifier keeps its per-use-case route, so the router
@@ -76,9 +77,39 @@ critical path should change this page too.
 
 ## Measured
 
-Ten Go files and five markdown docs from this repository, read in one pass
-(15 Read results at once), against a local SystemOne stand-in that costs
-40 ms a request plus 1 ms a KiB:
+### Live, against Clef
+
+One headless turn (`belai -prompt … -mode agent`) that reads three Go files
+and two markdown docs in one response, through the Vulnetix AI Firewall to
+OpenRouter's free router, with Clef on Workers AI as the decision backend.
+v0.154.0 (before) against this build with batching off and on, four runs
+each, all built with the same `first_token` trace event. Each row gives the
+range over the runs of when the first and the last of the five Read results
+cleared the classifier, measured from the start of the classification.
+
+| Build | First of five cleared | Last of five cleared | Pre-prompt | Checks that fell back to the chat model |
+| ----- | --------------------- | -------------------- | ---------- | --------------------------------------- |
+| v0.154.0 | 0.48 s to 0.80 s | 4.0 s to 4.6 s | 378 ms to 967 ms | 0 to 1 a run |
+| this build, batching off (default) | 0.37 s to 0.53 s | 3.1 s to 3.3 s | 334 ms to 523 ms | none in three runs, 3 in one |
+| this build, batching on | 2.3 s to 2.5 s | 4.7 s to 19.7 s | 345 ms to 675 ms | 1 to 4 a run |
+
+Batching on Clef was slower: the batch request itself takes as long as the
+largest item, a request with several items was answered less decisively, and
+every undecided item sent its neighbours back alone. That is why batching is
+opt-in. The live runs also found that Clef refuses question keys such as
+`s:a1` with HTTP 422, which the transport now maps
+([role-manager.md](role-manager.md#batched-systemone-checks)).
+
+Time to first token is recorded as the trace event `agent/first_token`
+(`BELAI_TRACE=<file>`). Against the free router it varied from 2.5 s to 21 s
+in both builds, run to run, so these runs cannot show a difference in it;
+the pre-prompt and classification times above are the part Belai controls.
+
+### Offline, against a stand-in
+
+Ten Go files and five markdown docs, read in one pass (15 Read results at
+once), against a local SystemOne stand-in that costs 40 ms a request plus
+1 ms a KiB, with batching on:
 
 | Server | Before | After |
 | ------ | ------ | ----- |
@@ -86,9 +117,7 @@ Ten Go files and five markdown docs from this repository, read in one pass
 | Answers one request at a time | 15 requests, 325 KiB, 926 ms | 4 requests, 202 KiB, 366 ms |
 | Parallel, flat 150 ms a request | 15 requests, 325 KiB, 156 ms | 4 requests, 202 KiB, 166 ms |
 
-Reading the same files again afterwards made no requests. The gain is
-largest on a server that queues requests (a single local model, a rate
-limit); on one that answers everything at once in a flat time, batching costs
-its 8 ms gathering wait. Before the one-pass scanner, chroma's tokenising made
-the new path slower on parallel servers; the scanner removed that. Time to
-first token against a live provider was not measured here.
+A stand-in answers a batch as decisively as single items, which Clef did
+not, so batching looks better here than it was live. Reading the same files
+again made no requests. Before the one-pass scanner, chroma's tokenising made
+the new path slower on parallel servers; the scanner removed that.
