@@ -102,8 +102,31 @@ opt-in. The live runs also found that Clef refuses question keys such as
 
 Time to first token is recorded as the trace event `agent/first_token`
 (`BELAI_TRACE=<file>`). Against the free router it varied from 2.5 s to 21 s
-in both builds, run to run, so these runs cannot show a difference in it;
-the pre-prompt and classification times above are the part Belai controls.
+in both builds, run to run, because that is the router's own latency, so it
+cannot show a difference in Belai's share. That share is the harness time
+between a turn starting and its first model request leaving: the turn's start
+(the `turn` event's end minus its duration) to the first `chat/completions`
+request's start, both in the trace. Over the same runs:
+
+| Build | Runs | Harness before the first model request |
+| ----- | ---- | -------------------------------------- |
+| v0.154.0 | 12 | median 1.52 s (0.41 s to 3.79 s) |
+| this build, batching on | 8 | median 1.48 s (0.33 s to 3.41 s) |
+| this build, batching off (default) | 4 | median 2.64 s (1.84 s to 3.27 s) |
+
+These do not separate: the spread within a build is larger than any gap
+between builds, and the four default-build runs happen to sit high. Read
+honestly, this configuration shows no measurable change in time to the first
+model request. That is expected: the work before the first request here is
+mostly the prompt's own admission check and the nonce fetch, which this change
+leaves alone, and the pre-prompt jobs it moves off the critical path (git
+sync, agent pick, scale rating, tool selection) are off or fast in this
+setup. The gain this change claims is in what happens after the first request,
+when tool results are classified (the first table), and in turns where git
+sync fetches or a decision job is slow. A clean first-token comparison needs a
+provider with steady latency; the models the organisation's AI Firewall
+allows were not usable for one during this work (the Anthropic account had no
+credit), so one was not run.
 
 ### Offline, against a stand-in
 
