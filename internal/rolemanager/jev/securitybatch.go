@@ -84,11 +84,12 @@ func batchable(d decisions.Decider) bool {
 // decide queues one check and waits for its answers, keyed by category as a
 // single request's would be.
 func (b *securityBatcher) decide(ctx context.Context, content string, cats []rolemanager.Sentinel) (map[string]decisions.Answer, error) {
+	b.mu.Lock()
 	if len(content) > b.maxBytes || (b.maxQuestions > 0 && len(cats) > b.maxQuestions) {
+		b.mu.Unlock()
 		return b.single(ctx, content, cats)
 	}
 	it := &batchItem{content: content, cats: cats, done: make(chan batchAnswer, 1)}
-	b.mu.Lock()
 	if len(b.pending) > 0 && !b.fits(it) {
 		b.flushLocked()
 	}
@@ -154,7 +155,10 @@ func (b *securityBatcher) send(items []*batchItem) {
 		items[0].done <- batchAnswer{answers: a, err: err}
 		return
 	}
-	res, err := b.backend.Decide(ctx, buildBatchRequest(items))
+	b.mu.Lock()
+	backend := b.backend
+	b.mu.Unlock()
+	res, err := backend.Decide(ctx, buildBatchRequest(items))
 	if err != nil {
 		b.each(ctx, items)
 		return
