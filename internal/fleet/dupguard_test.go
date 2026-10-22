@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -114,4 +115,20 @@ func TestAWorkerThatDoesNotPublishAsksNothing(t *testing.T) {
 	if open := w.guardOpenPR(context.Background()); open != nil || asks.Load() != 0 {
 		t.Fatalf("a non-publishing worker consulted the forge (%d asks)", asks.Load())
 	}
+}
+
+// The lease goroutine saves the record on its heartbeat while the worker saves
+// around the item; run under -race this failed before save took its lock.
+func TestSaveFromTheHeartbeatAndTheWorkerDoNotRace(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, sweeper(), complete)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			for range 50 {
+				w.save()
+			}
+		})
+	}
+	wg.Wait()
 }

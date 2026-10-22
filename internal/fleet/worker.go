@@ -185,6 +185,7 @@ type Worker struct {
 	jevOnce    sync.Once
 	fastOnce   sync.Once
 	mu         sync.Mutex
+	saveMu     sync.Mutex       // serialises save: the heartbeat and the worker both stamp and write the record
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 	outages    int              // consecutive items released because the model provider was unavailable
 	ctlSeq     int64            // the last control applied (control.go)
@@ -226,6 +227,10 @@ func (w *Worker) save() {
 	if w.Registry == nil {
 		return
 	}
+	// The lease goroutine saves on its heartbeat while the worker saves around
+	// the item: the stamps below and the copy Save takes must not interleave.
+	w.saveMu.Lock()
+	defer w.saveMu.Unlock()
 	w.Record.Beat = w.clock().UnixMilli()
 	w.Record.TokensLive = int(w.liveTokens.Load())
 	if err := w.Registry.Save(w.Record); err != nil {
