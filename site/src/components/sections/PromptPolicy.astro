@@ -8,7 +8,7 @@ import SubHead from '../ui/SubHead.astro';
 import Limits from '../ui/Limits.astro';
 
 const sealText =
-  'Prompt to policy: a permission you state in a prompt, such as never run Bash or mask emails, becomes an AI Firewall guardrail enforced at the gateway for every session in your organisation. While you are signed in to Vulnetix, a copy of each admitted prompt is read in the background. SystemOne decides whether it states a rule the firewall can enforce, with the fast model as fallback, and the main model writes the rule as a vulnetix ai-firewall guardrail. Every field is validated and rules already live are dropped. A card offers the rules with Apply, and nothing changes until you click. Allow and deny variants are both written, and only the one that fits your current rules is switched on. The Pix Sandbox Permissions tab lists every offer and the live rules.';
+  'Prompt to policy: a permission you state in a prompt, such as never run Bash or mask emails, becomes an AI Firewall guardrail enforced at the gateway for every session in your organisation. While you are signed in to Vulnetix, a copy of each admitted prompt is read in the background. SystemOne decides whether it states a rule the firewall can enforce, with the fast model as fallback, and the main model writes the rule as a vulnetix ai-firewall guardrail. Every field is validated and rules already live are dropped. A card offers the rules with Apply, and nothing changes until you click. Allow and deny variants are both written, and only the one that fits your current rules is switched on. For Software Factory sessions on a Pix Sandbox, the console Permissions tab lists every offer and the live rules.';
 
 const steps = [
   { n: '01', name: 'Word gate', key: 'free', lead: 'A prompt with no permission-like word (never, only use, redact, mask, PII, secret…) stops here and costs nothing.' },
@@ -36,7 +36,7 @@ const limits = [
 ---
 
 <SealedSection label="prompt-policy" sealText={sealText} id="prompt-policy">
-  <SectionHead title="Prompt to policy" surfaces={['tui', 'pix sandbox', 'vulnetix only']}>
+  <SectionHead title="Prompt to policy" surfaces={['tui', 'software factory', 'vulnetix only']}>
     Say "never run Bash" or "mask customer emails" and Belai turns it into an AI Firewall guardrail,
     enforced at the gateway for every session in your organisation. No other coding harness turns a
     permission you type into policy the network enforces.
@@ -91,7 +91,7 @@ const limits = [
   </details>
 
   <SubHead title="Every offer, in the console">
-    Each offer and each apply is recorded in the session. In a Pix Sandbox, the console's Permissions
+    Each offer and each apply is recorded in the session. For Software Factory sessions on a Pix Sandbox, the console's Permissions
     tab lists your organisation's live guardrails, which you can switch on, off or delete, and every
     rule any of the sandbox's sessions has offered, marked Applied or Pending, with Apply beside it.
   </SubHead>
