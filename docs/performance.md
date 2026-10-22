@@ -38,6 +38,11 @@ critical path should change this page too.
   goal draft and prefetch, and is bounded by 8 seconds. An early answer that
   the turn does not use is dropped and never recorded; a tool selection whose
   surface changed in between is rated again.
+- **Profiles are parsed once.** The agent pick lists your profiles every Auto
+  turn; the parsed list is kept until a profile file's name, size or
+  modification time changes (not the directory's time, which an edit in place
+  leaves alone), and each call gets fresh copies
+  (`internal/agentprofile/listcache.go`).
 - **One git status per turn.** Prefetch and the turn's status block share one
   `git status`.
 - **The sealed prompt survives a rebuild.** The TUI keeps the sealed system

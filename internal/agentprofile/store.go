@@ -322,22 +322,28 @@ func List() ([]AgentProfile, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	var out []AgentProfile
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
+	key, keyed := profilesKey(dir, entries)
+	out, hit := cachedProfiles(key, keyed)
+	if !hit {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			name := strings.TrimSuffix(e.Name(), ".json")
+			p, err := Load(name)
+			if err != nil {
+				return nil, err
+			}
+			// Load sets File from the entry name; pin it again here so the record
+			// survives any future Load fast-path change.
+			p.File = e.Name()
+			out = append(out, p)
 		}
-		name := strings.TrimSuffix(e.Name(), ".json")
-		p, err := Load(name)
-		if err != nil {
-			return nil, err
+		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+		if keyed {
+			storeProfiles(key, out)
 		}
-		// Load sets File from the entry name; pin it again here so the record
-		// survives any future Load fast-path change.
-		p.File = e.Name()
-		out = append(out, p)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	// Plugin profiles follow the user's, named "plugin:name" so they can
 	// never shadow a user or built-in profile.
 	if ExtraProfiles != nil {
