@@ -1,12 +1,13 @@
 // Where a feature is available. Each section and sub-area on the home page may
 // carry a short row of these markers (components/ui/Surfaces.astro). The list
-// is closed, so a marker is always one of these six and always reads the same.
+// is closed, so a marker is always one of these seven and always reads the same.
 export const surfaces = {
   tui: 'The interactive terminal session',
   acp: 'An editor connected over ACP',
   cli: 'The command line: headless runs and subcommands',
   'self-hosted': 'On a machine you run yourself',
-  'pix sandbox': 'In a Pix Sandbox that Vulnetix runs for you',
+  'pix sandbox': 'On a Pix Sandbox, the cloud machine Vulnetix runs for you',
+  'software factory': 'In the Vulnetix Software Factory, which runs on Pix Sandboxes',
   'vulnetix only': 'Needs a Vulnetix account or service',
 } as const;
 

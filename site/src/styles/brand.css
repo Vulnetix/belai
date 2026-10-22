@@ -856,7 +856,7 @@ main > .chapter:first-child {
 
 /* ----------------------------------------------------------------------------
  * Surface markers: where a feature works (TUI, ACP, CLI, self-hosted, Pix
- * Sandbox, Vulnetix only). Deliberately quiet: small mono type, a hairline
+ * Sandbox, Software Factory, Vulnetix only). Deliberately quiet: small mono type, a hairline
  * outline and the ink at low strength.
  * ------------------------------------------------------------------------- */
 .surfaces {
