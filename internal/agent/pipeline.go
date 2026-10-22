@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -49,4 +50,18 @@ func (s *Session) pipeline(emit func(Event)) *rolemanager.Pipeline {
 	sp.pipe, sp.key = p, key
 	sp.builds.Add(1)
 	return p
+}
+
+// traceFirstToken wraps emit so the trace records, once per turn, how long the
+// turn took to reach the model's first streamed output (text, reasoning or a
+// tool call): the latency a user feels. docs/performance.md.
+func (s *Session) traceFirstToken(emit func(Event), start time.Time) func(Event) {
+	var once sync.Once
+	return func(e Event) {
+		switch e.Kind {
+		case EventTextKind, EventReasoningKind, EventToolCallDeltaKind:
+			once.Do(func() { s.trace.Event("agent", "first_token", time.Since(start)) })
+		}
+		emit(e)
+	}
 }

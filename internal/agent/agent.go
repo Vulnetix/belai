@@ -1062,6 +1062,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
 	ctx = calltrace.WithSession(ctx, s.sessionID)
 	emit = stampEvents(emit)
+	emit = s.traceFirstToken(emit, turnStart)
 	s.emit = emit
 	s.taskCallsThisTurn = 0
 	s.taskSeq = 0

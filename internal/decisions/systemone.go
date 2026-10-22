@@ -9,6 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,7 +153,9 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		return Result{}, &Error{Class: ClassUnavailable, Msg: "a request has more questions than the model reads at once"}
 	}
 	questions := make(map[string]wireQuestion, len(r.Questions))
-	for id, q := range r.Questions {
+	wireIDs := wireQuestionIDs(r.Questions)
+	for qid, q := range r.Questions {
+		id := wireIDs.out[qid]
 		if s.MaxOptions > 0 && len(q.Options) > s.MaxOptions {
 			return Result{}, &Error{Class: ClassUnavailable, Msg: "a question has more options than the model reads"}
 		}
@@ -250,7 +255,11 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 		return Result{}, &Error{Class: ClassProtocol, Msg: "response is not a systemone answer", Err: err}
 	}
 	answers := make(map[string]Answer, len(out.Answers))
-	for id, a := range out.Answers {
+	for wid, a := range out.Answers {
+		id, ok := wireIDs.in[wid]
+		if !ok {
+			continue // an answer to a question that was not asked
+		}
 		ans := Answer{Type: a.Type, Choice: a.Choice, Probabilities: a.Probabilities}
 		if a.Noul != nil {
 			ans.Noul = *a.Noul
@@ -380,4 +389,44 @@ func excerpt(b []byte) string {
 		return "empty response body"
 	}
 	return truncate(s, 200)
+}
+
+// wireIDPattern is the question key a systemone server accepts. Cloudflare's
+// Clef refuses any other key with HTTP 422 ("String should match pattern
+// '^[A-Za-z0-9_.-]{1,100}$'"), which callers' keys such as "s:a1" and
+// "0:PROMPT_INJECTION" are not.
+var wireIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+
+// questionIDs maps a request's question keys to the keys sent on the wire and
+// back.
+type questionIDs struct {
+	out map[string]string // caller key -> wire key
+	in  map[string]string // wire key -> caller key
+}
+
+// wireQuestionIDs keeps every key that is already safe and renames the rest
+// "q0", "q1", ... (skipping any that a safe key already uses), so a request
+// whose keys are all safe is sent exactly as written.
+func wireQuestionIDs(qs map[string]Question) questionIDs {
+	ids := questionIDs{out: make(map[string]string, len(qs)), in: make(map[string]string, len(qs))}
+	var unsafe []string
+	for id := range qs {
+		if wireIDPattern.MatchString(id) {
+			ids.out[id], ids.in[id] = id, id
+			continue
+		}
+		unsafe = append(unsafe, id)
+	}
+	sort.Strings(unsafe)
+	n := 0
+	for _, id := range unsafe {
+		w := "q" + strconv.Itoa(n)
+		for _, taken := ids.in[w]; taken; _, taken = ids.in[w] {
+			n++
+			w = "q" + strconv.Itoa(n)
+		}
+		n++
+		ids.out[id], ids.in[w] = w, id
+	}
+	return ids
 }
