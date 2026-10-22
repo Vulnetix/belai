@@ -96,3 +96,16 @@ func TestEventStreamSkipsNonStringHeaders(t *testing.T) {
 }
 
 func crc32IEEE(b []byte) uint32 { return crc32.ChecksumIEEE(b) }
+
+// FuzzEventStreamNext never panics on arbitrary bytes.
+func FuzzEventStreamNext(f *testing.F) {
+	good := EncodeKiroEvent("test", []byte(`{"x":1}`))
+	f.Add(good)
+	f.Add([]byte{})
+	f.Add([]byte{0, 0, 0, 0})
+	f.Add(good[:len(good)-1])
+	f.Fuzz(func(t *testing.T, data []byte) {
+		r := NewEventStreamReader(bytes.NewReader(data))
+		_, _ = r.Next()
+	})
+}

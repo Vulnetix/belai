@@ -132,3 +132,33 @@ func TestParseOpenVEX(t *testing.T) {
 		t.Fatalf("dedupe keys = %d, want 3 (affected + investigating + risk)", len(keys))
 	}
 }
+
+// FuzzParseSARIF never panics on malformed JSON.
+func FuzzParseSARIF(f *testing.F) {
+	f.Add(`{"runs":[{"tool":{"driver":{"rules":[]}},"results":[]}]}`)
+	f.Add(`not json`)
+	f.Add(``)
+	f.Fuzz(func(t *testing.T, data string) {
+		_, _, _, _, _ = ParseSARIF(context.Background(), strings.NewReader(data), DefaultMaxBytes)
+	})
+}
+
+// FuzzParseCycloneDX never panics on malformed JSON.
+func FuzzParseCycloneDX(f *testing.F) {
+	f.Add(`{"vulnerabilities":[]}`)
+	f.Add(`not json`)
+	f.Add(``)
+	f.Fuzz(func(t *testing.T, data string) {
+		_, _, _, _ = ParseCycloneDX(context.Background(), strings.NewReader(data), DefaultMaxBytes)
+	})
+}
+
+// FuzzParseOpenVEX never panics on malformed JSON.
+func FuzzParseOpenVEX(f *testing.F) {
+	f.Add(`{"statements":[]}`)
+	f.Add(`not json`)
+	f.Add(``)
+	f.Fuzz(func(t *testing.T, data string) {
+		_, _, _, _, _ = ParseOpenVEX(context.Background(), strings.NewReader(data), DefaultMaxBytes)
+	})
+}

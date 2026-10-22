@@ -189,3 +189,21 @@ func TestRenderDropsTheHarnessMarker(t *testing.T) {
 		t.Fatalf("Render = %q", got)
 	}
 }
+
+// FuzzParse never panics on arbitrary input and terminates on unbalanced/nested thinking tags.
+func FuzzParse(f *testing.F) {
+	valid := `{"groups":[{"context":"What is the issue?","options":[{"label":"Bug"},{"label":"Feature"}]}]}`
+	f.Add(valid)
+	f.Add("```json\n" + valid + "\n```")
+	f.Add("<thinking>ignore</thinking>" + valid)
+	f.Add("<thinking>unbalanced" + valid)
+	f.Add("not json")
+	f.Add("")
+	f.Fuzz(func(t *testing.T, raw string) {
+		q, err := Parse(raw)
+		if err != nil {
+			return
+		}
+		_ = q.Validate()
+	})
+}

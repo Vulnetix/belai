@@ -110,3 +110,53 @@ func TestToolArgsFragmentInvalidString(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// TestCanonicalToolArgsRoundTrip checks that CanonicalToolArgs never panics and
+// that string/object inputs round-trip through the canonical form.
+func TestCanonicalToolArgsRoundTripAndPanics(t *testing.T) {
+	inputs := []string{
+		``,
+		`null`,
+		`"{\"a\":1}"`,
+		`{"a":1}`,
+		`[1,2]`,
+		`not json`,
+		`   `,
+	}
+	for _, in := range inputs {
+		_, _ = CanonicalToolArgs([]byte(in))
+	}
+
+	// String-encoded JSON should decode to the same JSON text.
+	in := `{"key":"value"}`
+	strJSON, _ := json.Marshal(in)
+	got, err := CanonicalToolArgs(strJSON)
+	if err != nil || got != in {
+		t.Fatalf("string round-trip: got %q err %v want %q", got, err, in)
+	}
+
+	// Object input should return itself.
+	got, err = CanonicalToolArgs([]byte(in))
+	if err != nil || got != in {
+		t.Fatalf("object round-trip: got %q err %v want %q", got, err, in)
+	}
+}
+
+// TestToolArgsFragmentRoundTrip checks string fragments decode and object fragments pass through.
+func TestToolArgsFragmentRoundTrip(t *testing.T) {
+	in := `{"key":"value"}`
+	strJSON, _ := json.Marshal(in)
+	if got := ToolArgsFragment(strJSON); got != in {
+		t.Fatalf("string fragment: got %q want %q", got, in)
+	}
+	if got := ToolArgsFragment([]byte(in)); got != in {
+		t.Fatalf("object fragment: got %q want %q", got, in)
+	}
+}
+
+// TestToolArgsFragmentNeverPanics checks ToolArgsFragment on random inputs.
+func TestToolArgsFragmentNeverPanics(t *testing.T) {
+	for _, in := range []string{``, `null`, `"x`, `{`, `[`, `abc`, `   `} {
+		_ = ToolArgsFragment([]byte(in))
+	}
+}

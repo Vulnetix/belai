@@ -230,3 +230,69 @@ func TestServingReadsTheAliasFromProps(t *testing.T) {
 		t.Fatal("props alias not honoured, or a foreign alias accepted")
 	}
 }
+
+// TestReadStateRejectsInvalidPort covers the validation branch in readState.
+func TestReadStateRejectsInvalidPort(t *testing.T) {
+	isolate(t)
+	dir, _ := RunDir()
+	dir2, _ := RunDir()
+	_ = dir2
+	if dir == "" {
+		t.Skip("no run dir")
+	}
+	_ = os.MkdirAll(dir, 0o700)
+	path := filepath.Join(dir, "decision-server.json")
+	_ = os.WriteFile(path, []byte(`{"port":0,"alias":"x"}`), 0o600)
+	if s, ok := readState(); ok {
+		t.Fatalf("expected readState to reject port 0, got %+v", s)
+	}
+	_ = os.WriteFile(path, []byte(`not json`), 0o600)
+	if _, ok := readState(); ok {
+		t.Fatal("expected readState to reject invalid JSON")
+	}
+}
+
+// TestDescribe returns the harness-composed strings for known errors.
+func TestDescribe(t *testing.T) {
+	if got := Describe(ErrWeightsMissing); !strings.Contains(got, "not downloaded") {
+		t.Fatalf("ErrWeightsMissing = %q", got)
+	}
+	if got := Describe(ErrNoBinary); !strings.Contains(got, "not installed") {
+		t.Fatalf("ErrNoBinary = %q", got)
+	}
+	if got := Describe(ErrUpgrade); !strings.Contains(got, "too old") {
+		t.Fatalf("ErrUpgrade = %q", got)
+	}
+	if got := Describe(errors.New("multi\nline")); !strings.Contains(got, "unavailable") {
+		t.Fatalf("generic = %q", got)
+	}
+}
+
+// TestSharedReturnsMemoizedSupervisor confirms Shared returns the same instance.
+func TestSharedReturnsMemoizedSupervisor(t *testing.T) {
+	m := testModel()
+	a := Shared(m)
+	b := Shared(m)
+	if a != b {
+		t.Fatal("Shared should return the same supervisor")
+	}
+	if a.Opts.NGL != -1 {
+		t.Fatalf("default NGL = %d, want -1", a.Opts.NGL)
+	}
+}
+
+// TestSupervisorAdoptAndStop verifies Supervisor.Adopt stores/Stop clears.
+func TestSupervisorAdoptAndStop(t *testing.T) {
+	m := testModel()
+	s := Shared(m)
+	called := false
+	h := &Handle{BaseURL: "http://127.0.0.1:1", stop: func() error { called = true; return nil }, Owned: true}
+	s.Adopt(h)
+	if s.Handle() != h {
+		t.Fatal("Adopt did not store the handle")
+	}
+	s.Stop()
+	if !called {
+		t.Fatal("Stop did not call handle stop")
+	}
+}

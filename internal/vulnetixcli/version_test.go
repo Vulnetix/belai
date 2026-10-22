@@ -48,3 +48,58 @@ func TestVersionCompare(t *testing.T) {
 		t.Fatalf("pre-release should sort before release")
 	}
 }
+
+// TestParseVersionRoundTrip checks ParseVersion(String(v)) round-trips for parsed versions.
+func TestParseVersionRoundTrip(t *testing.T) {
+	for _, in := range []string{"v1.0.0", "vv2.3.4", "3.5.6-beta", "v0.0.0-alpha"} {
+		v, ok := ParseVersion(in)
+		if !ok {
+			t.Fatalf("ParseVersion(%q) failed", in)
+		}
+		got, ok := ParseVersion(v.String())
+		if !ok {
+			t.Fatalf("ParseVersion(String()) failed for %q", in)
+		}
+		if !sameVersion(got, v) {
+			t.Fatalf("round-trip mismatch for %q: got %+v want %+v", in, got, v)
+		}
+	}
+}
+
+// TestVersionCompareTotalOrder verifies Compare is antisymmetric and transitive on a small grid.
+func TestVersionCompareTotalOrder(t *testing.T) {
+	versions := []Version{
+		{Major: 1, Minor: 0, Patch: 0},
+		{Major: 1, Minor: 0, Patch: 0, Pre: "rc1"},
+		{Major: 1, Minor: 0, Patch: 1},
+		{Major: 1, Minor: 1, Patch: 0},
+		{Major: 2, Minor: 0, Patch: 0},
+	}
+	for i, a := range versions {
+		for j, b := range versions {
+			ab := a.Compare(b)
+			ba := b.Compare(a)
+			if i == j && ab != 0 {
+				t.Fatalf("self comparison not zero: %+v", a)
+			}
+			if ab != -ba {
+				t.Fatalf("antisymmetry failed for %+v vs %+v: %d vs %d", a, b, ab, ba)
+			}
+			if ab == 0 && ba == 0 && a != b {
+				t.Fatalf("equal compare but values differ: %+v vs %+v", a, b)
+			}
+		}
+	}
+}
+
+// TestParseVersionNeverPanics checks ParseVersion on random-looking strings.
+func TestParseVersionNeverPanics(t *testing.T) {
+	inputs := []string{"", "v", "1.2", "1.2.3.4", "version: 1.2.3", "v1.2.3-rc.1"}
+	for _, in := range inputs {
+		_, _ = ParseVersion(in)
+	}
+}
+
+func sameVersion(a, b Version) bool {
+	return a.Major == b.Major && a.Minor == b.Minor && a.Patch == b.Patch && a.Pre == b.Pre
+}

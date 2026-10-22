@@ -176,3 +176,45 @@ func TestCheckerFuncValid(t *testing.T) {
 		t.Fatal("CheckerFunc.Valid(no) = true")
 	}
 }
+
+// TestEgressIdempotent confirms that running Egress twice gives the same result.
+func TestEgressIdempotent(t *testing.T) {
+	checker := MapChecker{"good": true}
+	in := `pre ` + Wrap("system", "good", "inner") + ` post`
+	once := Egress(in, checker)
+	twice := Egress(once, checker)
+	if once != twice {
+		t.Fatalf("Egress not idempotent:\nonce:  %q\ntwice: %q", once, twice)
+	}
+}
+
+// TestEgressRoundTripSealedBlock confirms a sealed block survives Egress.
+func TestEgressRoundTripSealedBlock(t *testing.T) {
+	checker := MapChecker{"n": true}
+	for _, kind := range []string{KindAttachment, KindDirective, KindDiagnostics, KindExploration, "system", "agent"} {
+		kind := kind
+		t.Run(kind, func(t *testing.T) {
+			block := Wrap(kind, "n", "content")
+			if got := Egress(block, checker); got != block {
+				t.Fatalf("Egress did not round-trip sealed %s block:\nin  %q\nout %q", kind, block, got)
+			}
+		})
+	}
+}
+
+// TestEgressNeverPanics checks Egress over a small fuzz of malformed inputs.
+func TestEgressNeverPanics(t *testing.T) {
+	checker := MapChecker{"n": true}
+	inputs := []string{
+		"",
+		"<system nonce=\"n\" integrity=\"x\">",
+		"</system>",
+		"<system nonce=\"n\" integrity=\"x\">inner</agent>",
+		"<unknown>content</unknown>",
+		"<<<>>>",
+		Wrap("system", "n", "valid") + Wrap("system", "bad", "uhoh"),
+	}
+	for _, in := range inputs {
+		_ = Egress(in, checker)
+	}
+}
