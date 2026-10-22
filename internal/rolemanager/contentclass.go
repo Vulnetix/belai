@@ -101,6 +101,15 @@ func ClassOf(path string) ContentClass {
 // the lexer fails on, comes back whole: when the comments cannot be told
 // apart, everything is classified.
 func ExtractComments(path, content string) string {
+	if out, ok := fastComments(path, content); ok {
+		return out
+	}
+	return chromaComments(path, content)
+}
+
+// chromaComments is ExtractComments through chroma's lexers: every language
+// chroma knows, at about 1 MB/s.
+func chromaComments(path, content string) string {
 	lexer := lexers.Match(filepath.Base(path))
 	if lexer == nil {
 		return content

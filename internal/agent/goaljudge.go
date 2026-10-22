@@ -73,3 +73,9 @@ func goalJevHint(p jev.GoalScores) string {
 	}
 	return one("complete", p.Complete) + "\n" + one("partial", p.Partial) + "\n" + one("not started", p.NotStarted) + "\n"
 }
+
+// goalJudgeHedge is how long the decision backend rates a pass alone before
+// the model judge starts beside it. A backend that answers inside it settles
+// the pass with no model call, as before; one that is slower no longer holds
+// the next pass for its whole timeout and then the model's.
+var goalJudgeHedge = 1500 * time.Millisecond

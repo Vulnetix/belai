@@ -611,6 +611,13 @@ against one criterion, so a clear case needs no chat-model call.
   complete only when the digest shows a check made with tools, such as a passing
   test or build, or the changed files read back after the last edit. Otherwise
   it answers partial and the agent is sent back to verify.
+- **A head start, not a wait.** The backend rates the pass alone for 1.5
+  seconds. An answer inside that settles a clear pass with no model call, as
+  before. If it has not answered by then, the model judge starts beside it: a
+  clear answer that arrives later still wins and cancels the judge, an unsure
+  one still hands its percentages to a judge that reads them, and a timeout or
+  an error takes the judge already running, so an unavailable backend no
+  longer holds the next pass for its whole 8 seconds before the model is asked.
 - **A stronger verification pass.** If the model judge then says complete, the
   verification directive that gates completion also asks for a proper check with
   tools: run the tests or build, read back changed files, and compare each

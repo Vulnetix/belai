@@ -58,10 +58,32 @@ critical path should change this page too.
 - **Score batches fit the backend.** A score batch never exceeds a backend's
   question or body cap, so none is refused and split.
 
+- **The goal judge gets a head start, not a wait.** At a pass boundary the
+  decision backend rates the goal alone for 1.5 seconds, so a pass it settles
+  quickly costs no model call. Past that the model judge starts beside it, so
+  an unavailable backend no longer holds the next pass for its 8 second
+  timeout before the model is asked
+  ([jev-jobs.md](jev-jobs.md#goal-judge)).
+
 ## What stays serial, on purpose
 
-- **The goal judge.** At a pass boundary the decision backend rates the goal
-  first and the model judge runs only when it is unsure, with the backend's
-  scores. Running them together would spend a model call on every pass,
-  including the passes the backend settles alone.
 - **Admission.** The prompt is admitted before anything acts on it.
+
+## Measured
+
+Ten Go files and five markdown docs from this repository, read in one pass
+(15 Read results at once), against a local SystemOne stand-in that costs
+40 ms a request plus 1 ms a KiB:
+
+| Server | Before | After |
+| ------ | ------ | ----- |
+| Answers requests in parallel | 15 requests, 325 KiB, 116 ms | 4 requests, 202 KiB, 110 ms |
+| Answers one request at a time | 15 requests, 325 KiB, 926 ms | 4 requests, 202 KiB, 366 ms |
+| Parallel, flat 150 ms a request | 15 requests, 325 KiB, 156 ms | 4 requests, 202 KiB, 166 ms |
+
+Reading the same files again afterwards made no requests. The gain is
+largest on a server that queues requests (a single local model, a rate
+limit); on one that answers everything at once in a flat time, batching costs
+its 8 ms gathering wait. Before the one-pass scanner, chroma's tokenising made
+the new path slower on parallel servers; the scanner removed that. Time to
+first token against a live provider was not measured here.
