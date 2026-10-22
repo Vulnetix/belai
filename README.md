@@ -179,6 +179,7 @@ Set the API key for your provider and Belai picks it up:
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`) |
+| `llama-server` | none (local; honours `BELAI_LLAMA_HOST`, default `http://localhost:8080/v1`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (OAuth, exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
 | `kiro` | none: run `belai login kiro` (AWS Builder ID or IAM Identity Center sign-in; see [Kiro](docs/kiro.md)). `KIRO_LOGIN` holds a stored login |
@@ -188,8 +189,8 @@ Set the API key for your provider and Belai picks it up:
 | `mistral` | `MISTRAL_API_KEY` |
 | `together` | `TOGETHER_API_KEY` |
 | `xai` | `XAI_API_KEY` |
-| `moonshot` | `MOONSHOT_API_KEY`; optional `base_url` for `.cn` |
-| `minimax` | `MINIMAX_API_KEY`; optional `base_url` for `.cn` |
+| `moonshot` | `MOONSHOT_API_KEY`; optional `BELAI_MOONSHOT_BASE_URL` for `.cn` |
+| `minimax` | `MINIMAX_API_KEY`; optional `BELAI_MINIMAX_BASE_URL` for `.cn` |
 | `alibaba` | `DASHSCOPE_API_KEY` or `ALIBABA_API_KEY` |
 
 A custom provider defined in `settings.json` resolves its key from its
