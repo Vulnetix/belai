@@ -193,7 +193,9 @@ type Worker struct {
 	crewRun    *CrewRun         // the crew run as last read
 	liveTokens atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
 	coordMu    sync.Mutex
-	coord      coordState // the forge coordinator's answer for the item in hand
+	coord      coordState        // the forge coordinator's answer for the item in hand
+	guardErr   string            // why the duplicate guard could not list open pull requests, logged once
+	heldLogged map[string]string // backlog cards the duplicate guard holds, with the card in front (dupguard.go)
 }
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
@@ -457,6 +459,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		w.securityStep(ctx, project)
 		w.qualityStep(ctx)
+		w.logHeld(ctx)
 		it, err := w.claim(project)
 		if errors.Is(err, kanban.ErrNoWork) {
 			if sv, ok := w.survey(project); ok {
@@ -628,6 +631,9 @@ func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	r := kanban.ClaimRequest{
 		Profile: w.Profile.Name, Crew: w.Record.Crew, Project: project, Worker: w.Record.ID,
 		Host: headless.HostID(), SessionID: w.Record.ID, Lease: w.Profile.LeaseDuration(),
+		// The duplicate guard: a finding card waits while another card for the
+		// same finding or package is worked or has a pull request still open.
+		OpenPR: w.guardOpenPR(context.Background()),
 	}
 	if k != nil {
 		r.Lists, r.Labels, r.AssignedOnly = k.ClaimLists(), k.Labels, k.AssignedOnly

@@ -430,6 +430,13 @@ func (s *Supervisor) boardDemand(run CrewRun) func(profile, repo string) int {
 		} else {
 			_, r.Project = kanban.ProjectFor(repo)
 		}
+		// Cards the duplicate guard holds are no demand: a worker started for
+		// them would find nothing to claim.
+		if p.PublishMode() != agentprofile.PublishNone {
+			if open, err := openPRFunc(context.Background(), repo, s.clock()); err == nil {
+				r.OpenPR = open
+			}
+		}
 		n, _ := s.Store.Demand(r)
 		return n
 	}

@@ -77,6 +77,11 @@ type FindingInput struct {
 	// card in the project already has is not filed either, so hand-filed work
 	// is not doubled.
 	Once bool
+	// PROpen reports whether a pull request url is still open on the forge.
+	// A finding whose finished card has a pull request still open is already
+	// being fixed, though the scan keeps reporting it until that pull request
+	// merges, so no new card is filed for it. Nil asks nothing.
+	PROpen func(pr string) bool
 }
 
 // FindingChange says what UpsertFinding did.
@@ -156,6 +161,14 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 				return errNoWrite
 			}
 			return nil
+		}
+		if in.PROpen != nil {
+			for _, it := range b.Items {
+				if !it.Deleted && it.Finding == id && it.PR != "" && sameProject(it, prov) && in.PROpen(it.PR) {
+					out, change = cloneItem(it), FindingRefreshed
+					return errNoWrite
+				}
+			}
 		}
 		if in.Once {
 			// A finished card, or an open one a person filed under the same

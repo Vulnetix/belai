@@ -154,12 +154,18 @@ func (w *Worker) syncCards(head string, upsert bool) {
 	prov := kanban.ProvenanceFor(w.Repo, w.Record.ID, headless.HostID())
 	present := make(map[string]bool, len(res.Findings))
 	created, refreshed, reopened := 0, 0, 0
+	// A finding whose card is done but whose pull request is still open is
+	// already being fixed: the scan reports it until that merges, and it must
+	// not become a second card with a second pull request.
+	openPR := w.guardOpenPR(context.Background())
 	for _, f := range res.Findings {
 		present[f.ID] = true
 		if !upsert {
 			continue
 		}
-		_, ch, err := w.Store.UpsertFinding(findingCard(f, head), prov)
+		card := findingCard(f, head)
+		card.PROpen = openPR
+		_, ch, err := w.Store.UpsertFinding(card, prov)
 		if err != nil {
 			w.logf("security sweep: card for %s: %v", f.ID, err)
 			continue

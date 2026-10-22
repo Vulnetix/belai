@@ -249,6 +249,20 @@ clears one. The `vuln`, `gone` and
 `needs-verify` labels route a card through the
 [security crew](fleet.md#the-security-crew).
 
+### The duplicate guard
+
+One fix gets one card at a time and one pull request. Two things used to break that. A finding whose card was done but whose pull request still waited for review came back in the next scan, and the sweep filed a fresh card for it. And several advisories on one package are cleared by the same bump, so each of their cards built it again. A repository saw eleven near-identical bumps of one package this way.
+
+The guard acts before any agent work starts, on harness fields only (the finding id, the `package` and `ecosystem` lines the harness wrote into the card, the claim and the recorded pull request url):
+
+- **Filing.** A sweep files no card for a finding while a card of that finding has a pull request the forge still reports open. When that pull request is closed unmerged and the scan still reports the finding, the next sweep files a new card as before.
+- **Claiming.** A backlog card is not claimed while another card for the same finding, or the same package in the same ecosystem, is claimed by a worker or has an open pull request. The check runs under the board lock, so two workers cannot both pass it, and a crew supervisor does not count held cards as demand. The card stays in the backlog and is claimable again as soon as the other card's pull request merges or closes, or its claim is released. Review cards are never held: their work exists, and the verifier decides which pull request stays.
+- **Log.** A worker logs `duplicate guard: K-xxxxxx waits, same package as K-yyyyyy, whose pull request ... is still open` once per held card.
+
+Open pull requests are listed once per repository per two minutes, from `belai/` branches, and only by a worker whose profile publishes. When the forge cannot be asked (no credential, an outage), the guard falls back to claims alone and says so once in the worker log; it never stops the crew. A pull request that stays open and unreviewed holds its package's other cards, so close or merge a stale draft to free them.
+
+Code: `internal/kanban/guard.go` (the rule), `internal/fleet/dupguard.go` (the forge side). `CloseDuplicatePR` still handles the case where a retry of one card left two of its own branches open.
+
 ### Human checkpoints
 
 A flow stage can hand its card on **held for a person**. The stage's profile

@@ -200,6 +200,12 @@ type ClaimRequest struct {
 	Lease     time.Duration
 	// Skip lists item ids this worker will not take again (it failed them).
 	Skip []string
+	// OpenPR reports whether a pull request url is still open on the forge. It
+	// feeds the duplicate guard (guard.go): a backlog finding card is not
+	// claimed while another card for the same finding or package is claimed or
+	// has an open pull request. Nil means the forge could not be asked, and
+	// then only the claims hold a card back.
+	OpenPR func(pr string) bool
 }
 
 func (r ClaimRequest) validate() error {
@@ -304,7 +310,7 @@ func depsDone(b *Board, it Item) bool {
 	return true
 }
 
-func (r ClaimRequest) matches(b *Board, it Item, now int64) bool {
+func (r ClaimRequest) matches(b *Board, hold holdIndex, it Item, now int64) bool {
 	switch {
 	case it.Deleted, it.Claimed(now), it.ClaimedBy != "":
 		return false
@@ -324,6 +330,11 @@ func (r ClaimRequest) matches(b *Board, it Item, now int64) bool {
 		return false
 	case slices.Contains(r.Skip, it.ID):
 		return false
+	}
+	if it.List == Backlog {
+		if _, held := hold.of(it); held {
+			return false
+		}
 	}
 	return depsDone(b, it)
 }
@@ -352,9 +363,10 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 		now := s.nowMs()
 		reaped := reapLocked(b, now)
 		lapsed = reaped
+		hold := newHoldIndex(b, now, r.OpenPR)
 		best := -1
 		for i, it := range b.Items {
-			if !r.matches(b, it, now) {
+			if !r.matches(b, hold, it, now) {
 				continue
 			}
 			if best < 0 || it.Priority > b.Items[best].Priority ||
@@ -388,8 +400,9 @@ func (s *Store) Demand(r ClaimRequest) (int, error) {
 	n := 0
 	err := s.read(func(b *Board) {
 		now := s.nowMs()
+		hold := newHoldIndex(b, now, r.OpenPR)
 		for _, it := range b.Items {
-			if r.matches(b, it, now) {
+			if r.matches(b, hold, it, now) {
 				n++
 			}
 		}
@@ -419,7 +432,13 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 		req := r
 		req.Lists = ClaimableLists
 		req.Labels, req.Skip, req.AssignedOnly, req.Project = nil, nil, false, ""
-		if !req.matches(b, it, now) {
+		hold := newHoldIndex(b, now, r.OpenPR)
+		if it.List == Backlog {
+			if h, held := hold.of(it); held {
+				return fmt.Errorf("%w: %s duplicates %s", ErrNotClaimable, it.Short(), h)
+			}
+		}
+		if !req.matches(b, hold, it, now) {
 			return fmt.Errorf("%w: %s is in %s", ErrNotClaimable, it.Short(), it.List)
 		}
 		claimLocked(&b.Items[i], r, now)
