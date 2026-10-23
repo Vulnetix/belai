@@ -363,3 +363,13 @@ See [Remote control](remote-control.md) for the daemon, [Session sync](session-s
 for the mirror, [Firewall](firewall.md) for the gateway and [Jev jobs](jev-jobs.md)
 for the classifier. The site section is described in [site.md](site.md), and the decider's tools are
 described under [MCP servers](mcp.md#built-in-servers).
+
+## Memory survives the machine
+
+A Pix Sandbox's disk does not outlive the container, so the agents' shared
+memory ([repo memory](a2a.md#repo-memory) notes and the fleet's profile
+lessons) is replicated to Vulnetix by `belai rc`'s memory replicator. A new
+sandbox starts with an empty store and hydrates it from the organisation's
+memory before its first read (waiting a few seconds at most), so what agents
+agreed and learnt is there on the next machine. Notes pulled from Vulnetix are
+classified on read like local ones.

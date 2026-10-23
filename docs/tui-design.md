@@ -56,6 +56,7 @@ unreadable on a light background.
 | `ColorTealSoft` | `#76E0CD` | `#178574` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
 | `ColorYou` | `#F49AC8` | `#B23C7E` | The `you` title of a prompt you typed. |
 | `ColorVoice` | `#C9B0F2` | `#7B5BBE` | The `you` title of a dictated prompt, and the composer frame while the speech or fast model works. |
+| `ColorA2A` | `#D49BF0` | `#8A4FA8` | A2A rows: broadcasts, direct messages, replies and acks between agents, and the status bar's `A2A: local only` / `A2A: blackout` ([a2a.md](a2a.md)). |
 | `ColorPolicy` | `#5FB3F0` | `#1F6AA8` | The AI Firewall permission card: its frame, the rules belai offers to write as org policy, and its apply buttons ([firewall-permissions.md](firewall-permissions.md)). |
 | `ColorAmber` | `#E8912B` | `#A95A0B` | Needs you, or you stepped in: permission asks, steering, `!` shell, goal mode, YOLO, context over 80%. **Not** routine tool activity. |
 | `ColorDanger` | `#E2564E` | `#B8322A` | Failed rows, errors, guardrails off. |

@@ -67,7 +67,8 @@ func TestRCPixNarrowKeepsOnlyReadOnlyTools(t *testing.T) {
 	}
 	got := narrow(full).Names()
 	for _, n := range got {
-		if !slices.Contains(rc.PixTools, n) {
+		// The repo memory tools are core: no narrowing removes them.
+		if !slices.Contains(rc.PixTools, n) && !slices.Contains(tools.CoreToolNames, n) {
 			t.Errorf("%s survived the narrowing: %v", n, got)
 		}
 	}

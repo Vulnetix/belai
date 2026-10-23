@@ -1250,7 +1250,7 @@ type UISettings struct {
 	// ShowA2A shows A2A broadcasts, messages, replies and acks in the
 	// transcript (docs/a2a.md). Default on. Display-only.
 	ShowA2A *bool `json:"show_a2a,omitempty"`
-	Mouse         *bool `json:"mouse,omitempty"`
+	Mouse   *bool `json:"mouse,omitempty"`
 	// MacKeyHints adds the Mac media-key form after an F-key in the hints and
 	// help (f9 shown as f9 (Fn+⏭)). nil follows the platform: on for macOS, off
 	// elsewhere. It is display-only. See MacKeyHintsFor.

@@ -37,8 +37,8 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task` |
-| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `mouse capture`, `macOS keyboard hints`, `session names` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received` |
+| Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
@@ -49,6 +49,17 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents` |
 | Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics`, `jev agent pick`, `jev teleport verify` |
 | Jev thresholds | one slider per cut-off, in the sections below |
+
+### A2A
+
+`A2A messaging` is `a2a.enabled` (default on): sessions broadcast what they
+work on and can message one another ([A2A messaging](a2a.md)). It takes
+effect on the next start. `A2A broadcasts received` is `a2a.filter`: `repo`
+(the default) hears broadcasts about this session's repository, `all` hears
+every one, `off` hears none and still broadcasts. A project layer may turn
+A2A off and narrow the filter, never the reverse. `A2A messages` in Display is
+`ui.show_a2a` (default on): it hides or shows the A2A rows in the thread and
+changes nothing else.
 
 ### Layout
 

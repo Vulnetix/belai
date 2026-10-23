@@ -1480,6 +1480,17 @@ tool-less turn distils at most three lessons from the report. The file is
 capped, oldest lines first. It is classified when written and again when the
 next item reads it, and `SearchMemory` can find it.
 
+Each lesson is also a `profile`-scoped note in the shared memory store
+(`~/.vulnetix/belai/memory/profiles/<profile>.jsonl`, [repo memory](a2a.md#repo-memory)),
+which is the record once it holds the profile: the worker reads its lessons
+from it, newest kept within `memory.max_bytes`. While sync is on the store
+replicates to Vulnetix, so a worker on a fresh machine (a Pix Sandbox) reads
+its lessons back, and the Software Factory console is where people edit or
+delete them; a console delete arrives as a tombstone and removes the lesson
+here. `belai agent memory NAME -clear` deletes the file and sends a tombstone
+for every lesson. Every agent also has the core `RepoMemoryRead` and
+`RepoMemoryWrite` tools for notes about the repository it works on.
+
 ## Registry
 
 Each worker writes `~/.vulnetix/belai/agents/run/<id>.json`: its profile,

@@ -44,7 +44,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
-  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), the `Vulnetix` tool (`KindRemote`,
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), an A2A direct message or reply (`KindPeer`, another agent's model text, from this host or another, classified on receipt), `RepoMemoryRead` notes (`KindRepoMemory`, text other agents and the Software Factory console wrote), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
@@ -1320,6 +1320,48 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   installed (sync off) `audit.Emit` does nothing, the audit is best effort and
   never fails or slows what it records, and the project layer may turn sync
   off, never on. See [docs/audit.md](docs/audit.md).
+- **A2A carries harness facts and classified text, and memory is notes, not
+  instructions.** `internal/a2a` (docs/a2a.md) moves envelopes between
+  sessions. The rules:
+  - **Broadcasts are the harness's.** A broadcast is composed from
+    `gitsync.Info`, the diff observer and a claim, never from model text. Every
+    identifier in an envelope is reduced to a fixed shape by `Envelope.Clean`
+    (a field that does not fit is dropped), and the directive a matching
+    broadcast becomes is a fixed template over those identifiers only, like a
+    coordinator fact. It is sanitise-only for that reason; never put a text
+    part into it.
+  - **Text parts classify.** A message's or reply's parts are the only free
+    text, capped at 4 KB. The receiving harness classifies them
+    (`tools.KindPeer`) before any model reads them: a reply rides only as a
+    user-turn attachment, a withheld message is answered with a fixed harness
+    reply, and a withheld reply is never delivered.
+  - **The side-turn is narrow.** `agent.SideReply` answers a message on the
+    receiver's model, outside the main loop's history, with exactly
+    `RepoMemoryRead` and `RepoMemoryWrite` on the receiver's repository, at
+    most four rounds, and the settings that would add a tool turned off.
+  - **The A2A tools grant nothing.** `A2AMessage` reaches only an agent whose
+    live card or broadcast is in the mailbox, and is asynchronous. `A2AAck`
+    takes an enum and 140 characters. Both are `KindA2A`, harness-composed
+    confirmations. No argument names a path, a host or a URL.
+  - **Relay is sync's, and the blackout stops it.** Cross-host relay runs only
+    while sync is on, to `https://*.vulnetix.com` with the CLI credential, and
+    stops in both directions during the organisation's A2A blackout; the local
+    bus and the local audit go on. The local audit (`a2a/audit.jsonl`,
+    hash-chained) and the uploaded one hold the `a2a.*` kinds and ids only,
+    never a text part. A project layer may turn `a2a.enabled` off and narrow
+    `a2a.filter`, never the reverse.
+  - **Repo memory is core, scoped by the harness, and classifies twice.**
+    `RepoMemoryRead` and `RepoMemoryWrite` are in every registry and survive
+    every allowlist, `Without` and mode. The store is outside every
+    repository (`<global>/memory/`), keyed by the A2A repo key the harness
+    computes; no argument names a path or another repository. A note is
+    sanitised, capped at 1 KB and admitted by the session's classifier gate
+    before it is stored, and a read is `KindRepoMemory`, which classifies
+    again, whether the note came from this host, another, or the Software
+    Factory console. Every field but the text is a harness-stamped fact.
+    Replication (`sessionsync.MemoryReplicator`) runs only while sync is on,
+    upserts by `noteId` with the newest change winning and applies
+    tombstones; the A2A blackout does not stop it.
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

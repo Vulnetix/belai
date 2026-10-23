@@ -495,3 +495,20 @@ Server side:
 - **Schema:** `BelaiKanbanItem` in `saas/prisma/models/belai.prisma`.
 - **Website page:** `src/pages/resolve/belai-kanban.vue`, under **Belai →
   Kanban**.
+
+## A2A relay and memory replication
+
+The syncer carries two more things for [A2A messaging](a2a.md). Every inbox
+poll asks for the organisation's A2A envelopes after `?a2aAfter=<seq>` and
+hands them to the host's relay, which writes them into the local bus; the
+relay posts this host's envelopes to `/v1/belai/hosts/{hostId}/a2a`. The
+session controls (`controls.a2aBlackout`, on registration and heartbeat) and
+the rc heartbeat's answer carry the organisation's A2A blackout, which stops
+the relay in both directions.
+
+The shared memory ([repo memory](a2a.md#repo-memory) and the fleet's lessons)
+replicates through the same client: local changes go to
+`POST /v1/belai/hosts/{hostId}/memory` and the organisation's come back from
+`GET /v1/belai/memory?after=<seq>`, upserted by `noteId`, the newest change
+winning, tombstones applied. A fresh machine hydrates before its first read.
+The A2A blackout does not stop it.

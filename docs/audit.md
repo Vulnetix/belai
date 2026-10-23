@@ -58,14 +58,18 @@ the harness read itself, and nothing else can be recorded.
 | agent | `gate.verified` | a gate, or a regression check, is decided by its exit code |
 | agent | `vex.written` | the harness writes the VEX for a verdict |
 | agent | `finding.carded`, `finding.reconciled` | the sweep files a finding card, or finds it gone or closed |
+| agent | `a2a.sent`, `a2a.received` | an A2A envelope this host sent (outcome `local` or `relayed`) or received and showed (`matched`) ([A2A messaging](a2a.md)) |
+| agent | `a2a.withheld` | an A2A envelope held back: by the A2A blackout from the relay, or by the classifier from the model |
+| agent | `a2a.blackout` | the organisation's A2A blackout switched, outcome `on` or `off` |
 
-`data` keys: `attempt`, `change`, `class`, `commit`, `dispatch`, `ecosystem`, `exit`,
-`files`, `forge`, `from`, `gate`, `hops`, `justification`, `list`, `os`,
-`package`, `passes`, `path`, `pr`, `previous`, `profile`, `reason`,
+`data` keys: `attempt`, `change`, `class`, `commit`, `decision`, `dispatch`, `ecosystem`, `exit`,
+`files`, `forge`, `from`, `gate`, `hops`, `justification`, `kind`, `list`, `message_id`, `os`,
+`package`, `passes`, `path`, `peer`, `pr`, `previous`, `profile`, `reason`,
 `regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,
 `suite`, `target`, `to`, `version`, `worker`. `schedule` is a schedule's UUID.
 `class` is a fault code (`provider_auth`, `provider_rate_limit`, …; see [fleet.md](fleet.md#the-provider-pool)), `retries` a count and
-`target` a `provider/model` pair, all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it
+`target` a `provider/model` pair; `message_id` an A2A `a2a-<ulid>`, `kind` an envelope kind, `peer` an Agent Card id
+(`<hostId>:<sessionId>`) and `decision` an acknowledgement's enum, never a text part; all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it
 needs a line here and a change to `TestDataKeysAllowlist`.
 
 A card links to a vulnerability (`vulnId`) only when it is a security card: one
