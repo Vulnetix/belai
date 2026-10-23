@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/mlclassify"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
@@ -456,7 +457,7 @@ func TestMemoryAppendIsCapped(t *testing.T) {
 	for i := range 50 {
 		AppendMemory("belai:builder", []string{strings.Repeat("x", 100) + string(rune('a'+i%26))}, 1024, now)
 	}
-	got := ReadMemory("belai:builder")
+	got := ReadMemoryN("belai:builder", 1024)
 	if len(got) > 1024 || !strings.Contains(got, "2026-09-28") {
 		t.Fatalf("memory %d bytes", len(got))
 	}
@@ -466,6 +467,41 @@ func TestMemoryAppendIsCapped(t *testing.T) {
 	}
 	if err := ClearMemory("belai:builder"); err != nil || ReadMemory("belai:builder") != "" {
 		t.Fatal("clear")
+	}
+	// Clear queued a tombstone per lesson for replication.
+	root, _ := memoryRoot()
+	pending, _, _ := repomemory.Outbox(root, 0, 1000)
+	tombs := 0
+	for _, n := range pending {
+		if n.DeletedAt != 0 && n.Scope == repomemory.ScopeProfile {
+			tombs++
+		}
+	}
+	if tombs == 0 {
+		t.Fatal("clear sent no tombstones")
+	}
+}
+
+// A fresh machine (a Pix Sandbox) has no .md: the lessons come back from the
+// replicated store, and a console delete (a tombstone) removes one.
+func TestMemoryReadsTheReplicatedStore(t *testing.T) {
+	testEnv(t)
+	root, _ := memoryRoot()
+	now := time.Now().UnixMilli()
+	n := repomemory.Note{NoteID: repomemory.NewNoteID(time.Now()), Scope: repomemory.ScopeProfile, ScopeKey: "belai-builder",
+		Text: "run go vet before committing", CreatedAt: now, HostID: "web"}
+	if _, err := repomemory.Apply(root, []repomemory.Note{n}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadMemory("belai:builder"); !strings.Contains(got, "run go vet") {
+		t.Fatalf("memory = %q", got)
+	}
+	n.DeletedAt, n.UpdatedAt = now+1, now+1
+	if _, err := repomemory.Apply(root, []repomemory.Note{n}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadMemory("belai:builder"); got != "" {
+		t.Fatalf("a deleted lesson is still read: %q", got)
 	}
 }
 

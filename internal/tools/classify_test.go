@@ -87,6 +87,14 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// The built-in decision server's result is JSON the harness composes
 		// from numbers and the caller's own options: sanitise-only.
 		KindDecision: false,
+		// An A2A message or reply is another agent's model text.
+		KindPeer: true,
+		// The A2A tools' confirmations are harness-composed.
+		KindA2A: false,
+		// Repo memory notes are other agents' model text; the writer's
+		// confirmation is harness-composed.
+		KindRepoMemory:      true,
+		KindRepoMemoryWrite: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

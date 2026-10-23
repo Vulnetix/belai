@@ -29,6 +29,10 @@ func allToolNames(t *testing.T) []string {
 	seen[(&Vulnetix{}).Definition().Name] = true
 	seen[(&RepoList{}).Definition().Name] = true
 	seen["RepoFiles"], seen["RepoRead"] = true, true
+	// The A2A tools are added to a session with an A2A endpoint (WithA2A).
+	for _, n := range Default(t.TempDir(), false).WithA2A(nopA2AHub{}).Names() {
+		seen[n] = true
+	}
 	out := make([]string, 0, len(seen))
 	for n := range seen {
 		out = append(out, n)

@@ -112,6 +112,25 @@ const (
 	// because the harness composes every character that is not the caller's
 	// own: the decision backend's text never reaches it (docs/mcp.md).
 	KindDecision Kind = "decision"
+	// KindPeer is a direct message or reply another agent sent over A2A
+	// (internal/a2a, docs/a2a.md): another model's text, from this host or
+	// another, that always classifies before any model reads it. It is not the
+	// result of any tool, so it is not read-only.
+	KindPeer Kind = "peer"
+	// KindA2A is the A2AMessage and A2AAck tools' result: a confirmation the
+	// harness composes (a message id, an agent's display id). They send
+	// nothing a model reads back and never touch the workspace, so they are
+	// read-only and sanitise-only; a reply arrives later as KindPeer.
+	KindA2A Kind = "a2a"
+	// KindRepoMemory is a RepoMemoryRead result: notes agents wrote about a
+	// repository (internal/repomemory), model-written text that classifies.
+	// It only reads Belai's store, so it is read-only.
+	KindRepoMemory Kind = "repo_memory"
+	// KindRepoMemoryWrite is a RepoMemoryWrite confirmation, harness-composed
+	// and sanitise-only. The note it stores was admitted by the classifier
+	// before it was written. It touches Belai's store, never the workspace,
+	// so it is read-only like KindKanbanWrite.
+	KindRepoMemoryWrite Kind = "repo_memory_write"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -123,6 +142,7 @@ var AllKinds = []Kind{
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport, KindDecision,
+	KindPeer, KindA2A, KindRepoMemory, KindRepoMemoryWrite,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -149,6 +169,10 @@ var readOnlyKinds = map[Kind]bool{
 	KindOffload:     true,
 	KindFetched:     true,
 	KindDecision:    true,
+	KindA2A:         true,
+	// The repo memory store is outside every workspace root, like the board.
+	KindRepoMemory:      true,
+	KindRepoMemoryWrite: true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

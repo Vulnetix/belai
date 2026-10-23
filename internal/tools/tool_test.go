@@ -89,7 +89,8 @@ func TestRegistryOnlyPreservesOrderAndSkipsUnknown(t *testing.T) {
 	base := Default(root, false)
 
 	got := base.Only("Glob", "no-such-tool", "Read", "Grep")
-	want := []string{"Glob", "Read", "Grep"}
+	// The core repo memory tools follow every allowlist.
+	want := append([]string{"Glob", "Read", "Grep"}, CoreToolNames...)
 	names := got.Names()
 	if len(names) != len(want) {
 		t.Fatalf("Only names = %v, want %v", names, want)
