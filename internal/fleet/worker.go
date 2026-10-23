@@ -29,6 +29,7 @@ import (
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/lintdetect"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/notify"
@@ -172,8 +173,11 @@ type Worker struct {
 	OutageDelay func(streak int) time.Duration
 	// Fast is the fast-tier classifier for the delivery roles (gate_draft,
 	// delivery_report); nil builds it from Cfg and Client on first use.
-	Fast     rolemanager.Classifier
-	Suites   func(ctx context.Context) []testdetect.Suite
+	Fast   rolemanager.Classifier
+	Suites func(ctx context.Context) []testdetect.Suite
+	// Lints detects the linters for a lint sweep or a lint gate; nil detects
+	// from the repository's rule files. A lint run goes through RunTests.
+	Lints    func(ctx context.Context) []lintdetect.Linter
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
@@ -186,6 +190,7 @@ type Worker struct {
 	surveyed   bool   // kanban.survey already considered this start
 	sweptRef   string // HEAD the kanban.security sweep last ran for
 	qualityRef string // HEAD the kanban.quality sweep last ran for
+	lintRef    string // HEAD the kanban.lint sweep last ran for
 	reconciled string // artefact signature the cards were last reconciled against
 	jevOnce    sync.Once
 	fastOnce   sync.Once
@@ -469,6 +474,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		w.securityStep(ctx, project)
 		w.qualityStep(ctx)
+		w.lintStep(ctx)
 		w.logHeld(ctx)
 		it, err := w.claim(project)
 		if errors.Is(err, kanban.ErrNoWork) {

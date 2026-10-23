@@ -233,3 +233,25 @@ func TestHandoffReposRoundTripsAndIsOffByDefault(t *testing.T) {
 		t.Error("handoff_repos changes what a worker may do, so a running worker must pin it")
 	}
 }
+
+func TestLintBlockParsesValidatesAndNamesItsLabels(t *testing.T) {
+	src := `{"name":"w","description":"d","system_prompt":"sp","mode":"worker","tools":["Read"],
+"kanban":{"labels":["lint-drift"],"on_success":{"list":"review"},"lint":{"sweep":true}}}`
+	p, err := ParseFile("w.json", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Kanban.Lint == nil || !p.Kanban.Lint.Sweep {
+		t.Fatalf("lint block lost: %+v", p.Kanban)
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("a lint sweep needs no handoff target: %v", err)
+	}
+	if LintLabel != "lint" || LintDriftLabel != "lint-drift" {
+		t.Fatalf("labels %q %q: the website claims by these", LintLabel, LintDriftLabel)
+	}
+	bad := strings.Replace(src, `"lint":{"sweep":true}`, `"lint":{"sweep":true,"command":"rm -rf /"}`, 1)
+	if _, err := ParseFile("w.json", []byte(bad)); err == nil {
+		t.Fatal("a lint block took a command key: a linter's argv is the harness's, never a profile's")
+	}
+}

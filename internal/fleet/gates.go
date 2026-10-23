@@ -21,10 +21,20 @@ import (
 // worker tells a model about the gates it may name and, in verify.go, how the
 // harness decides them.
 
-// detectedSuites returns the repository's detected test suites: the harness's
-// own table, from marker files, never from a model.
+// detectedSuites returns the suites a gate may name: the repository's detected
+// test suites, then its detected linters (lint-golangci, lint-ruff, ...). Both
+// come from the harness's own tables, from marker files, never from a model.
 func (w *Worker) detectedSuites(ctx context.Context) []testdetect.Suite {
-	return w.suitesAt(ctx, w.Repo)
+	return slices.Concat(w.suitesAt(ctx, w.Repo), w.lintSuitesAt(ctx, w.Repo))
+}
+
+// lintSuitesAt returns the linters detected at dir, as gate suites.
+func (w *Worker) lintSuitesAt(ctx context.Context, dir string) []testdetect.Suite {
+	var out []testdetect.Suite
+	for _, l := range w.lintersAt(ctx, dir) {
+		out = append(out, asGateSuite(l))
+	}
+	return out
 }
 
 // applyGates fills the claim's gate facts from the profile and the repository.

@@ -61,6 +61,8 @@ type KanbanSpec struct {
 	// Quality turns on the harness's test-quality sweep for the worker. Nil:
 	// none.
 	Quality *QualitySpec `json:"quality,omitempty"`
+	// Lint turns on the harness's lint sweep for the worker. Nil: none.
+	Lint *LintSpec `json:"lint,omitempty"`
 	// Gates turns on acceptance gates for the worker: the tasks it hands on
 	// carry them, and the harness verifies them on the branch. Nil: none.
 	Gates *GatesSpec `json:"gates,omitempty"`
@@ -98,6 +100,24 @@ func (q QualitySpec) HandoffList() kanban.List {
 		return l
 	}
 	return kanban.Review
+}
+
+// LintLabel marks a card the harness seeded from a lint run, and LintDriftLabel
+// is the claim label a lint fixer takes it by.
+const (
+	LintLabel      = "lint"
+	LintDriftLabel = "lint-drift"
+)
+
+// LintSpec is a worker's harness-run lint sweep. On each new HEAD with no lint
+// record, the harness runs the linters whose rule files the repository checked
+// in (internal/lintdetect), through the same sandboxed runner as the test
+// suites, writes what they show to a record for that commit, and files a seed
+// card for each linter that reports findings, labelled lint and lint-drift,
+// once for each finding. A card whose linter later runs clean is closed. No
+// model runs a linter.
+type LintSpec struct {
+	Sweep bool `json:"sweep,omitempty"`
 }
 
 // MaxRounds bounds kanban.security.rounds.

@@ -783,8 +783,8 @@ the board, and no gate can run anything the harness did not already detect:
 | --- | --- |
 | `title` | The outcome, as a statement that is true when the task is done. Cleaned to one line and at most 120 characters. Two gates on one card cannot share a title. |
 | `kind` | `runnable` (a detected test suite decides it) or `manual` (a reviewer decides it, for what no test can observe). |
-| `suite` | Runnable only. The name of a suite the harness detected from marker files (`go`, `pytest`, `just-check` and so on). A name that was not detected is refused, and the refusal lists the detected ones. When nothing was detected, only manual gates are possible. |
-| `dir`, `test` | Runnable and Go suites only. `dir` narrows the suite to one package directory of the repository (a relative path of letters, digits and `. _ - / @ +`, with no `..`, no leading `-` and no trailing `/`; it must exist and stay inside the repository after symlinks). `test` narrows it to one test function name (letters, digits and underscores). A test needs the `dir` of its package. Any other ecosystem runs the whole suite. |
+| `suite` | Runnable only. The name of a suite the harness detected from marker files (`go`, `pytest`, `just-check` and so on) or of a linter it detected from a rule file (`lint-golangci`, `lint-ruff` and so on; see [lint gates](lint.md#lint-gates)). A name that was not detected is refused, and the refusal lists the detected ones. When nothing was detected, only manual gates are possible. |
+| `dir`, `test` | Runnable and Go test suites only, never a `lint-*` suite. `dir` narrows the suite to one package directory of the repository (a relative path of letters, digits and `. _ - / @ +`, with no `..`, no leading `-` and no trailing `/`; it must exist and stay inside the repository after symlinks). `test` narrows it to one test function name (letters, digits and underscores). A test needs the `dir` of its package. Any other ecosystem runs the whole suite. |
 
 The harness assigns ids by position (`G1`, `G2`, and so on, at most eight a
 card) and starts every gate `unmet`. A model cannot file a gate as already met,

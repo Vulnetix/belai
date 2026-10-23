@@ -870,6 +870,22 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   to the profile's `kanban.quality.list` (review by default) whatever the model
   asks, as a survey does. The delivery scout has no daily survey and no
   `every` stamp.
+- **The lint sweep is the quality sweep for linters, and the same rules hold.**
+  `internal/lintdetect` names linters from a fixed marker-file table (a
+  checked-in rule file, plus a `lint` script name for ESLint) and reads file
+  names and script names only, never a rule file or a script body; the argv is
+  fixed by the table. A worker with `kanban.lint.sweep` runs them once for each
+  HEAD through the same `testrun` runner (no shell, permission rules, OS
+  sandbox, scrubbed environment) and writes
+  `.vulnetix/belai/lint/<commit>.json` (`quality.LintRecord`) only when a linter
+  actually ran. Linter output is raw process text: only a finding count read
+  from the tool's own summary or location lines is kept, and no path, rule name
+  or message reaches a card, a record or a model. Seed cards (`lint`,
+  `lint-drift`) use `FindingInput.Once` with a finding id of the tool and its
+  count, and `CloseAbsent` closes one only when its linter ran clean. A
+  `lint-*` suite name may be a runnable gate (`lint-golangci`, `lint-ruff`, ...)
+  and is never narrowed by `dir` or `test`. No profile key takes a lint
+  command. See [docs/lint.md](docs/lint.md).
 - **Acceptance gates are references, and the harness decides them.**
   A gate on a card (`kanban.Gate`) names a test suite the harness detected
   (`internal/testdetect`) and, for a Go suite, a package directory and a test

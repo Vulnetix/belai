@@ -16,7 +16,7 @@ import (
 // is added to AgentProfile or one changes meaning, so a console that reads the
 // builtin profiles from the repository can tell when the newest ones use keys a
 // pinned Belai build does not know (such a build rejects an unknown key).
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // IndexPath is where the committed index of the builtin files lives, relative to
 // the repository root.

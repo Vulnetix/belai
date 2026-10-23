@@ -418,6 +418,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.security.rounds` | int | Turns one item may take, 0 to 5 (0 or 1: one turn). After each turn the harness scans the worktree and, while the scanner still reports the card's finding, runs another turn with the result attached. Needs `workspace.isolation: worktree`. See [the security crew](fleet.md#the-security-crew). |
 | `kanban.quality.sweep` | bool | On each HEAD with no quality record, the harness runs the detected suites (or `tests.command`), records the result for that commit and files seed cards for the worker. Needs `handoff_to` or `handoff_labels`. See [the delivery crew](fleet.md#the-delivery-crew). |
 | `kanban.quality.list` | string | Where the handoffs from a seeded `quality` card go, whatever the model asks: `review` (default), `backlog`, or `auto`, which routes each handoff by whether it is clear and concise (backlog) or needs a person to confirm or split it (review). See [the delivery crew](fleet.md#the-delivery-crew). |
+| `kanban.lint.sweep` | bool | On each HEAD with no lint record, the harness runs the linters whose rule files the repository checked in (`.golangci.yml`, `ruff.toml`, `rustfmt.toml`, `clippy.toml`, `.rubocop.yml`, an ESLint config with a `lint` script), records the result for that commit and files a card labelled `lint` and `lint-drift` for each linter that reports findings. A card whose linter later runs clean is closed. See [lint](lint.md). |
 | `kanban.gates.require` | bool | Every handoff the worker files must carry at least one acceptance gate. Needs `handoff_to` or `handoff_labels`. See [acceptance gates](fleet.md#acceptance-gates). |
 | `kanban.gates.verify` | string | `off` (default), `record` or `enforce`: whether the harness runs a card's gates on the branch, and whether it decides where the card goes. |
 | `kanban.gates.review` | bool | The worker may decide a card's manual gates with `KanbanGate`, and under `enforce` the card is done only when every manual gate is met. Needs `kanban.gates.verify` to be `enforce`. See [manual gates](fleet.md#manual-gates-and-the-reviewer). |
@@ -444,6 +445,7 @@ Validation fails closed:
 - `handoff_repos` needs `handoff_to` or `handoff_labels`, and cannot be combined with a `gates` block, because a gate names a test suite of the worker's own repository;
 - a `survey` block needs a `title`, a `list` of `review`, `backlog` or `auto`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`;
 - a `quality` block needs a `list` of `review`, `backlog` or `auto`, and `sweep` needs `handoff_to` or `handoff_labels`;
+- a `lint` block takes only `sweep`; it needs no handoff target, because its cards are claimed by label;
 - a `gates` block needs a `verify` of `off`, `record` or `enforce`, `require` needs `handoff_to` or `handoff_labels`, `review` needs `verify` to be `enforce`, and `coverage` needs `handoff_to` or `handoff_labels`;
 - a `security` block with `sweep` needs the `Vulnetix` tool, `vex` needs `verdicts`, `verdicts` name known verdicts once each, only a worker with `vex` may list `rejected`, and `rounds` runs 0 to 5 and needs `isolation: worktree`.
 

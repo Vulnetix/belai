@@ -78,6 +78,11 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 	for _, s := range suites {
 		byName[s.Name] = s
 	}
+	// A lint gate runs the linter the same way: the suite table names it, the
+	// harness runs its fixed argv.
+	for _, s := range w.lintSuitesAt(ctx, ws.Dir) {
+		byName[s.Name] = s
+	}
 
 	// One run per distinct argv: several gates, or a gate and a suite, that
 	// resolve to the same command share its result.

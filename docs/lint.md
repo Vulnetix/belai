@@ -37,3 +37,52 @@ Rules and edge cases:
 - The argv is fixed by the table. A model never supplies one, and a profile has
   no key that does.
 
+## The lint sweep
+
+A worker whose profile sets `kanban.lint.sweep` runs the linters once for each
+new HEAD, the way `kanban.quality.sweep` runs the test suites.
+
+
+1. The harness reads the detected linters. With none, nothing runs and nothing
+   is recorded.
+2. It runs each linter's fixed argv through the same runner as the test suites
+   (see [testing](testing.md)): no shell, your permission rules, the OS sandbox,
+   the scrubbed environment and the `tests.timeout_seconds` bound.
+3. It writes `.vulnetix/belai/lint/<commit>.json` (the last twenty are kept):
+   each linter's name, tool, argv, rule file, status, exit code, duration, a
+   finding count and whether it is drift. A record for HEAD means the linters do
+   not run again on that commit. A run in which no linter started (denied, not
+   installed) writes nothing and is tried again at the next launch.
+4. It files one card for each linter that is drifting, labelled `lint` and
+   `lint-drift`, in the backlog, with the title `[lint] <tool> reports N
+   findings`. A worker that claims `lint-drift` takes it.
+
+The count is the only part of the linter's output that is kept. It is read from
+the tool's own summary or location lines (golangci-lint's `path:line:col:`
+lines, ruff's `Found N errors.`, rubocop's `N offenses detected`, `cargo fmt`'s
+`Diff in` headers, clippy's `warning:` and `error:` headers, ESLint's `N
+problems`). No path, rule name or message reaches a card, a record or a model,
+so a hostile file cannot write an instruction onto the board.
+
+A linter is drifting when it counted findings, or when it exited with the code
+it uses for findings (1 for golangci-lint, ruff, rubocop, `cargo fmt` and
+ESLint) and its output could not be counted, in which case the title omits the
+number. Clippy exits 0 on warnings, so only its count marks it. Any other
+failing exit code, such as a configuration error, a timeout, a denial or a
+tool that is not installed, is not drift and files nothing.
+
+Cards are filed once for each finding. The finding is the linter plus its
+count, so relaunching on the same commit, or on a later commit with the same
+count, never doubles the board, and a card a person deleted does not come back.
+A different count is a different finding. A card is closed, with
+`no longer reported`, when a later run of its linter is clean. A card is left
+alone when its linter did not run, timed out or is no longer detected.
+
+## Lint gates
+
+A gate on a card may name a detected linter as its suite: `lint-golangci`,
+`lint-ruff`, and so on. The gate is met when the linter's fixed argv exits 0 on
+the card's branch. A gate is still a reference and never a command. A lint
+gate cannot be narrowed with `dir` or `test`. See
+[acceptance gates](fleet.md#acceptance-gates).
+
