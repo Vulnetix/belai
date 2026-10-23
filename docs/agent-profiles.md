@@ -496,12 +496,16 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:vuln-scout` | at start, a review sweep of HEAD (harness); backlog items labelled `vuln-scan` for a targeted look | a `vuln` card per finding (harness), and `vuln` items for `belai:patcher` |
 | `belai:patcher` | backlog `vuln` items, on a worktree branch; reconciles cards before each claim | review, labelled `needs-verify`: a fix, or a false positive, no known fix or needs-a-human verdict |
 | `belai:verifier` | review `needs-verify` items, including gone cards, on their branch | done (and a draft PR) or blocked, each with a VEX, or back to `vuln` when it rejects the claim |
+| `belai:test-fixer` | backlog items labelled `tests-failing`, on a worktree branch | review, labelled `needs-review`, once the harness has verified the card's gates on the branch |
+| `belai:lint-fixer` | backlog items labelled `lint-drift`, on a worktree branch; its lint sweep files those cards | review, labelled `needs-review`, once the harness has verified the card's gates on the branch |
+| `belai:pr-reviewer` | backlog items labelled `pr-review`, read-only | done, labelled `reviewed`, with a verdict and its findings as a note on the card; it never approves, comments on or merges |
 
 The crews `belai:delivery` and `belai:security` start one scout, two
 builders or patchers, and one reviewer or verifier. The flow crews `belai:feature`,
 `belai:bug` and `belai:ui` start a planner, investigator or designer in the
 scout's place, with the same builders and reviewer; see
-[The flow crews](fleet.md#the-flow-crews).
+[The flow crews](fleet.md#the-flow-crews). The crew `belai:maintenance` starts a test fixer, a lint fixer and the reviewer; see
+[The maintenance crew](fleet.md#the-maintenance-crew).
 ## Event flow
 
 ```mermaid

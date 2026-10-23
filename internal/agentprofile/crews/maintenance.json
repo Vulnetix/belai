@@ -1,0 +1,10 @@
+{
+  "name": "belai:maintenance",
+  "description": "A test fixer, a lint fixer and a reviewer: failing tests and lint drift become reviewed branches",
+  "one_per_repo": true,
+  "members": [
+    {"profile": "belai:test-fixer", "replicas": 1},
+    {"profile": "belai:lint-fixer", "replicas": 1},
+    {"profile": "belai:reviewer", "replicas": 1}
+  ]
+}

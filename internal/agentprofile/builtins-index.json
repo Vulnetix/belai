@@ -82,6 +82,11 @@
       "sha256": "1a117aa7c73b3fd52d3d4669162cfe975b605cc3c98e9db928bb22cb7aa17b59"
     },
     {
+      "name": "belai:lint-fixer",
+      "path": "internal/agentprofile/builtin/lint-fixer.json",
+      "sha256": "93dd9831e887ca7b0a9494a6a44ff7497a7385035cfc1e17953539f2ca492494"
+    },
+    {
       "name": "belai:patcher",
       "path": "internal/agentprofile/builtin/patcher.json",
       "sha256": "1150451c973bf797296e92e39e1b8017132f39fd85d134f3bd90e87438a3eba0"
@@ -97,6 +102,11 @@
       "sha256": "e81453b5cd2c686b437d8d1e5b512a69b43f4311c3f63cab1951e1189cccff80"
     },
     {
+      "name": "belai:pr-reviewer",
+      "path": "internal/agentprofile/builtin/pr-reviewer.json",
+      "sha256": "bb5eac4f4577957d4898b68a2f17e2bc79228f127182d44d727abd42395c9c5a"
+    },
+    {
       "name": "belai:repro",
       "path": "internal/agentprofile/builtin/repro.json",
       "sha256": "c3aa96214874c5263c6f735f1db1fb2278612165242335ce007b8f53fc5d73d7"
@@ -110,6 +120,11 @@
       "name": "belai:scout",
       "path": "internal/agentprofile/builtin/scout.json",
       "sha256": "ebad6836683c7818581bd65bb1766ece1c75ad319460e8dd6cef88aef2362160"
+    },
+    {
+      "name": "belai:test-fixer",
+      "path": "internal/agentprofile/builtin/test-fixer.json",
+      "sha256": "7994190337826c10aab79c3fe226a96dcff6083c7811e20e86e65cf210c45bc4"
     },
     {
       "name": "belai:triage",
@@ -152,6 +167,11 @@
       "name": "belai:feature",
       "path": "internal/agentprofile/crews/feature.json",
       "sha256": "c68e9ea2c92df9b670d401cbfd9c06083c5ee93c5fe4950361d7d6095a1892d7"
+    },
+    {
+      "name": "belai:maintenance",
+      "path": "internal/agentprofile/crews/maintenance.json",
+      "sha256": "b95e3c64588bc2c8ff6fe1f3b486b46a869cea2e1b65cae94763b1f96fe722f8"
     },
     {
       "name": "belai:security",

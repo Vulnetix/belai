@@ -40,7 +40,8 @@ Rules and edge cases:
 ## The lint sweep
 
 A worker whose profile sets `kanban.lint.sweep` runs the linters once for each
-new HEAD, the way `kanban.quality.sweep` runs the test suites.
+new HEAD, the way `kanban.quality.sweep` runs the test suites. The built-in
+`belai:lint-fixer` sets it.
 
 
 1. The harness reads the detected linters. With none, nothing runs and nothing
@@ -86,3 +87,10 @@ the card's branch. A gate is still a reference and never a command. A lint
 gate cannot be narrowed with `dir` or `test`. See
 [acceptance gates](fleet.md#acceptance-gates).
 
+## Fixing drift
+
+`belai:lint-fixer` claims `lint-drift` cards, detects the language from the
+repository map, finds the checked-in rule files and runs the linter or
+formatter in its autofix mode over the files it reports. It never edits the
+rule file, adds an ignore or disables a rule, and keeps the diff small. Its
+branch goes to `belai:reviewer`. See [the maintenance crew](fleet.md#the-maintenance-crew).

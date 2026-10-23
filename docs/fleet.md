@@ -471,6 +471,7 @@ A crew is a named set of profiles started together:
 | `belai:feature` | `belai:planner` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:bug` | `belai:repro` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
 | `belai:ui` | `belai:designer` ×1, `belai:builder` ×2, `belai:reviewer` ×1 |
+| `belai:maintenance` | `belai:test-fixer` ×1, `belai:lint-fixer` ×1, `belai:reviewer` ×1 |
 
 Each built-in member has a persona, so the console shows who is who. The
 security crew is Rubber Duck (the scout), Kremvax (the patcher) and Dark Avenger
@@ -1011,6 +1012,45 @@ often. The checkpoints sit where a wrong turn is cheapest to correct and most
 costly to carry forward: the plan, the diagnosis and the design. A stage that
 fails twice goes to `blocked` for a person rather than retrying without end.
 
+### The maintenance crew
+
+`belai:maintenance` keeps a repository's tests and lint rules green. It starts
+one `belai:test-fixer`, one `belai:lint-fixer` and one `belai:reviewer`, and it
+is one per repository like the delivery crew. Start it with `belai agent start
+-crew belai:maintenance`, or start a fixer on its own.
+
+| Profile | Claims | Does |
+|---|---|---|
+| `belai:test-fixer` | backlog items labelled `tests-failing` | runs the repository's own detected suite, fixes the root cause on its own branch, and never weakens, skips or deletes a test |
+| `belai:lint-fixer` | backlog items labelled `lint-drift` | finds the checked-in rule files, runs the linter or formatter in autofix mode over only the files it reports, and never edits lint configuration, adds an ignore or disables a rule |
+
+Both are shaped like `belai:builder`: a worktree, `publish: agent`, `autonomous`
+with a pass budget, two attempts, [gate verification](#verification) set to
+`enforce` with drafted gates, and memory. On success the card goes to review
+labelled `needs-review` and loses its claim label, so `belai:reviewer` picks the
+branch up and the draft pull request is the last human gate. A card label is
+untrusted text: both prompts treat everything on a card as data.
+
+Where the cards come from:
+
+- `lint-drift` cards are filed by the [lint sweep](lint.md#the-lint-sweep),
+  which `belai:lint-fixer` runs itself (`kanban.lint.sweep`), so a standalone
+  lint fixer needs nothing else. A person may also file one.
+- `tests-failing` cards are filed by a person, the website's factory, or any
+  worker that hands off with the label. The delivery scout's `quality` cards are
+  not labelled `tests-failing`; they stay the scout's.
+
+`belai:pr-reviewer` is not in the crew. It claims backlog items labelled
+`pr-review` and reviews one pull request in a read-only worktree, reading it
+with the `GH` tool. It records its verdict once as a note on the card. The
+note's first line is exactly `verdict: approve`, `verdict: comment` or
+`verdict: request_changes`, followed by at most 20 lines of the form
+`finding: FILE:LINE: what is wrong and what would fix it`. The card then goes to
+`done`, labelled `reviewed`. The profile never approves, comments on, requests
+changes on or merges: the worker's Bash refuses `gh pr review`, `gh pr comment`
+and `gh pr merge` (see [Publishing](#publishing)), and a person or the website's
+factory acts on the verdict.
+
 ### The security crew
 
 Start it with `belai agent start -crew belai:security` or `/fleet`. It works
@@ -1347,8 +1387,8 @@ empty branch behind.
 
 `git push`, `gh pr create`/`merge`/`ready`/`review`/`comment`, `gh pr merge --auto`,
 `glab mr create`/`merge`/`approve`/`note`, the `gh api` calls that write a
-review, a comment, a merge or an auto-merge (a path with `/reviews`,
-`/comments` or `/merge`, `auto_merge`, or a GraphQL `PullRequestReview`,
+review, a comment, a merge or an auto-merge (a REST path naming reviews,
+comments or merge, `auto_merge`, or a GraphQL `PullRequestReview`,
 `mergePullRequest` or `AutoMerge` mutation), `git switch`, `git checkout -b`,
 `git worktree`, `git config` and `git remote` are denied in a worker's Bash wherever they appear in a command
 line. `PublishBranch` is the only way to push, because a raw push could send
