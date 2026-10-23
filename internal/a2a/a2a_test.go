@@ -482,7 +482,9 @@ func TestRelayBlackoutAndInbound(t *testing.T) {
 		t.Fatal("blackout not applied")
 	}
 	n.Broadcaster().AddFiles("z.go")
-	n.Step(context.Background(), false, false)
+	// Flush, not Step: the debounce is a millisecond, and Step may land
+	// inside it.
+	n.Flush()
 	_ = r.flush(context.Background())
 	if fc.count() != 1 {
 		t.Fatalf("relayed during blackout: %d", fc.count())
