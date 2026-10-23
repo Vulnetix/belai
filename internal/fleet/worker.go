@@ -1609,6 +1609,12 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		}
 		params.Permit = SyncPermits(specs)
 	}
+	// A2A: the worker broadcasts the card it works (its ticket) and the files
+	// it changes, hears matching broadcasts and answers messages in a
+	// side-turn while the item runs (docs/a2a.md).
+	link := headless.OpenA2A(ctx, params, p.Name, t.Item.Short(), nil)
+	defer link.Close()
+	params.A2A = link
 	sess, err := headless.NewSession(ctx, params)
 	if err != nil {
 		return run.Result{}, err
@@ -1635,6 +1641,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "pull_requests", Label: "this item's open pull requests, one per attempt branch", Body: openPRs})
 	}
 	tr := w.transcript(t)
+	link.SetRecorder(tr.log.A2A)
 	emit := func(e agent.Event) {
 		tr.observe(e)
 		if t.Emit != nil {

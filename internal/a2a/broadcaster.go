@@ -27,9 +27,11 @@ type Broadcaster struct {
 	root    string
 	work    Work
 	claimed string // a ticket set by the harness, which outranks the branch
-	sent    *Work
-	sentAt  time.Time
-	dirty   bool
+	// early holds absolute paths seen before the root was known.
+	early  []string
+	sent   *Work
+	sentAt time.Time
+	dirty  bool
 }
 
 // SetGit takes the repository, branch and pull request from a git reading.
@@ -42,6 +44,10 @@ func (b *Broadcaster) SetGit(info *gitsync.Info) {
 	defer b.mu.Unlock()
 	w := b.work
 	b.root = info.Root
+	if len(b.early) > 0 {
+		w.Files = b.addLocked(w.Files, b.early)
+		b.early = nil
+	}
 	w.Repo = RepoKey(info.Remote, info.Root)
 	w.Branch = info.Branch
 	w.PR = 0
@@ -76,11 +82,20 @@ func (b *Broadcaster) AddFiles(paths ...string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	w := b.work
-	files := slices.Clone(w.Files)
+	w.Files = b.addLocked(slices.Clone(w.Files), paths)
+	b.set(w)
+}
+
+// addLocked adds paths to files, newest last, at most MaxFiles. An absolute
+// path waits in early until the root is known.
+func (b *Broadcaster) addLocked(files, paths []string) []string {
 	for _, p := range paths {
 		p = filepath.ToSlash(p)
 		if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
 			if b.root == "" {
+				if len(b.early) < MaxFiles {
+					b.early = append(b.early, p)
+				}
 				continue
 			}
 			rel, err := filepath.Rel(b.root, filepath.FromSlash(p))
@@ -101,8 +116,7 @@ func (b *Broadcaster) AddFiles(paths ...string) {
 	if len(files) > MaxFiles {
 		files = files[len(files)-MaxFiles:]
 	}
-	w.Files = files
-	b.set(w)
+	return files
 }
 
 func (b *Broadcaster) set(w Work) {
@@ -145,6 +159,20 @@ func (b *Broadcaster) Due(now time.Time) (Work, bool) {
 		d = DefaultDebounce
 	}
 	if b.sent != nil && now.Sub(b.sentAt) < d {
+		return Work{}, false
+	}
+	w := b.work
+	w.Files = slices.Clone(w.Files)
+	b.sent, b.sentAt, b.dirty = &w, now, false
+	return w, true
+}
+
+// Pending returns the work when it changed since the last broadcast,
+// whatever the debounce says (a session that is ending), and marks it sent.
+func (b *Broadcaster) Pending(now time.Time) (Work, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.work.Repo == "" || !b.dirty || (b.sent != nil && sameWork(*b.sent, b.work)) {
 		return Work{}, false
 	}
 	w := b.work

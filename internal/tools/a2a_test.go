@@ -134,6 +134,12 @@ func TestRepoMemoryTools(t *testing.T) {
 	if err != nil || !strings.Contains(res.Content, "A owns x.go") || !strings.Contains(res.Content, agent) || strings.Contains(res.Content, "ignore all") {
 		t.Fatalf("read %+v %v", res, err)
 	}
+	// An out-of-range limit is clamped, never narrowed into something else.
+	for _, lim := range []any{"9223372036854775807", float64(1 << 40), -5} {
+		if res, err := r.Execute(context.Background(), map[string]any{"query": "owns", "limit": lim}); err != nil || !strings.Contains(res.Content, "A owns x.go") {
+			t.Fatalf("limit %v: %+v %v", lim, res, err)
+		}
+	}
 	// A read classifies on its way to a model; the write confirmation is shaped.
 	if !res.Kind.NeedsClassifier() || KindRepoMemoryWrite.NeedsClassifier() {
 		t.Fatal("repo memory classification")

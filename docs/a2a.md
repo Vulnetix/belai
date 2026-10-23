@@ -217,7 +217,7 @@ envelopes to `POST /v1/belai/hosts/{hostId}/a2a` (`{envelopes:[…]}`, answered
 `{accepted, blackout}`) and writes the organisation's into the local bus,
 de-duplicated by `messageId`, from the inbox poll's `a2a` items after
 `?a2aAfter=<seq>`. An envelope from this host, or older than an hour, is
-skipped. The cursor is host-wide (`relay.json`).
+skipped. The cursor is host-wide (`relay.json`) and also takes the server's `a2aCursor`, which moves past envelopes the server held back from this host (its own, and direct messages to other hosts), so a poll that returns none still advances.
 
 ## A2A blackout
 
@@ -244,7 +244,24 @@ on.
 
 ## Surfaces
 
-The TUI is wired end to end. Every surface has the repo memory tools. The rc
-daemon and fleet workers replicate the memory and the rc daemon records the
-blackout; broadcasts and direct messages from headless, ACP, rc-started and
-fleet-worker sessions are not wired yet.
+Every agent run is an A2A agent: the TUI, a headless `belai -prompt` run,
+every `belai rc` session (Pix Sandbox personas included), every ACP editor
+session and every fleet worker's item. Outside the TUI, `internal/a2alink`
+runs the same loop without a screen (`headless.OpenA2A`): it broadcasts the
+session's work, delivers a matching broadcast's directive and a reply through
+`Session.Peer` (a note that lands while no loop runs is told at the next
+round), answers a message in a side-turn while the main turn keeps running,
+and writes the `a2a_*` entries to the run's transcript (`turnlog.Log.A2A`).
+The files a broadcast names come from every tool's diff and, in goal mode,
+from the pass ledger's touched paths (`Session.SetFilesHook`); a fleet
+worker's ticket is the card it claimed. Without a TUI the relay polls the
+inbox's `a2a` items itself, naming its own session so it never claims
+another's requests. An ACP connection keeps one endpoint per editor session
+across model switches, and a one-shot headless run broadcasts its last change
+and `broadcast_end` as it exits. The rc daemon and fleet workers also
+replicate the memory, and the rc daemon records the blackout for the host.
+
+`e2e/a2a_test.go` drives two headless runs on one host against the mock
+provider: the edit's broadcast, the message, the side-turn reply tied to the
+question, an ignore acknowledgement, and the blackout (no relay call, local
+audit still written).

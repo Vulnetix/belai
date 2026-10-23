@@ -820,6 +820,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// the write ledger is what the directives and the verification gate
 		// key off.
 		l.noteWrites(out)
+		// The goal ledger's touched paths feed the A2A broadcaster.
+		s.noteFiles(out.mutatedPaths)
 		// A pass that ran its own passing check after its last change has
 		// verified it: the harness saw it, so GOAL_COMPLETE needs no
 		// separate verification pass to repeat the same checks.

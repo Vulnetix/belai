@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vulnetix/belai/internal/a2alink"
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/bgagent"
@@ -679,7 +680,12 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		observe = script.observe(tlog.Observe)
 		allowClarify = true
 	}
-	sess, err := newCLISessionAsking(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, allowClarify, gs)
+	// A2A: the run broadcasts its work, hears matching broadcasts, and
+	// answers messages in a side-turn while it runs (docs/a2a.md).
+	link := headless.OpenA2A(ctx, headless.Params{Cfg: cfg, Client: client, Posture: pol, Workdir: workdir,
+		Settings: settings, SessionID: sessionID, GitSync: gs}, "", "", tlog.A2A)
+	defer link.Close()
+	sess, err := newCLISessionLinked(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, allowClarify, gs, link)
 	if err != nil {
 		return run.Result{}, err
 	}
@@ -732,12 +738,17 @@ func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol
 // newCLISessionAsking is newCLISession for a run that can put questions to
 // someone (allowClarify): a headless run with -answers.
 func newCLISessionAsking(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk, allowClarify bool, gs *gitsync.Hygiene) (*agent.Session, error) {
+	return newCLISessionLinked(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, allowAsk, allowClarify, gs, nil)
+}
+
+// newCLISessionLinked is newCLISessionAsking with the session's A2A endpoint.
+func newCLISessionLinked(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk, allowClarify bool, gs *gitsync.Hygiene, link *a2alink.Link) (*agent.Session, error) {
 	store, src := cliKanban(workdir, sessionID, settings)
 	return headless.NewSession(ctx, headless.Params{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
 		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk, AllowClarify: allowClarify,
 		AskDecider: cliAskDecider(allowAsk, settings, workdir),
-		MCP:        mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs,
+		MCP:        mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs, A2A: link,
 	})
 }
 
