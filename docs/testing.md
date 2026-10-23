@@ -244,6 +244,7 @@ agentic loop, bounded by `tests.max_fix_passes`.
 | Package | Function | Role |
 | ------- | -------- | ---- |
 | `internal/testdetect` | `Detect` | Builds suites from the repository map's test commands, scoped to changed paths |
+| `internal/testdetect` | `HasDotnetProject` | Says whether the root holds a solution or project file, listing names only |
 | | `Rescope` | Re-scopes suites to a new changed-path set; Go maps to package directories, the rest stay full |
 | | `Suite.ScopedCommand` | The argv to run: `go test ./pkg/...` for a scoped Go suite, else the full command |
 | | `CommandStrings` | The flat command list `repomap.Commands.Test` is derived from |
