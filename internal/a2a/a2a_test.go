@@ -470,8 +470,14 @@ func TestRelayBlackoutAndInbound(t *testing.T) {
 	if remoteSeen != 1 {
 		t.Fatalf("remote envelope on the bus %d times", remoteSeen)
 	}
+	// The server's cursor moves past envelopes it did not deliver, never back.
+	r.Advance(12)
+	r.Advance(10)
+	if r.After() != 12 {
+		t.Fatalf("advanced cursor %d", r.After())
+	}
 	// A new relay on the host resumes from the saved cursor.
-	if r2 := NewRelay(fc, hostA, n.Bus(), n.Audit(), nil); r2.After() != 8 {
+	if r2 := NewRelay(fc, hostA, n.Bus(), n.Audit(), nil); r2.After() != 12 {
 		t.Fatalf("saved cursor %d", r2.After())
 	}
 
@@ -489,7 +495,7 @@ func TestRelayBlackoutAndInbound(t *testing.T) {
 	if fc.count() != 1 {
 		t.Fatalf("relayed during blackout: %d", fc.count())
 	}
-	r.Deliver([]sessionsync.A2AItem{item(9, bcast(card(hostB, sessB), "o/r"))})
+	r.Deliver([]sessionsync.A2AItem{item(13, bcast(card(hostB, sessB), "o/r"))})
 	entries, _ := crewlog.ReadEntries(dir, crewlog.Filter{})
 	var withheld, blackout, sentLocal int
 	for _, e := range entries {

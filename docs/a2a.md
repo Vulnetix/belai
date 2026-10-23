@@ -217,7 +217,7 @@ envelopes to `POST /v1/belai/hosts/{hostId}/a2a` (`{envelopes:[…]}`, answered
 `{accepted, blackout}`) and writes the organisation's into the local bus,
 de-duplicated by `messageId`, from the inbox poll's `a2a` items after
 `?a2aAfter=<seq>`. An envelope from this host, or older than an hour, is
-skipped. The cursor is host-wide (`relay.json`).
+skipped. The cursor is host-wide (`relay.json`) and also takes the server's `a2aCursor`, which moves past envelopes the server held back from this host (its own, and direct messages to other hosts), so a poll that returns none still advances.
 
 ## A2A blackout
 

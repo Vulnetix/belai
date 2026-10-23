@@ -120,7 +120,7 @@ func (a *App) a2aInbox(client *sessionsync.Client, hostID string, wake func()) *
 		if wake != nil {
 			wake()
 		}
-	}}
+	}, Advance: relay.Advance}
 }
 
 // a2aControls applies the organisation's A2A blackout from the session

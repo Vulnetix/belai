@@ -1000,6 +1000,10 @@ type Inbox struct {
 	// every host but scoped to the tenant (docs/a2a.md). A server that
 	// predates A2A sends none.
 	A2A []A2AItem `json:"a2a"`
+	// A2ACursor is the next a2aAfter. The server moves it past envelopes it
+	// does not deliver to this host (its own, and others' direct messages),
+	// so a poll that returns none can still advance. Nil from an older server.
+	A2ACursor *int64 `json:"a2aCursor"`
 }
 
 // A2AItem is one relayed A2A envelope and its server sequence number. The

@@ -93,6 +93,8 @@ type A2AInbox struct {
 	After func() int64
 	// Deliver takes the envelopes one poll returned.
 	Deliver func([]A2AItem)
+	// Advance takes the server's next cursor (Inbox.A2ACursor); optional.
+	Advance func(int64)
 }
 
 // Status is a snapshot for /sync status.
@@ -893,6 +895,9 @@ func (s *Syncer) inbox(ctx context.Context) {
 		backoff = 0
 		if len(batch.A2A) > 0 && after >= 0 && s.opts.A2A.Deliver != nil {
 			s.opts.A2A.Deliver(batch.A2A)
+		}
+		if batch.A2ACursor != nil && after >= 0 && s.opts.A2A.Advance != nil {
+			s.opts.A2A.Advance(*batch.A2ACursor)
 		}
 		// Answers first: the host is blocked on an ask until one arrives.
 		for _, a := range answers {

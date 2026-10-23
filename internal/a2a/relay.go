@@ -219,6 +219,23 @@ func (r *Relay) Deliver(items []sessionsync.A2AItem) {
 	r.saveCursor(cur)
 }
 
+// Advance moves the cursor to the server's next a2aAfter, past envelopes the
+// server did not deliver to this host. It never moves the cursor back, and
+// does nothing during a blackout (the server holds the cursor then).
+func (r *Relay) Advance(cursor int64) {
+	if r.Blackout() {
+		return
+	}
+	r.mu.Lock()
+	if cursor <= r.cursor {
+		r.mu.Unlock()
+		return
+	}
+	r.cursor = cursor
+	r.mu.Unlock()
+	r.saveCursor(cursor)
+}
+
 func (r *Relay) cursorValue() int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()

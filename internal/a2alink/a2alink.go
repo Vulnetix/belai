@@ -219,6 +219,9 @@ func (l *Link) inbound(ctx context.Context) {
 		if len(b.A2A) > 0 {
 			l.relay.Deliver(b.A2A)
 		}
+		if b.A2ACursor != nil {
+			l.relay.Advance(*b.A2ACursor)
+		}
 	}
 }
 
