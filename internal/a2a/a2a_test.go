@@ -106,6 +106,10 @@ func TestDisplayID(t *testing.T) {
 	if got := DisplayID("", sessB); got != "@belai·bbbbbb" {
 		t.Fatalf("display = %q", got)
 	}
+	// Lower-cased, non-hex stripped, from the session part of the id.
+	if got := DisplayAgentID("builder", "11111111-1111-4111-8111-111111111111:0A-Bz9c-1D2e3f"); got != "@builder·0ab9c1" {
+		t.Fatalf("display = %q", got)
+	}
 }
 
 func bcast(c AgentCard, repo string, files ...string) Envelope {

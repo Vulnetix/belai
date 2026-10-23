@@ -557,6 +557,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Jev = mergeJev(e.Settings.Jev, s.Jev, src == SourceProject)
 		e.Origin["jev"] = src
 	}
+	if s.A2A != nil {
+		// A2A carries the session's work to other sessions and hosts: a
+		// repository may turn it off or narrow the filter, never the reverse.
+		e.Settings.A2A = mergeA2A(e.Settings.A2A, s.A2A, src == SourceProject)
+		e.Origin["a2a"] = src
+	}
 	if s.Kanban != nil && (!*s.Kanban || src != SourceProject) {
 		// The board syncs off the machine and carries text between
 		// sessions: a repo-visible project layer may turn it off, never on.

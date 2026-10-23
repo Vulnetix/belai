@@ -68,6 +68,11 @@ type Footer struct {
 	// waiting for you.
 	Inbox string
 
+	// A2A is the A2A messaging segment ("A2A: local only" with no Vulnetix
+	// login, "A2A: blackout" while the organisation's blackout is on); empty
+	// when A2A relays normally or is off.
+	A2A string
+
 	// Voice is the speech-input segment ("voice: listening"); empty while voice
 	// input is off. VoiceOn draws the dot filled while the microphone is open
 	// or the model is working.
@@ -584,6 +589,9 @@ func (f Footer) permissionChipsAt(bareFirewall bool) string {
 	}
 	if f.Inbox != "" {
 		out += "  " + WarnStyle.Render(f.Inbox)
+	}
+	if f.A2A != "" {
+		out += "  " + lipgloss.NewStyle().Foreground(ColorA2A).Render(f.A2A)
 	}
 	return out
 }

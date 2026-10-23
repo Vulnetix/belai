@@ -175,17 +175,34 @@ func (c AgentCard) Display() string {
 	return DisplayID(c.Profile, c.SessionID)
 }
 
-// DisplayID is "@<profile|belai>·<the session id's first 6 hex>".
+// DisplayID is "@<profile|belai>·<6 hex>": the first six hex characters of
+// the session id, lower-cased with every non-hex character stripped. The
+// website computes the same handle from an Agent Card id.
 func DisplayID(profile, sessionID string) string {
 	name := sanitize.Ident(profile, maxIdentBytes)
 	if name == "" {
 		name = "belai"
 	}
-	hex := strings.ReplaceAll(sessionID, "-", "")
-	if len(hex) > 6 {
-		hex = hex[:6]
+	var hex strings.Builder
+	for _, r := range strings.ToLower(sessionID) {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			hex.WriteRune(r)
+			if hex.Len() == 6 {
+				break
+			}
+		}
 	}
-	return "@" + name + "·" + hex
+	return "@" + name + "·" + hex.String()
+}
+
+// DisplayAgentID is DisplayID for an Agent Card id "<hostId>:<sessionId>":
+// the handle comes from the session part.
+func DisplayAgentID(profile, agentID string) string {
+	_, sess, ok := strings.Cut(agentID, ":")
+	if !ok {
+		sess = agentID
+	}
+	return DisplayID(profile, sess)
 }
 
 // ErrInvalid is returned by Clean for an envelope that cannot be kept.

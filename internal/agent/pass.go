@@ -393,6 +393,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			turns = append(turns, directiveTurns(nudge)...)
 		}
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
+		// A2A broadcasts and replies that landed since the last round.
+		turns = append(turns, s.drainPeers()...)
 		// Goal research that landed while this pass ran is handed over
 		// before the next model call (goalkickoff.go).
 		turns = append(turns, s.deliverResearchMidPass(ctx, mode, emit)...)

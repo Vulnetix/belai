@@ -128,6 +128,10 @@ type Settings struct {
 	// preference: the project layer is dropped, so a repository cannot make a
 	// host index or return more.
 	Knowledge *KnowledgeSettings `json:"knowledge,omitempty"`
+	// A2A configures agent-to-agent messaging between sessions (docs/a2a.md).
+	// A project layer may turn it off and narrow the filter, never the
+	// reverse.
+	A2A *A2ASettings `json:"a2a,omitempty"`
 	// Sync mirrors session transcripts to the Vulnetix website while Belai is
 	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
 	// layer may turn it off, never on.
@@ -1243,6 +1247,9 @@ type UISettings struct {
 	ShowToolCalls *bool `json:"show_tool_calls,omitempty"`
 	ShowEdits     *bool `json:"show_edits,omitempty"`
 	ShowTodos     *bool `json:"show_todos,omitempty"`
+	// ShowA2A shows A2A broadcasts, messages, replies and acks in the
+	// transcript (docs/a2a.md). Default on. Display-only.
+	ShowA2A *bool `json:"show_a2a,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
 	// MacKeyHints adds the Mac media-key form after an F-key in the hints and
 	// help (f9 shown as f9 (Fn+⏭)). nil follows the platform: on for macOS, off
@@ -1309,6 +1316,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.ShowTodos != nil {
 		u.ShowTodos = from.ShowTodos
+	}
+	if from.ShowA2A != nil {
+		u.ShowA2A = from.ShowA2A
 	}
 	if from.MacKeyHints != nil {
 		u.MacKeyHints = from.MacKeyHints
@@ -1736,6 +1746,76 @@ func (s Settings) MacKeyHintsFor(goos string) bool {
 // MacKeyHints is [Settings.MacKeyHintsFor] for the running platform.
 func (s Settings) MacKeyHints() bool { return s.MacKeyHintsFor(runtime.GOOS) }
 
+// A2AVisible reports whether A2A rows render in the transcript. Default true.
+func (s Settings) A2AVisible() bool {
+	return s.UI == nil || s.UI.ShowA2A == nil || *s.UI.ShowA2A
+}
+
+// A2ASettings configures A2A messaging (docs/a2a.md).
+type A2ASettings struct {
+	// Enabled turns A2A messaging on: broadcasts, the mailbox and the
+	// A2AMessage and A2AAck tools. Default on.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Filter is which broadcasts a session receives: "repo" (the default)
+	// those about its own repository, "all" every one, "off" none (it still
+	// broadcasts). Any other value is "repo".
+	Filter string `json:"filter,omitempty"`
+}
+
+// A2A filter values.
+const (
+	A2AFilterRepo = "repo"
+	A2AFilterAll  = "all"
+	A2AFilterOff  = "off"
+)
+
+// A2AFilterNames lists the a2a.filter values.
+var A2AFilterNames = []string{A2AFilterRepo, A2AFilterAll, A2AFilterOff}
+
+// A2AEnabled reports whether A2A messaging is on. Default true.
+func (s Settings) A2AEnabled() bool {
+	return s.A2A == nil || s.A2A.Enabled == nil || *s.A2A.Enabled
+}
+
+// A2AFilter returns the receive filter: repo unless set to all or off.
+func (s Settings) A2AFilter() string {
+	if s.A2A != nil {
+		switch s.A2A.Filter {
+		case A2AFilterAll, A2AFilterOff:
+			return s.A2A.Filter
+		}
+	}
+	return A2AFilterRepo
+}
+
+// a2aFilterRank orders the filters from widest to narrowest.
+var a2aFilterRank = map[string]int{A2AFilterAll: 0, A2AFilterRepo: 1, A2AFilterOff: 2}
+
+// mergeA2A folds from over base. A project layer may turn A2A off and narrow
+// the filter (all, repo, off), never turn it on or widen it.
+func mergeA2A(base, from *A2ASettings, project bool) *A2ASettings {
+	if from == nil {
+		return base
+	}
+	out := A2ASettings{}
+	if base != nil {
+		out = *base
+	}
+	if from.Enabled != nil && (!project || !*from.Enabled) {
+		out.Enabled = from.Enabled
+	}
+	if r, ok := a2aFilterRank[from.Filter]; ok {
+		cur := out.Filter
+		if _, known := a2aFilterRank[cur]; !known {
+			cur = A2AFilterRepo
+		}
+		if !project || r > a2aFilterRank[cur] {
+			out.Filter = from.Filter
+		}
+	}
+	return &out
+}
+
 // TodosVisible reports whether the TODO panel renders. Default true.
 func (s Settings) TodosVisible() bool {
 	return s.UI == nil || s.UI.ShowTodos == nil || *s.UI.ShowTodos
@@ -1904,6 +1984,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Offload = mergeOffload(out.Offload, proj.Offload)
 	out.WebFetch = mergeWebFetch(out.WebFetch, proj.WebFetch)
 	out.Jev = mergeJev(out.Jev, proj.Jev, true)
+	// A2A carries this session's work to other sessions: off and narrower only.
+	out.A2A = mergeA2A(out.A2A, proj.A2A, true)
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {
 		f := false

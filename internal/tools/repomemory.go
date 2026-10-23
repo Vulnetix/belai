@@ -95,6 +95,13 @@ func (h *RepoMemoryHub) SetAdmit(f RepoMemoryAdmit) {
 	h.mu.Unlock()
 }
 
+// HasStamp reports whether a stamp source is installed.
+func (h *RepoMemoryHub) HasStamp() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stamp != nil
+}
+
 // HasAdmit reports whether a gate is installed.
 func (h *RepoMemoryHub) HasAdmit() bool {
 	h.mu.Lock()

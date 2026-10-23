@@ -35,6 +35,7 @@ import (
 	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/otel"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
@@ -335,6 +336,17 @@ func (w *Worker) Run(ctx context.Context) error {
 			aud := sessionsync.StartAudit(context.Background(), w.Sync, headless.HostID(),
 				sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}, dir)
 			defer aud.Close(5 * time.Second)
+			// The lessons this worker writes replicate with the shared
+			// memory (docs/fleet.md#memory).
+			mctx, mcancel := context.WithCancel(context.Background())
+			defer mcancel()
+			repl := sessionsync.NewMemoryReplicator(w.Sync, headless.HostID(), repomemory.Root(dir))
+			repl.Start(mctx)
+			defer func() {
+				fctx, fcancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer fcancel()
+				_ = repl.Upload(fctx)
+			}()
 		}
 	}
 	// A no-op unless a Recorder is installed (sync on, or a test's).

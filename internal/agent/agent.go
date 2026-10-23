@@ -381,6 +381,8 @@ type Session struct {
 	// facts carries forge coordinator facts to the goal loop (coordfact.go).
 	// They are harness facts, never steering: nothing typed reaches them.
 	facts chan CoordFact
+	// peers queues A2A deliveries for the loop's next round (a2a.go).
+	peers chan PeerNote
 	trace *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
@@ -813,6 +815,7 @@ func NewSession(o Options) (*Session, error) {
 		toolMethod:           method,
 		steer:                make(chan string, steerBuffer),
 		facts:                make(chan CoordFact, factBuffer),
+		peers:                make(chan PeerNote, peerBuffer),
 		trace:                trace.Env(),
 		diffs:                filediff.NewRecorder(o.Workdir),
 		diag:                 o.Diagnostics,
@@ -821,6 +824,7 @@ func NewSession(o Options) (*Session, error) {
 		kanban:               newKanbanState(reg),
 	}
 	codeTool.Run = sess.runCode
+	sess.installRepoMemory()
 	if offStore != nil {
 		sess.offload = offStore
 		sess.offloadThreshold, sess.offloadPreview = o.Settings.OffloadLimits()

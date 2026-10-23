@@ -422,7 +422,9 @@ type MessageList struct {
 	ShowReasoning bool
 	ShowTools     bool
 	ShowEdits     bool
-	InternalWork  rolemanager.Level
+	// ShowA2A gates the A2A rows (broadcasts, messages, replies, acks).
+	ShowA2A      bool
+	InternalWork rolemanager.Level
 	// Chronological lays the transcript out strictly in message order, which
 	// is time order: a belai notice is not hoisted below a streaming reply, and
 	// the blank line before each panel carries the time of the panel.
@@ -523,6 +525,11 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
+		case A2ARole:
+			if !m.ShowA2A {
+				continue
+			}
+			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		case PlayerRole, VulnRole, PermRole:
 			// The card has no text: it is drawn from Message.Player,
 			// Message.Vuln or Message.Perm.
@@ -566,6 +573,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = shellPanel(*msg, width, m.ExpandAll)
 				case ReportRole:
 					s, sub = reportPanel(*msg, width, m.ExpandAll)
+				case A2ARole:
+					s, sub = a2aPanel(*msg, width, m.ExpandAll)
 				case PlayerRole:
 					s, sub = playerPanel(*msg, width)
 				case VulnRole:

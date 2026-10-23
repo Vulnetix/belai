@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -87,6 +88,10 @@ func (a *App) startSessionSync() {
 		return
 	}
 	host := sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}
+	// The shared memory (repo notes, fleet lessons) replicates while sync is
+	// on, whatever the A2A blackout says (docs/a2a.md#repo-memory).
+	a.memRepl = sessionsync.NewMemoryReplicator(client, hostID, repomemory.Root(dir))
+	a.memRepl.Start(context.Background())
 	a.syncer = sessionsync.New(sessionsync.Options{
 		Client:        client,
 		HostID:        hostID,
@@ -94,7 +99,8 @@ func (a *App) startSessionSync() {
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
 		RemoteAnswers: a.settings.SyncRemoteAnswersEnabled(),
 		Git:           a.gitSyncRaw(),
-		OnControls:    a.gitSyncControls(),
+		A2A:           a.a2aInbox(client, hostID, a.memRepl.Wake),
+		OnControls:    a.a2aControls(a.gitSyncControls()),
 	})
 	a.syncer.Start(context.Background())
 	// The audit log goes where session sync goes: its own hash-chained facts
