@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/vulnetix/belai/internal/a2alink"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/vulnetix/belai/internal/acp"
 	"github.com/vulnetix/belai/internal/agent"
@@ -77,6 +79,9 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	// Kanban writes made over this connection are pushed once at the end.
 	defer flushKanban(global, wd)
 	defer recordUsage(session.MustID(), global, nil)()
+	// Each editor session is an A2A agent; its endpoint lives as long as the
+	// connection (docs/a2a.md).
+	defer acpLinks.closeAll()
 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {
 		return buildACPSession(ctx, cwd, sessionID, *providerName, *model)
@@ -94,6 +99,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 		// writes to the state directory, never to stdout.
 		opts.Transcript = func(cwd, id string) *turnlog.Log {
 			l, _ := turnlog.Open(cwd, id, session.Meta{Cwd: cwd, Mode: "agent"})
+			acpLinks.record(id, l)
 			return l
 		}
 		// The transcript is mirrored to the Vulnetix website when session sync
@@ -131,7 +137,65 @@ func buildACPSessionWith(ctx context.Context, cwd, sessionID, providerName, mode
 		return nil, err
 	}
 	// No git sync: an editor owns this working copy and its open buffers.
-	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true, nil)
+	link := acpLinks.get(ctx, sessionID, headless.Params{Cfg: cfg, Client: httpclient.Default(), Posture: pol,
+		Workdir: cwd, Settings: settings, SessionID: sessionID})
+	return newCLISessionLinked(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true, false, nil, link)
+}
+
+// acpLinkSet keeps one A2A endpoint per editor session, so a model switch
+// that rebuilds the session keeps its Agent Card, and a transcript opened
+// after the session still receives its a2a_* entries.
+type acpLinkSet struct {
+	mu    sync.Mutex
+	links map[string]*a2alink.Link
+	logs  map[string]*turnlog.Log
+}
+
+var acpLinks = &acpLinkSet{}
+
+func (s *acpLinkSet) get(ctx context.Context, id string, p headless.Params) *a2alink.Link {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if l, ok := s.links[id]; ok {
+		return l
+	}
+	l := headless.OpenA2A(ctx, p, "", "", nil)
+	if l == nil {
+		return nil
+	}
+	if s.links == nil {
+		s.links = map[string]*a2alink.Link{}
+	}
+	s.links[id] = l
+	if log := s.logs[id]; log != nil {
+		l.SetRecorder(log.A2A)
+	}
+	return l
+}
+
+func (s *acpLinkSet) record(id string, log *turnlog.Log) {
+	if log == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.logs == nil {
+		s.logs = map[string]*turnlog.Log{}
+	}
+	s.logs[id] = log
+	if l := s.links[id]; l != nil {
+		l.SetRecorder(log.A2A)
+	}
+}
+
+func (s *acpLinkSet) closeAll() {
+	s.mu.Lock()
+	links := s.links
+	s.links = nil
+	s.mu.Unlock()
+	for _, l := range links {
+		l.Close()
+	}
 }
 
 // acpConfig resolves the model config, merged settings and effective posture

@@ -31,6 +31,23 @@ type PeerNote struct {
 	Attachments []run.Attachment
 }
 
+// SetFilesHook tells f the paths this session's tools change, and the paths
+// a goal pass's ledger records as touched: the A2A broadcaster's files. f
+// must not block.
+func (s *Session) SetFilesHook(f func(paths []string)) {
+	if f == nil {
+		s.filesHook.Store(nil)
+		return
+	}
+	s.filesHook.Store(&f)
+}
+
+func (s *Session) noteFiles(paths []string) {
+	if f := s.filesHook.Load(); f != nil && len(paths) > 0 {
+		(*f)(paths)
+	}
+}
+
 // peerBuffer is the peer note queue's capacity.
 const peerBuffer = 16
 

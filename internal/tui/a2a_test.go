@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/a2a"
+	"github.com/vulnetix/belai/internal/a2alink"
 	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -132,7 +133,7 @@ func TestA2AWithheldMessageGetsTheHarnessReply(t *testing.T) {
 		t.Fatal("a withheld message started a side-turn")
 	}
 	got := nextEvent(t, peer, func(e a2a.Event) bool { return e.Env.Kind == a2a.KindReply && !e.Out })
-	if got.Env.Text() != a2aWithheldReply {
+	if got.Env.Text() != a2alink.WithheldReply {
 		t.Fatalf("reply %q", got.Env.Text())
 	}
 }

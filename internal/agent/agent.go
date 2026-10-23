@@ -383,7 +383,10 @@ type Session struct {
 	facts chan CoordFact
 	// peers queues A2A deliveries for the loop's next round (a2a.go).
 	peers chan PeerNote
-	trace *trace.Writer
+	// filesHook, when set, is told the paths the session's tools changed
+	// (the A2A broadcaster's files). It must not block.
+	filesHook atomic.Pointer[func([]string)]
+	trace     *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
@@ -2133,6 +2136,13 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 				}
 			}
 			emit(Event{Kind: EventToolDiffKind, ToolName: call.Name, ToolCallID: call.ID, Diff: &ch})
+			if len(ch.Files) > 0 {
+				paths := make([]string, 0, len(ch.Files))
+				for _, f := range ch.Files {
+					paths = append(paths, f.Path)
+				}
+				s.noteFiles(paths)
+			}
 		}
 	}
 

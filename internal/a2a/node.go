@@ -443,6 +443,14 @@ func (n *Node) end(card AgentCard) {
 	n.mu.Unlock()
 }
 
+// Flush broadcasts work that changed since the last broadcast, whatever the
+// debounce says: a session about to end says what it did.
+func (n *Node) Flush() {
+	if w, ok := n.bc.Pending(n.now()); ok {
+		_, _ = n.send(Envelope{Kind: KindBroadcast, Work: w})
+	}
+}
+
 // Close ends the session's broadcast and removes its card.
 func (n *Node) Close() {
 	n.mu.Lock()

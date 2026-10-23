@@ -202,3 +202,24 @@ func TestTodoListIsRecorded(t *testing.T) {
 		t.Fatalf("latest list = %+v, %v", latest, err)
 	}
 }
+
+// A2A entries are written as render-only a2a_* rows with their linkage meta;
+// any other type is refused, and a nil log is a no-op.
+func TestA2AEntries(t *testing.T) {
+	New(nil).A2A("a2a_message_in", "x", nil)
+	var nilLog *Log
+	nilLog.A2A("a2a_message_in", "x", nil)
+	l, read := newLog(t)
+	l.A2A("a2a_broadcast_in", "files: x.go", map[string]any{"messageId": "a2a-1", "peerSessionId": "s"})
+	l.A2A("user", "forged", nil)
+	entries := read()
+	var got []session.Entry
+	for _, e := range entries {
+		if strings.HasPrefix(e.Type, "a2a_") || e.Content == "forged" {
+			got = append(got, e)
+		}
+	}
+	if len(got) != 1 || got[0].Type != "a2a_broadcast_in" || got[0].Role != "a2a" || got[0].Meta["messageId"] != "a2a-1" {
+		t.Fatalf("entries %+v", got)
+	}
+}

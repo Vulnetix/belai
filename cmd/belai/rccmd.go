@@ -793,6 +793,12 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if pick.Pix != nil {
 		narrow, persona = rcNarrow(pick.Pix.Tools, pick.Pix.Skills), pick.Pix.Persona
 	}
+	// A2A: the session broadcasts its work, hears matching broadcasts and
+	// answers messages in a side-turn (docs/a2a.md). One endpoint for the
+	// session's life, whatever the controls rebuild.
+	link := headless.OpenA2A(ctx, headless.Params{Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd,
+		Settings: settings, SessionID: sessionID, GitSync: gs}, activeProfileOr(pick.Profile, activeProfile), "", tlog.A2A)
+	defer link.Close()
 	if !pick.Controls {
 		// Asks off exactly as for `belai -prompt`: nobody can answer one, so a
 		// call that would ask is decided by the posture and permission rules.
@@ -801,7 +807,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-			Narrow: narrow, Persona: persona,
+			Narrow: narrow, Persona: persona, A2A: link,
 		})
 		if err != nil {
 			w.System("remote session could not start: " + err.Error())
@@ -825,7 +831,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 					Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 					WorkspaceDirs: pick.Dirs, SessionID: sessionID, AllowAsk: false, AskDisabled: &allow,
 					MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-					Narrow: rcProfileNarrow(pick.Profile),
+					Narrow: rcProfileNarrow(pick.Profile), A2A: link,
 				})
 			}
 		}
@@ -885,7 +891,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
 			AskDecider: cliAskDecider(st.Ask, s, cwd),
 			MCP:        mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
-			Diagnostics: &gate, Narrow: rcProfileNarrow(pick.Profile),
+			Diagnostics: &gate, Narrow: rcProfileNarrow(pick.Profile), A2A: link,
 		})
 		if err != nil {
 			closeDiagnoser(gate.Diagnoser)
@@ -1048,4 +1054,13 @@ func firstLine(s string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return string(r)
+}
+
+// activeProfileOr is the profile an rc session's Agent Card names: the
+// engaged one, else the session's active persona.
+func activeProfileOr(profile, active string) string {
+	if profile != "" {
+		return profile
+	}
+	return active
 }

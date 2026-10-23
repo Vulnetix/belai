@@ -84,6 +84,16 @@ const maxDiffWireBytes = 256 << 10
 // maxShellBytes caps a shell entry's content, as the TUI caps a tool result.
 const maxShellBytes = 32 << 10
 
+// A2A writes one A2A entry (a2a_broadcast_in, a2a_reply_out, …; see
+// docs/a2a.md#transcripts): render-only, never replayed as a model message.
+// It is safe from any goroutine.
+func (l *Log) A2A(entryType, content string, meta map[string]any) {
+	if l == nil || l.w == nil || !strings.HasPrefix(entryType, "a2a_") {
+		return
+	}
+	l.w.Entry(session.Entry{Type: entryType, Role: "a2a", Content: content, Meta: copyMeta(meta)})
+}
+
 // Shell writes a shell line's result and returns its entry id ("" when not
 // written). meta carries command, shell_id and status like the TUI's entry;
 // content is cut at a rune boundary when it is over the cap.

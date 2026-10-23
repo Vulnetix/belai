@@ -6,11 +6,13 @@ package headless
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/vulnetix/belai/internal/a2alink"
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/config"
@@ -111,6 +113,26 @@ type Params struct {
 	// close them when the session is rebuilt. Every other headless session runs
 	// the fallback syntax checks alone.
 	Diagnostics *rolemanager.DiagnosticsGate
+	// A2A is the session's A2A endpoint (OpenA2A): its tools join the
+	// registry and the session is attached to it. nil when A2A is off.
+	A2A *a2alink.Link
+}
+
+// OpenA2A opens the A2A endpoint for a session about to be built from p
+// (docs/a2a.md): profile names its Agent Card, ticket its work (a fleet
+// worker's card), and rec writes its a2a_* transcript entries. It relays
+// through Vulnetix when sync is on. nil when a2a.enabled is off. Close it when
+// the session ends.
+func OpenA2A(ctx context.Context, p Params, profile, ticket string, rec a2alink.Recorder) *a2alink.Link {
+	var raw func() json.RawMessage
+	if p.GitSync != nil {
+		raw = p.GitSync.Raw
+	}
+	return a2alink.Open(ctx, a2alink.Options{
+		Workdir: p.Workdir, SessionID: p.SessionID, Profile: profile, Settings: p.Settings,
+		Cfg: p.Cfg, Client: p.Client, Posture: p.Posture, Sync: a2aSyncClient(p.Settings, p.Workdir),
+		Ticket: ticket, Git: raw, Record: rec,
+	})
 }
 
 // NewSession builds the session.
@@ -151,6 +173,8 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	} else {
 		reg = reg.WithKanban(p.Kanban, p.KanbanSource)
 	}
+	// The A2A tools ride on every top-level session, after the allowlist.
+	reg = p.A2A.Install(reg)
 
 	perms := permissions.From(p.Settings.Permissions.Allow, p.Settings.Permissions.Ask, p.Settings.Permissions.Deny).WithHarness(p.Deny, p.Permit)
 	repoMap := repomap.Scan(ctx, p.Workdir)
@@ -184,7 +208,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		}, true)
 	}
 
-	return agent.NewSession(agent.Options{
+	sess, err := agent.NewSession(agent.Options{
 		AskDecider:    p.AskDecider,
 		Knowledge:     kb,
 		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)
@@ -227,6 +251,10 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		MaxIterations: p.MaxIterations,
 		GitSync:       p.GitSync,
 	})
+	if err == nil {
+		p.A2A.Attach(sess)
+	}
+	return sess, err
 }
 
 // Kanban opens the global board for a headless session, or returns nils
@@ -268,6 +296,24 @@ func SyncClient(settings config.Settings, workdir string) *sessionsync.Client {
 // settings are on and a usable Vulnetix CLI credential resolves.
 func syncClient(settings config.Settings, workdir string) *sessionsync.Client {
 	if !settings.KanbanEnabled() || !settings.SyncEnabled() {
+		return nil
+	}
+	header, err := credentials.VulnetixAuthHeader(workdir)
+	if err != nil || sessionsync.UsableCredential(header) != nil {
+		return nil
+	}
+	client, err := sessionsync.NewClient(sessionsync.BaseURL(os.Getenv("VULNETIX_WEB_URL")),
+		func() (string, error) { return header, nil }, httpclient.Default())
+	if err != nil {
+		return nil
+	}
+	return client
+}
+
+// a2aSyncClient is the relay's client: sync on and a usable credential,
+// whatever the board setting says.
+func a2aSyncClient(settings config.Settings, workdir string) *sessionsync.Client {
+	if !settings.SyncEnabled() {
 		return nil
 	}
 	header, err := credentials.VulnetixAuthHeader(workdir)
