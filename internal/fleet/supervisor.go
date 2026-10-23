@@ -347,7 +347,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 				spawn = s.Registry.Spawn
 			}
 			id, err := spawn(SpawnOptions{Exe: s.Exe, Repo: k.Repo, Profile: k.Profile, Crew: run.Crew, Run: run.ID,
-				Provider: run.First().Provider, Model: run.First().Model, Effort: run.Effort, Stay: true,
+				Provider: run.First().Provider, Model: run.First().Model, Effort: run.Effort, Stay: true, StayIdleMax: time.Duration(run.StayIdleMaxSecs) * time.Second,
 				MaxWorkers: max, WebControls: run.WebControls})
 			if err != nil {
 				s.logf("start %s in %s: %v", k.Profile, k.Repo, err)
@@ -357,9 +357,6 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 			running++
 		}
 	}
-	if run.Stay {
-		return ""
-	}
 	total := 0
 	for k := range cached {
 		total += cached[k]
@@ -368,9 +365,14 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 		s.quiet = s.clock()
 		return ""
 	}
-	poll := agentprofile.DefaultPoll
-	if s.clock().Sub(s.quiet) >= QuietWindow(poll) {
-		return fmt.Sprintf("done: nothing left to claim in the scope for %s", QuietWindow(poll))
+	window := QuietWindow(agentprofile.DefaultPoll)
+	if run.Stay {
+		// A staying run waits for new work, but not forever: the idle cap
+		// ends it, and the host starts it again when it is wanted.
+		window = StayIdleCap(time.Duration(run.StayIdleMaxSecs) * time.Second)
+	}
+	if s.clock().Sub(s.quiet) >= window {
+		return fmt.Sprintf("done: nothing left to claim in the scope for %s", window)
 	}
 	return ""
 }

@@ -130,6 +130,9 @@ type CrewRun struct {
 	// Stay keeps the run going when nothing is left to claim anywhere in
 	// the scope; by default it ends after a quiet window.
 	Stay bool `json:"stay,omitempty"`
+	// StayIdleMaxSecs bounds a staying run: it ends once nothing has been left
+	// to claim anywhere in the scope for this long. Zero is DefaultStayIdleMax.
+	StayIdleMaxSecs int `json:"stay_idle_max_secs,omitempty"`
 	// WebControls lets the website change the workers' controls.
 	WebControls bool `json:"web_controls,omitempty"`
 

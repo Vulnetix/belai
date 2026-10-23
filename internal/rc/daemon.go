@@ -175,6 +175,11 @@ type WorkerStart struct {
 	// Drain makes the workers exit once nothing is left to claim, whatever
 	// cron schedule their profile carries (a stored schedule fires them).
 	Drain bool
+	// Stay keeps the workers waiting for work instead of exiting once nothing
+	// is left to claim (belai agent start -stay); StayIdleMax bounds that wait
+	// (-stay-idle-max), zero meaning the default. Stay is ignored with Drain.
+	Stay        bool
+	StayIdleMax time.Duration
 	// Fill starts only the replicas a crew lacks in the directory.
 	Fill bool
 	// Controls and GuardrailsOff are the daemon's own --web-controls and

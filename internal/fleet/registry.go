@@ -474,6 +474,9 @@ type SpawnOptions struct {
 	// Stay keeps the worker waiting for work instead of exiting once the
 	// board has nothing left for it.
 	Stay bool
+	// StayIdleMax is the idle cap passed with Stay (-stay-idle-max); zero
+	// leaves the default.
+	StayIdleMax time.Duration
 	// Drain exits once nothing is left to claim even when the profile has a
 	// cron schedule (a stored schedule fires the worker itself).
 	Drain bool
@@ -498,58 +501,7 @@ type SpawnOptions struct {
 // worker registers itself; WaitStarted reports whether it did.
 func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	id := NewID(o.Profile)
-	args := []string{"agent", "run", "-id", id, "-detached"}
-	if o.Crew != "" {
-		args = append(args, "-crew", o.Crew)
-	}
-	if o.Run != "" {
-		args = append(args, "-run", o.Run)
-	}
-	if o.Effort != "" {
-		args = append(args, "-effort", o.Effort)
-	}
-	if o.Provider != "" {
-		args = append(args, "-provider", o.Provider)
-	}
-	if o.Model != "" {
-		args = append(args, "-model", o.Model)
-	}
-	if o.Stay {
-		args = append(args, "-stay")
-	}
-	if o.Drain {
-		args = append(args, "-drain")
-	}
-	if o.WebControls {
-		args = append(args, "-web-controls")
-		if o.GuardrailsOff {
-			args = append(args, "-web-allow-guardrails-off")
-		}
-	}
-	if o.MaxWorkers > 0 {
-		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
-	}
-	if o.Prompt != "" {
-		// The = form, so a prompt that starts with a dash is not read as a flag.
-		args = append(args, "-prompt="+o.Prompt)
-		if len(o.Tools) > 0 {
-			args = append(args, "-tools="+strings.Join(o.Tools, ","))
-		}
-		if o.Claim != "" {
-			args = append(args, "-claim="+o.Claim)
-		}
-		if o.To != "" {
-			args = append(args, "-to="+o.To)
-		}
-		if o.Publish != "" {
-			args = append(args, "-publish="+o.Publish)
-		}
-		if o.ReadOnly {
-			args = append(args, "-read-only")
-		}
-	} else {
-		args = append(args, o.Profile)
-	}
+	args := spawnArgs(id, o)
 	if err := os.MkdirAll(r.LogDir(), 0o700); err != nil {
 		return "", err
 	}
@@ -599,4 +551,64 @@ func (r *Registry) WaitStarted(ids []string, d time.Duration) map[string]Record 
 		time.Sleep(150 * time.Millisecond)
 	}
 	return out
+}
+
+// spawnArgs is the fixed argv of one detached `belai agent run`.
+func spawnArgs(id string, o SpawnOptions) []string {
+	args := []string{"agent", "run", "-id", id, "-detached"}
+	if o.Crew != "" {
+		args = append(args, "-crew", o.Crew)
+	}
+	if o.Run != "" {
+		args = append(args, "-run", o.Run)
+	}
+	if o.Effort != "" {
+		args = append(args, "-effort", o.Effort)
+	}
+	if o.Provider != "" {
+		args = append(args, "-provider", o.Provider)
+	}
+	if o.Model != "" {
+		args = append(args, "-model", o.Model)
+	}
+	if o.Stay {
+		args = append(args, "-stay")
+		if o.StayIdleMax > 0 {
+			args = append(args, "-stay-idle-max", StayIdleCap(o.StayIdleMax).String())
+		}
+	}
+	if o.Drain {
+		args = append(args, "-drain")
+	}
+	if o.WebControls {
+		args = append(args, "-web-controls")
+		if o.GuardrailsOff {
+			args = append(args, "-web-allow-guardrails-off")
+		}
+	}
+	if o.MaxWorkers > 0 {
+		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
+	}
+	if o.Prompt != "" {
+		// The = form, so a prompt that starts with a dash is not read as a flag.
+		args = append(args, "-prompt="+o.Prompt)
+		if len(o.Tools) > 0 {
+			args = append(args, "-tools="+strings.Join(o.Tools, ","))
+		}
+		if o.Claim != "" {
+			args = append(args, "-claim="+o.Claim)
+		}
+		if o.To != "" {
+			args = append(args, "-to="+o.To)
+		}
+		if o.Publish != "" {
+			args = append(args, "-publish="+o.Publish)
+		}
+		if o.ReadOnly {
+			args = append(args, "-read-only")
+		}
+	} else {
+		args = append(args, o.Profile)
+	}
+	return args
 }

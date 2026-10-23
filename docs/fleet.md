@@ -113,7 +113,12 @@ One pass of the worker loop:
    `agents.max_workers` slot is free. A teammate that is working holds the
    window open, because it may still hand an item over. `-stay` on
    `belai agent run` or `start` keeps a standing worker that waits for new
-   items, and a worker on a cron `schedule` always stays. `-drain` is the
+   items, and a worker on a cron `schedule` always stays. A standing worker
+   is still bounded: `-stay-idle-max DURATION` (default 6h, at most 24h)
+   makes it exit with `done: stay idle cap` after that long with nothing to
+   claim, so a stuck worker cannot hold an `agents.max_workers` slot for good.
+   A worker or crew start from the website can ask for it (see
+   [remote-control.md](remote-control.md)). `-drain` is the
    opposite: the worker exits once nothing is left to claim even when its
    profile has a `schedule`. `belai rc` passes it when a stored schedule fires
    a worker (see [remote-control.md](remote-control.md#scheduled-agents)),
@@ -517,7 +522,9 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
   it is refused, unless `-fill`, which only confirms the supervisor keeps the
   crew full. A run ends when it is stopped (`belai agent stop RUN`), or, unless
   it stays (`-stay`), after a quiet window with nothing to claim anywhere in
-  its scope. Workers of a run never leave on their own quiet window: the
+  its scope. A staying run is bounded too: it ends after `-stay-idle-max` (default
+  6h, at most 24h) with nothing to claim, and a `-stay` start of a crew that already
+  runs upgrades that run to stay. Workers of a run never leave on their own quiet window: the
   supervisor decides.
 - **A crew outlives its supervisor.** If the supervisor dies while the run is
   still meant to run (a crash, an out-of-memory kill, `kill -9`), the run is
@@ -1118,8 +1125,8 @@ running crew (or launches it) without the refusal a second launch gets.
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent knowledge [-index] [-json] [-trust-dir] [-provider P] [-model M] [NAME]` | the retrieval indexes: this project's `.vulnetix` output and, with NAME, that profile's listed documents, as counts and addresses. `-index` brings them up to date first, sending new text through the security classifier (see [Knowledge](knowledge.md)) |
 | `belai agent status` | running workers and this project's board |
-| `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
-| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-crew` launches a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) (see the row below); `-fill` (with `-crew`) confirms a running crew without refusing, since its supervisor keeps it full; exactly one of NAME, `-crew` and `-prompt` is required |
+| `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay [-stay-idle-max DURATION] \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused; `-stay-idle-max` needs `-stay`. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
+| `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay [-stay-idle-max DURATION] \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-crew` launches a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) (see the row below); `-fill` (with `-crew`) confirms a running crew without refusing, since its supervisor keeps it full; exactly one of NAME, `-crew` and `-prompt` is required |
 | `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-pool P/M]… [-switch-after N] [-final-retry SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-pool` names the [provider pool](#the-provider-pool), cycled in order; `-model` is its first target. A running crew takes new directories into its scope |
 | `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, the pool and its phase |
 | `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the provider pool |

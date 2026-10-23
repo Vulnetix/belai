@@ -542,6 +542,14 @@ type Dispatch struct {
 	// directory instead of refusing (`belai agent start -crew CREW -fill`): a
 	// crew run's supervisor keeps its members at their replicas.
 	Fill bool `json:"fill,omitempty"`
+	// Stay makes a "worker" or "crew" request keep its workers waiting for
+	// work instead of exiting once nothing is left to claim (`belai agent
+	// start -stay`), and StayIdleMax bounds that wait in seconds (zero is the
+	// default, six hours; the daemon clamps it to 24 hours). A daemon from before
+	// these fields ignores them, and a server that omits them gets the old
+	// behaviour.
+	Stay        bool `json:"stay,omitempty"`
+	StayIdleMax int  `json:"stayIdleMax,omitempty"`
 	// Worker is the worker id a "pause" or "resume" request names.
 	Worker string `json:"worker,omitempty"`
 	// Control is a "crew_control" request's change to a running crew run.

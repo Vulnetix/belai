@@ -47,6 +47,15 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	}
 	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain, Provider: r.Provider, Model: r.Model,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff}
+	// A stored schedule drains by design, so it never stays. Otherwise the
+	// request's idle cap is clamped here, so no value reaches the argv above
+	// the fleet's hard maximum or below zero.
+	if r.Stay && !drain {
+		w.Stay = true
+		if r.StayIdleMax > 0 {
+			w.StayIdleMax = fleet.StayIdleCap(time.Duration(r.StayIdleMax) * time.Second)
+		}
+	}
 	inv := d.o.Inventory()
 	switch r.Kind {
 	case "worker":
@@ -133,6 +142,11 @@ func agentStartArgs(w WorkerStart) []string {
 	}
 	if w.Drain {
 		args = append(args, "-drain")
+	} else if w.Stay {
+		args = append(args, "-stay")
+		if w.StayIdleMax > 0 {
+			args = append(args, "-stay-idle-max", fleet.StayIdleCap(w.StayIdleMax).String())
+		}
 	}
 	if w.Provider != "" {
 		args = append(args, "-provider", w.Provider)

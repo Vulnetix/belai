@@ -125,6 +125,11 @@ type Worker struct {
 	// found nothing to claim, with no crew teammate working, for a quiet
 	// window; a scheduled (cron) worker always stays.
 	Stay bool
+	// StayIdleMax bounds a Stay worker's wait: it exits once it has found
+	// nothing to claim for this long, so a stuck worker cannot hold a
+	// max_workers slot forever. Zero is DefaultStayIdleMax; StayIdleCap clamps
+	// it to MaxStayIdleMax. A cron worker keeps its schedule and is not bounded.
+	StayIdleMax time.Duration
 	// Drain makes a scheduled (cron) profile work like any other: look for
 	// work, and exit once nothing is left to claim. A stored schedule fires
 	// the worker on the cron, so the profile's own schedule must not also
@@ -480,6 +485,11 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 				w.logf("nothing to claim: no %s", w.wants(project))
 				waiting = true
 			}
+			if w.Stay && !isCron {
+				if limit := StayIdleCap(w.StayIdleMax); w.clock().Sub(quietSince) >= limit {
+					return fmt.Sprintf("done: stay idle cap, nothing to claim for %s", limit), nil
+				}
+			}
 			if !w.Stay && !isCron {
 				if w.teammateWorking() {
 					quietSince = w.clock()
@@ -599,6 +609,26 @@ func (w *Worker) surveyStamp() string {
 // QuietWindow is how long a worker waits with nothing to claim before it
 // exits: two polls, so a handoff a teammate just made is claimed first.
 func QuietWindow(poll time.Duration) time.Duration { return 2 * poll }
+
+const (
+	// DefaultStayIdleMax is how long a worker started with -stay waits with
+	// nothing to claim before it exits anyway.
+	DefaultStayIdleMax = 6 * time.Hour
+	// MaxStayIdleMax is the hard ceiling on that wait, whatever a request asks.
+	MaxStayIdleMax = 24 * time.Hour
+)
+
+// StayIdleCap returns the idle cap a staying worker or crew run applies: the
+// default for zero or a negative value, never more than MaxStayIdleMax.
+func StayIdleCap(d time.Duration) time.Duration {
+	switch {
+	case d <= 0:
+		return DefaultStayIdleMax
+	case d > MaxStayIdleMax:
+		return MaxStayIdleMax
+	}
+	return d
+}
 
 // teammateWorking reports whether another live worker of this worker's crew,
 // in the same repository, is starting or working, and so may still hand an

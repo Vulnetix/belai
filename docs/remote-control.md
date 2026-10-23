@@ -507,6 +507,22 @@ predict what will happen to them:
   gets a new one first); with `fill` set, `belai agent start -crew NAME -fill`, a
   crew already running over that directory is confirmed rather than refused, since
   its supervisor keeps every member at its replicas.
+- **Workers that stay.** A `worker` or `crew` request may carry `stay: true`
+  and `stayIdleMax` (seconds). The daemon passes `belai agent start -stay`
+  and, when `stayIdleMax` is set, `-stay-idle-max`, so the workers keep
+  waiting for work after the board runs dry instead of exiting after about a
+  minute. This is how a Pix sandbox keeps a warm worker. Both default to off
+  and zero, and a daemon or server from before the fields ignores them, so
+  the old behaviour holds. The wait is always bounded: with no `stayIdleMax`
+  the cap is six hours, a larger value is clamped to 24 hours, and a negative
+  one is ignored. A worker that has found nothing to claim for that long
+  exits and frees its slot (`done: stay idle cap`), and the host starts it
+  again when it is wanted. A staying crew run ends the same way once nothing
+  is left to claim anywhere in its scope. A `crew` request with `stay` also
+  upgrades a run that is already going and would have ended on a dry board.
+  The worker cap still applies: a staying worker holds one
+  `agents.max_workers` slot, and a start that would pass the cap is refused.
+  A stored schedule drains by design, so it ignores `stay`.
 
 ## Scheduled agents
 

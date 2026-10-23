@@ -70,12 +70,14 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -provider P -model M       override the model
       -stay                      keep waiting for work instead of exiting
                                  once nothing is left to claim
+      -stay-idle-max DURATION    with -stay, exit after this long with
+                                 nothing to claim (default 6h, at most 24h)
       -drain                     exit once nothing is left to claim even
                                  with a cron schedule (not with -stay)
   start [flags] NAME | -crew C | -prompt TEXT
                                  start detached workers; prints their ids
       -replicas N                workers of NAME or of the prompt (default 1)
-      -trust-dir, -provider, -model, -stay, -drain as for run
+      -trust-dir, -provider, -model, -stay, -stay-idle-max, -drain as for run
       -crew C                    one supervised crew run over its scope:
         -dir PATH[:WEIGHT]       a directory in the scope (repeatable;
                                  default this repository); a running crew
@@ -342,6 +344,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	effort := fs.String("effort", "", "effort override (set by the crew supervisor)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
+	stayIdle := fs.Duration("stay-idle-max", 0, "with -stay, exit after this long with nothing to claim (default 6h, at most 24h)")
 	drain := fs.Bool("drain", false, "exit once nothing is left to claim even when the profile has a cron schedule")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
 	webControls := fs.Bool("web-controls", false, "take session controls from the website (set by `agent start`)")
@@ -360,6 +363,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	}
 	if *stay && *drain {
 		return 2, errors.New("-stay and -drain contradict each other")
+	}
+	if err := checkStayIdle(*stayIdle, *stay); err != nil {
+		return 2, err
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -449,7 +455,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
 		Sessions: sessions, Sync: headless.SyncClient(settings, repo), RemotePrompts: settings.SyncRemotePromptsEnabled(),
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Run: *runID, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:   *once, Item: *item, Stay: *stay, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
+		Once:   *once, Item: *item, Stay: *stay, StayIdleMax: *stayIdle, Drain: *drain, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 		// A push handed to the forge coordinator is filed by belai rc, so only
 		// while one runs on this host.
@@ -546,6 +552,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	model := fs.String("model", "", "model override")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
+	stayIdle := fs.Duration("stay-idle-max", 0, "with -stay, workers (and a crew run) give up after this long with nothing to claim (default 6h, at most 24h)")
 	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
 	fill := fs.Bool("fill", false, "with -crew, confirm a crew already running over this directory instead of refusing (its supervisor keeps it full)")
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
@@ -577,6 +584,9 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if *stay && *drain {
 		return 2, errors.New("-stay and -drain contradict each other")
 	}
+	if err := checkStayIdle(*stayIdle, *stay); err != nil {
+		return 2, err
+	}
 	if *fill && *crewName == "" {
 		return 2, errors.New("-fill needs -crew")
 	}
@@ -588,7 +598,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		// control room edits while it runs.
 		return startCrewRun(crewLaunch{crew: *crewName, dirs: dirs, trust: *trust, provider: *providerName, model: *model,
 			effort: *effort, pool: pool, switchAfter: *switchAfter, finalRetry: *finalRetry, maxWorkers: *maxWorkers,
-			stay: *stay, fill: *fill, webCtl: *webControls, stdout: stdout, waitForWorkers: 8 * time.Second})
+			stay: *stay, stayIdle: *stayIdle, fill: *fill, webCtl: *webControls, stdout: stdout, waitForWorkers: 8 * time.Second})
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -643,7 +653,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", *replicas, len(live)+*replicas, max)
 		}
 		for range *replicas {
-			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: name, Provider: *providerName, Model: *model, Stay: *stay, Drain: *drain, MaxWorkers: spawnMax,
+			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: name, Provider: *providerName, Model: *model, Stay: *stay, StayIdleMax: *stayIdle, Drain: *drain, MaxWorkers: spawnMax,
 				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff}
 			if adhocProfile != nil {
 				so.Prompt, so.Tools, so.Claim, so.To, so.Publish, so.ReadOnly = *adhoc.prompt, splitList(*adhoc.tools), *adhoc.claim, *adhoc.to, *adhoc.publish, *adhoc.readOnly

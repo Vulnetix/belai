@@ -37,6 +37,7 @@ type crewLaunch struct {
 	switchAfter, finalRetry int
 	maxWorkers              int
 	stay, fill, webCtl      bool
+	stayIdle                time.Duration // with stay: the run's idle cap, zero for the default
 	stdout                  io.Writer
 	startSupervisor         fleet.SupervisorStarter // nil starts `belai agent supervise`
 	registry                *fleet.Registry         // nil opens the default
@@ -118,6 +119,9 @@ func startCrewRun(l crewLaunch) (int, error) {
 		run.Pool = append(run.Pool, fleet.Target{Provider: l.provider, Model: l.model})
 	}
 	run.Effort, run.MaxWorkers, run.Stay, run.WebControls = l.effort, l.maxWorkers, l.stay, l.webCtl
+	if l.stay {
+		run.StayIdleMaxSecs = stayIdleSecs(l.stayIdle)
+	}
 	run.SwitchAfter, run.FinalRetrySecs = l.switchAfter, l.finalRetry
 	for _, t := range l.pool {
 		run.Pool = append(run.Pool, parseTarget(t))
@@ -148,6 +152,7 @@ func startCrewRun(l crewLaunch) (int, error) {
 // supervisor keeps it full on its own).
 func joinCrewRun(reg *fleet.Registry, live fleet.CrewRun, scope []fleet.ScopeDir, l crewLaunch) (int, error) {
 	var added []string
+	stayed := false
 	_, err := reg.UpdateRun(live.ID, "launch", func(cr *fleet.CrewRun) error {
 		for _, d := range scope {
 			if _, ok := cr.Dir(d.Path); !ok {
@@ -158,6 +163,13 @@ func joinCrewRun(reg *fleet.Registry, live fleet.CrewRun, scope []fleet.ScopeDir
 				added = append(added, d.Path+" (resumed)")
 			}
 		}
+		// A start that asks to stay upgrades a run that would have ended once
+		// the board ran dry, so a warm host does not lose it to its quiet
+		// window. It never turns a staying run back.
+		if l.stay && !cr.Stay {
+			cr.Stay, cr.StayIdleMaxSecs = true, stayIdleSecs(l.stayIdle)
+			stayed = true
+		}
 		return nil
 	})
 	if err != nil {
@@ -166,6 +178,9 @@ func joinCrewRun(reg *fleet.Registry, live fleet.CrewRun, scope []fleet.ScopeDir
 	switch {
 	case len(added) > 0:
 		fmt.Fprintf(l.stdout, "%s  crew %s is running; added to its scope: %s\n", live.ID, live.Crew, strings.Join(added, ", "))
+		return 0, nil
+	case stayed:
+		fmt.Fprintf(l.stdout, "%s  crew %s is running; it now stays for new work (idle cap %s)\n", live.ID, live.Crew, fleet.StayIdleCap(l.stayIdle))
 		return 0, nil
 	case l.fill:
 		fmt.Fprintf(l.stdout, "%s  crew %s is running over this scope; its supervisor keeps it full\n", live.ID, live.Crew)
@@ -366,4 +381,26 @@ func controlAction(model, effort string, drain, auto bool) string {
 		return "auto"
 	}
 	return "control"
+}
+
+// checkStayIdle refuses a -stay-idle-max that means nothing or cannot be
+// honoured: it needs -stay, and a negative duration is an error. A value over
+// the hard maximum is clamped later by fleet.StayIdleCap.
+func checkStayIdle(d time.Duration, stay bool) error {
+	switch {
+	case d < 0:
+		return errors.New("-stay-idle-max must not be negative")
+	case d > 0 && !stay:
+		return errors.New("-stay-idle-max needs -stay")
+	}
+	return nil
+}
+
+// stayIdleSecs is the idle cap a crew run records, in whole seconds. Zero
+// leaves the default.
+func stayIdleSecs(d time.Duration) int {
+	if d <= 0 {
+		return 0
+	}
+	return int(fleet.StayIdleCap(d) / time.Second)
 }
