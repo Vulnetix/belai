@@ -170,7 +170,7 @@ func settingsGroupOf(key string) string {
 	}
 	switch key {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
-		"show_edits", "show_internal_work", "layout", "show_todos", "mouse", "mac_key_hints", "show_session_names", "idle_pane":
+		"show_edits", "show_internal_work", "layout", "show_todos", "show_a2a", "mouse", "mac_key_hints", "show_session_names", "idle_pane":
 		return "display"
 	case "max_agents", "plan_explore", "goal_explore":
 		return "agents"
@@ -348,6 +348,8 @@ func (a *App) settingsRows() []settingsRow {
 	toolCallsVal := showLabel(s.ToolCallsVisible())
 	editsVal := showLabel(s.EditsVisible())
 	todosVal := showLabel(s.TodosVisible())
+	a2aShowVal := showLabel(s.A2AVisible())
+	a2aEnabledVal := boolLabel(s.A2AEnabled())
 	macHintsVal := showLabel(s.MacKeyHints())
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := showLabel(s.SessionNamesVisible())
@@ -393,6 +395,9 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "layout", label: "layout", kind: "choose", opts: config.LayoutNames, value: s.Layout(), src: sourceLabel(origin["ui"]), help: "clean is the usual thread; chronological places every late row by the time it happened and shows the time on each row"},
 		{key: "idle_pane", label: "empty composer pane", kind: "choose", opts: config.IdlePaneNames, value: s.IdlePane(), src: sourceLabel(origin["ui"]), help: "the one pane shown above an empty composer while the chat is idle: none, the kanban board, or a runs panel tab (activity, helpers, processes, crew, git, ci, intel). It goes away when you type; none by default"},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
+		{key: "show_a2a", label: "A2A messages", kind: "toggle", value: a2aShowVal, src: sourceLabel(origin["ui"]), help: "shows A2A broadcasts, messages, replies and acks between agents in the transcript, in their own colour; shown by default"},
+		{key: "a2a.enabled", label: "A2A messaging", kind: "toggle", value: a2aEnabledVal, src: sourceLabel(origin["a2a"]), help: "agents broadcast what they work on and can message each other (docs/a2a.md); takes effect on the next start"},
+		{key: "a2a.filter", label: "A2A broadcasts received", kind: "choose", opts: config.A2AFilterNames, value: s.A2AFilter(), src: sourceLabel(origin["a2a"]), help: "repo hears broadcasts about this repository, all hears every one, off hears none and still broadcasts"},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "mac_key_hints", label: "macOS keyboard hints", kind: "toggle", value: macHintsVal, src: sourceLabel(origin["ui"]), help: "adds the Mac form after an F key, such as f9 (Fn+⏭). Unset, it follows the platform: shown on macOS, hidden elsewhere. Turn it on in a virtual machine running on Mac hardware"},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -982,6 +987,16 @@ func (a *App) cycleToggle(key string) error {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.ShowTodos = nextBool(s.UI.ShowTodos)
+		case "show_a2a":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.ShowA2A = nextBool(s.UI.ShowA2A)
+		case "a2a.enabled":
+			if s.A2A == nil {
+				s.A2A = &config.A2ASettings{}
+			}
+			s.A2A.Enabled = nextBool(s.A2A.Enabled)
 		case "mouse":
 			if s.UI == nil {
 				s.UI = &config.UISettings{}
@@ -1047,6 +1062,12 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.ShowInternalWork = &next
+		case "a2a.filter":
+			idx := indexOfString(opts, s.A2AFilter())
+			if s.A2A == nil {
+				s.A2A = &config.A2ASettings{}
+			}
+			s.A2A.Filter = opts[(idx+1)%len(opts)]
 		case "layout":
 			idx := indexOfString(opts, s.Layout())
 			if s.UI == nil {
@@ -1171,6 +1192,18 @@ func (a *App) unsetSetting(key string) error {
 		case "show_todos":
 			if s.UI != nil {
 				s.UI.ShowTodos = nil
+			}
+		case "show_a2a":
+			if s.UI != nil {
+				s.UI.ShowA2A = nil
+			}
+		case "a2a.enabled":
+			if s.A2A != nil {
+				s.A2A.Enabled = nil
+			}
+		case "a2a.filter":
+			if s.A2A != nil {
+				s.A2A.Filter = ""
 			}
 		case "mouse":
 			if s.UI != nil {

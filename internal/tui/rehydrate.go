@@ -105,6 +105,10 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasMeta = true
 		case "reasoning", "system", "rolemanager", "ask", "ask_answer", completionRole, components.ShellRole, components.ReportRole:
 			hasNewRow = true
+		default:
+			if components.IsA2AEntry(e.Type) {
+				hasNewRow = true
+			}
 		}
 	}
 	r.TextOnly = hasAssistant && !hasTool && !hasMeta && !hasNewRow
@@ -231,6 +235,11 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				ToolArgs: metaString(e.Meta, "meta"),
 				Status:   metaString(e.Meta, "status"),
 			})
+		case components.A2ABroadcastOut, components.A2ABroadcastIn, components.A2AMessageOut, components.A2AMessageIn,
+			components.A2AReplyOut, components.A2AReplyIn, components.A2AAck, components.A2AState:
+			// Render-only, never a model message: what the model was told of
+			// A2A rode on a directive or a classified attachment.
+			msgs = append(msgs, components.Message{Role: components.A2ARole, ToolName: e.Type, Content: e.Content, Meta: e.Meta})
 		case components.ShellRole:
 			// A shell panel is render-only and pairs with nothing: the model's
 			// copy of its output rides the following user turn's attachment.

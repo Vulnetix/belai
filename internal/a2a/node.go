@@ -158,6 +158,9 @@ func (n *Node) SetRelay(r *Relay) {
 	n.emit(Event{State: n.State()})
 }
 
+// NotifyState emits the node's relay state (the blackout switched).
+func (n *Node) NotifyState() { n.emit(Event{State: n.State()}) }
+
 // State is the node's relay state.
 func (n *Node) State() string {
 	n.mu.Lock()

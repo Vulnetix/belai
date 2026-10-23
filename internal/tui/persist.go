@@ -39,6 +39,8 @@ func neverPersisted(m components.Message) bool {
 		return strings.TrimSpace(m.Text()) == "" && len(m.ToolCalls) == 0
 	case "reasoning", "system", completionRole, components.ReportRole:
 		return strings.TrimSpace(m.Text()) == ""
+	case components.A2ARole:
+		return !components.IsA2AEntry(m.ToolName)
 	case "rolemanager":
 		return strings.TrimSpace(rmText(m)) == ""
 	default:
@@ -96,7 +98,7 @@ func settled(msgs []components.Message, i int, inFlight, force bool) bool {
 			return true
 		}
 		return m.Content != "" || force
-	case "system", "rolemanager", completionRole, components.ReportRole:
+	case "system", "rolemanager", completionRole, components.ReportRole, components.A2ARole:
 		// System notices, role-manager activity rows and the completion
 		// panel are appended whole, never streamed, so they are final as soon
 		// as they exist.
@@ -262,6 +264,11 @@ func (a *App) persistMessage(i int) {
 		a.appendEntry(timedEntry(m, session.Entry{Type: completionRole, Role: completionRole, Content: m.Text()}))
 	case components.ReportRole:
 		a.appendEntry(timedEntry(m, session.Entry{Type: components.ReportRole, Role: components.ReportRole, Content: m.Text(), Meta: map[string]any{"title": m.ToolName, "meta": m.ToolArgs, "status": m.Status}}))
+	case components.A2ARole:
+		// The entry type is the row's (a2a_message_in, …) and the meta its
+		// linkage facts, so the website can link the two ends of a thread.
+		// No A2A entry is replayed as a model message on resume.
+		a.appendEntry(timedEntry(m, session.Entry{Type: m.ToolName, Role: components.A2ARole, Content: m.Text(), Meta: m.Meta}))
 	case components.ShellRole:
 		content := m.Text()
 		meta := map[string]any{

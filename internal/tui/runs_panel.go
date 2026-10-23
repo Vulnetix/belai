@@ -791,6 +791,8 @@ func (a *App) flushPendingActivitySends() tea.Cmd {
 	if a.working() || a.preSend {
 		return nil
 	}
+	// A2A replies a finished loop never took wait here too.
+	a.a2aReclaim()
 	// A queued review goes first and on its own: it carries its own
 	// objective and fan-out, so the activity outputs wait for the next idle.
 	if rs := a.pendingReview; rs != nil {

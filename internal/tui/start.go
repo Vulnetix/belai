@@ -33,6 +33,9 @@ func Start(opts Options) error {
 	// The git sync starts before session sync, which reads what it learns of
 	// the repository. Like both, it only runs on a real run (docs/git-sync.md).
 	app.startGitSync()
+	// A2A messaging opens before session sync, which attaches its relay. It
+	// works on this host with no login (docs/a2a.md).
+	app.startA2A()
 	// Session sync likewise only starts on a real run (docs/session-sync.md).
 	app.startSessionSync()
 	// Voice input likewise only starts on a real run, and only when the user
@@ -50,6 +53,7 @@ func Start(opts Options) error {
 	}
 	if a, ok := model.(*App); ok {
 		a.fireSessionHook(hooks.EventSessionEnd)
+		a.stopA2A()
 		a.stopGitSync()
 	}
 	// Every exit path (ctrl+d, /exit, ctrl+c, an error) flushes the usage

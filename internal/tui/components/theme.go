@@ -24,6 +24,7 @@ var (
 	ColorYou      = lipgloss.AdaptiveColor{Light: "#B23C7E", Dark: "#F49AC8"} // the prompts you type
 	ColorVoice    = lipgloss.AdaptiveColor{Light: "#7B5BBE", Dark: "#C9B0F2"} // dictated turns, the voice frame while the fast model works
 	ColorPolicy   = lipgloss.AdaptiveColor{Light: "#1F6AA8", Dark: "#5FB3F0"} // the AI Firewall permission card: org policy belai offers to write
+	ColorA2A      = lipgloss.AdaptiveColor{Light: "#8A4FA8", Dark: "#D49BF0"} // A2A rows: broadcasts, messages and replies between agents
 
 	// Role-manager categories: the colour of a row's icon, by the kind of
 	// work. They never colour an outcome; tone does that.

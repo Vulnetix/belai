@@ -25,6 +25,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/belai/internal/a2a"
 	"github.com/vulnetix/belai/internal/activity"
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentpool"
@@ -70,6 +71,7 @@ import (
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/scanartifacts"
@@ -584,7 +586,9 @@ type App struct {
 
 	// session sync (session_sync.go): the website mirror of the session file
 	// and the prompts it sends back. nil when sync is off or not logged in.
-	syncer      *sessionsync.Syncer
+	syncer *sessionsync.Syncer
+	// memRepl replicates the shared memory while sync is on.
+	memRepl     *sessionsync.MemoryReplicator
 	audit       *sessionsync.AuditSyncer   // the audit log's upload, started with syncer
 	syncedID    string                     // the session the syncer was last pointed at
 	syncNote    string                     // why sync is off, for /sync status
@@ -740,7 +744,10 @@ type App struct {
 	// gitSync keeps the session's branch current with origin's default branch
 	// before turns (internal/gitsync, git_sync.go). nil until Start creates it,
 	// so a bare New never execs git; every use is nil-checked.
-	gitSync   *gitsync.Hygiene
+	gitSync *gitsync.Hygiene
+	// a2a is the session's A2A endpoint (a2a.go); nil when A2A is off or
+	// the App was built without a real run.
+	a2a       *a2aState
 	gitCancel context.CancelFunc
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
@@ -1332,6 +1339,9 @@ func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	a.startupPending = true
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextFwPermOffer(), a.nextUsage(), a.importHistory(), a.warmDocs()}
+	if cmd := a.watchA2A(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if cmd := a.watchRemote(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -1698,6 +1708,8 @@ func (a *App) consumeDirective(fallback string) string {
 func (a *App) submitInput(input string) tea.Cmd {
 	previews, directive := a.attachmentPreviews()
 	directive = a.consumeDirective(directive)
+	// Broadcasts that matched while no turn ran are told with this prompt.
+	directive = joinDirective(directive, a.takeA2ADirectives())
 	a.messages = append(a.messages, previews...)
 
 	safe := a.safeAttachments()
@@ -2161,6 +2173,10 @@ type sessionBuildParams struct {
 	// fwPerm runs the firewall permission pass over admitted prompts
 	// (fwperm.go); nil leaves it off.
 	fwPerm *agent.FirewallPermissionHook
+	// a2aHub carries A2AMessage and A2AAck; nil when A2A is off.
+	a2aHub tools.A2AHub
+	// memStamp stamps repo memory notes with this host's and session's facts.
+	memStamp func() repomemory.Stamp
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2202,6 +2218,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		gitSync:       a.gitSync,
 		askDecider:    askDeciderFor(a.settings, credentialSourceOf(a.resolver)),
 		fwPerm:        a.fwPerm.hook(),
+		a2aHub:        a.a2aToolHub(),
+		memStamp:      a.repoMemoryStamp(),
 	}
 }
 
@@ -2236,6 +2254,12 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	// and update ride on every main session after the allowlist, as in
 	// headless sessions, so an engaged definition can always hand work on.
 	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc).WithSkills(p.skillAllow)
+	// The A2A tools ride on every main session after the allowlist, like the
+	// board: agents coordinate whatever their profile (docs/a2a.md).
+	reg = reg.WithA2A(p.a2aHub)
+	if hub := reg.RepoMemory(); hub != nil && p.memStamp != nil {
+		hub.SetStamp(p.memStamp)
+	}
 	if p.procManager != nil {
 		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
 		// Background launching rides on the same manager. Bash is this
@@ -2420,6 +2444,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Safety net for a turn that ended on a path that never persisted.
 		a.flushTurnEnd()
+		a.a2aSyncSession()
 		if a.armed.kind != armNone && time.Now().After(a.armed.until) {
 			a.disarm()
 		}
@@ -2435,6 +2460,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// A web prompt queued behind a turn runs once the host is idle.
 		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd(), forgeCmd, a.drainRemoteQueue())
+
+	case a2aEventMsg:
+		return a, tea.Batch(a.handleA2AEvent(a2a.Event(m)), a.watchA2A())
+	case a2aAdmittedMsg:
+		return a, a.handleA2AAdmitted(m)
+	case a2aSideMsg:
+		return a, a.handleA2ASide(m)
 
 	case remotePromptMsg:
 		return a, tea.Batch(a.handleRemotePrompt(sessionsync.RemotePrompt(m)), a.watchRemotePrompts())
@@ -4035,6 +4067,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// committed exactly as one conventional commit.
 		a.observeTaskDiff(m.Diff)
 		a.noteTaskEdit(m.Diff)
+		// A2A broadcasts name the files this session changed.
+		a.a2aNoteDiff(m.Diff)
 		return a.nextAgent()
 	case agent.EventCwdKind:
 		if m.CwdReset {
@@ -4453,6 +4487,7 @@ func (a *App) chatView() string {
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
+		ShowA2A:       a.settings.A2AVisible(),
 		ShowEdits:     a.editsVisible(),
 		InternalWork:  rolemanager.ParseLevel(a.settings.InternalWorkLevel()),
 		Chronological: a.chronological(),
@@ -5596,6 +5631,7 @@ func (a *App) refreshFooter() {
 	a.footer.RoutedModels = routedModelCount(a.cfg)
 	a.footer.RC = a.rcFooterLabel()
 	a.footer.Inbox = a.inboxFooterLabel()
+	a.footer.A2A = a.a2aFooterLabel()
 	a.footer.Voice, a.footer.VoiceOn = a.voiceFooter()
 	now := time.Now()
 	run.SetPlanLimits(a.settings.PlanLimitsEnabled())

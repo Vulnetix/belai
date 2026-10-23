@@ -44,7 +44,7 @@ const maxPlaceBack = 64
 // stays where the event stream put it.
 func movableRow(m components.Message) bool {
 	switch m.Role {
-	case "rolemanager", "system", components.ReportRole, components.VulnRole:
+	case "rolemanager", "system", components.ReportRole, components.VulnRole, components.A2ARole:
 		return true
 	}
 	return false

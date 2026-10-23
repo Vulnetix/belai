@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/a2a"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/avatar"
 	"github.com/vulnetix/belai/internal/config"
@@ -20,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/schedule"
@@ -375,6 +377,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// the requests it served (docs/audit.md). Best effort.
 	if dir, err := config.GlobalDir(); err == nil {
 		defer sessionsync.StartAudit(context.Background(), d.o.Client, d.o.HostID, d.o.Host, dir).Close(5 * time.Second)
+		// The shared memory (repo notes, fleet lessons) replicates while the
+		// daemon runs, so a Pix Sandbox's memory survives the machine
+		// (docs/a2a.md#repo-memory). The A2A blackout does not stop it.
+		sessionsync.NewMemoryReplicator(d.o.Client, d.o.HostID, repomemory.Root(dir)).Start(ctx)
 	}
 
 	d.register(ctx, d.o.Inventory())
@@ -477,7 +483,13 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 			// worktree: advertise again.
 			d.register(ctx, inv)
 		}
-		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running(), inv.Workers, inv.Runs)
+		hb, err := d.o.Client.RCHeartbeatState(ctx, d.o.HostID, d.running(), inv.Workers, inv.Runs)
+		if err == nil && hb.A2ABlackout != nil {
+			// The organisation's A2A blackout, for every relay on this host.
+			if dir, derr := a2a.DefaultDir(); derr == nil {
+				_, _ = a2a.SetBlackout(dir, *hb.A2ABlackout, time.Now())
+			}
+		}
 		if errors.Is(err, sessionsync.ErrNotFound) {
 			// The server lost the host (or never had it): advertise again.
 			d.register(ctx, inv)
