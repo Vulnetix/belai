@@ -221,8 +221,11 @@ func (t RepoMemoryRead) Execute(_ context.Context, args map[string]any) (Result,
 	query, _ := argString(args, "query")
 	limit := 0
 	if n, ok := argInt64(args, "limit"); ok && n > 0 {
-		// Clamp before narrowing, so a huge value cannot wrap on 32-bit.
-		limit = int(min(n, int64(repomemory.MaxLimit)))
+		// Bound before narrowing, so a huge value cannot wrap on 32-bit.
+		limit = repomemory.MaxLimit
+		if n < int64(repomemory.MaxLimit) {
+			limit = int(n)
+		}
 	}
 	notes, err := store.Search(query, limit)
 	if err != nil {
