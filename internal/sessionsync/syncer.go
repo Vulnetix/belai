@@ -46,6 +46,11 @@ type Options struct {
 	// as JSON), or nil when there is none. It is polled on every tick, so it
 	// must return a cached value and never block. nil sends no git state.
 	Git func() json.RawMessage
+	// A2A, when set, asks every inbox poll for the organisation's A2A
+	// envelopes after A2A.After() and hands them to A2A.Deliver, on the inbox
+	// goroutine (docs/a2a.md). Deliver must not block. Set, it runs the inbox
+	// loop even when no remote prompt, answer or command is taken.
+	A2A *A2AInbox
 
 	TickEvery      time.Duration // how often the file is re-read without a nudge (2s)
 	HeartbeatEvery time.Duration // liveness beat (15s; the server's window is 45s)
@@ -79,6 +84,15 @@ type SessionInfo struct {
 	// them at start; nothing in the file changes them).
 	Ephemeral bool
 	Origin    string
+}
+
+// A2AInbox is the A2A relay's half of the inbox poll.
+type A2AInbox struct {
+	// After is the highest server seq the relay holds; a negative value asks
+	// for no A2A envelopes this poll (an A2A blackout).
+	After func() int64
+	// Deliver takes the envelopes one poll returned.
+	Deliver func([]A2AItem)
 }
 
 // Status is a snapshot for /sync status.
@@ -168,7 +182,7 @@ func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
 	go s.vaultLease(ctx)
-	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands || s.opts.RemoteShell {
+	if s.opts.RemotePrompts || s.opts.RemoteAnswers || s.opts.RemoteCommands || s.opts.RemoteShell || s.opts.A2A != nil {
 		go s.inbox(ctx)
 	}
 }
@@ -626,7 +640,7 @@ func (s *Syncer) controlState() json.RawMessage {
 // applyControls hands the website's pending controls for the live session to
 // the host.
 func (s *Syncer) applyControls(id string, c Controls) {
-	if s.opts.OnControls != nil && c.GitSync != nil {
+	if s.opts.OnControls != nil && (c.GitSync != nil || c.A2ABlackout != nil) {
 		s.opts.OnControls(id, c)
 	}
 }
@@ -860,7 +874,11 @@ func (s *Syncer) inbox(ctx context.Context) {
 			}
 			continue
 		}
-		batch, err := s.opts.Client.InboxBatch(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		after := int64(-1)
+		if s.opts.A2A != nil && s.opts.A2A.After != nil {
+			after = s.opts.A2A.After()
+		}
+		batch, err := s.opts.Client.InboxBatchA2A(ctx, s.opts.HostID, live, s.opts.InboxWait, after)
 		prompts, answers, drafts := batch.Prompts, batch.Answers, batch.Drafts
 		if err != nil {
 			if ctx.Err() != nil {
@@ -873,6 +891,9 @@ func (s *Syncer) inbox(ctx context.Context) {
 			continue
 		}
 		backoff = 0
+		if len(batch.A2A) > 0 && after >= 0 && s.opts.A2A.Deliver != nil {
+			s.opts.A2A.Deliver(batch.A2A)
+		}
 		// Answers first: the host is blocked on an ask until one arrives.
 		for _, a := range answers {
 			if !s.RemoteAnswersEnabled() {

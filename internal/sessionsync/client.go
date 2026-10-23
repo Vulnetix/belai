@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -932,6 +933,10 @@ func (c *Client) PutSession(ctx context.Context, sessionID string, m SessionMeta
 type Controls struct {
 	// GitSync switches the session's git sync (internal/gitsync) on or off.
 	GitSync *bool `json:"gitSync,omitempty"`
+	// A2ABlackout is the organisation's A2A blackout (docs/a2a.md): on, the
+	// host relays no A2A envelope through Vulnetix in either direction. It is
+	// the factory's state, sent with every registration and heartbeat.
+	A2ABlackout *bool `json:"a2aBlackout,omitempty"`
 }
 
 // PutSessionControls is PutSession that also returns the website's pending
@@ -991,17 +996,75 @@ type Inbox struct {
 	Answers  []RemoteAnswer  `json:"answers"`
 	Drafts   []RemoteDraft   `json:"drafts"`
 	Commands []RemoteCommand `json:"commands"`
+	// A2A is the organisation's A2A envelopes after the a2aAfter cursor, from
+	// every host but scoped to the tenant (docs/a2a.md). A server that
+	// predates A2A sends none.
+	A2A []A2AItem `json:"a2a"`
+}
+
+// A2AItem is one relayed A2A envelope and its server sequence number. The
+// envelope is kept raw: internal/a2a cleans it before anything reads it. The
+// server may send the envelope's fields beside seq or under "envelope".
+type A2AItem struct {
+	Seq      int64
+	Envelope json.RawMessage
+}
+
+// UnmarshalJSON reads {"seq":n, ...envelope} or {"seq":n,"envelope":{...}}.
+func (it *A2AItem) UnmarshalJSON(b []byte) error {
+	var head struct {
+		Seq      int64           `json:"seq"`
+		Envelope json.RawMessage `json:"envelope"`
+	}
+	if err := json.Unmarshal(b, &head); err != nil {
+		return err
+	}
+	it.Seq = head.Seq
+	if len(head.Envelope) > 0 && string(head.Envelope) != "null" {
+		it.Envelope = head.Envelope
+	} else {
+		it.Envelope = append(json.RawMessage(nil), b...)
+	}
+	return nil
 }
 
 // InboxBatch is Inbox with session controls. A server that predates them
 // sends none.
 func (c *Client) InboxBatch(ctx context.Context, hostID, sessionID string, wait time.Duration) (Inbox, error) {
+	return c.InboxBatchA2A(ctx, hostID, sessionID, wait, -1)
+}
+
+// InboxBatchA2A is InboxBatch that also asks for the A2A envelopes after
+// a2aAfter. A negative a2aAfter asks for none.
+func (c *Client) InboxBatchA2A(ctx context.Context, hostID, sessionID string, wait time.Duration, a2aAfter int64) (Inbox, error) {
 	var out Inbox
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
 	if sessionID != "" {
 		path += "&session=" + url.QueryEscape(sessionID)
 	}
+	if a2aAfter >= 0 {
+		path += "&a2aAfter=" + strconv.FormatInt(a2aAfter, 10)
+	}
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
+	return out, err
+}
+
+// A2APostResult is what the relay endpoint answers: how many envelopes it
+// stored, and whether the organisation's A2A blackout is on (then none).
+type A2APostResult struct {
+	Accepted int  `json:"accepted"`
+	Blackout bool `json:"blackout"`
+}
+
+// PostA2A relays a batch of A2A envelopes from this host. The server stores
+// each once by messageId.
+func (c *Client) PostA2A(ctx context.Context, hostID string, envelopes []json.RawMessage) (A2APostResult, error) {
+	var out A2APostResult
+	if envelopes == nil {
+		envelopes = []json.RawMessage{}
+	}
+	err := c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/a2a",
+		map[string]any{"envelopes": envelopes}, &out, requestTimeout)
 	return out, err
 }
 
@@ -1048,14 +1111,29 @@ func (c *Client) Ack(ctx context.Context, promptID, status, reason, entryID stri
 // RCHeartbeat keeps an rc daemon online and reports how many sessions it
 // runs, its fleet workers and its crew runs.
 func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int, workers []RCWorker, runs []RCCrewRun) error {
+	_, err := c.RCHeartbeatState(ctx, hostID, running, workers, runs)
+	return err
+}
+
+// RCHeartbeatResult is what the rc heartbeat answers. A server that predates
+// it sends an empty body.
+type RCHeartbeatResult struct {
+	// A2ABlackout is the organisation's A2A blackout (docs/a2a.md).
+	A2ABlackout *bool `json:"a2aBlackout,omitempty"`
+}
+
+// RCHeartbeatState is RCHeartbeat that returns the server's answer.
+func (c *Client) RCHeartbeatState(ctx context.Context, hostID string, running int, workers []RCWorker, runs []RCCrewRun) (RCHeartbeatResult, error) {
 	if workers == nil {
 		workers = []RCWorker{}
 	}
 	if runs == nil {
 		runs = []RCCrewRun{}
 	}
-	return c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/heartbeat",
-		map[string]any{"running": running, "workers": workers, "runs": runs}, nil, requestTimeout)
+	var out RCHeartbeatResult
+	err := c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/heartbeat",
+		map[string]any{"running": running, "workers": workers, "runs": runs}, &out, requestTimeout)
+	return out, err
 }
 
 // RCOffline marks the rc daemon stopped; requests still waiting expire.

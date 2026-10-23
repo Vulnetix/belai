@@ -72,6 +72,16 @@ func serverFixture(t *testing.T) *Recorder {
 	emit(Fact{Kind: WorkerStopped, ActorKind: ActorAgent, Actor: "belai:security", Repo: "belai", Outcome: "stopped",
 		Data: map[string]string{"worker": "security-1a2b", "state": "stopped"}})
 	emit(Fact{Kind: HostRCOffline, ActorKind: ActorHarness, Data: map[string]string{"reason": "stopped"}})
+	const peer = "11111111-1111-4111-8111-111111111111:33333333-3333-4333-8333-333333333333"
+	emit(Fact{Kind: A2ASent, ActorKind: ActorHarness, SessionID: session, Repo: "vulnetix/belai", Outcome: "relayed",
+		Data: map[string]string{"message_id": "a2a-01k8z3m5x6y7z8a9b0c1d2e3f4", "kind": "broadcast"}})
+	emit(Fact{Kind: A2AReceived, ActorKind: ActorHarness, SessionID: session, Repo: "vulnetix/belai", Outcome: "matched",
+		Data: map[string]string{"message_id": "a2a-01k8z3m5x6y7z8a9b0c1d2e3f5", "kind": "message", "peer": peer}})
+	emit(Fact{Kind: A2ASent, ActorKind: ActorHarness, SessionID: session, Repo: "vulnetix/belai", Outcome: "relayed",
+		Data: map[string]string{"message_id": "a2a-01k8z3m5x6y7z8a9b0c1d2e3f6", "kind": "ack", "peer": peer, "decision": "wait"}})
+	emit(Fact{Kind: A2ABlackout, ActorKind: ActorHarness, SessionID: session, Outcome: "on"})
+	emit(Fact{Kind: A2AWithheld, ActorKind: ActorHarness, SessionID: session, Repo: "vulnetix/belai", Outcome: "withheld",
+		Data: map[string]string{"message_id": "a2a-01k8z3m5x6y7z8a9b0c1d2e3f7", "kind": "broadcast"}})
 	return r
 }
 
