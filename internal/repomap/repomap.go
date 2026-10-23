@@ -10,11 +10,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/lintdetect"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/testdetect"
 )
@@ -52,6 +54,10 @@ type Map struct {
 	// fixed marker-file table. Commands.Test is derived from it, so existing
 	// consumers keep working.
 	TestSuites []testdetect.Suite
+	// LintTools is the harness-computed linter table (name, tool, argv and the
+	// rule file that made the match), derived from the fixed marker-file table
+	// in internal/lintdetect. Commands.Lint carries its commands.
+	LintTools []lintdetect.Linter
 	// LastTestRun is the volatile result of the last post-end test pass:
 	// pass/fail and how many suites ran. It is harness-computed and updated by
 	// the test pass runner, never by a model.
@@ -141,6 +147,7 @@ func Scan(ctx context.Context, workdir string) Map {
 	m.JustRecipes = justRecipes(info.Root)
 	m.Commands = commands(info.Root, m.JustRecipes)
 	m.TestSuites = testdetect.Detect(info.Root, m.Commands.Test, changedPaths(m.Changed))
+	m.LintTools = lintdetect.Detect(info.Root)
 	m.Entrypoints = entrypoints(ctx, info.Root)
 	m.Layout = layout(ctx, info.Root)
 	m.AgentsFiles = agentsFiles(info.Root)
@@ -308,7 +315,6 @@ func commands(root string, recipes []string) Commands {
 	if _, err := os.Stat(filepath.Join(root, "package.json")); err == nil {
 		c.Build = append(c.Build, "npm run build")
 		c.Test = append(c.Test, "npm test")
-		c.Lint = append(c.Lint, "npm run lint")
 	}
 	// Ruby: rspec when the repository has a Gemfile and an rspec config,
 	// otherwise a Rakefile's test task.
@@ -331,7 +337,23 @@ func commands(root string, recipes []string) Commands {
 		c.Build = append(c.Build, "dotnet build")
 		c.Test = append(c.Test, "dotnet test")
 	}
+	// Lint: the linters whose rule files are checked in, and the package
+	// manager's lint script only when package.json declares one.
+	c.Lint = appendNew(c.Lint, lintdetect.CommandStrings(lintdetect.Detect(root))...)
+	if cmd := lintdetect.PackageLintCommand(root); len(cmd) > 0 {
+		c.Lint = appendNew(c.Lint, strings.Join(cmd, " "))
+	}
 	return c
+}
+
+// appendNew appends the values dst does not hold yet.
+func appendNew(dst []string, vals ...string) []string {
+	for _, v := range vals {
+		if !slices.Contains(dst, v) {
+			dst = append(dst, v)
+		}
+	}
+	return dst
 }
 
 // fileExists reports whether a marker file is present under root.

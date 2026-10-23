@@ -67,6 +67,8 @@ the packages that own changed `.go` files: `go test ./internal/x/...`.
   imports most of the tree.
 - `tests.scope` set to `full` never scopes.
 
+Linters are detected the same way, from rule files; see [lint](lint.md).
+
 ## What the model sees
 
 The stable part of the repository map, in the system block, gains a `tests:`

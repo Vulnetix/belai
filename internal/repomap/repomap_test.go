@@ -251,6 +251,48 @@ func writeMarkers(t *testing.T, root string, files map[string]string) {
 	}
 }
 
+// package.json alone does not make `npm run lint` a lint command: the script
+// has to be declared. Only its name is read.
+func TestCommandsNpmLintNeedsALintScript(t *testing.T) {
+	root := t.TempDir()
+	writeMarkers(t, root, map[string]string{"package.json": `{"scripts":{"build":"tsc","test":"vitest run"}}`})
+	c := commands(root, nil)
+	if len(c.Lint) != 0 {
+		t.Fatalf("lint advertised with no lint script: %v", c.Lint)
+	}
+	if strings.Join(c.Test, ";") != "npm test" || strings.Join(c.Build, ";") != "npm run build" {
+		t.Fatalf("build and test unchanged: %+v", c)
+	}
+
+	writeMarkers(t, root, map[string]string{"package.json": `{"scripts":{"lint":"eslint ."}}`})
+	if got := strings.Join(commands(root, nil).Lint, ";"); got != "npm run lint" {
+		t.Fatalf("lint = %q", got)
+	}
+	writeMarkers(t, root, map[string]string{"yarn.lock": ""})
+	if got := strings.Join(commands(root, nil).Lint, ";"); got != "yarn run lint" {
+		t.Fatalf("lint with yarn.lock = %q", got)
+	}
+}
+
+// Rule files the repository checked in name its linters; a language with no
+// rule file gets none.
+func TestCommandsLintFromRuleFiles(t *testing.T) {
+	root := t.TempDir()
+	writeMarkers(t, root, map[string]string{
+		"go.mod": "module x\n", ".golangci.yml": "run: {}\n", "ruff.toml": "", "Cargo.toml": "", "clippy.toml": "", ".rubocop.yml": "",
+	})
+	got := strings.Join(commands(root, nil).Lint, ";")
+	want := "go vet ./...;golangci-lint run;ruff check;cargo clippy;rubocop"
+	if got != want {
+		t.Fatalf("lint = %q, want %q", got, want)
+	}
+	bare := t.TempDir()
+	writeMarkers(t, bare, map[string]string{"pyproject.toml": "", "Cargo.toml": ""})
+	if l := commands(bare, nil).Lint; len(l) != 0 {
+		t.Fatalf("a manifest alone is not a rule file: %v", l)
+	}
+}
+
 func TestCommandsRubyJvmDotnetTests(t *testing.T) {
 	root := t.TempDir()
 	writeMarkers(t, root, map[string]string{"Gemfile": "", ".rspec": "", "Rakefile": "", "gradlew": "", "mvnw": "", "App.sln": ""})
