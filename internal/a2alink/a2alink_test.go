@@ -76,12 +76,18 @@ func TestLinksBroadcastAndAnswerWithoutASession(t *testing.T) {
 	if in["peerSessionId"] != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" || in["repo"] != "o/r" {
 		t.Fatalf("broadcast_in meta %v", in)
 	}
-	// The directive waits for the session.
-	b.mu.Lock()
-	pending := len(b.pending)
-	b.mu.Unlock()
-	if pending == 0 || !strings.Contains(b.pending[0].Directive, "A2AAck{messageId:") {
-		t.Fatalf("pending %d", pending)
+	// The directive waits for the session (it is queued just after the
+	// entry is recorded).
+	var directive string
+	for deadline := time.Now().Add(5 * time.Second); directive == "" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		b.mu.Lock()
+		if len(b.pending) > 0 {
+			directive = b.pending[0].Directive
+		}
+		b.mu.Unlock()
+	}
+	if !strings.Contains(directive, "A2AAck{messageId:") {
+		t.Fatalf("pending directive %q", directive)
 	}
 	ra.wait(t, EntryBroadcastOut)
 
