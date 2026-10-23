@@ -42,6 +42,9 @@ behaviour, and implementation details.
 - [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.
+- [A2A messaging](a2a.md): agents broadcast what they work on, message each
+  other and answer in a side-turn, keep repo memory (`RepoMemoryRead`,
+  `RepoMemoryWrite`), and the A2A blackout that stops relay between hosts.
 - [Kanban](kanban.md): the global board, its lists and tools, the TUI pane and
   how it syncs with the website.
 - [The BKAN file format](bkan.md): how the board file is built byte by byte, the

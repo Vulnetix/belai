@@ -1064,6 +1064,17 @@ Security rules for native tools:
   local native's argv is built by the harness from a fixed shape, so it is on
   the sanitize-only side of [Tool-result trust](#tool-result-trust).
 
+### Core and coordination tools
+
+`RepoMemoryRead` and `RepoMemoryWrite` are core tools: `tools.Default` carries
+them for every session, model and surface, `Registry.Only` adds them back to
+any allowlist and `Registry.Without` never drops them, and plan mode keeps
+them (both are read-only kinds that touch only Belai's store). A read is
+`KindRepoMemory` and classifies; a note is admitted by the session's
+classifier gate before it is stored. `A2AMessage` and `A2AAck` (`KindA2A`) join
+a main session with A2A on, after its allowlist. A2A message and reply text is
+`KindPeer` and always classifies. See [A2A messaging](a2a.md).
+
 ### Search and file-location tools
 
 `Grep` searches file **contents**; `Glob` finds files by **path**. Both report

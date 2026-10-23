@@ -969,3 +969,9 @@ avatar id, so the website can draw the agent. They are presentation only.
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.
+
+## A2A and memory
+
+`belai rc` replicates the host's shared memory ([repo memory](a2a.md#repo-memory))
+while it runs, and its heartbeat's answer carries the organisation's A2A
+blackout, which it records for every relay on the host ([A2A messaging](a2a.md#a2a-blackout)).
