@@ -407,6 +407,12 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindTeleport: false,
 		// Decisions only read: no ask, offered in plan mode, run concurrently.
 		KindDecision: true,
+		// No tool carries KindPeer; it stays off the read-only list.
+		KindPeer: false,
+		// The A2A tools send and record; they never touch the workspace.
+		KindA2A: true,
+		// Repo memory is Belai's store outside every root.
+		KindRepoMemory: true, KindRepoMemoryWrite: true,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

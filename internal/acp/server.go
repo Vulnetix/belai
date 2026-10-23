@@ -704,6 +704,11 @@ func toolKind(name string) string {
 		return "fetch"
 	case "update_plan", "Todo", "Task":
 		return "think"
+	case "RepoMemoryRead":
+		return "search"
+	case "A2AMessage", "A2AAck", "RepoMemoryWrite":
+		// Messaging another agent is neither a read nor an edit.
+		return "other"
 	}
 	return "other"
 }

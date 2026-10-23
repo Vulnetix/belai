@@ -1428,7 +1428,11 @@ func (w *Worker) memory(ctx context.Context) string {
 	if m == nil || !m.Enabled {
 		return ""
 	}
-	text := strings.TrimSpace(ReadMemory(w.Profile.Name))
+	max := m.MaxBytes
+	if max <= 0 {
+		max = agentprofile.DefaultMemoryBytes
+	}
+	text := strings.TrimSpace(ReadMemoryN(w.Profile.Name, max))
 	if text == "" {
 		return ""
 	}

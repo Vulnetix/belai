@@ -46,12 +46,17 @@ func Default(workdir string, readOnly bool) *Registry {
 	// static registry. Probing is lazy (first use), not at startup, so a
 	// registry built here costs nothing until a call is made.
 	list = append(list, NewAgentStoreTools(agentstore.New("", workdir), workdir)...)
+	// The repo memory tools are core: every session has them, scoped to the
+	// working directory's repository key (docs/a2a.md#repo-memory).
+	memory := NewRepoMemoryHub(workdir)
+	list = append(list, RepoMemoryTools(memory)...)
 
 	base := NewRegistry(list...)
 	base.cwd = cwd
 	base.hub = hub
 	base.cloud = cloud
 	base.pages = pages
+	base.memory = memory
 	if readOnly {
 		return base.ReadOnly()
 	}

@@ -292,7 +292,8 @@ func (r *Registry) Without(names ...string) *Registry {
 	for _, t := range r.tools {
 		drop := false
 		for _, n := range names {
-			if strings.EqualFold(t.Definition().Name, n) {
+			// A core tool (repo memory) is never removed.
+			if strings.EqualFold(t.Definition().Name, n) && !isCore(n) {
 				drop = true
 				break
 			}

@@ -181,7 +181,7 @@ func TestNarrowWithKanbanKeepsTheBoard(t *testing.T) {
 	if _, ok := full.Find("Write"); !ok {
 		t.Error("an empty allowlist narrowed the surface")
 	}
-	if got := Default(t.TempDir(), false).NarrowWithKanban([]string{"Read"}, nil, nil); len(got.Names()) != 1 {
+	if got := Default(t.TempDir(), false).NarrowWithKanban([]string{"Read"}, nil, nil); len(got.Names()) != 1+len(CoreToolNames) {
 		t.Errorf("a nil store added tools: %v", got.Names())
 	}
 }

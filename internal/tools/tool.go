@@ -65,6 +65,9 @@ type Registry struct {
 	// narrowed registry keeps the one store; a registry built for a subagent
 	// has its own, switched off.
 	pages *WebPages
+	// memory is the repo memory tools' hub (repomemory.go); the tools are
+	// core, so a narrowing that drops them gets them back over this hub.
+	memory *RepoMemoryHub
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -87,6 +90,7 @@ func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.hub = r.hub
 	reg.cloud = r.cloud
 	reg.pages = r.pages
+	reg.memory = r.memory
 	return reg
 }
 
@@ -224,7 +228,8 @@ func (r *Registry) Only(names ...string) *Registry {
 			add("update_plan")
 		}
 	}
-	return r.withCwd(NewRegistry(list...))
+	// The core tools (repo memory) survive every allowlist.
+	return r.withCwd(NewRegistry(r.withCore(list)...))
 }
 
 // With returns a registry holding r's tools followed by extra, carrying the

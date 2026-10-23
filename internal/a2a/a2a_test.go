@@ -12,6 +12,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/gitsync"
+	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -507,5 +508,37 @@ func TestRelayBlackoutAndInbound(t *testing.T) {
 	_ = r.flush(context.Background())
 	if !r.Blackout() {
 		t.Fatal("server blackout ignored")
+	}
+}
+
+type memSrv struct{ posted int }
+
+func (m *memSrv) PostMemory(_ context.Context, _ string, notes []repomemory.Note) (sessionsync.MemoryPostResult, error) {
+	m.posted += len(notes)
+	return sessionsync.MemoryPostResult{Accepted: len(notes)}, nil
+}
+
+func (m *memSrv) GetMemory(context.Context, string, string, int64, int) (sessionsync.MemoryPage, error) {
+	return sessionsync.MemoryPage{}, nil
+}
+
+// The A2A blackout stops relay between agents, never the memory's
+// replication, which is persistence like the session mirror.
+func TestBlackoutDoesNotStopMemoryReplication(t *testing.T) {
+	global := t.TempDir()
+	if _, err := SetBlackout(Dir(global), true, time.Now()); err != nil || !Blackout(Dir(global)) {
+		t.Fatal("blackout not set")
+	}
+	root := repomemory.Root(global)
+	s, _ := repomemory.Open(root, "o/r")
+	if _, err := s.Append("note during blackout", nil, repomemory.Stamp{}); err != nil {
+		t.Fatal(err)
+	}
+	srv := &memSrv{}
+	if err := sessionsync.NewMemoryReplicator(srv, hostA, root).Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if srv.posted != 1 {
+		t.Fatalf("posted %d during blackout", srv.posted)
 	}
 }

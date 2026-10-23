@@ -1,8 +1,6 @@
 package a2a
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -11,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/gitsync"
+	"github.com/vulnetix/belai/internal/repomemory"
 )
 
 // DefaultDebounce is the least time between two broadcasts of changed work.
@@ -166,19 +165,11 @@ func sameWork(a, b Work) bool {
 	return a.Repo == b.Repo && a.Branch == b.Branch && a.PR == b.PR && a.Ticket == b.Ticket && slices.Equal(a.Files, b.Files)
 }
 
-// RepoKey is the repository as broadcasts name it: the remote's owner/name,
-// or "path:" and 16 hex of the root path's SHA-256 when there is no remote,
-// so two checkouts of one remote match and a path is never sent.
-func RepoKey(remote, root string) string {
-	if r := strings.Trim(remote, "/"); r != "" && repoShape.MatchString(r) && !strings.HasPrefix(r, "path:") {
-		return strings.ToLower(r)
-	}
-	if root == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(filepath.Clean(root)))
-	return "path:" + hex.EncodeToString(sum[:8])
-}
+// RepoKey is the repository as broadcasts name it (repomemory.RepoKey): the
+// remote's owner/name, or "path:" and 16 hex of the root path's SHA-256 when
+// there is no remote, so two checkouts of one remote match and a path is
+// never sent. Repo memory is scoped by the same key.
+func RepoKey(remote, root string) string { return repomemory.RepoKey(remote, root) }
 
 var branchTicket = regexp.MustCompile(`(?:^|[/_-])([A-Z][A-Z0-9]{1,9}-[0-9]{1,7})(?:$|[/_-])`)
 
