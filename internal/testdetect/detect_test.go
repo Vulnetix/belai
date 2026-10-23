@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -178,5 +179,80 @@ func TestCommandStrings(t *testing.T) {
 	want := []string{"go test ./...", "pytest"}
 	if got := CommandStrings(suites); !reflect.DeepEqual(got, want) {
 		t.Errorf("CommandStrings = %v, want %v", got, want)
+	}
+}
+
+// The Ruby, JVM and .NET suites come from file presence alone, and each needs
+// the file that makes the command real.
+func TestDetectRubyJvmDotnet(t *testing.T) {
+	cases := []struct {
+		name  string
+		files []string
+		cmd   string
+		want  Suite
+	}{
+		{"rspec", []string{"Gemfile", ".rspec"}, "bundle exec rspec", Suite{Name: "rspec", Ecosystem: "ruby", Framework: "rspec", TestFilePattern: "*_spec.rb"}},
+		{"rake", []string{"Rakefile"}, "rake test", Suite{Name: "rake-test", Ecosystem: "ruby", Framework: "minitest"}},
+		{"gradle", []string{"gradlew"}, "./gradlew test", Suite{Name: "gradle", Ecosystem: "jvm", Framework: "gradle"}},
+		{"maven", []string{"mvnw"}, "./mvnw test", Suite{Name: "maven", Ecosystem: "jvm", Framework: "maven"}},
+		{"dotnet sln", []string{"App.sln"}, "dotnet test", Suite{Name: "dotnet", Ecosystem: "dotnet", Framework: "dotnet"}},
+		{"dotnet csproj", []string{"App.csproj"}, "dotnet test", Suite{Name: "dotnet", Ecosystem: "dotnet", Framework: "dotnet"}},
+		{"dotnet fsproj upper case", []string{"App.FSPROJ"}, "dotnet test", Suite{Name: "dotnet", Ecosystem: "dotnet", Framework: "dotnet"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTree(t, dir, tc.files...)
+			got := Detect(dir, []string{tc.cmd}, []string{"lib/x.rb"})
+			if len(got) != 1 {
+				t.Fatalf("got %d suites, want 1: %+v", len(got), got)
+			}
+			s := got[0]
+			if s.Name != tc.want.Name || s.Ecosystem != tc.want.Ecosystem || s.Framework != tc.want.Framework || s.TestFilePattern != tc.want.TestFilePattern {
+				t.Errorf("suite = %+v, want %+v", s, tc.want)
+			}
+			if strings.Join(s.Command, " ") != tc.cmd || s.Scope != ScopeFull {
+				t.Errorf("command %v scope %q", s.Command, s.Scope)
+			}
+		})
+	}
+}
+
+// A command with no file behind it, or with an argument the table does not
+// know, is not a suite.
+func TestDetectRubyJvmDotnetNeedTheirFiles(t *testing.T) {
+	empty := t.TempDir()
+	writeTree(t, empty, "README.md", "sub/App.sln")
+	for _, cmd := range []string{
+		"bundle exec rspec", "rake test", "./gradlew test", "./mvnw test", "dotnet test",
+	} {
+		if got := Detect(empty, []string{cmd}, nil); len(got) != 0 {
+			t.Errorf("%q detected with no marker file: %+v", cmd, got)
+		}
+	}
+	full := t.TempDir()
+	writeTree(t, full, "Gemfile", ".rspec", "Rakefile", "gradlew", "mvnw", "App.sln")
+	for _, cmd := range []string{
+		"bundle install", "bundle exec rspec --format json", "rake", "rake test:all", "./gradlew build", "./mvnw clean test", "dotnet run", "dotnet test --no-build",
+	} {
+		if got := Detect(full, []string{cmd}, nil); len(got) != 0 {
+			t.Errorf("%q detected although the table does not name it: %+v", cmd, got)
+		}
+	}
+	// .rspec is what makes rspec; a Gemfile alone is not a suite.
+	gem := t.TempDir()
+	writeTree(t, gem, "Gemfile")
+	if got := Detect(gem, []string{"bundle exec rspec"}, nil); len(got) != 0 {
+		t.Errorf("rspec detected from a Gemfile alone: %+v", got)
+	}
+}
+
+// Rescope never narrows the new ecosystems.
+func TestRescopeNewEcosystemsStayFull(t *testing.T) {
+	suites := []Suite{{Name: "rspec", Ecosystem: "ruby", Command: []string{"bundle", "exec", "rspec"}}, {Name: "dotnet", Ecosystem: "dotnet", Command: []string{"dotnet", "test"}}}
+	for _, s := range Rescope(suites, []string{"a.go", "lib/a.rb"}) {
+		if s.Scope != ScopeFull || len(s.Dirs) != 0 {
+			t.Errorf("%s narrowed: %+v", s.Name, s)
+		}
 	}
 }

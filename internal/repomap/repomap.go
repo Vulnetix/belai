@@ -310,7 +310,34 @@ func commands(root string, recipes []string) Commands {
 		c.Test = append(c.Test, "npm test")
 		c.Lint = append(c.Lint, "npm run lint")
 	}
+	// Ruby: rspec when the repository has a Gemfile and an rspec config,
+	// otherwise a Rakefile's test task.
+	switch {
+	case fileExists(root, "Gemfile") && fileExists(root, ".rspec"):
+		c.Test = append(c.Test, "bundle exec rspec")
+	case fileExists(root, "Rakefile"):
+		c.Test = append(c.Test, "rake test")
+	}
+	// The JVM wrappers the repository checked in, never a global gradle or mvn.
+	if fileExists(root, "gradlew") {
+		c.Build = append(c.Build, "./gradlew build")
+		c.Test = append(c.Test, "./gradlew test")
+	}
+	if fileExists(root, "mvnw") {
+		c.Build = append(c.Build, "./mvnw package")
+		c.Test = append(c.Test, "./mvnw test")
+	}
+	if testdetect.HasDotnetProject(root) {
+		c.Build = append(c.Build, "dotnet build")
+		c.Test = append(c.Test, "dotnet test")
+	}
 	return c
+}
+
+// fileExists reports whether a marker file is present under root.
+func fileExists(root, name string) bool {
+	_, err := os.Stat(filepath.Join(root, name))
+	return err == nil
 }
 
 // entrypoints finds likely program entrypoints: a top-level main.go and

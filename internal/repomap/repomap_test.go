@@ -241,3 +241,26 @@ func TestScanTestSuitesNeverInferFromProse(t *testing.T) {
 		}
 	}
 }
+
+func writeMarkers(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCommandsRubyJvmDotnetTests(t *testing.T) {
+	root := t.TempDir()
+	writeMarkers(t, root, map[string]string{"Gemfile": "", ".rspec": "", "Rakefile": "", "gradlew": "", "mvnw": "", "App.sln": ""})
+	got := strings.Join(commands(root, nil).Test, ";")
+	if want := "bundle exec rspec;./gradlew test;./mvnw test;dotnet test"; got != want {
+		t.Fatalf("test = %q, want %q (rake test only when there is no .rspec)", got, want)
+	}
+	rake := t.TempDir()
+	writeMarkers(t, rake, map[string]string{"Rakefile": ""})
+	if got := strings.Join(commands(rake, nil).Test, ";"); got != "rake test" {
+		t.Fatalf("test = %q", got)
+	}
+}

@@ -155,6 +155,32 @@ func classify(root, cmd string) Suite {
 		return Suite{Name: "cargo", Ecosystem: "rust", Command: argv, Scope: ScopeFull, Framework: "cargo"}
 	case "pytest":
 		return Suite{Name: "pytest", Ecosystem: "python", Command: argv, Scope: ScopeFull, Framework: "pytest"}
+	case "bundle":
+		// Only the rspec form the repository map emits: a Gemfile and a .rspec.
+		if len(argv) != 3 || argv[1] != "exec" || argv[2] != "rspec" || !exists(root, ".rspec") {
+			return Suite{}
+		}
+		return Suite{Name: "rspec", Ecosystem: "ruby", Command: argv, Scope: ScopeFull, Framework: "rspec", TestFilePattern: "*_spec.rb"}
+	case "rake":
+		if len(argv) != 2 || argv[1] != "test" || !exists(root, "Rakefile") {
+			return Suite{}
+		}
+		return Suite{Name: "rake-test", Ecosystem: "ruby", Command: argv, Scope: ScopeFull, Framework: "minitest"}
+	case "./gradlew":
+		if len(argv) != 2 || argv[1] != "test" || !exists(root, "gradlew") {
+			return Suite{}
+		}
+		return Suite{Name: "gradle", Ecosystem: "jvm", Command: argv, Scope: ScopeFull, Framework: "gradle"}
+	case "./mvnw":
+		if len(argv) != 2 || argv[1] != "test" || !exists(root, "mvnw") {
+			return Suite{}
+		}
+		return Suite{Name: "maven", Ecosystem: "jvm", Command: argv, Scope: ScopeFull, Framework: "maven"}
+	case "dotnet":
+		if len(argv) != 2 || argv[1] != "test" || !HasDotnetProject(root) {
+			return Suite{}
+		}
+		return Suite{Name: "dotnet", Ecosystem: "dotnet", Command: argv, Scope: ScopeFull, Framework: "dotnet"}
 	case "npm", "yarn", "pnpm":
 		if len(argv) < 2 || argv[1] != "test" {
 			return Suite{}
@@ -237,6 +263,26 @@ func hasScriptName(path, name string) bool {
 	}
 	_, ok := pkg.Scripts[name]
 	return ok
+}
+
+// HasDotnetProject reports whether root itself holds a solution or a project
+// file (*.sln, *.slnx, *.csproj, *.fsproj, *.vbproj). Only the directory's
+// names are listed; no file is opened.
+func HasDotnetProject(root string) bool {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(e.Name())) {
+		case ".sln", ".slnx", ".csproj", ".fsproj", ".vbproj":
+			return true
+		}
+	}
+	return false
 }
 
 // exists reports whether a marker file is present under root.

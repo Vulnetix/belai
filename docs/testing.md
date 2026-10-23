@@ -30,11 +30,21 @@ bodies or prose, so the result is harness-computed fact.
 | `Cargo.toml` | `cargo` | `cargo test` | `cargo` | none |
 | `pyproject.toml` | `pytest` | `pytest` | `pytest` | none |
 | `package.json` with a `test` script | `node` | `npm test` | `jest`, `vitest` or `mocha` from a config file, else empty | none |
+| `Gemfile` and `.rspec` | `rspec` | `bundle exec rspec` | `rspec` | `*_spec.rb` |
+| `Rakefile`, with no `.rspec` | `rake-test` | `rake test` | `minitest` | none |
+| `gradlew` | `gradle` | `./gradlew test` | `gradle` | none |
+| `mvnw` | `maven` | `./mvnw test` | `maven` | none |
+| a `*.sln`, `*.slnx`, `*.csproj`, `*.fsproj` or `*.vbproj` in the root | `dotnet` | `dotnet test` | `dotnet` | none |
 
 Rules and edge cases:
 
 - A command that does not resolve to a real suite is skipped. `npm test` in a
   package with no `test` script is not a suite.
+- The Ruby, JVM and .NET suites are file presence only. Gradle and Maven count
+  only through the wrapper the repository checked in (`gradlew`, `mvnw`), never
+  a global `gradle` or `mvn`, and a bare `pom.xml` or `build.gradle` is not a
+  suite. The .NET marker is a solution or project file in the root itself, not
+  in a subdirectory. A Gemfile alone is not an rspec suite.
 - A node framework is named from the presence of a config file (`jest.config.*`,
   `vitest.config.*`, `.mocharc.*`) and never from its contents. Jest wins over
   vitest, and vitest over mocha, when several exist.
