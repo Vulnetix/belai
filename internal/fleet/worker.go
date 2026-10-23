@@ -1682,6 +1682,14 @@ var workerGitDeny = []string{
 	"Bash(*git push*)",
 	"Bash(*gh pr create*)", "Bash(*gh pr merge*)", "Bash(*gh pr ready*)",
 	"Bash(*glab mr create*)", "Bash(*glab mr merge*)",
+	// A review, a comment and an auto-merge are the factory's to make, never a
+	// model's: a worker reads a pull request, it does not approve, comment on or
+	// queue one. The `gh api` forms close the same writes by the REST and GraphQL
+	// routes (a review, a comment, a merge, an auto-merge).
+	"Bash(*gh pr review*)", "Bash(*gh pr comment*)", "Bash(*gh pr merge --auto*)",
+	"Bash(*gh api*/reviews*)", "Bash(*gh api*/comments*)", "Bash(*gh api*/merge*)", "Bash(*gh api*auto_merge*)",
+	"Bash(*gh api*PullRequestReview*)", "Bash(*gh api*mergePullRequest*)", "Bash(*gh api*AutoMerge*)",
+	"Bash(*glab mr approve*)", "Bash(*glab mr note*)",
 	"Bash(*git switch*)", "Bash(*git checkout -b*)", "Bash(*git worktree*)",
 	"Bash(*git config*)", "Bash(*git remote*)",
 }

@@ -1345,12 +1345,20 @@ empty branch behind.
 | `agent` | The agent gets the `PublishBranch` tool. It pushes exactly the item's branch to `origin` and opens a draft pull request, or returns the one already open. It can be called again after more commits. |
 | `draft_pr` | When the item reaches `done`, the harness does the same itself. |
 
-`git push`, `gh pr create`/`merge`/`ready`, `glab mr create`/`merge`,
-`git switch`, `git checkout -b`, `git worktree`, `git config` and
-`git remote` are denied in a worker's Bash wherever they appear in a command
+`git push`, `gh pr create`/`merge`/`ready`/`review`/`comment`, `gh pr merge --auto`,
+`glab mr create`/`merge`/`approve`/`note`, the `gh api` calls that write a
+review, a comment, a merge or an auto-merge (a path with `/reviews`,
+`/comments` or `/merge`, `auto_merge`, or a GraphQL `PullRequestReview`,
+`mergePullRequest` or `AutoMerge` mutation), `git switch`, `git checkout -b`,
+`git worktree`, `git config` and `git remote` are denied in a worker's Bash wherever they appear in a command
 line. `PublishBranch` is the only way to push, because a raw push could send
 any ref, `main` included. Publishing needs a GitHub or GitLab `origin` and
 committed work on the branch. The link is recorded on the item.
+
+A review, a comment and an auto-merge are never a worker's to make: the
+factory makes them. The `gh api` rules match the path and not the method, so
+reading a pull request's comments or reviews through `gh api` is refused too;
+the read-only `GH` tool reads them.
 
 A branch with no changes beyond its base is never pushed. When the base
 already does what the item asks, `PublishBranch` says so and names the base,

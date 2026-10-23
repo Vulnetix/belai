@@ -707,12 +707,30 @@ func TestWorkerGitDenyRules(t *testing.T) {
 		"git config core.hooksPath /tmp/h",
 		"git remote set-url origin evil",
 		"git worktree add ../x",
+		"gh pr review 12 --approve",
+		"gh pr review --request-changes -b no",
+		"cd sub && gh pr comment 12 --body hi",
+		"gh pr merge 12 --auto --squash",
+		"gh api repos/o/r/pulls/12/reviews -f event=APPROVE",
+		"gh api -X POST repos/o/r/pulls/12/reviews",
+		"gh api repos/o/r/issues/12/comments -f body=hi",
+		"gh api repos/o/r/pulls/12/comments --method POST",
+		"gh api -X PUT repos/o/r/pulls/12/merge",
+		"gh api repos/o/r/pulls/12 -f auto_merge=true",
+		"gh api graphql -f query='mutation{addPullRequestReview(input:{pullRequestId:\"x\"}){clientMutationId}}'",
+		"gh api graphql -f query='mutation{submitPullRequestReview(input:{event:APPROVE}){clientMutationId}}'",
+		"gh api graphql -f query='mutation{enablePullRequestAutoMerge(input:{pullRequestId:\"x\"}){clientMutationId}}'",
+		"gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\"x\"}){clientMutationId}}'",
+		"glab mr approve 3",
+		"glab mr note 3 -m hi",
 	} {
 		if d := perms.Evaluate("Bash", cmd); d != permissions.DecisionBlock {
 			t.Errorf("%q: %s, want block", cmd, d)
 		}
 	}
-	for _, cmd := range []string{"git status", "git diff abc..HEAD", "git add -A && git commit -m x", "git log --oneline", "go test ./..."} {
+	for _, cmd := range []string{"git status", "git diff abc..HEAD", "git add -A && git commit -m x", "git log --oneline", "go test ./...",
+		"gh pr view 12", "gh pr diff 12", "gh pr checks 12", "gh pr list --state open", "gh run view 99 --log-failed",
+		"gh api repos/o/r/pulls/12", "gh api repos/o/r/pulls/12/files", "glab mr view 3", "glab mr diff 3"} {
 		if d := perms.Evaluate("Bash", cmd); d == permissions.DecisionBlock {
 			t.Errorf("%q blocked", cmd)
 		}

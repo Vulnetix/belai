@@ -1069,8 +1069,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     mutating, sanitise-only): exactly the item's branch, by an explicit
     refspec, to a GitHub/GitLab `origin`, then a draft pull request. It is on
     the surface only for `workspace.publish` and `agents.publish` on. A
-    worker's Bash denies `git push`, `gh`/`glab` PR creation and merging,
-    `git switch`, `git checkout -b`, `git worktree`, `git config` and
+    worker's Bash denies `git push`, `gh`/`glab` PR creation, merging, review and
+    comment (including `gh pr merge --auto` and the `gh api` routes to a
+    review, comment, merge or auto-merge), `git switch`, `git checkout -b`, `git worktree`, `git config` and
     `git remote` (`fleet.workerGitDeny`).
   - **The forge coordinator.** A push or pull request that fails for an
     infrastructure reason (`forge.ClassifyPushError`: a refused or missing
