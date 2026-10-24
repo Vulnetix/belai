@@ -31,14 +31,14 @@ Reply with ONLY a JSON object matching this schema:
 
 Rules:
 - Reply with ONLY valid JSON. No Markdown fences, no prose outside the JSON, no trailing text.
-- groups may contain 1–6 items. Use {"groups": []} when you can proceed without the user.
+- groups may contain 1 to 6 items. Use {"groups": []} when you can proceed without the user.
 - Prefer exactly one question; never exceed three groups.
 - Never ask what a read-only tool could already answer from the evidence or the repository.
 - Never repeat or rephrase a question listed under "Already answered". The user's answers there are final; when they settle the ambiguity, reply {"groups": []}.
 - Base options on the evidence: name real files, directories or commands from it rather than generic placeholders.
-- Each group must have 2–4 options. One option is not a choice.
+- Each group must have 2 to 4 options. One option is not a choice.
 - Put the recommended option first and suffix its label with " (Recommended)".
-- Do not emit an "Other" option — the UI provides the free-form path itself.
+- Do not emit an "Other" option. The UI provides the free-form path itself.
 - context must be a single line, ≤200 runes, and end with '.' or '?'.
 - label must be non-empty, a single line, ≤80 runes, and unique within its group.
 - description is optional; if given it must be a single line ≤160 runes.

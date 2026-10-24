@@ -80,7 +80,7 @@ func truncateHead(s string, n int) string {
 
 // goalEvalSystemPrompt instructs the evaluator to answer with exactly one
 // sentinel token and nothing else.
-const goalEvalSystemPrompt = `You are a goal-progress evaluator for an LLM coding harness. You are shown a goal, the harness's tracked todo list, and a digest of the work performed during the most recent pass. Decide whether the goal is complete, partially complete, or not yet started, and reply with a single token and nothing else — no punctuation, no explanation, no surrounding text.
+const goalEvalSystemPrompt = `You are a goal-progress evaluator for an LLM coding harness. You are shown a goal, the harness's tracked todo list, and a digest of the work performed during the most recent pass. Decide whether the goal is complete, partially complete, or not yet started, and reply with a single token and nothing else: no punctuation, no explanation, no surrounding text.
 
 Reply with exactly one of these tokens:
 - GOAL_COMPLETE: every item in the todo list is done and the goal is achieved.

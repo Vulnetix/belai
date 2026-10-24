@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/proserules"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -67,6 +68,9 @@ func ChatSteps(t ChatTarget) []Step {
 	return steps
 }
 
+// probeSystem is the connectivity probe's system prompt.
+var probeSystem = proserules.Append("You are a connectivity check. Reply with the single word OK.")
+
 // chatProbe sends a minimal completion. A request the provider rejects for
 // its reasoning or token options is retried without them.
 func chatProbe(ctx context.Context, st *State, cfg run.Config) Outcome {
@@ -76,11 +80,11 @@ func chatProbe(ctx context.Context, st *State, cfg run.Config) Outcome {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	start := time.Now()
-	a, err := run.SendTurns(ctx, probe, "You are a connectivity check. Reply with the single word OK.", []run.Turn{{Role: "user", Content: "Reply OK."}}, st.Env.Client)
+	a, err := run.SendTurns(ctx, probe, probeSystem, []run.Turn{{Role: "user", Content: "Reply OK."}}, st.Env.Client)
 	if err != nil && isOptionRejection(err) {
 		st.log("the provider rejected the reasoning/token options; retrying without them")
 		probe.Effort, probe.MaxTokens = "", 0
-		a, err = run.SendTurns(ctx, probe, "You are a connectivity check. Reply with the single word OK.", []run.Turn{{Role: "user", Content: "Reply OK."}}, st.Env.Client)
+		a, err = run.SendTurns(ctx, probe, probeSystem, []run.Turn{{Role: "user", Content: "Reply OK."}}, st.Env.Client)
 		if err == nil {
 			return warn(fmt.Sprintf("%s replied in %s after dropping the reasoning/token options it rejects", cfg.Model, time.Since(start).Round(time.Millisecond)))
 		}

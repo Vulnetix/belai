@@ -34,6 +34,7 @@ import (
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/proserules"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -1638,8 +1639,11 @@ type chatClassifier struct {
 
 // prepare applies the payload's budget and notes the model that will be asked.
 // It is noted before the call, so a timeout or a provider error still names
-// the model that was asked rather than the agent model.
-func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPayload) (context.Context, Config) {
+// the model that was asked rather than the agent model. It also closes the
+// payload's system prompt with the prose rules: every role prompt reaches a
+// model through here, so this is the one place they are added.
+func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPayload) (context.Context, Config, rolemanager.ClassifierPayload) {
+	p.System = proserules.Append(p.System)
 	cfg := c.cfg
 	if p.MaxTokens > 0 {
 		cfg.MaxTokens = p.MaxTokens
@@ -1649,11 +1653,11 @@ func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPa
 	if role == "" {
 		role = RoleSecurity
 	}
-	return withUsageRole(ctx, role), cfg
+	return withUsageRole(ctx, role), cfg, p
 }
 
 func (c *chatClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-	ctx, cfg := c.prepare(ctx, p)
+	ctx, cfg, p := c.prepare(ctx, p)
 	a, err := chatWithRetryAssistant(ctx, cfg, p.System, p.User, c.client, c.onRetry)
 	if err != nil {
 		return "", err
@@ -1669,7 +1673,7 @@ func (c *chatClassifier) Classify(ctx context.Context, p rolemanager.ClassifierP
 // piece of text as it arrives and the whole text is returned at the end. Only
 // the answer text streams; reasoning is not shown.
 func (c *chatClassifier) ClassifyStream(ctx context.Context, p rolemanager.ClassifierPayload, onText func(string)) (string, error) {
-	ctx, cfg := c.prepare(ctx, p)
+	ctx, cfg, p := c.prepare(ctx, p)
 	ch, err := StreamTurnsWithTools(ctx, cfg, p.System, []Turn{{Role: "user", Content: p.User}}, c.client, nil, nil, nil, c.onRetry)
 	if err != nil {
 		return "", err

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/proserules"
 	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
@@ -77,8 +79,11 @@ func roleServer(t *testing.T) (*httptest.Server, func() map[string][]string) {
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
+		// Key on the role's own prompt, without the prose rules every
+		// role prompt ends with.
+		key := strings.TrimSuffix(req.Messages[0].Content, "\n\n"+proserules.Rules+"\n")
 		mu.Lock()
-		seen[req.Messages[0].Content] = append(seen[req.Messages[0].Content], req.Model)
+		seen[key] = append(seen[key], req.Model)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)

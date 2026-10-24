@@ -3,6 +3,8 @@ package prompt
 import (
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/proserules"
 )
 
 func TestSystemCarriers(t *testing.T) {
@@ -246,5 +248,25 @@ func TestSystemRendersTheEnvironmentOnlyWhenGiven(t *testing.T) {
 	}
 	if !strings.Contains(with, "- Pix Sandbox: Large.") {
 		t.Fatalf("the option did not render:\n%s", with)
+	}
+}
+
+// The prose rules close the stable block, after the voice line, so they stay
+// in the cached prefix; the session block does not repeat them.
+func TestSystemPartsEndStableWithProseRules(t *testing.T) {
+	for _, caveman := range []bool{false, true} {
+		stable, session, err := SystemParts(Options{Caveman: caveman, WorkDiscipline: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(stable, proserules.Rules+"\n") {
+			t.Fatalf("caveman=%v: stable block does not end with the prose rules", caveman)
+		}
+		if strings.Index(stable, "Voice guidance:") > strings.Index(stable, proserules.Rules) {
+			t.Fatalf("caveman=%v: prose rules come before the voice line", caveman)
+		}
+		if strings.Contains(session, proserules.Rules) {
+			t.Fatalf("caveman=%v: session block repeats the prose rules", caveman)
+		}
 	}
 }
