@@ -208,6 +208,15 @@ jobs:
           cd bin
           sha256sum * > checksums.txt
 
+      # The subject list for the provenance job. Small on purpose: the 3.4 GB
+      # binaries artifact is never downloaded a second time. The bytes are the
+      # release asset's, so the signed statement names what a user downloads.
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-subjects
+          path: bin/checksums.txt
+          retention-days: 1
+
       - name: Create or update Release
         run: |
           VERSION=${{ needs.version.outputs.version }}
@@ -220,6 +229,20 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # SLSA v1 build provenance for every binary in the release, signed and
+  # verified by the reusable workflow in Vulnetix/cli (the cli release uses the
+  # same one). It runs beside update-packages, not after it, because the
+  # package managers carry the binaries and not the provenance.
+  provenance:
+    needs: release
+    permissions:
+      contents: write
+      id-token: write
+    uses: Vulnetix/cli/.github/workflows/slsa-provenance.yml@d30744892a42c71dd0aa9ce622ca929e7a2b73eb
+    with:
+      subjects_artifact: release-subjects
+      version: ${{ needs.release.outputs.version }}
 
   update-packages:
     needs: release
@@ -391,3 +414,126 @@ jobs:
               git pull --rebase origin main
             done
           fi
+
+  # Publish the release to the Transparency Exchange API.
+  #
+  # Runs after update-packages for the reason the cli's job does: the Homebrew
+  # and Scoop channels it names must carry the version before a machine is
+  # told to install it from there.
+  publish-tea:
+    needs: [release, update-packages, provenance]
+    # A provenance failure publishes the release without the bundle, with a
+    # warning below, rather than leaving the transparency log silent about it.
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.update-packages.result == 'success' }}
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    timeout-minutes: 20
+    # id-token lets this job get an OIDC token from GitHub, the identity public
+    # Fulcio issues a short-lived certificate against: keyless signing.
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      VULNETIX_ORG_ID: ${{ secrets.VULNETIX_ORG_ID }}
+      VULNETIX_API_KEY: ${{ secrets.VULNETIX_API_KEY }}
+      # Pinned, not latest: a CLI regression must not stop belai releases
+      # publishing with no way to roll back short of a CLI release.
+      CLI_VERSION: v3.126.7
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the Vulnetix CLI
+        run: |
+          curl -fsSL https://cli.vulnetix.com/install.sh \
+            | sh -s -- --install-dir "$HOME/.local/bin" --version "$CLI_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Not fatal: `tea release` drops a file it cannot read and says so.
+      - name: Download the provenance bundle
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: slsa-provenance
+          path: provenance
+
+      - name: Download checksums
+        run: |
+          curl -fsSL --retry 8 --retry-all-errors --retry-delay 5 \
+            "https://github.com/Vulnetix/belai/releases/download/${{ needs.release.outputs.version }}/checksums.txt" \
+            -o checksums.txt
+
+      # The organisation's quality gate makes `sca` exit non-zero on a policy
+      # breach, and it writes the SBOM before returning that verdict. The
+      # verdict is a scan result, not a publication failure: the release
+      # already exists on GitHub, so refusing to record it would leave the
+      # transparency log silent about it.
+      - name: Generate the release SBOM
+        continue-on-error: true
+        run: vulnetix sca --no-banner --no-progress -o belai.cdx.json
+
+      - name: Report what was produced
+        run: |
+          if [ -s belai.cdx.json ]; then
+            echo "SBOM: $(wc -c < belai.cdx.json) bytes"
+          else
+            echo "::warning::no SBOM was produced; publishing the release without one"
+          fi
+          if [ -s provenance/provenance.sigstore.json ]; then
+            echo "provenance: $(wc -c < provenance/provenance.sigstore.json) bytes"
+          else
+            echo "::warning::no provenance bundle was produced; publishing the release without it"
+          fi
+
+      - name: Install cosign
+        if: hashFiles('belai.cdx.json') != ''
+        uses: sigstore/cosign-installer@v4.1.2
+
+      # cosign rather than actions/attest-build-provenance, which persists
+      # through GitHub's plan-gated attestation store. Fulcio and Rekor are
+      # public goods and the output verifies with stock tooling either way.
+      - name: Sign the SBOM (keyless)
+        if: hashFiles('belai.cdx.json') != ''
+        run: |
+          set -euo pipefail
+
+          cosign sign-blob --yes \
+            --output-signature belai.cdx.json.sig \
+            --output-certificate belai.cdx.json.pem \
+            belai.cdx.json
+
+          # The same claim as an in-toto/DSSE envelope, with the SBOM as the
+          # predicate, for consumers that speak attestations.
+          cosign attest-blob --yes \
+            --type cyclonedx \
+            --predicate belai.cdx.json \
+            --output-attestation belai.cdx.json.intoto.jsonl \
+            belai.cdx.json
+
+          cosign verify-blob \
+            --signature belai.cdx.json.sig \
+            --certificate belai.cdx.json.pem \
+            --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            belai.cdx.json
+
+          gh release upload "${{ needs.release.outputs.version }}" \
+            belai.cdx.json.sig belai.cdx.json.pem \
+            belai.cdx.json.intoto.jsonl --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish product, release, artifacts and distributions
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.release.outputs.version }}"
+
+          # --checksums turns every published asset into a distribution, with
+          # the digests from the file a user verifies a download against.
+          vulnetix tea release belai.cdx.json provenance/provenance.sigstore.json \
+            --version "$VERSION" \
+            --checksums checksums.txt \
+            --exclude checksums.txt \
+            --channel "name=Homebrew: brew install vulnetix/tap/belai,url=https://github.com/Vulnetix/homebrew-tap" \
+            --channel "name=Scoop: scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install belai,url=https://github.com/Vulnetix/scoop-bucket" \
+            --channel "name=go install github.com/vulnetix/belai/cmd/belai@${VERSION},purl=pkg:golang/github.com/vulnetix/belai@${VERSION}" \
+            --channel "name=Install script: curl -fsSL https://raw.githubusercontent.com/Vulnetix/belai/main/install.sh | sh,url=https://raw.githubusercontent.com/Vulnetix/belai/main/install.sh" \
+            --visibility public
