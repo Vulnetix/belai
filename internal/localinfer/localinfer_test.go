@@ -330,9 +330,11 @@ fi
 	args := []string{"--port", "12345", dir}
 	baseURL := BaseURL("127.0.0.1", 12345)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// The stub server is a cold python3 start, which takes seconds when the
+	// whole suite runs in parallel; a 2s health deadline failed under load.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	stop, err := Launch(ctx, bin, args, baseURL, LaunchOptions{Deadline: 2 * time.Second})
+	stop, err := Launch(ctx, bin, args, baseURL, LaunchOptions{Deadline: 15 * time.Second})
 	if err != nil {
 		t.Fatalf("launch failed: %v", err)
 	}
