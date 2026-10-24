@@ -369,7 +369,7 @@ func gitRepo(t *testing.T) string {
 		}
 	}
 	os.WriteFile(filepath.Join(dir, "README"), []byte("hi\n"), 0o644)
-	for _, args := range [][]string{{"add", "README"}, {"commit", "-q", "-m", "init"}} {
+	for _, args := range [][]string{{"add", "README"}, {"commit", "--no-gpg-sign", "-q", "-m", "init"}} {
 		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
@@ -629,7 +629,7 @@ func worktreeGitInsideTheSandbox(t *testing.T, extraEnv []string, tolerated stri
 	before := ws.RootEntries()
 	packedBefore, _ := os.ReadFile(filepath.Join(ws.commonDir, "packed-refs"))
 	os.WriteFile(filepath.Join(ws.Dir, "agent.txt"), []byte("by the agent\n"), 0o644)
-	if out, err := sh("git status --short && git add agent.txt && git commit -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "fatal:") || errorLineOtherThan(out, tolerated) {
+	if out, err := sh("git status --short && git add agent.txt && git commit --no-gpg-sign -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "fatal:") || errorLineOtherThan(out, tolerated) {
 		t.Fatalf("git inside the sandbox: %v\n%s", err, out)
 	}
 	// From a subdirectory of the worktree, as a shell often is, git still finds

@@ -135,7 +135,7 @@ func gatedEnv(t *testing.T) *fleetEnv {
 		}
 	}
 	e.git("add", ".")
-	e.git("commit", "-q", "-m", "fixture")
+	e.git("commit", "--no-gpg-sign", "-q", "-m", "fixture")
 	// No OS sandbox: the point here is the harness's verification, and CI
 	// runners differ in what a sandbox allows.
 	os.WriteFile(filepath.Join(e.home, "settings.json"), []byte(`{"resilience":{"max_iterations":2},"sandbox":{"mode":"off"}}`), 0o600)

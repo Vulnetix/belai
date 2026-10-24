@@ -41,7 +41,7 @@ func repo(t *testing.T) string {
 	write(t, dir, "b.txt", "keep\n")
 	write(t, dir, "secret.env", "TOKEN=old\n")
 	run(t, dir, "add", ".")
-	run(t, dir, "commit", "-q", "-m", "init")
+	run(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "init")
 	return dir
 }
 

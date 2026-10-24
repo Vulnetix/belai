@@ -168,7 +168,7 @@ func newFleetEnv(t *testing.T) *fleetEnv {
 	}
 	os.WriteFile(filepath.Join(e.repo, "README"), []byte("fleet test\n"), 0o644)
 	e.git("add", "README")
-	e.git("commit", "-q", "-m", "init")
+	e.git("commit", "--no-gpg-sign", "-q", "-m", "init")
 	os.WriteFile(filepath.Join(e.home, "settings.json"), []byte(`{"resilience":{"max_iterations":2}}`), 0o600)
 	return e
 }

@@ -59,7 +59,7 @@ func prefetchRepo(t *testing.T) string {
 	write("gone.go", "package gone\n")
 	write("evil.go", "package evil\n")
 	git("add", ".")
-	git("commit", "-q", "-m", "init")
+	git("commit", "--no-gpg-sign", "-q", "-m", "init")
 	write("a.go", "package a // A-BYTES\n")
 	write("new.go", "package n // NEW-BYTES\n")
 	write("big.txt", strings.Repeat("BIG-BYTES ", 6000))

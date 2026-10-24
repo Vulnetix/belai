@@ -317,7 +317,7 @@ func publishedThenOverrun(t *testing.T, more bool) TurnRunner {
 		if err := os.WriteFile(filepath.Join(tt.Workdir, "README"), []byte("fixed\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		gitIn("commit", "-q", "-am", "fix the README")
+		gitIn("commit", "--no-gpg-sign", "-q", "-am", "fix the README")
 		tt.Workspace.published = gitIn("rev-parse", "HEAD")
 		if more {
 			if err := os.WriteFile(filepath.Join(tt.Workdir, "NOTES"), []byte("unpublished\n"), 0o644); err != nil {

@@ -16,7 +16,7 @@ func initRepo(t *testing.T, dir, origin string) {
 	run(t, dir, "git", "config", "user.email", "test@example.com")
 	run(t, dir, "git", "config", "user.name", "Test")
 	run(t, dir, "git", "remote", "add", "origin", origin)
-	run(t, dir, "git", "commit", "-q", "--allow-empty", "-m", "initial")
+	run(t, dir, "git", "commit", "--no-gpg-sign", "-q", "--allow-empty", "-m", "initial")
 }
 
 func run(t *testing.T, dir string, name string, args ...string) {
@@ -165,7 +165,7 @@ func TestScanFindsWorktreeGitFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	run(t, mainRepo, "git", "add", "file.txt")
-	run(t, mainRepo, "git", "commit", "-q", "-m", "file")
+	run(t, mainRepo, "git", "commit", "--no-gpg-sign", "-q", "-m", "file")
 	run(t, mainRepo, "git", "branch", "feature")
 	run(t, mainRepo, "git", "worktree", "add", "-q", worktree, "feature")
 

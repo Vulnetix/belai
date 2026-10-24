@@ -37,7 +37,7 @@ func initRepo(t *testing.T, dir string) {
 	cmd = exec.Command("git", "add", "file.txt")
 	cmd.Dir = dir
 	cmd.Run()
-	cmd = exec.Command("git", "commit", "-q", "-m", "initial")
+	cmd = exec.Command("git", "commit", "--no-gpg-sign", "-q", "-m", "initial")
 	cmd.Dir = dir
 	cmd.Run()
 	cmd = exec.Command("git", "remote", "add", "origin", "git@github.com:Vulnetix/belai.git")

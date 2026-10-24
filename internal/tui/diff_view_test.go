@@ -35,7 +35,7 @@ func diffTestRepo(t *testing.T) string {
 		}
 	}
 	g("add", ".")
-	g("commit", "-q", "-m", "init")
+	g("commit", "--no-gpg-sign", "-q", "-m", "init")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\nTWO\nsecret-new-text\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

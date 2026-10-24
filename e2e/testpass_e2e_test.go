@@ -153,7 +153,7 @@ func TestTestPassRunsAtSessionEndAndReportsOnStderr(t *testing.T) {
 func TestTestPassSessionLevelSkipsACleanTree(t *testing.T) {
 	srv, _ := testPassMock(t)
 	dir := testPassRepo(t)
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "init"}} {
+	for _, args := range [][]string{{"add", "-A"}, {"commit", "--no-gpg-sign", "-q", "-m", "init"}} {
 		c := exec.Command("git", args...)
 		c.Dir = dir
 		if out, err := c.CombinedOutput(); err != nil {

@@ -291,7 +291,7 @@ func TestSyncedFilesAreNeverCommittedByTheHarness(t *testing.T) {
 		t.Fatalf("committed synced = %v", bad)
 	}
 	// A model's own git add can still commit it; that is reported.
-	for _, args := range [][]string{{"add", "-f", crewFile}, {"commit", "-q", "-m", "oops"}} {
+	for _, args := range [][]string{{"add", "-f", crewFile}, {"commit", "--no-gpg-sign", "-q", "-m", "oops"}} {
 		cmd := exec.Command("git", append([]string{"-C", ws.Dir}, args...)...)
 		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e.invalid", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e.invalid")
 		if out, err := cmd.CombinedOutput(); err != nil {
