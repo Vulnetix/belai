@@ -43,7 +43,7 @@ func ParseModeSentinel(raw string) (ModeSentinel, error) {
 // modeClassifierSystemPrompt instructs the classifier to answer with exactly
 // one intent token and nothing else. The classifier is shown only the user
 // prompt — never attachment contents or referenced files.
-const modeClassifierSystemPrompt = `You are an operating-mode classifier for an LLM coding harness. The user's prompt does not explicitly name a mode. Classify it into exactly one intent and reply with a single token and nothing else — no punctuation, no explanation.
+const modeClassifierSystemPrompt = `You are an operating-mode classifier for an LLM coding harness. The user's prompt does not explicitly name a mode. Classify it into exactly one intent and reply with a single token and nothing else: no punctuation, no explanation.
 
 Reply with exactly one of these tokens:
 - AGENT: a general coding request, including a single straightforward edit to one named file, that needs no formal plan and no tracked goal.

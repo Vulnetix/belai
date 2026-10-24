@@ -7,6 +7,8 @@ package prompt
 import (
 	"fmt"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/proserules"
 )
 
 // Carrier identifies which single context block the system prompt carries.
@@ -102,7 +104,7 @@ func identity(provider, model string) string {
 	var b strings.Builder
 	b.WriteString("You are an AI model running inside Belai, an LLM coding harness.\n")
 	b.WriteString("Three identities are in play in this session and they are not interchangeable:\n")
-	b.WriteString("- Harness: Belai. The tooling around you — this prompt, the tools, the safety pipeline. Belai is not you.\n")
+	b.WriteString("- Harness: Belai. The tooling around you: this prompt, the tools, the safety pipeline. Belai is not you.\n")
 	if provider != "" {
 		b.WriteString(fmt.Sprintf("- Provider: %s. The API serving this session.\n", provider))
 	} else {
@@ -137,7 +139,7 @@ func workDiscipline() string {
 		"- After changing code, run the detected test or lint command and fix what it reports before calling the work done.\n" +
 		"- Do not narrate a plan you are about to carry out; carry it out, then report what changed.\n" +
 		"- The repository map lists the build/test commands and justfile recipes, and each turn's repository status lists the branch and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
-		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file — never re-read what you already have.\n" +
+		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file. Never re-read what you already have.\n" +
 		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n" +
 		"- A result that starts \"tool call rejected\", \"tool result withheld: execution error\", \"malformed arguments\" or \"arguments may be truncated\" is an error in your own call: read it, fix the arguments, and issue the call again. A permission, hook, mode or scope refusal is a decision, not an error: do not retry it.\n"
 }
@@ -157,7 +159,7 @@ func explorePreamble(tools []string, goalSurvey bool) string {
 		opening = "You are gathering edit targets for a goal."
 	}
 	return opening + " You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. " +
-		"When a task mentions a remote repository, check the local index first — call Repos to see which checkouts are on this machine, then RepoFiles/RepoRead for one that is. Only use GH for a repository that is not available locally. " +
+		"When a task mentions a remote repository, check the local index first: call Repos to see which checkouts are on this machine, then RepoFiles/RepoRead for one that is. Only use GH for a repository that is not available locally. " +
 		"Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
 }
 
@@ -240,7 +242,9 @@ func SystemParts(opts Options) (stable, session string, err error) {
 	if opts.Environment != "" {
 		b.WriteString(opts.Environment + "\n")
 	}
-	return st.String(), b.String(), nil
+	// The prose rules close the stable block: they are the same for every
+	// session, so they stay in the cached prefix.
+	return proserules.Append(st.String()), b.String(), nil
 }
 
 func resolveCarrier(opts Options) (Carrier, string, error) {

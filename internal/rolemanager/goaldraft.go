@@ -37,7 +37,7 @@ Rules:
 - Do not repeat the objective line; it is already present.
 - Do not output any other headings, Markdown fences, or commentary outside the sections.
 - The contract is read by the model doing the work, so be concrete and actionable, not generic.
-- Verification commands: when a harness-detected command list is given, use only those commands (plus read-only git). A goal that changes no code and only runs commands, such as git operations, is verified by those commands and read-only git, not by the list. Never invent a build tool or target the list does not name — no make, npm, cargo or similar unless listed.
+- Verification commands: when a harness-detected command list is given, use only those commands (plus read-only git). A goal that changes no code and only runs commands, such as git operations, is verified by those commands and read-only git, not by the list. Never invent a build tool or target the list does not name: no make, npm, cargo or similar unless listed.
 - Name files only when the user's goal names them or they are certain; never guess paths.
 - Keep the whole reply under 600 words; the loop starts editing as soon as this contract exists, so brevity is speed.`
 

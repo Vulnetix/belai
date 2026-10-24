@@ -7,7 +7,7 @@ import (
 )
 
 // sessionNameSystemPrompt instructs the classifier to produce a short title.
-const sessionNameSystemPrompt = `You name coding sessions. You will be shown the first message a user sent to a coding assistant. Reply with a short title for the session — three to six words, no quotes, no punctuation at the end, no explanation. Reply with the title on a single line and nothing else.`
+const sessionNameSystemPrompt = `You name coding sessions. You will be shown the first message a user sent to a coding assistant. Reply with a short title for the session: three to six words, no quotes, no punctuation at the end, no explanation. Reply with the title on a single line and nothing else.`
 
 // MaxSessionNameRunes bounds a session name for the status bar.
 const MaxSessionNameRunes = 48

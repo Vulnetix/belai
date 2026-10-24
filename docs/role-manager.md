@@ -898,7 +898,7 @@ and agent-less. The invariant holds for all eight builders:
 | Skills | Always empty | Live |
 | Agent block | Always empty | Live |
 | User content | Only the single untrusted blob under test | Live |
-| System prompt | The specialised classifier prompt, plus the caveman voice on prose builders only | Live |
+| System prompt | The specialised classifier prompt, plus the caveman voice on prose builders only, then the prose rules | Live |
 
 #### Prose payloads versus sentinel payloads
 
@@ -917,6 +917,27 @@ Every other builder is a **sentinel** payload whose reply is matched exactly —
 ever be voiced: a rewritten reply fails the strict parse and refuses benign
 content for the wrong reason. `TestSentinelBuildersNeverCarryCavemanVoice` pins
 this.
+
+#### Prose rules
+
+Every system prompt the harness sends ends with the prose rules in
+`internal/proserules` (`proserules.Rules`). They set the writing standard for
+replies, summaries, docs, code comments, commit messages, PR descriptions,
+review comments and advisories: no em or en dash punctuation, none of the
+patterns listed in Wikipedia's "Signs of AI writing", Conventional Commits
+1.0.0, and specific rules for READMEs, PRs, code comments, review comments and
+vulnerability reports. AGENTS.md carries the same text for coding agents
+working in this repository.
+
+| Rule | Where | Pinned by |
+| ---- | ----- | --------- |
+| The main agent prompt ends its cached stable block with the rules, after the voice line | `internal/prompt/system.go` | `TestSystemPartsEndStableWithProseRules`, `TestSealSystemCarriesProseRules` |
+| Every role prompt gets the rules where the classifier client prepares its payload, so a new role is covered without its own edit | `chatClassifier.prepare` in `internal/run/run.go` | `TestClassifierSendsProseRules` |
+| The rules come after the prompt's own output format and after the caveman voice, and their first line says they never override a required output format, so sentinel and JSON payloads still parse | `proserules.Append` | `TestAppend` |
+| A prompt that already carries the rules is not given them twice | `proserules.Append` | `TestAppend` |
+| An empty system prompt stays empty: a call without one does not gain one | `proserules.Append` | `TestAppend` |
+| The rules text has no em or en dash | `proserules.Rules` | `TestRulesHaveNoDashPunctuation` |
+| The Tev1 and JevK5 decision prompts are sent unchanged, because those models were trained on their system text verbatim and answer with one logprob-scored letter | `internal/decisions` | `TestDecisionPromptsCarryNoProseRules` |
 
 ### Attachment admission
 

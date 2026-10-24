@@ -39,7 +39,7 @@ func ParseAgentVerdict(raw string) (AgentVerdict, error) {
 
 // agentEvalSystemPrompt instructs the loop evaluator to answer with exactly
 // one verdict token and nothing else.
-const agentEvalSystemPrompt = `You are a background-agent loop evaluator for an LLM coding harness. You are shown an agent's stated goals and its most recent output. Decide whether the agent should keep working, pause for the user, sleep one schedule interval, or stop, and reply with a single token and nothing else — no punctuation, no explanation, no surrounding text.
+const agentEvalSystemPrompt = `You are a background-agent loop evaluator for an LLM coding harness. You are shown an agent's stated goals and its most recent output. Decide whether the agent should keep working, pause for the user, sleep one schedule interval, or stop, and reply with a single token and nothing else: no punctuation, no explanation, no surrounding text.
 
 Reply with exactly one of these tokens:
 - CONTINUE: the goals are not yet met and the agent should keep working now.

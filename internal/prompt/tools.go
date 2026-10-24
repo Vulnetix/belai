@@ -122,14 +122,14 @@ func ToolsBlock(opts ToolsOptions) string {
 		b.WriteString("\nMode: plan. ")
 		switch {
 		case hasWrite:
-			b.WriteString("Guardrails are off, so every tool is available, including tools that change the workspace and full Bash. The deliverable of plan mode is still the plan, not the change: investigate with the tools you need, then call ExitPlanMode with the plan. Do not implement the change while planning — an approved plan runs next with the full surface.\n")
+			b.WriteString("Guardrails are off, so every tool is available, including tools that change the workspace and full Bash. The deliverable of plan mode is still the plan, not the change: investigate with the tools you need, then call ExitPlanMode with the plan. Do not implement the change while planning. An approved plan runs next with the full surface.\n")
 		case hasBash:
 			b.WriteString("Bash is available in read-only form only. Write, Edit, and other tools that change the workspace are not in the list below and calling one is refused.\n")
-			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
+			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made. Describe the change you would make.\n")
 		default:
 			b.WriteString("This is a read-only mode:\n")
 			b.WriteString("- Bash is not available. Neither are Write, Edit, or any other tool that changes the workspace; they are not in the list below and calling one is refused.\n")
-			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
+			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made. Describe the change you would make.\n")
 		}
 		if !hasBash && !hasWrite {
 			// Sessions showed the model reaching for Bash out of habit and
