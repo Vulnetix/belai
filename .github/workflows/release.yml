@@ -439,6 +439,16 @@ jobs:
       # publishing with no way to roll back short of a CLI release.
       CLI_VERSION: v3.126.7
     steps:
+      # Without these the CLI falls back to the shared community organisation,
+      # which persists nothing, so a missing secret must stop the job instead
+      # of looking like a publish.
+      - name: Require the Vulnetix credentials
+        run: |
+          if [ -z "$VULNETIX_ORG_ID" ] || [ -z "$VULNETIX_API_KEY" ]; then
+            echo "::error::VULNETIX_ORG_ID and VULNETIX_API_KEY are not set for this repository; nothing can be published to TEA"
+            exit 1
+          fi
+
       - uses: actions/checkout@v5
 
       - name: Install the Vulnetix CLI
@@ -483,9 +493,13 @@ jobs:
             echo "::warning::no provenance bundle was produced; publishing the release without it"
           fi
 
+      # v3 of the installer, as in the cli release: the cosign it installs
+      # honours --output-signature and --output-certificate. The v4 installer
+      # brings cosign v3, which ignores both and wants --bundle, so the
+      # release's .sig and .pem would never be written.
       - name: Install cosign
         if: hashFiles('belai.cdx.json') != ''
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@v3
 
       # cosign rather than actions/attest-build-provenance, which persists
       # through GitHub's plan-gated attestation store. Fulcio and Rekor are
