@@ -230,10 +230,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # SLSA v1 build provenance for every binary in the release, signed and
-  # verified by the reusable workflow in Vulnetix/cli (the cli release uses the
-  # same one). It runs beside update-packages, not after it, because the
-  # package managers carry the binaries and not the provenance.
   # binaries (about 3.6 GB) and models (about 400 MB) are read only by build and
   # release, so they go as soon as release succeeds. retention-days: 1 alone was
   # not enough: three releases on 2026-10-24 filled the org's artifact quota and
@@ -258,6 +254,10 @@ jobs:
                 echo "deleted artifact $id"
               done
 
+  # SLSA v1 build provenance for every binary in the release, signed and
+  # verified by the reusable workflow in Vulnetix/cli (the cli release uses the
+  # same one). It runs beside update-packages, not after it, because the
+  # package managers carry the binaries and not the provenance.
   provenance:
     needs: release
     permissions:
