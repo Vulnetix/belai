@@ -234,6 +234,30 @@ jobs:
   # verified by the reusable workflow in Vulnetix/cli (the cli release uses the
   # same one). It runs beside update-packages, not after it, because the
   # package managers carry the binaries and not the provenance.
+  # binaries (about 3.6 GB) and models (about 400 MB) are read only by build and
+  # release, so they go as soon as release succeeds. retention-days: 1 alone was
+  # not enough: three releases on 2026-10-24 filled the org's artifact quota and
+  # other repos' uploads failed with "Artifact storage quota has been hit". A
+  # failed release keeps them for its one day, so a rerun can still read them.
+  delete-artifacts:
+    needs: release
+    if: always() && needs.release.result == 'success'
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Delete the binaries and models artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name == "binaries" or .name == "models") | .id' \
+            | while read -r id; do
+                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+                echo "deleted artifact $id"
+              done
+
   provenance:
     needs: release
     permissions:
