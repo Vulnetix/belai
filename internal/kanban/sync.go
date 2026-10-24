@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"time"
@@ -14,6 +15,9 @@ type Remote interface {
 	KanbanList(ctx context.Context, since int64, limit int) ([]sessionsync.KanbanItem, int64, bool, error)
 	KanbanBatch(ctx context.Context, items []sessionsync.KanbanItem) ([]sessionsync.KanbanAck, error)
 }
+
+// minPullPage is the smallest page a pull falls back to when a larger one cannot be read.
+const minPullPage = 25
 
 // SyncStatus is a snapshot for /kanban and /sync status.
 type SyncStatus struct {
@@ -197,9 +201,17 @@ func (s *Syncer) pullAll(ctx context.Context) error {
 		return err
 	}
 	total := 0
-	for range 20 { // bounded: 20 pages of 500 is the whole board many times over
-		items, next, more, err := s.remote.KanbanList(ctx, cursor, 500)
+	page := 500
+	for range 40 { // bounded: 20 pages of 500 is the whole board many times over, and a halved page costs a retry
+		items, next, more, err := s.remote.KanbanList(ctx, cursor, page)
 		if err != nil {
+			// A page longer than the client reads is cut mid-document and fails to decode, and
+			// asking again for the same page would fail the same way for ever: the cursor would
+			// never move and no card written on the web would arrive. Ask for half as many.
+			if page > minPullPage && !errors.Is(err, sessionsync.ErrUnauthorized) && ctx.Err() == nil {
+				page /= 2
+				continue
+			}
 			return err
 		}
 		local := make([]Item, 0, len(items))

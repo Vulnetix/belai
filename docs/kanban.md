@@ -359,6 +359,12 @@ CLI's credential.
   credential); with those off it keeps only its local board. An unreachable website does
   not delay the first turn by more than 10 seconds or fail the session. A fleet worker
   pulls once per poll instead.
+- A pull walks the board in pages after its cursor, 500 cards at a time. The client reads at most
+  4 MiB of a response, so a page that is longer is cut mid-document and cannot be decoded; asking
+  for the same page again would fail the same way for ever, the cursor would stay put and no card
+  written on the website (a Software Factory card included) would arrive. A page that fails is
+  therefore retried from the same cursor with half as many cards, down to 25, and the website
+  also cuts a page to 2 MiB.
 - Conflicts resolve per item: the most recent change wins. A newer local change
   that has not been pushed yet survives a pull. Histories are merged.
 
