@@ -63,7 +63,7 @@ func (c *cidrList) Set(v string) error { *c = append(*c, v); return nil }
 
 const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
                 [--web-controls [--web-allow-guardrails-off]] [--web-project-settings]
-                [--web-shell] [--allow-private-cidr CIDR]...
+                [--web-shell] [--allow-private-cidr CIDR]... [--no-clone]
        belai rc --status
        belai rc --stop
 
@@ -87,6 +87,12 @@ whose own network answers with addresses there (the Pix Sandbox's egress
 gateway). Only a private-use range is accepted, never loopback or link-local;
 every other private address stays refused. Sessions and workers inherit it.
 
+With agents.clone on (the default), a Software Factory request for a GitHub
+repository this machine does not offer clones it under the worktrees directory
+(repos/<owner>/<name>), through the GitHub CLI's credential when gh is signed
+in, offers it, and starts the workers there. --no-clone turns that off for
+this daemon.
+
 Needs a Vulnetix CLI browser login (vulnetix auth login).
 `
 
@@ -107,6 +113,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	webGuardrailsOff := fs.Bool("web-allow-guardrails-off", false, "with --web-controls, let a web session turn its guardrails off")
 	webProjectSettings := fs.Bool("web-project-settings", false, "let the website read and edit each offered directory's project preferences on this host")
 	webShell := fs.Bool("web-shell", false, "let web sessions run a shell line on this host, under the TUI's `!cmd` permission rules and OS sandbox")
+	noClone := fs.Bool("no-clone", false, "never clone a repository a Software Factory request names and this machine does not offer, whatever agents.clone says")
 	var allowCIDRs cidrList
 	fs.Var(&allowCIDRs, "allow-private-cidr", "let WebFetch reach this private-use range (repeatable); loopback and link-local are never allowed, and every other private address stays refused")
 	if err := fs.Parse(args); err != nil {
@@ -282,7 +289,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd), Distill: rcDistill(wd), TeleportPush: teleportPushPolicy(wd),
 		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
-		Shell: *webShell,
+		Shell: *webShell, NoClone: *noClone,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)

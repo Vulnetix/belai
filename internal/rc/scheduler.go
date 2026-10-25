@@ -210,7 +210,7 @@ func (d *Daemon) checkSchedule(r schedule.Record) (cron.Schedule, string) {
 	if err != nil {
 		return cron.Schedule{}, schedule.StatusRefusedCron
 	}
-	if _, ok := Allowed(d.o.Dirs, r.Dir); !ok {
+	if _, ok := Allowed(d.dirs(), r.Dir); !ok {
 		return sched, schedule.StatusRefusedDir
 	}
 	if !schedule.ValidProfileName(r.Profile) ||
@@ -236,7 +236,7 @@ func retryableRefusal(refusal string, r schedule.Record) bool {
 
 // fire starts the schedule's worker and returns the outcome.
 func (d *Daemon) fire(r schedule.Record) string {
-	cwd, ok := Allowed(d.o.Dirs, r.Dir)
+	cwd, ok := Allowed(d.dirs(), r.Dir)
 	if !ok {
 		return schedule.StatusRefusedDir
 	}

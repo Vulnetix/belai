@@ -171,11 +171,24 @@ type RCInfo struct {
 	// mode (an ephemeral, read-only session engaged as a security-crew
 	// persona), so the website never sends one to an older daemon.
 	PixAssistant bool `json:"pixAssistant,omitempty"`
+	// CanClone says a "worker" or "crew" request may name a repository with
+	// Clone and no Cwd: the daemon clones or reuses it under the worktrees
+	// directory and offers it (agents.clone, on unless turned off). An older
+	// daemon sends none, and the website never asks it to clone.
+	CanClone bool `json:"canClone,omitempty"`
 	// Features names what this daemon takes beyond the base protocol, so the
 	// website offers a choice only to a host that understands it: "worktree"
 	// (a start request's Branch and Workspace) and "checkout" (a session's
 	// RemoteCommand.Checkout). Nil from an older daemon.
 	Features []string `json:"features,omitempty"`
+}
+
+// DispatchClone is the repository a worker or crew request asks the host to
+// clone: owner/name on GitHub, and the branch to check out ("" is the remote's
+// default branch). No URL, path or credential travels.
+type DispatchClone struct {
+	Repo string `json:"repo"`
+	Ref  string `json:"ref,omitempty"`
 }
 
 // The RCInfo.Features this build sends.
@@ -636,6 +649,12 @@ type Dispatch struct {
 	// budget and retry settings for the workers it starts, layered over their
 	// profiles. Nil keeps the profiles' own. Cleaned before use.
 	Budget *WorkerBudget `json:"budget,omitempty"`
+	// Clone, on a "worker" or "crew" request with an empty Cwd, names a GitHub
+	// repository this host does not offer. A daemon that advertised CanClone
+	// clones or reuses <WorktreesDir>/repos/<owner>/<name>, offers it and starts
+	// the workers there; any other daemon refuses the request. Untrusted: the
+	// daemon checks its shape before git sees it.
+	Clone *DispatchClone `json:"clone,omitempty"`
 	// A "project_prefs" request names an offered directory in Cwd and the flat
 	// preference keys to set (with their values) and to clear. Keys and values
 	// are checked by the host against config.ProjectPrefs' shape.

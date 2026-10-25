@@ -172,7 +172,7 @@ func settingsGroupOf(key string) string {
 	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
 		"show_edits", "show_internal_work", "layout", "show_todos", "show_a2a", "mouse", "mac_key_hints", "show_session_names", "idle_pane":
 		return "display"
-	case "max_agents", "plan_explore", "goal_explore":
+	case "max_agents", "plan_explore", "goal_explore", "agents.clone":
 		return "agents"
 	case "permissions", "lsp":
 		return "access"
@@ -186,7 +186,7 @@ func settingsGroupOf(key string) string {
 // settings whatever scope the screen shows: the project layer cannot set it.
 func settingsWritesGlobalOnly(key string) bool {
 	switch {
-	case key == "auto_commit_per_task", key == "plan_limits",
+	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone",
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
@@ -355,6 +355,7 @@ func (a *App) settingsRows() []settingsRow {
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	autoCommitVal := boolLabel(s.AutoCommitPerTaskEnabled())
+	cloneVal := boolLabel(s.AgentsCloneEnabled())
 	testsPostEndVal := s.TestsPostEnd()
 	testsScopeVal := s.TestsScope()
 	testsOnFailVal := s.TestsOnFail()
@@ -413,6 +414,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "goal_explore", label: "goal explore", kind: "toggle", value: goalExploreVal, src: sourceLabel(origin["resilience"])},
+		{key: "agents.clone", label: "clone repositories", kind: "toggle", value: cloneVal, src: sourceLabel(origin["agents"]), help: "belai rc clones a repository a Software Factory request names and this machine lacks, under the worktrees directory, and starts the workers there. Global only; belai rc -no-clone turns it off for one daemon"},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 		{key: "lsp", label: "language servers", kind: "submenu", value: lspSummary(a), src: sourceLabel(origin["lsp"])},
 		{key: "token_budgets", label: "token budgets", kind: "submenu", value: budgetsVal, src: sourceLabel(origin["token_budgets"])},
@@ -911,6 +913,20 @@ func (a *App) cycleToggle(key string) error {
 			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
 		})
 	}
+	if key == "agents.clone" {
+		// Global only, like the daemon that reads it: on (unset) -> off -> on.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Agents == nil {
+				s.Agents = &config.AgentsSettings{}
+			}
+			if s.AgentsCloneEnabled() {
+				f := false
+				s.Agents.Clone = &f
+			} else {
+				s.Agents.Clone = nil
+			}
+		})
+	}
 	if key == "tests.report" {
 		// The report is an extra model call, so it is opt-in and global only,
 		// like the rest of the tests block's user-facing keys.
@@ -1114,6 +1130,13 @@ func (a *App) unsetSetting(key string) error {
 	if key == "auto_commit_per_task" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
+		})
+	}
+	if key == "agents.clone" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Agents != nil {
+				s.Agents.Clone = nil
+			}
 		})
 	}
 	if strings.HasPrefix(key, "tests.") {

@@ -50,7 +50,7 @@ func (d *Daemon) teleportCode(ctx context.Context, r sessionsync.Dispatch) (stri
 	if !teleportIDRe.MatchString(r.Teleport) {
 		return "", "a teleport code request names a teleport"
 	}
-	cwd, ok := Allowed(d.o.Dirs, r.Cwd)
+	cwd, ok := Allowed(d.dirs(), r.Cwd)
 	if !ok {
 		return "", "this host does not offer that directory"
 	}

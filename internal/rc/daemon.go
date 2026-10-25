@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -162,6 +163,18 @@ type Options struct {
 	// Workspace prepares the directory a start request that names a branch or
 	// a workspace runs in (prepareWorkspace unless a test replaces it).
 	Workspace Workspacer
+
+	// NoClone turns the clone capability off for this daemon (belai rc
+	// -no-clone), whatever agents.clone says.
+	NoClone bool
+	// CloneEnabled reports whether the user's agents.clone is on (the global
+	// settings, read at each advertisement, failing closed unless a test
+	// replaces it).
+	CloneEnabled func() bool
+	// Clone clones or reuses a repository a worker or crew request names and
+	// returns its checkout, trusted for the directory (cloneRepo unless a test
+	// replaces it). The error text is the refusal reason.
+	Clone Cloner
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -251,6 +264,13 @@ type Daemon struct {
 	// library imports a website selection fans out (scan.go).
 	scanSlot chan struct{}
 	importMu sync.Mutex
+	// dirsMu guards o.Dirs, which a clone request extends while the daemon
+	// runs (offerDir); every reader takes a snapshot through dirs().
+	dirsMu sync.RWMutex
+	// cloneSlot holds a token while a repository is being cloned;
+	// advertisedClone is the canClone of the last advertisement (under mu).
+	cloneSlot       chan struct{}
+	advertisedClone bool
 }
 
 type child struct {
@@ -292,13 +312,16 @@ func New(o Options) (*Daemon, error) {
 	if o.Workspace == nil {
 		o.Workspace = prepareWorkspace
 	}
+	// The closures below read the offered directories when they run, so a
+	// directory a clone request adds is covered too; d is set before New returns.
+	var d *Daemon
 	{
 		// The knowledge catalogue covers the offered directories, which only
 		// the daemon knows.
-		read, dirs, cat := o.Inventory, o.Dirs, o.Knowledge
+		read, cat := o.Inventory, o.Knowledge
 		o.Inventory = func() Inventory {
 			inv := read()
-			inv.Knowledge = cat(dirs)
+			inv.Knowledge = cat(d.dirs())
 			return inv
 		}
 	}
@@ -306,10 +329,10 @@ func New(o Options) (*Daemon, error) {
 		if o.Prefs == nil {
 			o.Prefs = localPrefs
 		}
-		read, dirs, prefs := o.Inventory, o.Dirs, o.Prefs
+		read, prefs := o.Inventory, o.Prefs
 		o.Inventory = func() Inventory {
 			inv := read()
-			inv.Prefs = prefs(dirs)
+			inv.Prefs = prefs(d.dirs())
 			return inv
 		}
 	}
@@ -325,13 +348,13 @@ func New(o Options) (*Daemon, error) {
 		o.PauseWorker = setWorkerPaused
 	}
 	if o.CrewControl == nil {
-		controls, dirs := o.Controls, o.Dirs
+		controls := o.Controls
 		o.CrewControl = func(c *sessionsync.RCCrewControl) (string, error) {
 			reg, err := fleet.OpenRegistry(nil)
 			if err != nil {
 				return "", err
 			}
-			return applyCrewControl(crewControlEnv{Registry: reg, Controls: controls, Dirs: dirs,
+			return applyCrewControl(crewControlEnv{Registry: reg, Controls: controls, Dirs: d.dirs(),
 				CheckDir: fleet.CheckScopeDir, Grace: 45 * time.Second}, c)
 		}
 	}
@@ -371,8 +394,43 @@ func New(o Options) (*Daemon, error) {
 	if o.LibrarySyncEvery <= 0 {
 		o.LibrarySyncEvery = DefaultLibrarySyncEvery
 	}
-	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
-		codeSlot: make(chan struct{}, 2), scanSlot: make(chan struct{}, 1), libsync: &libSyncState{records: map[string]syncRecord{}}}, nil
+	if o.CloneEnabled == nil {
+		o.CloneEnabled = cloneSettingOn
+	}
+	if o.Clone == nil {
+		o.Clone = cloneRepo
+	}
+	d = &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
+		codeSlot: make(chan struct{}, 2), scanSlot: make(chan struct{}, 1), cloneSlot: make(chan struct{}, 1),
+		libsync: &libSyncState{records: map[string]syncRecord{}}}
+	return d, nil
+}
+
+// dirs is a snapshot of the offered directories. offerDir never changes a
+// slice it has handed out, so the snapshot stays valid without the lock.
+func (d *Daemon) dirs() []Dir {
+	d.dirsMu.RLock()
+	defer d.dirsMu.RUnlock()
+	return d.o.Dirs
+}
+
+// offerDir adds a directory to the offer (a clone request's checkout) and has
+// the next heartbeat advertise it, so the website sees its remote. It reports
+// whether the directory was new.
+func (d *Daemon) offerDir(dir Dir) bool {
+	d.dirsMu.Lock()
+	for _, x := range d.o.Dirs {
+		if x.Path == dir.Path {
+			d.dirsMu.Unlock()
+			return false
+		}
+	}
+	d.o.Dirs = append(slices.Clip(d.o.Dirs), dir)
+	d.dirsMu.Unlock()
+	d.mu.Lock()
+	d.worktreesChanged = true
+	d.mu.Unlock()
+	return true
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -401,7 +459,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.register(ctx, d.o.Inventory())
 	audit.Emit(audit.Fact{Kind: audit.HostRCOnline, ActorKind: audit.ActorHarness,
 		Data: map[string]string{"version": d.o.Host.BelaiVersion}})
-	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
+	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.dirs()), plural(len(d.dirs()), "y", "ies"), d.o.Max)
 	if d.o.MaxWorkers > 0 {
 		d.logf("up to %d fleet workers (overrides agents.max_workers)", d.o.MaxWorkers)
 	}
@@ -434,6 +492,8 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings,
 		PixAssistant: true, Features: []string{sessionsync.FeatureWorktree, sessionsync.FeatureCheckout}}
+	canClone := d.canClone()
+	h.RC.CanClone = canClone
 	if d.o.Controls {
 		for _, c := range sessionctl.Controls {
 			h.RC.ControlCatalogue = append(h.RC.ControlCatalogue, sessionsync.RCControl{
@@ -456,8 +516,9 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	d.mu.Lock()
 	d.catalog = inv.catalogueHash()
 	d.worktreesChanged = false
+	d.advertisedClone = canClone
 	d.mu.Unlock()
-	for _, dir := range d.o.Dirs {
+	for _, dir := range d.dirs() {
 		rd := dirGit(sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
 		rd.Worktrees = dirWorktrees(ctx, dir.Path)
 		if p, ok := inv.Prefs[dir.Path]; ok {
@@ -490,8 +551,9 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 		case <-t.C:
 		}
 		inv := d.o.Inventory()
+		canClone := d.canClone()
 		d.mu.Lock()
-		changed := inv.catalogueHash() != d.catalog || d.worktreesChanged
+		changed := inv.catalogueHash() != d.catalog || d.worktreesChanged || canClone != d.advertisedClone
 		d.mu.Unlock()
 		if changed {
 			// A profile or crew was added, edited or removed, or a start used a
@@ -574,6 +636,16 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
 	case "worker", "crew":
+		if r.Cwd == "" && r.Clone != nil {
+			// A clone can take minutes: it runs beside the poll loop, one at a
+			// time, and the request is answered when it is done (clone.go).
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.cloneThenStart(ctx, r, ack)
+			}()
+			return
+		}
 		report, reason := d.startWorkers(r)
 		if reason != "" {
 			d.logf("refused %s %s%s in %s: %s", r.Kind, r.Profile, r.Crew, r.Cwd, reason)
@@ -765,7 +837,7 @@ func (d *Daemon) ack(ctx context.Context, id, status, sid, reason string) {
 // start validates a start request and spawns its session. It returns the
 // new session id, or the reason it refused.
 func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
-	cwd, ok := Allowed(d.o.Dirs, r.Cwd)
+	cwd, ok := Allowed(d.dirs(), r.Cwd)
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
@@ -775,7 +847,7 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	default:
 		return "", "unknown mode " + fmt.Sprintf("%q", r.Mode)
 	}
-	dirs, ok := AllowedExtra(d.o.Dirs, cwd, r.Dirs)
+	dirs, ok := AllowedExtra(d.dirs(), cwd, r.Dirs)
 	if !ok {
 		return "", "this host does not offer one of those directories"
 	}
@@ -926,7 +998,7 @@ func (d *Daemon) writeRecord() {
 	d.mu.Lock()
 	r := Record{
 		PID: os.Getpid(), Started: d.started, Beat: time.Now(), HostID: d.o.HostID, URL: d.o.URL,
-		Max: d.o.Max, Dirs: d.o.Dirs, LogPath: d.o.LogPath, Online: d.online, Error: d.lastErr,
+		Max: d.o.Max, Dirs: d.dirs(), LogPath: d.o.LogPath, Online: d.online, Error: d.lastErr,
 	}
 	for _, c := range d.sessions {
 		r.Sessions = append(r.Sessions, c.RunningSession)

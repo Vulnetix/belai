@@ -37,7 +37,7 @@ func (d *Daemon) startWorkers(r sessionsync.Dispatch) (string, string) {
 // the worker exits once nothing is left to claim, whatever cron schedule its
 // profile carries, because the stored schedule is what starts it.
 func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, string) {
-	cwd, ok := Allowed(d.o.Dirs, r.Cwd)
+	cwd, ok := Allowed(d.dirs(), r.Cwd)
 	if !ok {
 		return "", "this host does not offer that directory"
 	}

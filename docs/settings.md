@@ -40,7 +40,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
-| Agents | `max agents`, `plan explore`, `goal explore` |
+| Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
 | Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
@@ -60,6 +60,21 @@ every one, `off` hears none and still broadcasts. A project layer may turn
 A2A off and narrow the filter, never the reverse. `A2A messages` in Display is
 `ui.show_a2a` (default on): it hides or shows the A2A rows in the thread and
 changes nothing else.
+
+### Clone repositories
+
+`clone repositories` in Agents is `agents.clone` (default on), saved to your
+global settings only. While it is on, `belai rc` advertises `canClone`: a
+Software Factory worker or crew request for a GitHub repository this machine
+does not offer clones it, or reuses the clone, at
+`<worktrees directory>/repos/<owner>/<name>` (`BELAI_WORKTREES_DIR`, else
+`~/.vulnetix/worktrees`), offers that directory with its remote and starts the
+workers there. It goes through the engine `belai repo sync` uses (git as an
+argv, hooks off, fast-forward only), with the GitHub CLI's own credential
+helper when `gh` is signed in. No token is stored or put in a URL; a public
+repository clones without `gh`. A failed clone refuses the request with the
+reason. `belai rc -no-clone` turns it off for one daemon. A project layer may
+turn it off, never on. See [remote-control.md](remote-control.md#cloning-a-repository-for-the-software-factory).
 
 ### Layout
 
@@ -167,7 +182,7 @@ movement, edit and back always stay.
 
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
-  the scope chip shows: `auto-commit per task`, `plan limits`, every `test …`,
+  the scope chip shows: `auto-commit per task`, `plan limits`, `clone repositories`, every `test …`,
   `voice …`, `read aloud …` and `knowledge …` row, `permission offers`,
   `auto-apply permissions`, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session

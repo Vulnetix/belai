@@ -77,6 +77,48 @@ checks each request against its own list again (an exact match after
 resolving symlinks, never a prefix), and the session checks trust once more
 where it runs.
 
+### Cloning a repository for the Software Factory
+
+The daemon also advertises `canClone`: true while `agents.clone` is on (the
+default, global settings only, read again at each advertisement) and `belai rc`
+runs without `--no-clone`. A Software Factory worker or crew request may then
+name a GitHub repository this machine does not offer, as `clone: {repo:
+"owner/name", ref?: "branch"}` with an empty `cwd`. The website sends one only to
+a self-hosted machine (never a Pix Sandbox, which works on its attached
+repositories) and only for a repository the organisation's GitHub App can read.
+
+The daemon:
+
+1. checks the request's shape: `owner/name` in GitHub's characters, never a
+   leading dash or a dot segment, and a branch that cannot read as an option;
+2. reuses an offered directory whose origin remote is that repository, if there
+   is one;
+3. otherwise clones it, one clone at a time and beside the request loop, at
+   `<worktrees directory>/repos/<owner>/<name>` through the engine `belai repo
+   sync` uses (`internal/repos`: git as an argv, hooks off, no prompts, https
+   and ssh only, fast-forward only, a dirty or diverged checkout refused rather
+   than reset). An existing clone there is brought up to date the same way.
+   The ref is the request's, else the remote's default branch. Authentication
+   is the GitHub CLI's own credential helper when `gh` is installed and signed
+   in, the same credential a push or a pull request uses; no token is stored,
+   put in a URL or passed as an argument, and a public repository clones
+   without `gh`;
+4. trusts the checkout for the directory only (as a worktree is), adds it to
+   the offered directories with its remote, and advertises it on the next
+   heartbeat, so the next request names it by `cwd`;
+5. starts the workers there with the request's own checks.
+
+A refused or failed clone answers the request `refused` with the reason (for
+example `could not clone acme/api: ...`), which the website shows on the step.
+A cloned directory is offered until `belai rc` restarts; the clone stays on
+disk and is reused by the next request for the repository.
+
+Cards a worker files carry their checkout's `remote` (owner/name) as well as
+the machine's project key, and a worker started in its own project claims a
+card whose `remote`, or whose project written as owner/name, is its own
+repository. A card filed on one machine is claimable by a worker in another
+machine's checkout of the same repository; see [kanban.md](kanban.md).
+
 ### Starting on a branch or in a worktree
 
 The advertisement says `features: ["worktree", "checkout"]`, and each directory
@@ -479,6 +521,8 @@ Remote control also tells the website about this host's
 predict what will happen to them:
 
 - **Catalogue.** The host upsert's `rc` block carries `agents.max_workers`
+  (always: 4 when unset, or the `--max-workers`/`--max` override), `canClone`
+  ([Cloning a repository](#cloning-a-repository-for-the-software-factory))
   and every worker profile's routing (lists, labels, `on_success`,
   `on_failure`, handoffs, attempts, lease and budget) and every crew with its
   members. Never a system prompt, a tool list or a model. The daemon sends it

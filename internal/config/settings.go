@@ -2308,6 +2308,12 @@ type AgentsSettings struct {
 	// Publish allows a worker profile's workspace.publish (push a branch and
 	// open a draft pull request). Default on.
 	Publish *bool `json:"publish,omitempty"`
+	// Clone lets `belai rc` clone a repository a Software Factory dispatch
+	// names but this machine does not have, under the worktrees directory
+	// (<WorktreesDir>/repos/<owner>/<name>), and start the workers there. The
+	// daemon advertises it as canClone. Default on; `belai rc -no-clone` turns
+	// it off for one daemon. Read from the user's global settings only.
+	Clone *bool `json:"clone,omitempty"`
 }
 
 // tighten applies a project layer: it may turn Enabled and Publish off and
@@ -2327,6 +2333,9 @@ func (a *AgentsSettings) tighten(proj *AgentsSettings) *AgentsSettings {
 	}
 	if proj.Publish != nil && !*proj.Publish {
 		out.Publish = &f
+	}
+	if proj.Clone != nil && !*proj.Clone {
+		out.Clone = &f
 	}
 	if proj.MaxWorkers != nil {
 		cur := DefaultMaxWorkers
@@ -2351,6 +2360,15 @@ func (a *AgentsSettings) merge(o *AgentsSettings) {
 	if o.Publish != nil {
 		a.Publish = o.Publish
 	}
+	if o.Clone != nil {
+		a.Clone = o.Clone
+	}
+}
+
+// AgentsCloneEnabled reports whether `belai rc` may clone a repository a
+// dispatch names and this machine lacks. Default on.
+func (s Settings) AgentsCloneEnabled() bool {
+	return s.Agents == nil || s.Agents.Clone == nil || *s.Agents.Clone
 }
 
 // AgentsEnabled reports whether fleet workers may run. Default on.

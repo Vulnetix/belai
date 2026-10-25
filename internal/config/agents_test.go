@@ -46,3 +46,37 @@ func TestResolveAgentsTightenOnly(t *testing.T) {
 		t.Fatalf("Override lost project tightening: %+v", m.Agents)
 	}
 }
+
+// agents.clone is on by default; the global layer turns it off, and a project
+// file may turn it off but never back on.
+func TestResolveAgentsClone(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	resolve := func(global, project *AgentsSettings) Settings {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Agents: global}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Agents: project}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings
+	}
+	on, off := boolPtr(true), boolPtr(false)
+	if !(Settings{}).AgentsCloneEnabled() || !resolve(nil, nil).AgentsCloneEnabled() {
+		t.Fatal("agents.clone is on by default")
+	}
+	if resolve(&AgentsSettings{Clone: off}, nil).AgentsCloneEnabled() {
+		t.Fatal("the global layer turns agents.clone off")
+	}
+	if resolve(nil, &AgentsSettings{Clone: off}).AgentsCloneEnabled() {
+		t.Fatal("a project may turn agents.clone off")
+	}
+	if resolve(&AgentsSettings{Clone: off}, &AgentsSettings{Clone: on}).AgentsCloneEnabled() {
+		t.Fatal("a project turned agents.clone back on")
+	}
+}

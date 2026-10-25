@@ -62,6 +62,12 @@ type Options struct {
 	Getenv func(string) string
 	// Timeout bounds one call (DefaultTimeout when zero).
 	Timeout time.Duration
+	// GitHubCLI also authenticates a public https repository through the GitHub
+	// CLI's credential helper when gh is installed and signed in to the host,
+	// and fetches it without one otherwise. It is for a repository whose
+	// visibility the caller does not know (a Software Factory clone, which may
+	// be private): the credential is still gh's own, never stored or put in a URL.
+	GitHubCLI bool
 }
 
 // Result says what a sync did.
@@ -212,11 +218,24 @@ func newEngine(r config.GitRepo, o Options) (*engine, error) {
 // reason it cannot. A public repository gets none.
 func (e *engine) credentials(ctx context.Context) error {
 	if e.repo.Visibility != "private" {
+		if e.o.GitHubCLI && !strings.HasPrefix(e.repo.URL, "git@") {
+			// Best effort: without gh, or signed out, a public repository still
+			// fetches, and a private one fails with git's own message.
+			if err := e.ghCredentials(ctx); err != nil {
+				e.credArg = nil
+			}
+		}
 		return nil
 	}
 	if strings.HasPrefix(e.repo.URL, "git@") {
 		return nil // ssh: the agent and the user's keys, in batch mode
 	}
+	return e.ghCredentials(ctx)
+}
+
+// ghCredentials points git at the GitHub CLI's credential helper for the
+// repository's https host, or fails with the reason it cannot.
+func (e *engine) ghCredentials(ctx context.Context) error {
 	u, err := url.Parse(e.repo.URL)
 	if err != nil {
 		return err
@@ -303,6 +322,35 @@ func Sync(ctx context.Context, r config.GitRepo, o Options) (Result, error) {
 		res.Action = "current"
 	}
 	return res, nil
+}
+
+// DefaultBranch asks origin which branch its HEAD names (`git ls-remote
+// --symref URL HEAD`), with the hardened git and the credentials Sync uses. r
+// must be a valid repository; its refs are not read.
+func DefaultBranch(ctx context.Context, r config.GitRepo, o Options) (string, error) {
+	e, err := newEngine(r, o)
+	if err != nil {
+		return "", err
+	}
+	if err := e.credentials(ctx); err != nil {
+		return "", err
+	}
+	e.env = append(e.env, e.o.Env...)
+	out, err := e.run(ctx, "", "ls-remote", "--symref", r.URL, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("read the default branch: %w", err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		ref, ok := strings.CutPrefix(line, "ref: refs/heads/")
+		if !ok {
+			continue
+		}
+		name, _, _ := strings.Cut(ref, "\t")
+		if name = strings.TrimSpace(name); libitem.ValidRefName(name) {
+			return name, nil
+		}
+	}
+	return "", errors.New("origin does not name a default branch")
 }
 
 func (e *engine) depth() int {

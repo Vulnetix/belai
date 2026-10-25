@@ -82,8 +82,8 @@ func reason(s string) string { return sanitize.Line(s, 240) }
 // roots are the directories a relative path in a profile is looked up under: the
 // directories this daemon offers.
 func (d *Daemon) roots() []string {
-	out := make([]string, 0, len(d.o.Dirs))
-	for _, dir := range d.o.Dirs {
+	out := make([]string, 0, len(d.dirs()))
+	for _, dir := range d.dirs() {
 		out = append(out, dir.Path)
 	}
 	return out
@@ -200,7 +200,7 @@ func (d *Daemon) installProfile(ctx context.Context, r sessionsync.Dispatch) (st
 // what happened, never what the documents hold.
 func (d *Daemon) indexProfile(ctx context.Context, name string) string {
 	dir := ""
-	for _, offered := range d.o.Dirs {
+	for _, offered := range d.dirs() {
 		if offered.Source == SourceTrusted {
 			dir = offered.Path
 			break

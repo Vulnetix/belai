@@ -817,3 +817,54 @@ func TestResolveDir(t *testing.T) {
 		t.Error("an empty base resolved")
 	}
 }
+
+func TestDefaultBranchReadsOriginsHead(t *testing.T) {
+	o := newOrigin(t)
+	o.git(o.work, "push", "-q", "origin", "main:trunk")
+	o.git(o.bare, "symbolic-ref", "HEAD", "refs/heads/trunk")
+	got, err := DefaultBranch(context.Background(), repo(), o.opts(t.TempDir()))
+	if err != nil || got != "trunk" {
+		t.Fatalf("default branch %q, %v", got, err)
+	}
+}
+
+// GitHubCLI asks gh for a credential for a public https repository when gh is
+// signed in, and fetches without one when it is not: a Software Factory clone
+// does not know whether the repository is private.
+func TestGitHubCLIIsOptionalForAPublicURL(t *testing.T) {
+	o := newOrigin(t)
+	helper := "credential.https://example.test.helper=!gh auth git-credential"
+	for _, signedIn := range []bool{true, false} {
+		rec := &recorder{ghOK: signedIn}
+		opts := o.opts(t.TempDir())
+		opts.Run, opts.GitHubCLI = rec.run, true
+		opts.LookPath = func(n string) (string, error) {
+			if n == "git" {
+				return exec.LookPath("git")
+			}
+			return "/usr/bin/gh", nil
+		}
+		if _, err := Sync(context.Background(), repo(), opts); err != nil {
+			t.Fatalf("signed in %v: %v", signedIn, err)
+		}
+		saw := false
+		for _, c := range rec.git() {
+			saw = saw || hasArg(c, helper)
+		}
+		if saw != signedIn {
+			t.Errorf("signed in %v: helper used %v", signedIn, saw)
+		}
+	}
+	// No gh at all: the public clone still works.
+	opts := o.opts(t.TempDir())
+	opts.GitHubCLI = true
+	opts.LookPath = func(n string) (string, error) {
+		if n == "git" {
+			return exec.LookPath("git")
+		}
+		return "", errors.New("not found")
+	}
+	if _, err := Sync(context.Background(), repo(), opts); err != nil {
+		t.Fatalf("no gh: %v", err)
+	}
+}

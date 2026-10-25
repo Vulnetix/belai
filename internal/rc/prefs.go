@@ -59,7 +59,7 @@ func (d *Daemon) setProjectPrefs(r sessionsync.Dispatch) (string, string) {
 	if !d.o.ProjectSettings {
 		return "", "this host does not let the website change project settings; start belai rc with --web-project-settings"
 	}
-	dir, ok := Allowed(d.o.Dirs, r.Cwd)
+	dir, ok := Allowed(d.dirs(), r.Cwd)
 	if !ok {
 		return "", "that directory is not offered by belai rc on this host"
 	}

@@ -59,7 +59,7 @@ func TestSettingsPageListsEveryGlobalOnlyRow(t *testing.T) {
 		}
 		var named bool
 		switch {
-		case r.key == "auto_commit_per_task", r.key == "plan_limits", strings.HasPrefix(r.key, "firewall."):
+		case r.key == "auto_commit_per_task", r.key == "plan_limits", r.key == "agents.clone", strings.HasPrefix(r.key, "firewall."):
 			named = strings.Contains(doc, "`"+r.label+"`")
 		case strings.HasPrefix(r.key, "tests."):
 			named = strings.Contains(doc, "every `test …`")
