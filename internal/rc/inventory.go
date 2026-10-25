@@ -267,6 +267,7 @@ func reportWorkers(all []fleet.Record, logDir string, now time.Time) []sessionsy
 			Item: r.Item, Project: r.Project, Session: r.Session, Started: r.Started,
 			Beat: r.Beat, Stopped: r.Stopped, Reason: sessionsync.CleanLogLine(r.Reason),
 			Done: r.Done, Failed: r.Failed, Branch: r.Branch,
+			Tokens: r.Tokens, CostMicroUSD: r.CostMicroUSD, CostLive: r.CostLive,
 		}
 		if fleet.ValidID(r.ID) {
 			for _, l := range logTail(filepath.Join(logDir, r.ID+".log"), sessionsync.RCWorkerLogLines) {

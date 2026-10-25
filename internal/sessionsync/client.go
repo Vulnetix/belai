@@ -442,6 +442,13 @@ type RCWorker struct {
 	Done    int    `json:"done"`
 	Failed  int    `json:"failed"`
 	Branch  string `json:"branch,omitempty"`
+	// Tokens and CostMicroUSD are the worker's spend over its finished items
+	// (estimated cost, millionths of a dollar; zero for an unpriced model), and
+	// CostLive the item in hand's so far. They only grow while the worker
+	// lives, so the server can charge the difference to the factory's budgets.
+	Tokens       int   `json:"tokens,omitempty"`
+	CostMicroUSD int64 `json:"costMicroUsd,omitempty"`
+	CostLive     int64 `json:"costLive,omitempty"`
 	// Log is the tail of the worker's own log file, startup included:
 	// harness lines and the detached process's stderr, each cleaned by
 	// CleanLogLine. Never a transcript: model output goes to the session.
