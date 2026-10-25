@@ -22,6 +22,13 @@ concurrency:
 env:
   # Force JS actions to Node 24 so deprecated Node 20 runs stop firing.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Models and binaries pass between jobs through the S3 stage, not Actions artifacts, which are
+  # billed in GB-hours per month (github-runner-aws README, "Staging large hand-offs in S3"). The
+  # role is assumed through OIDC and can read and write only this repository's prefix; objects
+  # expire after a day. Release assets, which users install from, are unchanged.
+  STAGE_BUCKET: vulnetix-gha-stage-061882422009
+  STAGE_PREFIX: ${{ github.event.repository.name }}/${{ github.run_id }}
+  STAGE_ROLE: arn:aws:iam::061882422009:role/gha-stage-${{ github.event.repository.name }}
 
 jobs:
   version:
@@ -48,6 +55,9 @@ jobs:
     needs: version
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v5
 
@@ -81,12 +91,15 @@ jobs:
       - name: Prepare models
         run: go run ./tools/modelprep -python python -phase1 -phase2
 
-      - uses: actions/upload-artifact@v6
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          name: models
-          path: internal/mlclassify/assets/*
-          # Only the build job below reads these, in this same run.
-          retention-days: 1
+          role-to-assume: ${{ env.STAGE_ROLE }}
+          aws-region: ap-southeast-2
+      # Only the build job below reads these, in this same run.
+      - name: Stage models
+        run: |
+          set -euo pipefail
+          tar -czf - -C internal/mlclassify/assets . | aws s3 cp - "s3://$STAGE_BUCKET/$STAGE_PREFIX/models.tgz"
 
   # Belai is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
   # Linux box. Each variant family is built for all six targets.
@@ -94,6 +107,9 @@ jobs:
     needs: [version, models]
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -104,10 +120,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/download-artifact@v7
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          name: models
-          path: internal/mlclassify/assets
+          role-to-assume: ${{ env.STAGE_ROLE }}
+          aws-region: ap-southeast-2
+      - name: Fetch the staged models
+        run: |
+          set -euo pipefail
+          mkdir -p internal/mlclassify/assets
+          aws s3 cp "s3://$STAGE_BUCKET/$STAGE_PREFIX/models.tgz" - | tar -xzf - -C internal/mlclassify/assets
 
       # The speech model every variant embeds for voice input. The key follows
       # the checksum pinned in the source, so a changed model cannot slip into
@@ -172,19 +193,21 @@ jobs:
             build_target "$variant" windows arm64 ".exe"
           done
 
-      - uses: actions/upload-artifact@v6
-        with:
-          name: binaries
-          path: bin/*
-          # About 4 GB a release: only the release job reads it, in this same run.
-          retention-days: 1
+      # About 4 GB a release: only the release job reads it, in this same run.
+      - name: Stage binaries
+        run: |
+          set -euo pipefail
+          tar -czf - -C bin . | aws s3 cp - "s3://$STAGE_BUCKET/$STAGE_PREFIX/binaries.tgz"
 
   release:
     needs: [version, build]
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
-    # The binaries artifact is about 3.4 GB; on a local podman runner its
-    # download alone ran past 20 minutes and v0.109.0's release was cancelled.
+    # The binaries are about 3.4 GB; on a local podman runner their download alone ran past 20
+    # minutes and v0.109.0's release was cancelled.
     timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
     outputs:
       version: ${{ needs.version.outputs.version }}
     steps:
@@ -192,10 +215,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v7
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
-          name: binaries
-          path: bin
+          role-to-assume: ${{ env.STAGE_ROLE }}
+          aws-region: ap-southeast-2
+      - name: Fetch the staged binaries
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          aws s3 cp "s3://$STAGE_BUCKET/$STAGE_PREFIX/binaries.tgz" - | tar -xzf - -C bin
 
       # Ship the installer with the release so a vanity host can redirect to
       # releases/latest/download/install.sh, and so the script that fetches a
@@ -229,30 +257,6 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # binaries (about 3.6 GB) and models (about 400 MB) are read only by build and
-  # release, so they go as soon as release succeeds. retention-days: 1 alone was
-  # not enough: three releases on 2026-10-24 filled the org's artifact quota and
-  # other repos' uploads failed with "Artifact storage quota has been hit". A
-  # failed release keeps them for its one day, so a rerun can still read them.
-  delete-artifacts:
-    needs: release
-    if: always() && needs.release.result == 'success'
-    runs-on: [self-hosted, Linux, X64, vulnetix-local]
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Delete the binaries and models artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
-            --jq '.artifacts[] | select(.name == "binaries" or .name == "models") | .id' \
-            | while read -r id; do
-                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
-                echo "deleted artifact $id"
-              done
 
   # SLSA v1 build provenance for every binary in the release, signed and
   # verified by the reusable workflow in Vulnetix/cli (the cli release uses the
