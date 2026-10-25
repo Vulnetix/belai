@@ -34,11 +34,13 @@ type fakeServer struct {
 	sessions map[string]SessionMeta
 	entries  map[string]map[int64]Entry
 	ended    map[string]bool
-	beats    int
-	inbox    []RemotePrompt
-	answers  []RemoteAnswer
-	drafts   []RemoteDraft
-	commands []RemoteCommand
+	// endBodies is each end call's body, "" when it sent none.
+	endBodies map[string]string
+	beats     int
+	inbox     []RemotePrompt
+	answers   []RemoteAnswer
+	drafts    []RemoteDraft
+	commands  []RemoteCommand
 	// cmdState holds each command ack's state, by command id.
 	cmdState map[string]string
 	// results holds each posted draft result body, by draft id.
@@ -55,7 +57,7 @@ type fakeServer struct {
 
 func newFake() *fakeServer {
 	return &fakeServer{hosts: map[string]Host{}, sessions: map[string]SessionMeta{},
-		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, acks: map[string]string{},
+		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, endBodies: map[string]string{}, acks: map[string]string{},
 		results: map[string]map[string]any{}, cmdState: map[string]string{}}
 }
 
@@ -124,6 +126,8 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(map[string]any{"ok": true, "controls": f.controls})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "end":
 		f.ended[parts[1]] = true
+		b, _ := io.ReadAll(r.Body)
+		f.endBodies[parts[1]] = string(b)
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && parts[0] == "agent-drafts":
 		if f.conflictDrafts {
@@ -881,5 +885,66 @@ func TestEphemeralOriginReachTheRegistration(t *testing.T) {
 	b, _ := json.Marshal(SessionMeta{HostID: "h"})
 	if strings.Contains(string(b), "ephemeral") || strings.Contains(string(b), "origin") {
 		t.Fatalf("an ordinary session's meta = %s", b)
+	}
+}
+
+// The end call says why: a replaced session was superseded, and Close sends
+// what the runner last recorded for the live one.
+func TestEndCarriesTheReason(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	dir := t.TempDir()
+	const second = "33333333-3333-4333-8333-333333333333"
+	p1, p2 := filepath.Join(dir, "1.jsonl"), filepath.Join(dir, "2.jsonl")
+	appendLines(t, p1, line("a", "user", "1"))
+	appendLines(t, p2, line("b", "user", "2"))
+
+	s := startSyncer(t, srv, false)
+	s.Activate(SessionInfo{ID: testSess, Path: p1})
+	eventually(t, "first session", func() bool { return fake.count(testSess) == 1 })
+	s.SetEndReason(EndInfo{Reason: EndCompleted})
+	s.Activate(SessionInfo{ID: second, Path: p2})
+	eventually(t, "first ended", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.ended[testSess] })
+	eventually(t, "second session", func() bool { return fake.count(second) == 1 })
+	s.SetEndReason(EndInfo{Reason: EndTimeout, Error: "wall budget of 30m reached"})
+	s.Close(time.Second)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	var first, last EndInfo
+	if err := json.Unmarshal([]byte(fake.endBodies[testSess]), &first); err != nil || first.Reason != EndSuperseded {
+		t.Fatalf("replaced session's end = %q", fake.endBodies[testSess])
+	}
+	if err := json.Unmarshal([]byte(fake.endBodies[second]), &last); err != nil || last.Reason != EndTimeout || last.Error != "wall budget of 30m reached" {
+		t.Fatalf("live session's end = %q", fake.endBodies[second])
+	}
+}
+
+// An end with nothing to say sends no body, as before.
+func TestEndWithNothingSendsNoBody(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.End(context.Background(), testSess); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("é", 900)
+	if err := c.EndWith(context.Background(), "44444444-4444-4444-8444-444444444444", EndInfo{Reason: EndError, Error: long}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.endBodies[testSess] != "" {
+		t.Fatalf("body %q", fake.endBodies[testSess])
+	}
+	var got EndInfo
+	_ = json.Unmarshal([]byte(fake.endBodies["44444444-4444-4444-8444-444444444444"]), &got)
+	if n := len([]rune(got.Error)); n != maxEndError || got.Reason != EndError {
+		t.Fatalf("error cut to %d runes, reason %q", n, got.Reason)
 	}
 }

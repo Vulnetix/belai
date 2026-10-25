@@ -984,9 +984,59 @@ func (c *Client) HeartbeatControls(ctx context.Context, sessionID string) (Contr
 	return out.Controls, err
 }
 
-// End moves the session into History.
+// End reasons a host reports when it ends a session (vdb-site
+// handler/belai_session_finished.go). The server announces each as its own
+// event (belai.session.ended.<outcome>), so a notification says "timed out"
+// or "token budget exhausted" rather than "finished". "" sends no reason and
+// the server works one out from the transcript.
+const (
+	EndCompleted      = "completed"
+	EndError          = "error"
+	EndInterrupted    = "interrupted"
+	EndUserStop       = "user_stop"
+	EndTimeout        = "timeout"
+	EndBudgetExceeded = "budget_exceeded"
+	EndMaxTurns       = "max_turns"
+	EndRateLimited    = "rate_limited"
+	EndQuotaExceeded  = "quota_exceeded"
+	EndAuthFailed     = "auth_failed"
+	EndGoalComplete   = "goal_complete"
+	EndGoalPaused     = "goal_paused"
+	EndSuperseded     = "superseded"
+	EndHostShutdown   = "host_shutdown"
+	EndUnknown        = "unknown"
+)
+
+// maxEndError caps the error text an end carries; the server keeps 500.
+const maxEndError = 500
+
+// EndInfo is why a session ended. Error is the text the person was shown,
+// never a secret; ExitCode is a process's exit status when one ended it.
+type EndInfo struct {
+	Reason   string `json:"reason,omitempty"`
+	Error    string `json:"error,omitempty"`
+	ExitCode *int   `json:"exitCode,omitempty"`
+}
+
+// empty reports whether the end says nothing.
+func (e EndInfo) empty() bool { return e.Reason == "" && e.Error == "" && e.ExitCode == nil }
+
+// End moves the session into History, saying nothing of why.
 func (c *Client) End(ctx context.Context, sessionID string) error {
-	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/end", nil, nil, requestTimeout)
+	return c.EndWith(ctx, sessionID, EndInfo{})
+}
+
+// EndWith moves the session into History and says why it ended. A server
+// that predates the body ignores it.
+func (c *Client) EndWith(ctx context.Context, sessionID string, info EndInfo) error {
+	var in any
+	if !info.empty() {
+		if r := []rune(info.Error); len(r) > maxEndError {
+			info.Error = string(r[:maxEndError-1]) + "…"
+		}
+		in = info
+	}
+	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/end", in, nil, requestTimeout)
 }
 
 // Inbox long-polls for web prompts and web answers addressed to sessionID, a

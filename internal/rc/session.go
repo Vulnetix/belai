@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/commandlib"
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/libitem"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/run"
@@ -773,13 +774,21 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 	}
 	res, err := agentRunner.RunInputObserved(ctx, history, in, emit)
 	state := "ended"
+	end := sessionsync.EndInfo{Reason: sessionsync.EndCompleted}
 	switch {
 	case ctx.Err() != nil:
 		state = "interrupted"
+		end = sessionsync.EndInfo{Reason: sessionsync.EndInterrupted}
 	case err != nil:
 		state = "error"
+		end = sessionsync.EndInfo{Reason: fleet.EndReason(err), Error: err.Error()}
 		o.Log.System("turn failed: " + err.Error())
 		fmt.Fprintf(o.Out, "rc-session: turn failed: %v\n", err)
+	}
+	// Why the session would end if this were its last turn (the end call
+	// carries it; vdb-site names the notification after it).
+	if m, ok := o.Mirror.(interface{ SetEndReason(sessionsync.EndInfo) }); ok {
+		m.SetEndReason(end)
 	}
 	o.Log.TurnEnded(state, facts)
 	o.Mirror.Nudge()

@@ -149,6 +149,9 @@ type Syncer struct {
 	remoteAnswers bool
 	ctlState      json.RawMessage
 	ctlGen        int
+	// ends is why each session ended, as the session runner last said
+	// (SetEndReason), sent with its end call.
+	ends map[string]EndInfo
 }
 
 // New builds a Syncer. Call Start to run it.
@@ -371,6 +374,46 @@ func (s *Syncer) Status() Status {
 
 // Close flushes what the file holds, ends the live session and stops, waiting
 // at most timeout.
+// SetEndReason records why the live session would end if it ended now: the
+// runner calls it after every turn (completed, error, interrupted, a budget),
+// so the end call says how the session's last turn went. A session with
+// nothing recorded ends with no reason and the server reads the transcript.
+func (s *Syncer) SetEndReason(info EndInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.live == "" {
+		return
+	}
+	if s.ends == nil {
+		s.ends = map[string]EndInfo{}
+	}
+	s.ends[s.live] = info
+}
+
+// endInfo takes what was recorded for id; fallback is used when nothing was.
+func (s *Syncer) endInfo(id, fallback string) EndInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	info, ok := s.ends[id]
+	delete(s.ends, id)
+	if !ok {
+		return EndInfo{Reason: fallback}
+	}
+	return info
+}
+
+// end ends id with the reason recorded for it.
+func (s *Syncer) end(ctx context.Context, id string) error {
+	return s.opts.Client.EndWith(ctx, id, s.endInfo(id, ""))
+}
+
+// endReplaced ends id because another session took its place, whatever its
+// last turn said.
+func (s *Syncer) endReplaced(ctx context.Context, id string) error {
+	_ = s.endInfo(id, "")
+	return s.opts.Client.EndWith(ctx, id, EndInfo{Reason: EndSuperseded})
+}
+
 func (s *Syncer) Close(timeout time.Duration) {
 	s.closeOnce.Do(func() {
 		s.closing <- timeout
@@ -430,7 +473,7 @@ func (s *Syncer) run(ctx context.Context) {
 					s.sendAcks(fctx, &pendingAcks)
 				}
 				if cur.registered {
-					_ = s.opts.Client.End(fctx, cur.info.ID)
+					_ = s.end(fctx, cur.info.ID)
 				}
 			}
 			cancel()
@@ -448,7 +491,8 @@ func (s *Syncer) run(ctx context.Context) {
 					fctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 					defer cancel()
 					_ = s.upload(fctx, prev)
-					_ = s.opts.Client.End(fctx, prev.info.ID)
+					// Another session took this one's place.
+					_ = s.endReplaced(fctx, prev.info.ID)
 				}()
 			}
 			cur = &tail{info: info, serverLast: -1}
@@ -512,7 +556,7 @@ func (s *Syncer) takeQueued(ctx context.Context, cur *tail, pending *[]ack) *tai
 			}
 			if cur != nil && cur.registered {
 				_ = s.upload(ctx, cur)
-				_ = s.opts.Client.End(ctx, cur.info.ID)
+				_ = s.endReplaced(ctx, cur.info.ID)
 			}
 			cur = &tail{info: info, serverLast: -1}
 		case m := <-s.meta:

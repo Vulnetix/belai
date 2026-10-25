@@ -11,6 +11,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -189,6 +190,37 @@ func (a *App) closeTurn(state string) {
 	}
 	a.turnEnd = state
 	a.turnEndAt = time.Now()
+	// Why the session would end if this were its last turn. A failed turn has
+	// already said why, with its error (noteTurnError).
+	switch state {
+	case "ended":
+		a.noteEnd(sessionsync.EndInfo{Reason: sessionsync.EndCompleted})
+	case "interrupted":
+		a.noteEnd(sessionsync.EndInfo{Reason: sessionsync.EndInterrupted})
+	case "superseded":
+		a.noteEnd(sessionsync.EndInfo{Reason: sessionsync.EndSuperseded})
+	case "error":
+		if !a.turnErrNoted {
+			a.noteEnd(sessionsync.EndInfo{Reason: sessionsync.EndError})
+		}
+	}
+	a.turnErrNoted = false
+}
+
+// noteEnd tells the session mirror why the session would end now.
+func (a *App) noteEnd(info sessionsync.EndInfo) {
+	if a.syncer != nil {
+		a.syncer.SetEndReason(info)
+	}
+}
+
+// noteTurnError records a failed turn's reason and error for the end call.
+func (a *App) noteTurnError(err error) {
+	if err == nil {
+		return
+	}
+	a.noteEnd(sessionsync.EndInfo{Reason: fleet.EndReason(err), Error: err.Error()})
+	a.turnErrNoted = true
 }
 
 // flushTurnEnd writes a pending turn end. persistTail and the tick call it.

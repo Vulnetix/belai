@@ -361,6 +361,17 @@ and the inbox run on the syncer's own goroutines.
   resumed file is. The origin session is not touched and keeps syncing.
 - **Moving to History.** Quitting the TUI, `/clear`, a resume of another
   session and `/sync off` all end the session, which moves it to History.
+- **The end says why.** `POST /sessions/{id}/end` carries
+  `{"reason", "error", "exitCode"}` when the host knows why the session ended:
+  after every turn the TUI and `belai rc-session` record `completed`,
+  `interrupted`, or the failed turn's reason (`rate_limited`, `quota_exceeded`,
+  `auth_failed`, `timeout`, `budget_exceeded`, `max_turns`, else `error`, from
+  `fleet.EndReason`) with its error text (`Syncer.SetEndReason`). A session
+  another one replaces ends `superseded`. Nothing recorded sends no body, and a
+  backfilled session sends none; the server then reads the reason from the
+  transcript. The website names its notification after the reason ("Session
+  timed out", "Provider rate limit"), not merely "finished"
+  (`TestEndCarriesTheReason`).
 - **A session that ends at once is still kept.** Closing the syncer takes the
   activation that was queued ahead of it, registers the session if it is not yet,
   uploads every line and ends it, in that order. A fast fleet-worker turn that

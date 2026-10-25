@@ -152,3 +152,30 @@ func faultForStatus(status int) Fault {
 // transientProviderError reports whether err is the model provider refusing the
 // call for its own reasons, which says nothing about the item.
 func transientProviderError(err error) bool { return classifyErr(err).Outage }
+
+// EndReason is the session end reason (sessionsync.End*) of a turn that
+// failed with err: the provider's rate limit, quota or key, a budget or a
+// timeout when the fault says so, else a plain error.
+func EndReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch classifyErr(err).Code {
+	case FaultRateLimit:
+		return "rate_limited"
+	case FaultQuota:
+		return "quota_exceeded"
+	case FaultAuth:
+		return "auth_failed"
+	case FaultWallBudget:
+		return "timeout"
+	case FaultTokenBudget:
+		return "budget_exceeded"
+	case FaultMaxPasses:
+		return "max_turns"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return "error"
+}
