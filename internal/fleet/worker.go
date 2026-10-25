@@ -1231,7 +1231,11 @@ func (w *Worker) workspace(ctx context.Context, it kanban.Item) (*Workspace, err
 		if w.Profile.Workspace != nil {
 			base = w.Profile.Workspace.Base
 		}
-		return PrepareWorktree(ctx, w.Repo, it, base)
+		ws, err := PrepareWorktree(ctx, w.Repo, it, base)
+		if ws != nil {
+			ws.Session = w.Record.Session
+		}
+		return ws, err
 	default:
 		return SharedWorkspace(w.Repo), nil
 	}

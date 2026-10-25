@@ -16,6 +16,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
@@ -1076,7 +1077,7 @@ func rcAfterTurn(ctx context.Context, ctl *rc.Controller, settings config.Settin
 		pol = posture.AllIgnore()
 	}
 	if st.AutoCommit && res.GoalSentinel == rolemanager.GoalComplete && len(paths) > 0 {
-		msg := forge.TaskCommitMessage(firstLine(prompt, 200), paths)
+		msg := attribution.Message(forge.TaskCommitMessage(firstLine(prompt, 200), paths), sessionID)
 		sha, err := forge.CommitPaths(ctx, forge.NonInteractiveRunner, cwd, paths, msg)
 		switch {
 		case err != nil:

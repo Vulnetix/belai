@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -82,6 +83,8 @@ type Workspace struct {
 	pending *pendingRequest
 	filedMu sync.Mutex
 	filed   map[string]bool
+	// Session is the Belai session doing the work, named in the Session trailer of what the harness commits.
+	Session string
 }
 
 func randHex(n int) string {
@@ -310,7 +313,7 @@ func (w *Workspace) Commit(ctx context.Context, msg string) (int, error) {
 	if len(paths) > MaxHarnessCommitPaths {
 		return 0, fmt.Errorf("the worktree holds %d uncommitted paths, more than %d, which looks like a cache or build output left in the repository; it was not committed", len(paths), MaxHarnessCommitPaths)
 	}
-	sha, err := forge.CommitPaths(ctx, w.run, w.Dir, paths, msg)
+	sha, err := forge.CommitPaths(ctx, w.run, w.Dir, paths, attribution.Message(msg, w.Session))
 	if err != nil || sha == "" {
 		return 0, err
 	}
@@ -644,6 +647,7 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	if w.FilesChanged(ctx) == 0 {
 		return "", w.nothingToPublish(ctx)
 	}
+	w.ensureAttribution(ctx)
 	// A failure that is the machine's or the forge's (a refused or missing
 	// credential, a rate limit, a server error, no gh) hands the branch to the
 	// forge coordinator when one is set; a failure that is the branch's never
@@ -814,8 +818,8 @@ func (w *Workspace) CloseDuplicatePR(ctx context.Context, number, keep int, reas
 	if err != nil {
 		return closed, kept, err
 	}
-	comment := fmt.Sprintf("Closed as a duplicate of #%d. %s", keep, reason)
-	if err := p.ClosePR(ctx, w.Dir, number, strings.TrimSpace(comment)); err != nil {
+	comment := attribution.Markdown(strings.TrimSpace(fmt.Sprintf("Closed as a duplicate of #%d. %s", keep, reason)), w.Session)
+	if err := p.ClosePR(ctx, w.Dir, number, comment); err != nil {
 		return closed, kept, err
 	}
 	if closed.Branch == w.Branch {

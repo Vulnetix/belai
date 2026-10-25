@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/forge"
@@ -82,7 +83,7 @@ func (a *App) flushAutoCommit(res run.Result) tea.Cmd {
 	workdir := a.workdir
 	objective := a.lastGoal.Objective
 	runner := a.forgeRun()
-	msg := forge.TaskCommitMessage(objective, paths)
+	msg := attribution.Message(forge.TaskCommitMessage(objective, paths), a.sessionID)
 
 	return func() tea.Msg {
 		sha, err := forge.CommitPaths(context.Background(), runner, workdir, paths, msg)

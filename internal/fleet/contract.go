@@ -129,7 +129,7 @@ func workspaceDirective(ws *Workspace, publish bool, mode string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Workspace: your working directory is a git worktree on branch %s, made for this item from commit %s. ", ws.Branch, base)
 	fmt.Fprintf(&b, "git works here: status, diff, log, show, add and commit. Commit your work on this branch as you go, with clear messages; `git diff %s..HEAD` is everything this item has changed so far. ", base)
-	b.WriteString("Stay on this branch: do not switch or create branches, rebase onto other branches, add worktrees, or change git config or remotes. Anything you leave uncommitted, the harness commits when the goal ends. ")
+	b.WriteString("Stay on this branch: do not switch or create branches, rebase onto other branches, add worktrees, or change git config or remotes. Anything you leave uncommitted, the harness commits when the goal ends. Commit trailers (Co-authored-by, Signed-off-by, Session, Vulnerability) are added for you: never write, edit or remove them. ")
 	switch {
 	case publish:
 		b.WriteString("Publishing: when the work is committed and verified, call " + tools.PublishBranchName + " with a pull request title and a description of what changed and how you verified it, to push this branch to origin and open a draft pull request (it returns the one already open, and pushes new commits when called again). `git push`, `gh pr create` and `glab mr create` are not available; " + tools.PublishBranchName + " is the only way to push.")
