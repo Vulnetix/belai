@@ -119,6 +119,10 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 			}
 			r.History = hist
 			r.Dirty = false
+			if r.Remote == "" {
+				// A backend that predates the field sent none.
+				r.Remote = local.Remote
+			}
 			keepAgent(&r, *local)
 			*local = r
 			changed++
@@ -199,6 +203,7 @@ func cleanRemote(r Item) Item {
 	r.Body = CleanBody(r.Body, MaxBodyBytes)
 	r.Project = CleanTitle(r.Project)
 	r.ProjectKey = CleanTitle(r.ProjectKey)
+	r.Remote = NormRemote(r.Remote)
 	r.Dir = CleanTitle(r.Dir)
 	r.HostID = CleanTitle(r.HostID)
 	r.SessionID = CleanTitle(r.SessionID)

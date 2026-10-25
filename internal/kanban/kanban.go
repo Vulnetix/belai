@@ -97,9 +97,14 @@ type Item struct {
 	// Provenance, stamped by the harness when the item was added.
 	Project    string
 	ProjectKey string
-	Dir        string
-	HostID     string
-	SessionID  string
+	// Remote is owner/name of the origin remote of the checkout the item was
+	// filed in, lower-cased; "" outside a forge checkout. ProjectKey is a
+	// local path's key and differs on every machine; a worker in another
+	// checkout of the same repository claims by Remote.
+	Remote    string
+	Dir       string
+	HostID    string
+	SessionID string
 
 	Created int64 // unix ms
 	Updated int64 // unix ms
@@ -221,7 +226,10 @@ type Provenance struct {
 	HostID     string
 	Project    string
 	ProjectKey string
-	Dir        string
+	// Remote is the checkout's origin as owner/name, lower-cased (NormRemote);
+	// "" outside a forge checkout.
+	Remote string
+	Dir    string
 }
 
 // ItemInput is a new item's content.
@@ -718,7 +726,7 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 		}
 		out = Item{
 			ID: id, Title: title, Body: body, List: list,
-			Project: CleanTitle(prov.Project), ProjectKey: prov.ProjectKey, Dir: prov.Dir,
+			Project: CleanTitle(prov.Project), ProjectKey: prov.ProjectKey, Remote: NormRemote(prov.Remote), Dir: prov.Dir,
 			HostID: prov.HostID, SessionID: prov.SessionID,
 			Created: now, Updated: now, Dirty: true,
 			Labels: NormLabels(in.Labels), Priority: ClampPriority(in.Priority), Assignee: assignee,

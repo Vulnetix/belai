@@ -238,7 +238,7 @@ func (s *Syncer) pullAll(ctx context.Context) error {
 func ToWire(it Item) sessionsync.KanbanItem {
 	w := sessionsync.KanbanItem{
 		ID: it.ID, Title: it.Title, Body: it.Body, List: string(it.List),
-		Project: it.Project, ProjectKey: it.ProjectKey, Cwd: it.Dir,
+		Project: it.Project, ProjectKey: it.ProjectKey, Remote: it.Remote, Cwd: it.Dir,
 		HostID: it.HostID, SessionID: it.SessionID,
 		CreatedAt: it.Created, UpdatedAt: it.Updated,
 		Version: it.ServerVersion, Deleted: it.Deleted,
@@ -262,7 +262,7 @@ func ToWire(it Item) sessionsync.KanbanItem {
 func FromWire(w sessionsync.KanbanItem) Item {
 	it := Item{
 		ID: w.ID, Title: w.Title, Body: w.Body, List: List(w.List),
-		Project: w.Project, ProjectKey: w.ProjectKey, Dir: w.Cwd,
+		Project: w.Project, ProjectKey: w.ProjectKey, Remote: w.Remote, Dir: w.Cwd,
 		HostID: w.HostID, SessionID: w.SessionID,
 		Created: w.CreatedAt, Updated: w.UpdatedAt,
 		ServerVersion: w.Version, Deleted: w.Deleted,

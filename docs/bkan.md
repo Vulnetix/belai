@@ -77,7 +77,7 @@ kanban.Board{Cursor: 7, Items: []kanban.Item{{
 
 When the format was version 1, `kanban.Encode` turned it into 519 bytes, and
 that capture is what the dumps below show. Today `Encode` writes version 4 and
-the same board is 1022 bytes, because `Item` has gained fields and the schema is
+the same board is 1033 bytes, because `Item` has gained fields and the schema is
 sent with every file (see [Size](#size)). The version 1 file is still valid: it
 is read, and its missing fields decode as zero. Here are the 519 bytes, with the
 sections marked.
@@ -173,8 +173,8 @@ The full specification is the Go package documentation for `encoding/gob`.
 
 | Board | Bytes |
 |---|---|
-| empty | 908: 6 header, 870 payload (the schema alone), 32 checksum |
-| the one-item example above | 1022 (519 when the format was version 1) |
+| empty | 919: 6 header, 881 payload (the schema alone), 32 checksum |
+| the one-item example above | 1033 (519 when the format was version 1) |
 | a typical item after that | roughly 150–600 more, mostly its text |
 
 The schema is written once per file, not once per item. Each `Encode`
@@ -212,6 +212,7 @@ type Item struct {
 	// Provenance, stamped by the harness when the item was added.
 	Project    string
 	ProjectKey string
+	Remote     string // owner/name of the origin remote, lower case
 	Dir        string
 	HostID     string
 	SessionID  string
@@ -295,6 +296,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `List` | The current list. | model, user or web |
 | `Project` | The `origin` repository name, or the repository directory's name. | the harness |
 | `ProjectKey` | The repository root's workdir key: its basename plus a hash, the same key session sync uses. | the harness |
+| `Remote` | The `origin` remote as `owner/name` in lower case, or empty outside a forge checkout. Unlike `ProjectKey` it is the same on every machine, so a worker in another checkout of the repository claims the item. A file written before the field existed decodes it as empty, and an older Belai that rewrites the board drops it, which only narrows that host's claims back to the key; no version bump. | the harness |
 | `Dir` | The absolute directory the item was filed from. | the harness |
 | `HostID` | The install's sync host id (`sync/host-id`), or empty. | the harness |
 | `SessionID` | The session that added the item, or empty when it was added on the web. | the harness |
@@ -547,6 +549,7 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `List` | `list` | |
 | `Project` | `project` | |
 | `ProjectKey` | `projectKey` | |
+| `Remote` | `remote` | Omitted when empty. A pull without it, from a backend that predates it, keeps the host's own value; a malformed one is dropped. |
 | `Dir` | `cwd` | |
 | `HostID` | `hostId` | |
 | `SessionID` | `sessionId` | |

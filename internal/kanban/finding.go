@@ -199,7 +199,7 @@ func (s *Store) UpsertFinding(in FindingInput, prov Provenance) (Item, FindingCh
 		}
 		item := Item{
 			ID: nid, Title: title, Body: CleanBody(in.Body, MaxBodyBytes), List: Backlog,
-			Project: CleanTitle(prov.Project), ProjectKey: prov.ProjectKey, Dir: prov.Dir,
+			Project: CleanTitle(prov.Project), ProjectKey: prov.ProjectKey, Remote: NormRemote(prov.Remote), Dir: prov.Dir,
 			HostID: prov.HostID, SessionID: prov.SessionID,
 			Created: now, Updated: now, Dirty: true,
 			Labels: NormLabels(in.Labels), Priority: ClampPriority(in.Priority), Parent: parent,

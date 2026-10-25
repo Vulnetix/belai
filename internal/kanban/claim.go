@@ -192,6 +192,11 @@ type ClaimRequest struct {
 	Crew string
 	// Project limits the claim to one project (name or key); empty is any.
 	Project string
+	// Remote is the worker's checkout's origin as owner/name (NormRemote).
+	// With Project set, an item filed in another checkout of the same
+	// repository (on this machine or another) also matches: its Remote, or a
+	// Project the Software Factory wrote as owner/name, equals this one.
+	Remote string
 	// Worker is the worker instance id; Host its sync host id.
 	Worker string
 	Host   string
@@ -334,7 +339,7 @@ func (r ClaimRequest) matches(b *Board, hold holdIndex, it Item, now int64) bool
 		return false
 	case it.PinHost != "" && it.PinHost != r.Host:
 		return false
-	case r.Project != "" && !strings.EqualFold(it.Project, r.Project) && it.ProjectKey != r.Project:
+	case r.Project != "" && !r.sameRepository(it):
 		return false
 	case slices.Contains(r.Skip, it.ID):
 		return false
@@ -345,6 +350,20 @@ func (r ClaimRequest) matches(b *Board, hold holdIndex, it Item, now int64) bool
 		}
 	}
 	return depsDone(b, it)
+}
+
+// sameRepository reports whether an item belongs to the claim's project: by
+// name or key as before, or by the repository's remote, so the key of one
+// machine's checkout never keeps another machine's worker from the card.
+func (r ClaimRequest) sameRepository(it Item) bool {
+	if strings.EqualFold(it.Project, r.Project) || it.ProjectKey == r.Project {
+		return true
+	}
+	rem := NormRemote(r.Remote)
+	if rem == "" {
+		return false
+	}
+	return NormRemote(it.Remote) == rem || NormRemote(it.Project) == rem
 }
 
 func claimLocked(it *Item, r ClaimRequest, now int64) {

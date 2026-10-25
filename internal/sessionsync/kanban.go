@@ -23,20 +23,24 @@ type KanbanMove struct {
 // KanbanItem is a kanban item on the wire. Version is the server's; the host
 // sends the last one it saw.
 type KanbanItem struct {
-	ID         string       `json:"id"`
-	Title      string       `json:"title"`
-	Body       string       `json:"body,omitempty"`
-	List       string       `json:"list"`
-	Project    string       `json:"project,omitempty"`
-	ProjectKey string       `json:"projectKey,omitempty"`
-	Cwd        string       `json:"cwd,omitempty"`
-	HostID     string       `json:"hostId,omitempty"`
-	SessionID  string       `json:"sessionId,omitempty"`
-	CreatedAt  int64        `json:"createdAt"`
-	UpdatedAt  int64        `json:"updatedAt"`
-	History    []KanbanMove `json:"history,omitempty"`
-	Version    int64        `json:"version,omitempty"`
-	Deleted    bool         `json:"deleted,omitempty"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Body       string `json:"body,omitempty"`
+	List       string `json:"list"`
+	Project    string `json:"project,omitempty"`
+	ProjectKey string `json:"projectKey,omitempty"`
+	// Remote is owner/name of the origin remote of the checkout the item was
+	// filed in, lower-cased. A backend that predates it omits it, and the host
+	// keeps its own value.
+	Remote    string       `json:"remote,omitempty"`
+	Cwd       string       `json:"cwd,omitempty"`
+	HostID    string       `json:"hostId,omitempty"`
+	SessionID string       `json:"sessionId,omitempty"`
+	CreatedAt int64        `json:"createdAt"`
+	UpdatedAt int64        `json:"updatedAt"`
+	History   []KanbanMove `json:"history,omitempty"`
+	Version   int64        `json:"version,omitempty"`
+	Deleted   bool         `json:"deleted,omitempty"`
 	// Agent carries the routing and claim fields. It is always sent. A
 	// backend that predates them omits it on a pull, and the host then keeps
 	// its own values rather than clearing them.

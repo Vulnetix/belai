@@ -199,25 +199,29 @@ type Worker struct {
 	// profile's own.
 	Limits *Limits
 
-	now        func() time.Time
-	surveyed   bool   // kanban.survey already considered this start
-	sweptRef   string // HEAD the kanban.security sweep last ran for
-	qualityRef string // HEAD the kanban.quality sweep last ran for
-	lintRef    string // HEAD the kanban.lint sweep last ran for
-	reconciled string // artefact signature the cards were last reconciled against
-	jevOnce    sync.Once
-	fastOnce   sync.Once
-	mu         sync.Mutex
-	saveMu     sync.Mutex       // serialises save: the heartbeat and the worker both stamp and write the record
-	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
-	outages    int              // consecutive items released because the model provider was unavailable
-	ctlSeq     int64            // the last control applied (control.go)
-	pinned     bool             // a human picked the model; the fallback policy leaves it
-	poolFailed map[Target]bool  // pool targets that failed since the last success (pool.go)
-	crewRun    *CrewRun         // the crew run as last read
-	liveTokens atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
-	liveCost   atomic.Int64     // the item in hand's estimated cost so far, µ$ (budget.go)
-	price      priceSlot        // the running turn's model price; nil when unknown (budget.go)
+	now      func() time.Time
+	surveyed bool // kanban.survey already considered this start
+	// claimRemote is the repository's origin as owner/name, set when the worker
+	// claims in its own project: a card filed in another checkout of the same
+	// repository (another machine's, whose project key differs) matches it.
+	claimRemote string
+	sweptRef    string // HEAD the kanban.security sweep last ran for
+	qualityRef  string // HEAD the kanban.quality sweep last ran for
+	lintRef     string // HEAD the kanban.lint sweep last ran for
+	reconciled  string // artefact signature the cards were last reconciled against
+	jevOnce     sync.Once
+	fastOnce    sync.Once
+	mu          sync.Mutex
+	saveMu      sync.Mutex       // serialises save: the heartbeat and the worker both stamp and write the record
+	failures    map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
+	outages     int              // consecutive items released because the model provider was unavailable
+	ctlSeq      int64            // the last control applied (control.go)
+	pinned      bool             // a human picked the model; the fallback policy leaves it
+	poolFailed  map[Target]bool  // pool targets that failed since the last success (pool.go)
+	crewRun     *CrewRun         // the crew run as last read
+	liveTokens  atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
+	liveCost    atomic.Int64     // the item in hand's estimated cost so far, µ$ (budget.go)
+	price       priceSlot        // the running turn's model price; nil when unknown (budget.go)
 	// unpricedLogged is set once the worker logged that its model has no price.
 	unpricedLogged atomic.Bool
 	coordMu        sync.Mutex
@@ -449,6 +453,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		switch strings.ToLower(strings.TrimSpace(p.Kanban.Project)) {
 		case "", "current", ".":
 			_, project = kanban.ProjectFor(w.Repo)
+			w.claimRemote = kanban.RemoteFor(w.Repo)
 		case "all", "*":
 		default:
 			project = p.Kanban.Project
@@ -724,7 +729,7 @@ func sleep(ctx context.Context, d time.Duration) bool {
 func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	k := w.Profile.Kanban
 	r := kanban.ClaimRequest{
-		Profile: w.Profile.Name, Crew: w.Record.Crew, Project: project, Worker: w.Record.ID,
+		Profile: w.Profile.Name, Crew: w.Record.Crew, Project: project, Remote: w.claimRemote, Worker: w.Record.ID,
 		Host: headless.HostID(), SessionID: w.Record.ID, Lease: w.Profile.LeaseDuration(),
 		// The duplicate guard: a finding card waits while another card for the
 		// same finding or package is worked or has a pull request still open.
