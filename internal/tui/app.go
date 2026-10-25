@@ -587,6 +587,8 @@ type App struct {
 	// session sync (session_sync.go): the website mirror of the session file
 	// and the prompts it sends back. nil when sync is off or not logged in.
 	syncer *sessionsync.Syncer
+	// turnErrNoted: the failing turn's error already went to the syncer.
+	turnErrNoted bool
 	// memRepl replicates the shared memory while sync is on.
 	memRepl     *sessionsync.MemoryReplicator
 	audit       *sessionsync.AuditSyncer   // the audit log's upload, started with syncer
@@ -3952,6 +3954,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.addSystem(fmt.Sprintf("context: attached %d file(s) up front — %s", len(m.Paths), strings.Join(m.Paths, ", ")))
 		return a.nextAgent()
 	case agent.EventErrorKind:
+		a.noteTurnError(m.Err)
 		if !a.phaseStartedAt.IsZero() {
 			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
 		}
