@@ -33,6 +33,20 @@ func tokenCredential(t *testing.T, workdir string) {
 	}
 }
 
+// opaqueCredential writes an opaque bearer token: a token login rather than a
+// JWT, so sessionsync.UsableCredential rejects it and the sync client stays nil.
+func opaqueCredential(t *testing.T, workdir string) {
+	t.Helper()
+	dir := filepath.Join(workdir, ".vulnetix")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cred := `{"org_id":"o","method":"token","token":"opaque"}`
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), []byte(cred), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // emptyHome points the credential lookup at a directory with no credentials.
 func emptyHome(t *testing.T) {
 	t.Helper()
@@ -63,6 +77,19 @@ func TestHostID(t *testing.T) {
 			t.Fatalf("HostID() = %q, want \"\" when the global dir cannot be located", id)
 		}
 	})
+
+	// The sync path exists as a regular file, so reading and writing the
+	// host-id file under it fails: sessionsync.HostID's error, not ErrNotExist.
+	t.Run("unreadable host id file returns empty", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("BELAI_HOME", home)
+		if err := os.WriteFile(filepath.Join(home, "sync"), []byte("not a dir"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if id := HostID(); id != "" {
+			t.Fatalf("HostID() = %q, want \"\" when the host id file cannot be read", id)
+		}
+	})
 }
 
 func TestSyncClient(t *testing.T) {
@@ -81,6 +108,14 @@ func TestSyncClient(t *testing.T) {
 		emptyHome(t)
 		if c := SyncClient(syncSettings(true, true), t.TempDir()); c != nil {
 			t.Fatalf("SyncClient() = %+v, want nil with no credential", c)
+		}
+	})
+	t.Run("opaque token credential returns nil", func(t *testing.T) {
+		emptyHome(t)
+		workdir := t.TempDir()
+		opaqueCredential(t, workdir)
+		if c := SyncClient(syncSettings(true, true), workdir); c != nil {
+			t.Fatalf("SyncClient() = %+v, want nil with an opaque token credential", c)
 		}
 	})
 	t.Run("usable credential builds a client", func(t *testing.T) {
@@ -108,6 +143,14 @@ func TestA2ASyncClient(t *testing.T) {
 		emptyHome(t)
 		if c := a2aSyncClient(config.Settings{}, t.TempDir()); c != nil {
 			t.Fatalf("a2aSyncClient() = %+v, want nil with no credential", c)
+		}
+	})
+	t.Run("opaque token credential returns nil", func(t *testing.T) {
+		emptyHome(t)
+		workdir := t.TempDir()
+		opaqueCredential(t, workdir)
+		if c := a2aSyncClient(syncSettings(false, true), workdir); c != nil {
+			t.Fatalf("a2aSyncClient() = %+v, want nil with an opaque token credential", c)
 		}
 	})
 	t.Run("usable credential builds a client without the board setting", func(t *testing.T) {
