@@ -1099,7 +1099,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     - an autonomous worker with Bash needs a working OS sandbox (bubblewrap
       or Landlock).
   - **Asks.** A worker that cannot ask blocks the item with the tool names;
-    it never widens.
+    it never widens. The exceptions are an `autonomous` profile and a worker
+    started with `-ask-off` (a dispatch's `ask: false`), whose asks resolve to
+    allow under the same deny rules, posture and sandbox.
   - **Setup failures.** A workspace that cannot be prepared gets one
     setup-debug turn (`Worker.investigate`) in the trusted repository on the
     profile's `ReadOnlySurface`, because no worktree isolates it. The failure
@@ -1481,7 +1483,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `--web-controls` the website never changes a session's provider, model,
   posture or permissions after the start request, rc refuses to run with
   guardrails off, sessions run with `AllowAsk` false and web answers off
-  (never `AskDisabled`, which would allow every ask); a guardrails-off
+  (never `AskDisabled` unless the settings or the request's `ask: false`
+  say so: the request is the organization's factory setting or the user's
+  Pix Call consent, passed as `-ask` to `rc-session` (`rcAskDisabled`) and as
+  `-ask-off` to `belai agent start` and every worker and crew member it
+  starts, which then needs the autonomous worker's OS sandbox for `Bash`
+  (`fleet.PreflightAskOff`); a pix-assistant start never takes it); a guardrails-off
   project preference is overridden to on for a remote session, never honoured
   without the host's flag. A `pix-assistant` start runs only as one of
   `rc.PixPersonas`, with its tools cut to `rc.PixTools` (read-only), no board,

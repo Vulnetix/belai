@@ -135,6 +135,10 @@ type CrewRun struct {
 	StayIdleMaxSecs int `json:"stay_idle_max_secs,omitempty"`
 	// WebControls lets the website change the workers' controls.
 	WebControls bool `json:"web_controls,omitempty"`
+	// AskOff starts every member with -ask-off: the dispatch that launched
+	// the run said ask: false, so a call that would ask is allowed instead of
+	// blocking the item.
+	AskOff bool `json:"ask_off,omitempty"`
 
 	State      RunState `json:"state"`
 	Reason     string   `json:"reason,omitempty"`

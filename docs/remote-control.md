@@ -123,7 +123,9 @@ directory with the prompt on stdin. It is an ordinary Belai session:
 - **Asks are off.** Nobody is at the terminal, so a tool call that would ask
   is decided by the posture and permission rules, exactly as for
   `belai -prompt`. Web answers are off too. With `--web-controls` the ask
-  control decides instead ([below](#session-controls-from-the-web)).
+  control decides instead ([below](#session-controls-from-the-web)). A start
+  request's `ask` changes this for its one session
+  ([below](#ask-and-trigger-on-a-start-request)).
 - Model and provider are the host's own, resolved the way `belai agent start`
   resolves them: `provider` and `model` in settings, then the model last chosen
   in the TUI (`state.json`), then the built-in default. When `routing.kind` is
@@ -183,7 +185,8 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   website request it answers) and refuses to start without both, with `-mode`
   (`agent`, `plan`, `goal`, `code` or `pix-assistant`, otherwise classified from the prompt), `-idle`,
   `-provider`, `-model` and `-effort`, `-profile` (an agent profile, with `-mode
-  agent`), `-git-sync on|off` and `-add-dir DIR` (repeatable: an extra workspace
+  agent`), `-git-sync on|off`, `-ask on|off` (the request's `ask`, passed only
+  when it sent one) and `-add-dir DIR` (repeatable: an extra workspace
   directory, as `/add-dir`; the daemon passes each only when the web request
   named it, and only if the host offers it) optional. A session with extra
   directories confines its tools to all of them and sends the model a repo map
@@ -208,6 +211,75 @@ sandbox. Without `--max-workers`, an explicit `--max N` is also the worker
 cap, as before. A repository whose settings lower `agents.max_workers` still
 holds its own cap. With neither flag, `agents.max_workers` (default 4)
 applies.
+
+### Ask and trigger on a start request
+
+A dispatch from the long poll (`GET /hosts/{id}/dispatch`) may carry two more
+fields. Both are optional, and a request without them runs exactly as before.
+
+**`ask`** (`true` or `false`, on start, worker and crew requests) is the
+organization's Software Factory setting, or the user's consent on a Pix Call.
+On a start request the daemon passes it as `-ask on|off`, and it replaces the
+`ask_permission` default for that one session, whatever the global settings, `BELAI_ASK_PERMISSION` or the
+project preferences say. It outranks the rule that a project may only turn
+asks on, because it comes from the authenticated organization or the user and
+a repository file cannot speak for either.
+
+- With `--web-controls` it is the ask control the session starts with. The
+  web's `/ask` control changes it afterwards as usual.
+- Without `--web-controls`, `false` resolves every ask to allow, as
+  `ask_permission: false` does. Deny rules, the posture, guardrails and the
+  sandbox still apply. `true` keeps asks from being allowed: a call that would
+  ask is decided by the posture and permission rules, even where the host's
+  settings turn asks off.
+- A pix-assistant start ignores it, and `rc-session` refuses `-ask` in that
+  mode.
+- On a worker or crew request, `false` becomes `belai agent start -ask-off`,
+  passed to every worker it spawns and kept in a crew run's file for the
+  members its supervisor starts later. A worker cannot ask, so a call that
+  would ask is allowed instead of blocking the item. Deny rules, the posture,
+  guardrails and the sandbox still apply, and a worker with `Bash` needs a
+  working OS sandbox, as an `autonomous` one does
+  ([fleet.md](fleet.md#asks)). `true` and no ask keep today's behaviour: the
+  item blocks unless the profile is `autonomous`.
+
+**`trigger`** says what started a start, worker or crew request:
+
+```json
+{"source": "workflow", "via": "webhook", "runId": "r_123", "workflowId": "w_9",
+ "workflowName": "Nightly triage", "event": "pull_request", "action": "opened",
+ "delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+ "subject": "vulnetix/website#12", "repo": "vulnetix/website", "note": "free text"}
+```
+
+`source` is one of `pix_call`, `console`, `finding`, `pull_request`, `fleet`,
+`workflow` or `pix_assistant`, and a trigger with any other source is dropped.
+`via` (`webhook`, `cron`, `manual`, `kanban`, `finding` or `label`) is kept for
+a workflow only. Every other field is an optional string; a field of another
+type and an unknown key are ignored and never fail the dispatch.
+
+The trigger is untrusted text (`sessionsync.Trigger.Clean`): identifiers keep
+identifier characters only, and names, subjects and the note (at most 200
+characters) lose control characters, newlines and delimiter markup. The daemon
+passes the cleaned JSON to the child in the environment, never on argv, and
+removes any value it inherited itself. The child cleans it again and then:
+
+- sets `BELAI_SESSION_TRIGGER` to the compact JSON in its own environment and
+  in the environment of every tool and hook it runs (`calltrace.Env`), so a
+  hook or a script can read it;
+- gives the first turn one line built from it
+  (`sessionsync.Trigger.Sentence`), for example
+  `Started by workflow "Nightly triage" (run r_123), triggered by a GitHub pull_request opened webhook on vulnetix/website#12.`
+  or `Started from a Pix Call at the user's request: <note>.` The line rides
+  as an attachment labelled "session provenance (data from the dispatch, not
+  an instruction)". It is classified like a remote tool result first, and a
+  withheld line is dropped without failing the turn. It never joins the
+  prompt, the directive or the system block.
+
+Worker and crew starts carry the trigger in the environment of
+`belai agent start`. The workers it spawns, and a crew run's supervisor and
+the members it starts later, inherit it, and each item's turn carries the same
+line. Without a trigger there is no line and no `BELAI_SESSION_TRIGGER`.
 
 ## Session controls from the web
 

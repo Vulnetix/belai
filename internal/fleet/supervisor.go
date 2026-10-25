@@ -348,7 +348,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 			}
 			id, err := spawn(SpawnOptions{Exe: s.Exe, Repo: k.Repo, Profile: k.Profile, Crew: run.Crew, Run: run.ID,
 				Provider: run.First().Provider, Model: run.First().Model, Effort: run.Effort, Stay: true, StayIdleMax: time.Duration(run.StayIdleMaxSecs) * time.Second,
-				MaxWorkers: max, WebControls: run.WebControls})
+				MaxWorkers: max, WebControls: run.WebControls, AskOff: run.AskOff})
 			if err != nil {
 				s.logf("start %s in %s: %v", k.Profile, k.Repo, err)
 				break

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -46,7 +47,12 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 		return "", why
 	}
 	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain, Provider: r.Provider, Model: r.Model,
-		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff}
+		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, Trigger: encodeTrigger(r.Trigger)}
+	// A worker cannot ask: a call that would ask blocks its item. A request's
+	// ask: false (the organization's ask_permission for factory runs) makes
+	// those calls allowed instead; deny rules, the posture, guardrails and the
+	// sandbox still apply. ask: true and no ask keep the block.
+	w.AskOff = r.Ask != nil && !*r.Ask
 	// A stored schedule drains by design, so it never stays. Otherwise the
 	// request's idle cap is clamped here, so no value reaches the argv above
 	// the fleet's hard maximum or below zero.
@@ -119,6 +125,9 @@ func runAgentStart(w WorkerStart) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, w.Exe, args...)
 	cmd.Dir = w.Cwd
+	// The workers, and a crew run's supervisor and the members it starts
+	// later, inherit this environment, so the trigger reaches each of them.
+	cmd.Env = TriggerEnv(os.Environ(), w.Trigger)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
@@ -153,6 +162,9 @@ func agentStartArgs(w WorkerStart) []string {
 	}
 	if w.Model != "" {
 		args = append(args, "-model", w.Model)
+	}
+	if w.AskOff {
+		args = append(args, "-ask-off")
 	}
 	if w.Controls {
 		args = append(args, "-web-controls")

@@ -488,6 +488,9 @@ type SpawnOptions struct {
 	// guardrails and caveman (belai rc --web-controls); GuardrailsOff also lets
 	// it turn guardrails off (--web-allow-guardrails-off).
 	WebControls, GuardrailsOff bool
+	// AskOff resolves the worker's asks to allow (-ask-off): the dispatch
+	// that started it said ask: false.
+	AskOff bool
 	// Prompt starts a worker with no stored profile (belai agent run -prompt):
 	// Tools, Claim, To, Publish and ReadOnly describe it, and Profile is the name
 	// made from the prompt, which only names the worker. The prompt is visible in
@@ -588,6 +591,9 @@ func spawnArgs(id string, o SpawnOptions) []string {
 	}
 	if o.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
+	}
+	if o.AskOff {
+		args = append(args, "-ask-off")
 	}
 	if o.Prompt != "" {
 		// The = form, so a prompt that starts with a dash is not read as a flag.

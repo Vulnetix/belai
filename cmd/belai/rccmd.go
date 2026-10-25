@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/fleet"
@@ -453,6 +454,7 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	modelFlag := fs.String("model", "", "model for this session (default: the host's own)")
 	effortFlag := fs.String("effort", "", "effort for this session (default: the host's own)")
 	gitSyncFlag := fs.String("git-sync", "", "on or off: sync the branch with origin's default branch before turns (default: git.sync in settings)")
+	askFlag := fs.String("ask", "", "on or off: the start request's permission-ask switch for this session (default: ask_permission in settings)")
 	controls := fs.Bool("controls", false, "take session controls from the web (belai rc --web-controls)")
 	allowGuardrailsOff := fs.Bool("allow-guardrails-off", false, "with -controls, a web session may turn guardrails off")
 	shell := fs.Bool("shell", false, "run shell lines from the web (belai rc --web-shell)")
@@ -479,6 +481,10 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 	}
 	var pix *rc.PixSession
 	if mode == modes.ModePixAssistant {
+		if *askFlag != "" {
+			fmt.Fprintln(stderr, "belai rc-session: a pix-assistant session takes no -ask")
+			return 2
+		}
 		ps, code := rcPixStart(*profileFlag, *gitSyncFlag, *controls, *shell, stderr)
 		if code != 0 {
 			return code
@@ -518,6 +524,20 @@ func runRCSessionCLI(ctx context.Context, args []string, stdin io.Reader, stderr
 		fmt.Fprintf(stderr, "belai rc-session: -git-sync must be on or off, not %q\n", *gitSyncFlag)
 		return 2
 	}
+	switch *askFlag {
+	case "":
+	case "on", "off":
+		on := *askFlag == "on"
+		pick.Ask = &on
+	default:
+		fmt.Fprintf(stderr, "belai rc-session: -ask must be on or off, not %q\n", *askFlag)
+		return 2
+	}
+	// The daemon sets BELAI_SESSION_TRIGGER for a start that carried a
+	// trigger and clears it otherwise. It is cleaned again here, and the
+	// cleaned form is what tools and hooks see.
+	pick.Provenance, pick.Trigger = rc.Provenance(os.Getenv(calltrace.EnvTrigger))
+	applyTriggerEnv(pick.Trigger)
 	if err := runRCSession(ctx, *dispatch, *sessionID, mode, prompt, *idle, pick, stderr); err != nil {
 		fmt.Fprintln(stderr, "belai rc-session:", err)
 		return 1
@@ -571,6 +591,53 @@ type rcModelPick struct {
 	// persona's text in the system block, its tools narrowed to rc.PixTools,
 	// no kanban board, and registered as ephemeral with origin "pix".
 	Pix *rc.PixSession
+	// Ask is the start request's switch for permission asks (-ask); nil
+	// leaves the resolved ask_permission (rcAskDisabled).
+	Ask *bool
+	// Provenance is the trigger's sentence for the first turn and Trigger its
+	// cleaned JSON; both "" without a trigger.
+	Provenance, Trigger string
+}
+
+// rcAskDisabled is the AskDisabled a remote session without web controls is
+// built with. nil keeps today's rule: the resolved ask_permission decides, and
+// a call that would ask is otherwise decided by the posture and permission
+// rules because nobody can answer it. A request's ask outranks every settings
+// layer for this one session, including the rule that a project may only turn
+// asks on: it comes from the authenticated organization's factory setting or
+// the user's explicit consent on a Pix Call, which a repository file cannot
+// speak for. Off resolves asks to allow, as ask_permission false does; deny
+// rules, the posture and the sandbox still apply. On keeps asks from being
+// allowed even where the host's settings turn them off.
+func rcAskDisabled(ask *bool) *bool {
+	if ask == nil {
+		return nil
+	}
+	off := !*ask
+	return &off
+}
+
+// rcInitialAsk is the ask control a session with web controls starts with:
+// the request's switch when it sent one (see rcAskDisabled for why it
+// outranks the settings), else the resolved ask_permission. The web's /ask
+// control changes it afterwards as usual.
+func rcInitialAsk(settingsAsk bool, ask *bool) bool {
+	if ask != nil {
+		return *ask
+	}
+	return settingsAsk
+}
+
+// applyTriggerEnv makes the cleaned trigger this process's
+// BELAI_SESSION_TRIGGER, for the process and for every tool and hook it runs
+// (calltrace.Env adds it after the BELAI_ scrub). "" clears both.
+func applyTriggerEnv(trigger string) {
+	if trigger == "" {
+		_ = os.Unsetenv(calltrace.EnvTrigger)
+	} else {
+		_ = os.Setenv(calltrace.EnvTrigger, trigger)
+	}
+	calltrace.SetTrigger(trigger)
 }
 
 // stringList is a repeatable string flag.
@@ -781,7 +848,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 
 	opts := rc.SessionOptions{
 		Log: tlog, Mirror: syncer, Dispatch: dispatch,
-		Prompt: prompt, Mode: mode, Profile: pick.Profile, Idle: idle, Out: stderr,
+		Prompt: prompt, Mode: mode, Profile: pick.Profile, Idle: idle, Out: stderr, Provenance: pick.Provenance,
 		Workdir: cwd, SlashCommands: settings.SyncItemEnabled("command"),
 		Models: rc.LocalModels, ContextWindows: settings.ContextWindows,
 		Facts: map[string]any{
@@ -802,10 +869,12 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 	if !pick.Controls {
 		// Asks off exactly as for `belai -prompt`: nobody can answer one, so a
 		// call that would ask is decided by the posture and permission rules.
-		// (AskDisabled is left alone: it would resolve every ask to allow.)
+		// AskDisabled stays with the settings unless the start request said
+		// otherwise (rcAskDisabled): it resolves every ask to allow.
 		sess, err := headless.NewSession(ctx, headless.Params{
 			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
-			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID, AllowAsk: false,
+			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID,
+			AllowAsk: false, AskDisabled: rcAskDisabled(pick.Ask),
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 			Narrow: narrow, Persona: persona, A2A: link,
 		})
@@ -854,6 +923,7 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		modeName = "auto"
 	}
 	ctlState := sessionctl.FromSettings(settings, modeName, cfg.Provider, cfg.Model, settings.Effort)
+	ctlState.Ask = rcInitialAsk(ctlState.Ask, pick.Ask)
 	env := rcControlEnv(cfg, pick.AllowGuardrailsOff)
 	var prevDiag io.Closer
 	build := func(st sessionctl.State) (rc.Runner, error) {

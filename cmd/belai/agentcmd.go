@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/fleet"
@@ -349,6 +350,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
 	webControls := fs.Bool("web-controls", false, "take session controls from the website (set by `agent start`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, guardrails may be turned off from the website (set by `agent start`)")
+	askOff := fs.Bool("ask-off", false, "a call that would ask is allowed instead of blocking the item (set by `agent start -ask-off`)")
 	adhoc := addAdhocFlags(fs)
 	const runUsage = "usage: belai agent run [-once] [-item K-xxxxxx] [-stay | -drain] NAME | -prompt TEXT [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
 	if err := parseInterleaved(fs, rest); err != nil {
@@ -384,6 +386,11 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	}
 	if err := fleet.Preflight(profile, settings, pol); err != nil {
 		return 1, err
+	}
+	if *askOff {
+		if err := fleet.PreflightAskOff(profile, settings, pol); err != nil {
+			return 1, err
+		}
 	}
 	if err := fleet.CheckRepo(profile, repo); err != nil {
 		return 1, err
@@ -473,6 +480,13 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		return withClassifier(nc, settings, resolver)
 	})
 	w.WebControls = *webControls
+	w.AskOff = *askOff
+	// A worker belai rc started for a dispatch inherits the trigger through
+	// the environment (rc.TriggerEnv on `agent start`, then each spawn). It is
+	// cleaned again here; tools and hooks see the cleaned form.
+	var trig string
+	w.Provenance, trig = rc.Provenance(os.Getenv(calltrace.EnvTrigger))
+	applyTriggerEnv(trig)
 	if *runID != "" {
 		// A worker of a crew run restarts the run's supervisor if it dies.
 		if exe, err := os.Executable(); err == nil {
@@ -557,6 +571,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	fill := fs.Bool("fill", false, "with -crew, confirm a crew already running over this directory instead of refusing (its supervisor keeps it full)")
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
+	askOff := fs.Bool("ask-off", false, "the workers' calls that would ask are allowed instead of blocking the item (set by `belai rc` for a dispatch with ask: false)")
 	var dirs, pool listFlag
 	fs.Var(&dirs, "dir", "with -crew, a directory in the crew's scope, PATH or PATH:WEIGHT (repeatable; default this repository)")
 	fs.Var(&pool, "pool", "with -crew, a provider/model in the crew's pool, which workers cycle when one keeps failing (repeatable)")
@@ -598,7 +613,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		// control room edits while it runs.
 		return startCrewRun(crewLaunch{crew: *crewName, dirs: dirs, trust: *trust, provider: *providerName, model: *model,
 			effort: *effort, pool: pool, switchAfter: *switchAfter, finalRetry: *finalRetry, maxWorkers: *maxWorkers,
-			stay: *stay, stayIdle: *stayIdle, fill: *fill, webCtl: *webControls, stdout: stdout, waitForWorkers: 8 * time.Second})
+			stay: *stay, stayIdle: *stayIdle, fill: *fill, webCtl: *webControls, askOff: *askOff, stdout: stdout, waitForWorkers: 8 * time.Second})
 	}
 	wd, _ := os.Getwd()
 	repo := repoRoot(wd)
@@ -621,6 +636,11 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	if err := fleet.Preflight(p, settings, pol); err != nil {
 		return 1, fmt.Errorf("%s: %w", name, err)
+	}
+	if *askOff {
+		if err := fleet.PreflightAskOff(p, settings, pol); err != nil {
+			return 1, fmt.Errorf("%s: %w", name, err)
+		}
 	}
 	if err := fleet.CheckRepo(p, repo); err != nil {
 		return 1, err
@@ -654,7 +674,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		}
 		for range *replicas {
 			so := fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: name, Provider: *providerName, Model: *model, Stay: *stay, StayIdleMax: *stayIdle, Drain: *drain, MaxWorkers: spawnMax,
-				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff}
+				WebControls: *webControls, GuardrailsOff: *webControls && *allowOff, AskOff: *askOff}
 			if adhocProfile != nil {
 				so.Prompt, so.Tools, so.Claim, so.To, so.Publish, so.ReadOnly = *adhoc.prompt, splitList(*adhoc.tools), *adhoc.claim, *adhoc.to, *adhoc.publish, *adhoc.readOnly
 			}

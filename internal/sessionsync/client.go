@@ -611,6 +611,14 @@ type Dispatch struct {
 	// GitSync, when set on a "start" request, switches the new session's git
 	// sync on or off; nil leaves it to the host's settings.
 	GitSync *bool `json:"gitSync,omitempty"`
+	// Ask, when set on a "start" request, turns permission asks on or off for
+	// the new session in place of the host's ask_permission default (the
+	// organization's factory setting, or the user's consent on a Pix Call);
+	// nil leaves the default. A pix-assistant start ignores it.
+	Ask *bool `json:"ask,omitempty"`
+	// Trigger says what started a "start", "worker" or "crew" request. It is
+	// untrusted provenance: cleaned before use and nil when absent.
+	Trigger *Trigger `json:"trigger,omitempty"`
 	// A "project_prefs" request names an offered directory in Cwd and the flat
 	// preference keys to set (with their values) and to clear. Keys and values
 	// are checked by the host against config.ProjectPrefs' shape.

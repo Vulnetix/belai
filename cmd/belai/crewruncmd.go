@@ -37,6 +37,7 @@ type crewLaunch struct {
 	switchAfter, finalRetry int
 	maxWorkers              int
 	stay, fill, webCtl      bool
+	askOff                  bool          // -ask-off: every member starts with it (CrewRun.AskOff)
 	stayIdle                time.Duration // with stay: the run's idle cap, zero for the default
 	stdout                  io.Writer
 	startSupervisor         fleet.SupervisorStarter // nil starts `belai agent supervise`
@@ -118,7 +119,7 @@ func startCrewRun(l crewLaunch) (int, error) {
 		// -model is the pool's first target, where the workers start.
 		run.Pool = append(run.Pool, fleet.Target{Provider: l.provider, Model: l.model})
 	}
-	run.Effort, run.MaxWorkers, run.Stay, run.WebControls = l.effort, l.maxWorkers, l.stay, l.webCtl
+	run.Effort, run.MaxWorkers, run.Stay, run.WebControls, run.AskOff = l.effort, l.maxWorkers, l.stay, l.webCtl, l.askOff
 	if l.stay {
 		run.StayIdleMaxSecs = stayIdleSecs(l.stayIdle)
 	}

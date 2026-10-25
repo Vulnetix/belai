@@ -116,6 +116,14 @@ type Worker struct {
 	// WebControls is on (belai rc --web-controls). nil changes nothing.
 	Controls    *WorkerControls
 	WebControls bool
+	// Provenance is the sentence of the trigger that started this worker
+	// (belai rc passes it in BELAI_SESSION_TRIGGER). Each item's turn carries
+	// it as agent.TurnInput.Provenance; "" adds nothing.
+	Provenance string
+	// AskOff resolves this worker's asks to allow whatever the profile's
+	// autonomy (-ask-off, from a dispatch's ask: false). Without it a call
+	// that would ask blocks the item unless the profile is autonomous.
+	AskOff bool
 	// Record is this worker's registry entry (ID, Profile, Crew set).
 	Record Record
 	// Once works at most one item (or finds none) and returns.
@@ -271,20 +279,40 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 	if !s.KanbanEnabled() {
 		return errors.New("the kanban board is turned off (kanban): workers take their work from it")
 	}
-	if p.HasTool("Bash") && p.Autonomy == agentprofile.AutonomyAutonomous {
-		if pol := sandbox.FromSettings(s.Sandbox, []string{"/"}, pol); pol.Mode == sandbox.ModeOff {
-			return errors.New("an autonomous worker with Bash needs the OS sandbox on (sandbox.mode); guardrails off or sandbox off leave its commands unconfined")
-		}
-		if name, _ := sandbox.Backend(); name == "" {
-			msg := "an autonomous worker with Bash needs a working OS sandbox backend (bubblewrap or Landlock on Linux, sandbox-exec on macOS)"
-			if why := sandbox.BackendProblem(); why != "" {
-				msg += ": " + why
-			}
-			return errors.New(msg)
+	if p.Autonomy == agentprofile.AutonomyAutonomous {
+		if err := bashSandbox(p, s, pol, "an autonomous worker"); err != nil {
+			return err
 		}
 	}
 	// agents.publish off does not stop a publishing profile: it runs without
 	// PublishBranch, and nothing is pushed (Worker.publishes).
+	return nil
+}
+
+// PreflightAskOff is the extra check for a worker started with -ask-off. Its
+// asks resolve to allow as an autonomous worker's do, so it is held to the
+// same sandbox rule: with Bash it needs a working OS sandbox.
+func PreflightAskOff(p agentprofile.AgentProfile, s config.Settings, pol posture.Policy) error {
+	return bashSandbox(p, s, pol, "a worker started with ask off")
+}
+
+// bashSandbox refuses a profile with Bash whose asks resolve to allow when
+// the OS sandbox is off or has no working backend. who names the worker in
+// the refusal.
+func bashSandbox(p agentprofile.AgentProfile, s config.Settings, pol posture.Policy, who string) error {
+	if !p.HasTool("Bash") {
+		return nil
+	}
+	if pol := sandbox.FromSettings(s.Sandbox, []string{"/"}, pol); pol.Mode == sandbox.ModeOff {
+		return errors.New(who + " with Bash needs the OS sandbox on (sandbox.mode); guardrails off or sandbox off leave its commands unconfined")
+	}
+	if name, _ := sandbox.Backend(); name == "" {
+		msg := who + " with Bash needs a working OS sandbox backend (bubblewrap or Landlock on Linux, sandbox-exec on macOS)"
+		if why := sandbox.BackendProblem(); why != "" {
+			msg += ": " + why
+		}
+		return errors.New(msg)
+	}
 	return nil
 }
 
@@ -1533,7 +1561,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		}
 		settings.Resilience = &res
 	}
-	askOff := p.Autonomy == agentprofile.AutonomyAutonomous
+	askOff := p.Autonomy == agentprofile.AutonomyAutonomous || w.AskOff
 	persona := p.Persona()
 	if t.Memory != "" {
 		persona += "\n\nLessons from your earlier items are attached; use what applies."
@@ -1626,7 +1654,8 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	in := agent.TurnInput{
 		Prompt: prompt, HarnessPrompt: prompt, ForceMode: modes.ModeGoal,
 		KanbanItem: t.Item.ID, NoGoalDraft: true, Decision: p.Decides(),
-		Directive: w.directive(t.Workspace, publish, openPRs != ""),
+		Directive:  w.directive(t.Workspace, publish, openPRs != ""),
+		Provenance: w.Provenance,
 	}
 	if t.Memory != "" {
 		in.Attachments = []run.Attachment{{Kind: "memory", Label: "lessons of agent " + p.Name, Body: t.Memory}}

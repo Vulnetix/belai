@@ -52,6 +52,10 @@ type SessionOptions struct {
 	// Facts are the footer facts written on every turn_state line.
 	Facts map[string]any
 	Out   io.Writer
+	// Provenance is the trigger's sentence (sessionsync.Trigger.Sentence).
+	// The dispatched prompt's turn carries it as agent.TurnInput.Provenance;
+	// later turns do not. "" adds nothing.
+	Provenance string
 
 	// Controls, when set, is the session's web controls (belai rc
 	// --web-controls): the agent, the mode and the facts come from it, and
@@ -194,6 +198,9 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 	// retry is the turn a branch switch interrupted, run again before anything
 	// else waiting.
 	var retry *lastTurn
+	// provenance rides on the first turn that runs, which is the dispatched
+	// prompt's; a retry of that turn keeps it through its turnPlan.
+	provenance := o.Provenance
 	for {
 		if ctx.Err() != nil {
 			bridge.closePlanReview(open, "the session stopped")
@@ -324,6 +331,7 @@ func RunSession(ctx context.Context, o SessionOptions) error {
 			// Output of the composer's shell lines since the last turn rides on this
 			// one, exactly once. The console's lines never get here.
 			attachments = shells.drain()
+			tp.provenance, provenance = provenance, ""
 		}
 		last := lastTurn{text: text, meta: maps.Clone(meta), tp: tp, attachments: attachments}
 		delete(last.meta, "retry_of")
@@ -646,6 +654,9 @@ const executePlanPrompt = "Execute the approved plan."
 type turnPlan struct {
 	execute string // the approved plan's name
 	refine  bool
+	// provenance is the trigger sentence the turn carries (the dispatched
+	// prompt's turn only).
+	provenance string
 }
 
 // turnResult is what a finished turn hands the session loop: the assistant turn
@@ -741,7 +752,7 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		o.Log.Observe(e)
 		o.Mirror.Nudge()
 	}
-	in := agent.TurnInput{Prompt: text, Attachments: attachments, ForceMode: mode}
+	in := agent.TurnInput{Prompt: text, Attachments: attachments, ForceMode: mode, Provenance: tp.provenance}
 	if o.Profile != "" && mode == modes.ModeAgent {
 		in.ForceAgent = o.Profile
 	}

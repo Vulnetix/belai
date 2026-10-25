@@ -226,7 +226,9 @@ parsed and counts as `deny`.
 - Commands run without a shell, from their own directory, in their own
   process group, with the scrubbed environment used for Bash (no
   `*_API_KEY`, `*_TOKEN`, `*_SECRET`, `BELAI_*` from your shell) plus the
-  identity variables `BELAI=1`, `BELAI_SESSION_ID` and `TRACEPARENT`. A
+  identity variables `BELAI=1`, `BELAI_SESSION_ID` and `TRACEPARENT`, and
+  `BELAI_SESSION_TRIGGER` in a session or worker that remote control started
+  with a trigger ([remote-control.md](remote-control.md#ask-and-trigger-on-a-start-request)). A
   command path that resolves outside the hooks directory, including through
   a symlink, is refused.
 - Hooks are your configuration, so they run with guardrails on or off. Only

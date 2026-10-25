@@ -362,6 +362,16 @@ that step yourself, and move the item back. An `autonomous` worker resolves
 asks to allow; it must use a worktree, and a worker that has `Bash` must have
 a working [OS sandbox](sandbox.md) backend, or it refuses to start.
 
+A worker started with `-ask-off` resolves asks to allow whatever its
+autonomy. `belai rc` passes `-ask-off` to `belai agent start` for a worker or
+crew dispatch that carries `ask: false` (the organization's `ask_permission`
+for factory runs), `agent start` passes it to each worker, and a crew run
+keeps it in its run file (`ask_off`) so its supervisor starts every member
+with it. Joining a crew run that is already live keeps that run's setting.
+Deny rules, the posture, guardrails and the sandbox still apply, and a worker
+with `Bash` started this way needs a working OS sandbox, as an `autonomous`
+one does ([remote-control.md](remote-control.md#ask-and-trigger-on-a-start-request)).
+
 A worker classifies exactly as the TUI does with the same settings. With
 `classifier.kind: "models"` in a binary built without embedded models (and no
 explicit phase model), both use the full LLM sentinel instead and say so once

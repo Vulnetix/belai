@@ -187,6 +187,12 @@ type WorkerStart struct {
 	// Controls and GuardrailsOff are the daemon's own --web-controls and
 	// --web-allow-guardrails-off, passed on so the workers take session controls.
 	Controls, GuardrailsOff bool
+	// Trigger is the request's cleaned trigger as compact JSON; "" when the
+	// request carried none.
+	Trigger string
+	// AskOff is the request's ask: false (belai agent start -ask-off): a call
+	// that would ask is allowed instead of blocking the item.
+	AskOff bool
 }
 
 // Child is one session to start.
@@ -204,11 +210,17 @@ type Child struct {
 	// GitSync is the request's switch for the git sync before turns; nil
 	// leaves it to git.sync in the host's settings.
 	GitSync *bool
-	Idle    time.Duration
+	// Ask is the request's switch for permission asks; nil leaves the host's
+	// ask_permission default. Never set for a pix-assistant session.
+	Ask  *bool
+	Idle time.Duration
 	// Controls and GuardrailsOff are the daemon's own flags, passed on.
 	Controls, GuardrailsOff bool
 	// Shell is the daemon's --web-shell, passed on.
 	Shell bool
+	// Trigger is the request's cleaned trigger as compact JSON; "" when the
+	// request carried none.
+	Trigger string
 }
 
 // Daemon is a running `belai rc`.
@@ -806,18 +818,19 @@ func (d *Daemon) start(r sessionsync.Dispatch) (string, string) {
 	c := Child{
 		Exe: d.o.Exe, Cwd: cwd, Dirs: dirs, Dispatch: r.ID, SessionID: sid, Mode: r.Mode, Prompt: prompt,
 		Provider: r.Provider, Model: r.Model, Effort: r.Effort, Profile: r.Profile, GitSync: r.GitSync,
-		Idle: d.o.Idle, LogPath: d.sessionLog(sid),
+		Ask: r.Ask, Idle: d.o.Idle, LogPath: d.sessionLog(sid),
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff,
-		Shell: d.o.Shell,
+		Shell: d.o.Shell, Trigger: encodeTrigger(r.Trigger),
 	}
 	if pix {
 		// An advisory session: the persona by its built-in name, git sync
 		// off, a short idle, and none of the host's web opt-ins (controls,
-		// guardrails off, shell lines), whatever the request or the host says.
+		// guardrails off, shell lines) or the request's ask switch, whatever
+		// the request or the host says.
 		c.Profile, _ = PixPersonaName(r.Profile)
 		off := false
 		c.GitSync, c.Idle = &off, PixIdle
-		c.Controls, c.GuardrailsOff, c.Shell = false, false, false
+		c.Controls, c.GuardrailsOff, c.Shell, c.Ask = false, false, false, nil
 	}
 	pid, wait, err := d.o.Start(c)
 	if err != nil {
@@ -949,6 +962,9 @@ func childArgs(c Child) []string {
 	if c.GitSync != nil {
 		args = append(args, "-git-sync", map[bool]string{true: "on", false: "off"}[*c.GitSync])
 	}
+	if c.Ask != nil {
+		args = append(args, "-ask", map[bool]string{true: "on", false: "off"}[*c.Ask])
+	}
 	if c.Controls {
 		args = append(args, "-controls")
 		if c.GuardrailsOff {
@@ -967,6 +983,7 @@ func childArgs(c Child) []string {
 func startChild(c Child) (int, func() error, error) {
 	cmd := exec.Command(c.Exe, childArgs(c)...)
 	cmd.Dir = c.Cwd
+	cmd.Env = TriggerEnv(os.Environ(), c.Trigger)
 	cmd.Stdin = strings.NewReader(c.Prompt)
 	var logFile *os.File
 	if c.LogPath != "" {

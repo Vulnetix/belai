@@ -572,6 +572,7 @@ scrubbing still removes every credential first:
 | `BELAI_TOOL`         | tool name                               |
 | `BELAI_TOOL_CALL_ID` | tool-call id                            |
 | `TRACEPARENT`         | same value as the `traceparent` header  |
+| `BELAI_SESSION_TRIGGER` | what started a dispatched session or worker, as cleaned JSON; set only when the dispatch carried a trigger ([remote-control.md](remote-control.md#ask-and-trigger-on-a-start-request)) |
 
 `TRACEPARENT` follows the OpenTelemetry environment-variable propagation
 convention, so an instrumented child process joins the session's trace.

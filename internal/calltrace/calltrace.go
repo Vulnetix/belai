@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/vulnetix/belai/internal/version"
 )
@@ -45,7 +46,25 @@ const (
 	EnvToolCallID  = "BELAI_TOOL_CALL_ID"
 	EnvVersion     = "BELAI_VERSION"
 	EnvTraceparent = "TRACEPARENT"
+	// EnvTrigger holds what started a dispatched session or worker, as the
+	// compact JSON of a cleaned sessionsync.Trigger (SetTrigger).
+	EnvTrigger = "BELAI_SESSION_TRIGGER"
 )
+
+// trigger is this process's EnvTrigger value. It is process-wide because a
+// dispatched process runs one session (or one worker's items) for one trigger.
+var trigger atomic.Pointer[string]
+
+// SetTrigger sets the EnvTrigger value Env adds to every tool and hook
+// environment; "" removes it. ScrubbedEnv drops every BELAI_ variable, so the
+// process environment alone would not reach a tool.
+func SetTrigger(s string) {
+	if s == "" {
+		trigger.Store(nil)
+		return
+	}
+	trigger.Store(&s)
+}
 
 // info is the trace identity carried on a context.
 type info struct {
@@ -147,6 +166,9 @@ func Env(ctx context.Context) []string {
 	}
 	if tp := traceparent(v); tp != "" {
 		env = append(env, EnvTraceparent+"="+tp)
+	}
+	if t := trigger.Load(); t != nil {
+		env = append(env, EnvTrigger+"="+*t)
 	}
 	return env
 }
