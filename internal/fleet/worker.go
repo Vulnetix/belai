@@ -787,6 +787,15 @@ var errLeaseLost = errors.New("the claim was released elsewhere (on the web, by 
 // errTokenBudget cancels an item over budget.max_tokens_per_item.
 var errTokenBudget = errors.New("budget.max_tokens_per_item reached")
 
+// errCostBudget cancels an item over budget.max_cost_usd_per_item.
+var errCostBudget = errors.New("budget.max_cost_usd_per_item reached")
+
+// budgetCause reports whether an item's context ended because one of its
+// budgets did.
+func budgetCause(cause error) bool {
+	return errors.Is(cause, errWallBudget) || errors.Is(cause, errTokenBudget) || errors.Is(cause, errCostBudget)
+}
+
 // work runs one claimed item to a release.
 func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	p := w.Profile
@@ -940,6 +949,12 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	sessionID := session.MustID()
 	w.Record.Session = sessionID
 	w.save()
+	// The tip the claim starts from: a resumed branch already holds earlier
+	// claims' commits, so progress is what this claim adds to it.
+	var headBefore string
+	if ws.Worktree {
+		headBefore, _ = ws.Head(context.WithoutCancel(ctx))
+	}
 	// Snapshot the git common dir so Settle can remove what the model adds.
 	ws.Sandbox() // prepares the ref dirs and packed-refs before the snapshot
 	rootBefore := ws.RootEntries()
@@ -972,7 +987,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	// recorded success is finished work like a published branch, so its gates
 	// are verified under the grace period too (the item's context has ended).
 	recd := recordedOutcome(claim, res, runErr, cause)
-	if errors.Is(cause, errWallBudget) && recd != tools.OutcomeFailure && recd != tools.OutcomeBlocked && ((o.failed && !o.transient) || recd == tools.OutcomeSuccess) {
+	if budgetCause(cause) && recd != tools.OutcomeFailure && recd != tools.OutcomeBlocked && ((o.failed && !o.transient) || recd == tools.OutcomeSuccess) {
 		switch {
 		case recd == tools.OutcomeSuccess:
 			decided = "recorded its outcome"
@@ -985,7 +1000,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 	}
 	if decided != "" && w.Store.Renew(it.ID, w.Record.ID, publishedGrace+p.LeaseDuration()) == nil {
-		o = outcome{stop: res.StopReason, passes: res.Passes, note: fmt.Sprintf("agent %s %s before %s (%d passes)", p.Name, decided, errWallBudget, res.Passes)}
+		o = outcome{stop: res.StopReason, passes: res.Passes, note: fmt.Sprintf("agent %s %s before %s (%d passes)", p.Name, decided, cause, res.Passes)}
 		var stopGrace context.CancelFunc
 		vctx, stopGrace = context.WithTimeout(context.WithoutCancel(ctx), publishedGrace)
 		defer stopGrace()
@@ -1010,6 +1025,23 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		o.branch = ws.Branch
 		if bad := ws.CommittedSynced(context.WithoutCancel(ctx)); len(bad) > 0 && !o.failed {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the branch commits a crew file the harness keeps out of branches: " + sanitize.Line(strings.Join(bad, ", "), 200)}
+		}
+	}
+	// A budget that ran out after the claim made progress (files changed on the
+	// branch, findings recorded on the card) is not a failure: the item goes
+	// back to be resumed and the branch is pushed, so the next claim on any
+	// machine starts where this one stopped.
+	advanced := false
+	if ws.Worktree {
+		headAfter, _ := ws.Head(context.WithoutCancel(ctx))
+		advanced = headAfter != "" && headAfter != headBefore
+	}
+	if o.failed && !o.transient && o.fault.Budget() && (advanced || claim.Notes() > 0) {
+		o.continued = true
+		if o.files > 0 && ws.Worktree && w.publishes() {
+			if branch, note := w.pushProgress(context.WithoutCancel(ctx), it, ws); branch != "" {
+				o.note += note
+			}
 		}
 	}
 	// The worker closed this branch's pull request as a duplicate of an earlier
@@ -1079,19 +1111,10 @@ func (w *Worker) stopped(ctx, itemCtx context.Context, it kanban.Item, ws *Works
 			// relaunch): push the branch so the next claim resumes it from
 			// origin. Only for a worker allowed to push at all.
 			if ws.Worktree && w.publishes() && ws.FilesChanged(bg) > 0 {
-				pctx, cancel := context.WithTimeout(bg, 30*time.Second)
-				var esc *EscalatedError
-				if err := ws.PushBranch(pctx); errors.As(err, &esc) {
-					// The forge coordinator pushes it from the bundle instead.
-					out.Branch = ws.Branch
-					out.Note += fmt.Sprintf("; the push of %s was handed to the forge coordinator (request %s, failure %s)", ws.Branch, esc.RequestID, esc.Failure)
-				} else if err != nil {
-					w.logf("%s: push the work in progress: %v", it.Short(), err)
-				} else {
-					out.Branch = ws.Branch
-					out.Note += "; pushed " + ws.Branch + " to origin"
+				if branch, note := w.pushProgress(bg, it, ws); branch != "" {
+					out.Branch = branch
+					out.Note += note
 				}
-				cancel()
 			}
 		}
 		if released, err := w.Store.Release(it.ID, w.Record.ID, out); err != nil {
@@ -1115,6 +1138,36 @@ func (w *Worker) stopped(ctx, itemCtx context.Context, it kanban.Item, ws *Works
 		return true
 	}
 	return false
+}
+
+// resumeDirective tells a claim that picks up an item an earlier claim left
+// unfinished (its budget ran out, or it failed with work on the branch) to
+// carry on from that work instead of starting again. Harness facts only: the
+// counts and the branch name come from the card.
+func (w *Worker) resumeDirective(it kanban.Item) string {
+	if it.Branch == "" || (it.Continuations == 0 && it.Attempts == 0) {
+		return ""
+	}
+	return fmt.Sprintf("Resume: this item was claimed before (%d continuations, %d failed attempts at this stage) and its branch %s holds that work, already checked out here. "+
+		"Start from it, not from scratch: run git status --short and git log --oneline against the base, read the attached summary of what the branch changed and the item's notes (earlier findings are there), then continue from the next unfinished step. "+
+		"Record each new finding with KanbanUpdate as soon as you have it, so a later claim keeps it too.", it.Continuations, it.Attempts, kanban.CleanTitle(it.Branch))
+}
+
+// pushProgress pushes the item's branch so the next claim resumes it from
+// origin, on whatever machine takes it. It returns the branch and a release
+// note fragment, or an empty branch when the push failed (logged). A push the
+// forge refuses for its own reason is handed to the forge coordinator.
+func (w *Worker) pushProgress(ctx context.Context, it kanban.Item, ws *Workspace) (string, string) {
+	pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var esc *EscalatedError
+	if err := ws.PushBranch(pctx); errors.As(err, &esc) {
+		return ws.Branch, fmt.Sprintf("; the push of %s was handed to the forge coordinator (request %s, failure %s)", ws.Branch, esc.RequestID, esc.Failure)
+	} else if err != nil {
+		w.logf("%s: push the work in progress: %v", it.Short(), err)
+		return "", ""
+	}
+	return ws.Branch, "; pushed " + ws.Branch + " to origin"
 }
 
 // investigate runs a setup-debug turn after the workspace could not be
@@ -1175,11 +1228,15 @@ type outcome struct {
 	// switched marks an item moved to an earlier attempt's branch whose pull
 	// request was kept over this one's: nothing of this branch is reported.
 	switched bool
-	note     string
-	branch   string
-	files    int
-	stop     run.StopReason
-	passes   int
+	// continued marks a budget run-out that made progress: the item goes back
+	// to be resumed and the attempt is not counted, up to the profile's
+	// max_continuations.
+	continued bool
+	note      string
+	branch    string
+	files     int
+	stop      run.StopReason
+	passes    int
 	// The security verdict routes the item and names its VEX. to, when set,
 	// replaces the profile's route with these label edits.
 	verdict    kanban.Verdict
@@ -1270,7 +1327,7 @@ func recordSettled(res run.Result, runErr, cause error) bool {
 	if runErr == nil && cause == nil {
 		return true
 	}
-	if errors.Is(cause, errWallBudget) {
+	if budgetCause(cause) {
 		return true
 	}
 
@@ -1346,6 +1403,19 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		if !out.To.Valid() {
 			out.To = kanban.Backlog
 		}
+	case o.continued && it.Continuations+1 > p.MaxContinuationsOr():
+		out.To = kanban.Blocked
+		out.Note += fmt.Sprintf("; blocked after %d continuations: the budget ran out each time before the work finished, so a person should look (raise the budget or split the card)", it.Continuations)
+	case o.continued:
+		// The budget ran out, not the work: back where it was claimed from,
+		// labels untouched, the attempt not counted. The next claim resumes
+		// the branch and reads the notes.
+		out.To = it.ClaimFrom
+		if !out.To.Valid() {
+			out.To = kanban.Backlog
+		}
+		out.Failed, out.Continued = false, true
+		out.Note += fmt.Sprintf("; continued (%d of %d): the progress is kept and the next claim resumes it", it.Continuations+1, p.MaxContinuationsOr())
 	case it.Attempts+1 >= p.MaxAttemptsOr():
 		out.To = kanban.Blocked
 		out.Note += fmt.Sprintf("; blocked after %d failed attempts", it.Attempts+1)
@@ -1369,9 +1439,11 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		}
 	}
 	out.Verdict, out.VEX = o.verdict, o.vex
-	if o.failed {
+	switch {
+	case out.Continued:
+	case o.failed:
 		w.Record.Failed++
-	} else {
+	default:
 		w.Record.Done++
 	}
 	released, err := w.Store.Release(it.ID, w.Record.ID, out)
@@ -1381,6 +1453,10 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		// The provider failed, not the card: it stays claimable, and the loop
 		// backs off (or falls back) before the next claim.
 		w.outages++
+	case out.Continued:
+		// Progress, not failure: the card stays claimable, by this worker too.
+		w.outages = 0
+		w.poolSuccess()
 	case o.failed:
 		// Skip it until someone else touches it: a move or an assignment
 		// after this release is a deliberate retry.
@@ -1665,6 +1741,12 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	}
 	if t.Setup != "" {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "setup", Label: "workspace setup failure", Body: t.Setup})
+	}
+	if resume := w.resumeDirective(t.Item); resume != "" && t.Setup == "" && t.Workspace != nil {
+		in.Directive = strings.TrimSpace(in.Directive + " " + resume)
+		if stat := t.Workspace.DiffStat(ctx); stat != "" {
+			in.Attachments = append(in.Attachments, run.Attachment{Kind: "resume", Label: "what this item's branch already changed (git diff --stat against its base)", Body: stat})
+		}
 	}
 	if openPRs != "" {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "pull_requests", Label: "this item's open pull requests, one per attempt branch", Body: openPRs})

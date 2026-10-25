@@ -46,6 +46,11 @@ type KanbanSpec struct {
 	// names it, and it is the reason a person's decision is asked for.
 	HandoffCheckpoint string `json:"handoff_checkpoint,omitempty"`
 	MaxAttempts       int    `json:"max_attempts,omitempty"`
+	// MaxContinuations bounds the claims at one stage that may run out of
+	// budget after making progress and go back to be resumed without costing
+	// an attempt. Beyond it the item goes to blocked for a person. 0 is
+	// DefaultMaxContinuations.
+	MaxContinuations int `json:"max_continuations,omitempty"`
 	// Lease is how long a claim holds without renewal; Poll how often an
 	// idle worker looks for work. Go durations.
 	Lease string `json:"lease,omitempty"`
@@ -244,11 +249,19 @@ type MemorySpec struct {
 	MaxBytes int  `json:"max_bytes,omitempty"`
 }
 
-// BudgetSpec bounds one item.
+// BudgetSpec bounds one item. MaxCostUSDPerItem is the real bound for an
+// autonomous worker: what the item's model calls are estimated to cost. The
+// passes, tokens and wall time are safety rails. When any limit reaches
+// FinalizeAt of itself the harness tells the worker to finalise (commit,
+// record its findings, publish) before the limit ends the claim.
 type BudgetSpec struct {
-	MaxPassesPerItem int    `json:"max_passes_per_item,omitempty"`
-	MaxTokensPerItem int    `json:"max_tokens_per_item,omitempty"`
-	MaxWallPerItem   string `json:"max_wall_per_item,omitempty"`
+	MaxPassesPerItem  int     `json:"max_passes_per_item,omitempty"`
+	MaxTokensPerItem  int     `json:"max_tokens_per_item,omitempty"`
+	MaxWallPerItem    string  `json:"max_wall_per_item,omitempty"`
+	MaxCostUSDPerItem float64 `json:"max_cost_usd_per_item,omitempty"`
+	// FinalizeAt is the fraction of a limit at which the worker is told to
+	// finalise; 0 is DefaultFinalizeAt.
+	FinalizeAt float64 `json:"finalize_at,omitempty"`
 }
 
 // Isolation values.
@@ -273,6 +286,16 @@ const (
 	DefaultLease       = 20 * time.Minute
 	DefaultPoll        = 30 * time.Second
 	DefaultMaxAttempts = 3
+	// DefaultMaxContinuations bounds the budget run-outs that made progress
+	// at one stage.
+	DefaultMaxContinuations = 5
+	// DefaultFinalizeAt is the fraction of a budget at which a worker is told
+	// to finalise, and MinFinalizeAt/MaxFinalizeAt bound budget.finalize_at.
+	DefaultFinalizeAt = 0.85
+	MinFinalizeAt     = 0.5
+	MaxFinalizeAt     = 0.95
+	// MaxCostUSD bounds budget.max_cost_usd_per_item.
+	MaxCostUSD         = 10000.0
 	DefaultMemoryBytes = 8 << 10
 	MaxMemoryBytes     = 64 << 10
 )
@@ -354,6 +377,32 @@ func (p AgentProfile) MaxAttemptsOr() int {
 		return DefaultMaxAttempts
 	}
 	return p.Kanban.MaxAttempts
+}
+
+// MaxContinuationsOr is the limit on budget run-outs that made progress.
+func (p AgentProfile) MaxContinuationsOr() int {
+	if p.Kanban == nil || p.Kanban.MaxContinuations <= 0 {
+		return DefaultMaxContinuations
+	}
+	return p.Kanban.MaxContinuations
+}
+
+// FinalizeAtOr is the fraction of a budget at which the worker is told to
+// finalise.
+func (p AgentProfile) FinalizeAtOr() float64 {
+	if p.Budget == nil || p.Budget.FinalizeAt <= 0 {
+		return DefaultFinalizeAt
+	}
+	return p.Budget.FinalizeAt
+}
+
+// CostBudgetMicroUSD is the per-item cost budget in millionths of a dollar,
+// or 0.
+func (p AgentProfile) CostBudgetMicroUSD() int64 {
+	if p.Budget == nil || p.Budget.MaxCostUSDPerItem <= 0 {
+		return 0
+	}
+	return int64(p.Budget.MaxCostUSDPerItem * 1e6)
 }
 
 // WallBudget is the per-item wall-clock budget, or 0.
@@ -534,8 +583,8 @@ func (p AgentProfile) validateWorker() error {
 			return err
 		}
 	}
-	if k.MaxAttempts < 0 || k.MaxItems < 0 {
-		return errors.New("kanban.max_attempts and kanban.max_items must not be negative")
+	if k.MaxAttempts < 0 || k.MaxItems < 0 || k.MaxContinuations < 0 {
+		return errors.New("kanban.max_attempts, kanban.max_continuations and kanban.max_items must not be negative")
 	}
 	if p.Schedule != "" {
 		if _, _, err := CronSchedule(p.Schedule); err != nil {
@@ -567,8 +616,14 @@ func (p AgentProfile) validateWorker() error {
 		}
 	}
 	if b := p.Budget; b != nil {
-		if b.MaxPassesPerItem < 0 || b.MaxTokensPerItem < 0 {
+		if b.MaxPassesPerItem < 0 || b.MaxTokensPerItem < 0 || b.MaxCostUSDPerItem < 0 {
 			return errors.New("budget values must not be negative")
+		}
+		if b.MaxCostUSDPerItem > MaxCostUSD {
+			return fmt.Errorf("budget.max_cost_usd_per_item must be at most %g", MaxCostUSD)
+		}
+		if b.FinalizeAt != 0 && (b.FinalizeAt < MinFinalizeAt || b.FinalizeAt > MaxFinalizeAt) {
+			return fmt.Errorf("budget.finalize_at must be between %g and %g", MinFinalizeAt, MaxFinalizeAt)
 		}
 		if b.MaxWallPerItem != "" {
 			if d, err := time.ParseDuration(b.MaxWallPerItem); err != nil || d <= 0 {
@@ -583,8 +638,8 @@ func (p AgentProfile) validateWorker() error {
 	if p.Guardrails != nil && !*p.Guardrails {
 		return errors.New("a worker cannot turn guardrails off: its item text and every tool result must stay classified")
 	}
-	if p.Autonomy == AutonomyAutonomous && (p.Budget == nil || p.Budget.MaxPassesPerItem <= 0) {
-		return errors.New("an autonomous worker needs budget.max_passes_per_item")
+	if p.Autonomy == AutonomyAutonomous && (p.Budget == nil || (p.Budget.MaxPassesPerItem <= 0 && p.Budget.MaxCostUSDPerItem <= 0)) {
+		return errors.New("an autonomous worker needs budget.max_cost_usd_per_item or budget.max_passes_per_item")
 	}
 	if p.Writes() && p.IsolationMode() == IsolationNone {
 		return errors.New("a worker that can write (Write, Edit or Bash, or no tools allowlist) needs workspace.isolation: worktree or shared")

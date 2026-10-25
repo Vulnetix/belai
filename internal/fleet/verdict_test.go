@@ -354,11 +354,13 @@ func TestWorkPublishedBeforeTheWallBudgetEndsStillCounts(t *testing.T) {
 	}
 }
 
-// Work left beside what was published is not finished, so the overrun fails it.
-func TestUnpublishedWorkAtTheWallBudgetStillFails(t *testing.T) {
+// Work left beside what was published is not finished, so the overrun does not
+// move the card on; it made progress, so the card goes back to be resumed
+// instead of costing an attempt.
+func TestUnpublishedWorkAtTheWallBudgetIsContinued(t *testing.T) {
 	_, got := overrunBuilder(t, true)
-	if got.List == kanban.Review || got.Attempts != 1 {
-		t.Fatalf("unpublished work moved on: %s attempts=%d (%q)", got.List, got.Attempts, got.LastNote())
+	if got.List != kanban.Backlog || got.Attempts != 0 || got.Continuations != 1 || !strings.Contains(got.LastNote(), "continued (1 of 5)") {
+		t.Fatalf("unpublished work was not continued: %s attempts=%d continuations=%d (%q)", got.List, got.Attempts, got.Continuations, got.LastNote())
 	}
 }
 
