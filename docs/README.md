@@ -65,6 +65,8 @@ behaviour, and implementation details.
   prompt, offered as AI Firewall guardrail rules on a card you apply.
 - [Turn latency](performance.md): what runs before the first token and between
   passes, what is classified of a file, and what stays serial on purpose.
+- [Bot attribution trailers](bot-attribution.md): the `Co-authored-by` and
+  `Signed-off-by: Pix [bot]` trailers Belai adds to commits inside a Pix sandbox.
 - [Git sync](git-sync.md): rebasing a session's branch onto upstream main before
   its turns, turning it off per session or globally, and the git state the
   website shows
