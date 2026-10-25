@@ -60,8 +60,11 @@ type KanbanAgent struct {
 	LeaseUntil int64    `json:"leaseUntil,omitempty"`
 	Attempts   int      `json:"attempts,omitempty"`
 	Bounces    int      `json:"bounces,omitempty"`
-	Branch     string   `json:"branch,omitempty"`
-	PR         string   `json:"pr,omitempty"`
+	// Continuations counts the claims at this stage that ran out of budget
+	// after making progress and went back to be resumed.
+	Continuations int    `json:"continuations,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	PR            string `json:"pr,omitempty"`
 	// Finding, SeenRef, Verdict and VEX are a security card's facts. Only a
 	// host sets them (the website ignores them on an edit), and a host that
 	// pulls them takes a value only into a field it holds none for.

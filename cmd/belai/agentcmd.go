@@ -481,6 +481,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	})
 	w.WebControls = *webControls
 	w.AskOff = *askOff
+	// The factory's budgets and retries for a dispatched worker arrive in the
+	// environment (rc.BudgetEnv), cleaned again here.
+	w.Limits = fleet.LimitsFromEnv()
 	// A worker belai rc started for a dispatch inherits the trigger through
 	// the environment (rc.TriggerEnv on `agent start`, then each spawn). It is
 	// cleaned again here; tools and hooks see the cleaned form.

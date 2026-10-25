@@ -281,18 +281,26 @@ func MovesBack(from, to List) bool {
 // to an earlier stage counts a bounce and starts that stage's attempts afresh,
 // and a success that moves the item on starts the next stage's attempts afresh.
 func releaseLocked(it *Item, to List, note, sid string, now int64, failed bool) {
+	releaseLockedAs(it, to, note, sid, now, failed, false)
+}
+
+// releaseLockedAs is releaseLocked for a claim that may be a continuation: one
+// counts a continuation and leaves the attempts as they are.
+func releaseLockedAs(it *Item, to List, note, sid string, now int64, failed, continued bool) {
 	from := it.claimSource()
 	appendHistory(it, Move{ID: session.MustID(), From: it.List, To: to, At: now, SessionID: sid, Note: CleanBody(note, MaxNoteBytes)})
 	it.List = to
 	it.ClaimedBy, it.ClaimHost, it.ClaimFrom, it.LeaseUntil = "", "", "", 0
 	switch {
+	case continued && !failed:
+		it.Continuations++
 	case failed && MovesBack(from, to):
 		it.Bounces++
-		it.Attempts = 0
+		it.Attempts, it.Continuations = 0, 0
 	case failed:
 		it.Attempts++
 	case StageRank(to) > StageRank(from) && StageRank(from) >= 0:
-		it.Attempts = 0
+		it.Attempts, it.Continuations = 0, 0
 	}
 	it.Updated, it.Dirty = now, true
 }
@@ -508,6 +516,9 @@ type Outcome struct {
 	SessionID string
 	// Failed counts the claim as a failed attempt.
 	Failed bool
+	// Continued counts the claim as a continuation: it ran out of budget after
+	// making progress and goes back to be resumed. It never counts an attempt.
+	Continued bool
 	// AddLabels and DropLabels edit the item's labels on the way out.
 	AddLabels  []string
 	DropLabels []string
@@ -544,7 +555,7 @@ func (s *Store) Release(ref, worker string, o Outcome) (Item, error) {
 		if o.Releaser != "" && it.Assignee == o.Releaser && o.To != it.claimSource() {
 			it.Assignee = ""
 		}
-		releaseLocked(it, o.To, o.Note, o.SessionID, s.nowMs(), o.Failed)
+		releaseLockedAs(it, o.To, o.Note, o.SessionID, s.nowMs(), o.Failed, o.Continued)
 		labels := slices.DeleteFunc(slices.Clone(it.Labels), func(l string) bool {
 			return slices.Contains(NormLabels(keepCheckpoints(o.DropLabels)), l)
 		})

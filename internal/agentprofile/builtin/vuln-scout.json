@@ -15,7 +15,7 @@
   "skills": ["belai-vuln-scout"],
   "mode": "worker",
   "autonomy": "autonomous",
-  "max_iterations": 12,
+  "max_iterations": 30,
   "kanban": {
     "lists": ["backlog"],
     "labels": ["vuln-scan"],
@@ -23,10 +23,10 @@
     "handoff_to": ["belai:patcher"],
     "handoff_labels": ["vuln"],
     "security": {"sweep": true},
-    "max_attempts": 2,
+    "max_attempts": 3,
     "lease": "20m"
   },
-  "budget": {"max_passes_per_item": 4, "max_wall_per_item": "30m"},
+  "budget": {"max_cost_usd_per_item": 8, "finalize_at": 0.85, "max_passes_per_item": 20, "max_wall_per_item": "2h"},
   "memory": {"enabled": true},
   "knowledge": {"paths": [".vulnetix"]}
 }

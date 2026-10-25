@@ -34,6 +34,23 @@ func TriggerEnv(env []string, trigger string) []string {
 	return out
 }
 
+// BudgetEnv is env for the workers a dispatch starts: any inherited
+// BELAI_WORKER_BUDGET is removed, so a start never runs on another's budget,
+// and budget is set when the dispatch carried one. A crew run's supervisor and
+// the members it starts later inherit it.
+func BudgetEnv(env []string, budget string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, e := range env {
+		if !strings.HasPrefix(e, sessionsync.EnvWorkerBudget+"=") {
+			out = append(out, e)
+		}
+	}
+	if budget != "" {
+		out = append(out, sessionsync.EnvWorkerBudget+"="+budget)
+	}
+	return out
+}
+
 // Provenance is the line a session's first turn carries about how it
 // started, read from the BELAI_SESSION_TRIGGER value a parent set, or "" when
 // there is none. The value is parsed and cleaned again here: the environment

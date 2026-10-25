@@ -267,6 +267,7 @@ func reportWorkers(all []fleet.Record, logDir string, now time.Time) []sessionsy
 			Item: r.Item, Project: r.Project, Session: r.Session, Started: r.Started,
 			Beat: r.Beat, Stopped: r.Stopped, Reason: sessionsync.CleanLogLine(r.Reason),
 			Done: r.Done, Failed: r.Failed, Branch: r.Branch,
+			Tokens: r.Tokens, CostMicroUSD: r.CostMicroUSD, CostLive: r.CostLive,
 		}
 		if fleet.ValidID(r.ID) {
 			for _, l := range logTail(filepath.Join(logDir, r.ID+".log"), sessionsync.RCWorkerLogLines) {
@@ -370,10 +371,11 @@ func profileSummary(p agentprofile.AgentProfile) sessionsync.RCProfile {
 		OnSuccess: route(k.OnSuccess), OnFailure: route(k.OnFailure),
 		HandoffTo: nonNil(k.HandoffTo), HandoffLabels: nonNil(k.HandoffLabels),
 		MaxAttempts: k.MaxAttempts, Lease: p.LeaseDuration().String(),
+		MaxContinuations: k.MaxContinuations, MaxIterations: p.MaxIterations,
 		ID: p.ID, DisplayName: p.DisplayName, Palette: slices.Clone(p.Palette), AvatarID: p.AvatarID,
 	}
 	if b := p.Budget; b != nil {
-		out.MaxWall, out.MaxPasses = b.MaxWallPerItem, b.MaxPassesPerItem
+		out.MaxWall, out.MaxPasses, out.MaxCostUSD = b.MaxWallPerItem, b.MaxPassesPerItem, b.MaxCostUSDPerItem
 	}
 	return out
 }

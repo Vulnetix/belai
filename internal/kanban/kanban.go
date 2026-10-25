@@ -138,6 +138,12 @@ type Item struct {
 	// list (a review that rejected a branch). It is what bounds a card passing
 	// between two stages, which Attempts, reset at each stage, no longer does.
 	Bounces int
+	// Continuations counts the claims at this stage that ran out of budget
+	// after making progress (files changed on the branch, findings recorded):
+	// the item went back to be resumed, not failed. Like Attempts it starts
+	// again at zero when the item moves on, and it bounds a card that never
+	// finishes however much progress each claim makes.
+	Continuations int
 	// Branch is the git branch holding the item's work; PR the draft pull
 	// request opened for it. Both are harness-set.
 	Branch string

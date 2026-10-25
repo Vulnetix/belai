@@ -319,6 +319,12 @@ type Session struct {
 	turnSimple bool
 	// turnDecision is TurnInput.Decision for this turn.
 	turnDecision bool
+	// turnWorker is set for a fleet worker's turn (TurnInput.KanbanItem): a
+	// pass ceiling gives it one finalise reserve before it stops.
+	turnWorker bool
+	// finalizing is set once this turn was told to finalise, by a harness fact
+	// or by the pass ceiling, so the reserve is given once.
+	finalizing bool
 	// turnFanOut is set for fan-out profile turns. It advertises the Task
 	// tool and allows several read-only subagents to run concurrently.
 	turnFanOut bool
@@ -1476,6 +1482,8 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.turnPlanPaths = nil
 	s.turnSimple = false
 	s.turnDecision = in.Decision
+	s.turnWorker = in.KanbanItem != ""
+	s.finalizing = false
 	var draft *pendingDraft
 	// A turn that ends before the join must not leave the draft running.
 	defer func() {

@@ -340,6 +340,26 @@ func (w *Workspace) FilesChanged(ctx context.Context) int {
 	return len(strings.Split(out, "\n"))
 }
 
+// MaxDiffStatBytes caps the diff summary handed to a resumed claim.
+const MaxDiffStatBytes = 4 << 10
+
+// DiffStat summarises what the branch changed since Base (git diff --stat), so
+// a claim that resumes it sees the earlier claims' work before it reads a file.
+// Empty when there is nothing or git fails.
+func (w *Workspace) DiffStat(ctx context.Context) string {
+	if !w.Worktree || w.Base == "" {
+		return ""
+	}
+	out, err := git(ctx, w.run, w.Dir, "diff", "--stat=120", w.Base+"..HEAD")
+	if err != nil {
+		return ""
+	}
+	if len(out) > MaxDiffStatBytes {
+		out = out[:MaxDiffStatBytes] + "\n…"
+	}
+	return out
+}
+
 // branchDir is the ref directory this item's commits may write: the item's
 // own directory for a belai/K-xxxxxx/aN branch, so a model cannot touch
 // another item's branches; the whole belai/ namespace for an older flat

@@ -15,7 +15,7 @@
   "skills": ["belai-patcher"],
   "mode": "worker",
   "autonomy": "autonomous",
-  "max_iterations": 12,
+  "max_iterations": 40,
   "kanban": {
     "lists": ["backlog"],
     "labels": ["vuln"],
@@ -25,7 +25,7 @@
     "lease": "30m"
   },
   "workspace": {"isolation": "worktree", "publish": "agent"},
-  "budget": {"max_passes_per_item": 10, "max_wall_per_item": "75m"},
+  "budget": {"max_cost_usd_per_item": 20, "finalize_at": 0.85, "max_passes_per_item": 40, "max_wall_per_item": "4h"},
   "memory": {"enabled": true},
   "knowledge": {"paths": [".vulnetix"]}
 }

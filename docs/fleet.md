@@ -38,7 +38,7 @@ profile's `kanban` block says which items it takes and where they go next:
     "poll": "30s"
   },
   "workspace": {"isolation": "worktree"},
-  "budget": {"max_passes_per_item": 8, "max_wall_per_item": "45m"}
+  "budget": {"max_cost_usd_per_item": 25, "finalize_at": 0.85, "max_passes_per_item": 40, "max_wall_per_item": "4h"}
 }
 ```
 
@@ -225,6 +225,46 @@ review. With `kanban.survey.every: 1h`:
   `auto`), whatever the model asks.
 - **Missed hours are not made up.** A schedule that was not running at the hour
   skips it, and the worker reads its own notes for what it last covered.
+
+### Budgets and continuations
+
+An autonomous worker's items are bounded by cost, not by a small number of
+passes. `budget.max_cost_usd_per_item` is what the item's main-model calls
+are estimated to cost, reckoned per call from the provider's reported usage
+(uncached input, cache reads, cache writes and output) at the turn's model
+price. The price is the one the Software Factory dispatched for the model, or
+Belai's built-in table; a model with no known price leaves the cost bound off,
+and the passes, tokens and wall time stand in for it. Those three stay as
+generous safety rails: the built-in workers allow 40 tool rounds a pass, 20 to
+40 passes and two to four hours a card, beside a cost bound of $8 to $25.
+
+Before a bound ends a claim, the worker is told to finalise. When the first of
+cost, tokens, passes or wall time reaches `budget.finalize_at` of its bound
+(85% by default), the harness queues a fixed directive for the goal loop's next
+pass boundary: stop investigating, commit, record what was found and the next
+step on the card, update the linked issue when the profile has the tools,
+publish the branch as a draft pull request, and record the outcome. It is sent
+once per item. A worker that reaches its pass ceiling without having been told
+gets two reserve passes to do the same.
+
+A claim that runs out of budget is not a failed attempt when it made progress:
+new commits on its branch, or a finding recorded on the card. The harness
+pushes the branch, returns the card to the list it was claimed from with its
+labels untouched and counts a continuation (`agent.continuations` on the card;
+"continued (N of M)" in the release note). The next claim, on any machine, is
+told it is resuming: it is given what the branch already changed (`git diff
+--stat` against the base) and starts from the branch and the notes.
+`kanban.max_continuations` (default 5) bounds this per stage; past it the card
+goes to `blocked` for a person to raise the budget or split the card. A claim
+that ran out having changed nothing still counts as an attempt.
+
+A worker started by a Software Factory dispatch takes the organisation's agent
+budgets with the workflow's and the step's overrides (`belai rc` passes them
+in the environment, cleaned and clamped), layered over the profile:
+`budget.*`, `kanban.max_attempts`, `kanban.max_continuations` and
+`max_iterations`. The profile file is unchanged, so the overrides never stop a
+worker for a changed definition. The registry records each worker's estimated
+spend (`cost_micro_usd`, and `cost_live` for the item in hand).
 
 ### Facts
 
@@ -602,7 +642,7 @@ Failures are classified by type and status, never by the provider's text:
 `provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429) and
 `provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
 `provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
-`token_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
+`token_budget`, `cost_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
 `max_passes`, `incomplete`, `error`, `worker_failed`, `pool_exhausted` and `supervisor_failed` are
 not.
 

@@ -77,7 +77,7 @@ kanban.Board{Cursor: 7, Items: []kanban.Item{{
 
 When the format was version 1, `kanban.Encode` turned it into 519 bytes, and
 that capture is what the dumps below show. Today `Encode` writes version 4 and
-the same board is 1004 bytes, because `Item` has gained fields and the schema is
+the same board is 1022 bytes, because `Item` has gained fields and the schema is
 sent with every file (see [Size](#size)). The version 1 file is still valid: it
 is read, and its missing fields decode as zero. Here are the 519 bytes, with the
 sections marked.
@@ -173,8 +173,8 @@ The full specification is the Go package documentation for `encoding/gob`.
 
 | Board | Bytes |
 |---|---|
-| empty | 890: 6 header, 852 payload (the schema alone), 32 checksum |
-| the one-item example above | 1004 (519 when the format was version 1) |
+| empty | 908: 6 header, 870 payload (the schema alone), 32 checksum |
+| the one-item example above | 1022 (519 when the format was version 1) |
 | a typical item after that | roughly 150–600 more, mostly its text |
 
 The schema is written once per file, not once per item. Each `Encode`
@@ -236,6 +236,8 @@ type Item struct {
 	LeaseUntil int64
 	Attempts   int
 	Bounces    int
+	// Continuations counts budget run-outs at this stage that made progress.
+	Continuations int
 	Branch     string
 	PR         string
 
@@ -311,6 +313,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `LeaseUntil` | Unix milliseconds the claim lapses at. Renewals are host-local: they change neither `Updated` nor the history, and are never pushed on their own. | the harness |
 | `Attempts` | Claims that ended without success at the stage the item is in; it starts again at zero when the item moves on to a later list. | the harness |
 | `Bounces` | Times a failed claim sent the item back to an earlier list; it bounds a card passing between two stages. | the harness |
+| `Continuations` | Claims at this stage that ran out of budget after making progress and went back to be resumed without costing an attempt. It starts again at zero when the item moves on, and `kanban.max_continuations` bounds it. A file written before the field existed decodes it as zero. | the harness |
 | `Branch` | The git branch holding the item's work. | the harness |
 | `PR` | The draft pull request opened for the branch. | the harness |
 | `Finding` | The advisory id (or `<kind>:<rule>:<hash>` for a SARIF result) a security card is about. At most 64 characters of `[A-Za-z0-9._:-]`. `Finding`, `SeenRef`, `Verdict` and `VEX` sync on the wire (`agent.finding`, `seenRef`, `verdict`, `vex`); a pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. | the harness (`UpsertFinding`) |
@@ -554,7 +557,7 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `Deleted` | `deleted` | |
 | `Labels`, `Priority`, `Assignee`, `Parent`, `DependsOn`, `Hops` | `agent.labels`, `agent.priority`, `agent.assignee`, `agent.parent`, `agent.dependsOn`, `agent.hops` | Always sent. |
 | `PinHost` | `agent.pinHost` | A sync host id; the website may set or clear it. Only a worker on that host claims the item. |
-| `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Bounces`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.bounces`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
+| `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Bounces`, `Continuations`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.bounces`, `agent.continuations`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
 | `Finding`, `SeenRef`, `Verdict`, `VEX` | `agent.finding`, `agent.seenRef`, `agent.verdict`, `agent.vex` | Sent, but only a host sets them: the website ignores them on an edit. A pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. |
 | `Gates`, `Clauses`, `Covers` | — | Local only; never sent, and a pulled copy keeps the local values. |
 | `Dirty` | — | Local only; never sent. |

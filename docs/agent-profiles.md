@@ -406,7 +406,8 @@ items and works each as a goal. It adds these fields:
 | `kanban.handoff_to`, `kanban.handoff_labels` | string[] | The profiles and labels `KanbanHandoff` may route new items to. |
 | `kanban.handoff_repos` | bool | Gives `KanbanHandoff` a `repo` argument that files the task under a repository the harness found beside or beneath the worker's directory, so a worker in a plain folder can send each finding to the repo that owns it. Off by default. See [Filing a handoff under another repository](fleet.md#filing-a-handoff-under-another-repository). |
 | `kanban.handoff_checkpoint` | string | Holds every item the worker hands off for a person: `plan_approval`, `root_cause`, `visual` or `pre_pr`. The harness adds the checkpoint label to each handoff, so a builder takes none until a person approves it. Needs `handoff_to` or `handoff_labels`. See [Human checkpoints](kanban.md#human-checkpoints). |
-| `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). |
+| `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). A claim that ran out of budget after making progress is a continuation, not a failed attempt. |
+| `kanban.max_continuations` | int | Claims at one stage that may run out of budget after making progress (new commits on the branch, or a finding recorded with `KanbanUpdate`) and go back to be resumed without costing an attempt (default 5). The branch is pushed so the next claim, on any machine, resumes it, and that claim is told to start from the branch and the notes. Past the limit the item goes to `blocked`. See [Budgets and continuations](fleet.md#budgets-and-continuations). |
 | `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
 | `kanban.survey.title`, `kanban.survey.body` | string | When the board has nothing for the worker, it files and works one survey item with this title (`{project}` replaced, date appended) and body. `title` is required in a `survey` block. See [Finding work](fleet.md#finding-work-kanbansurvey). |
@@ -430,7 +431,9 @@ items and works each as a goal. It adds these fields:
 | `workspace.sync` | object[] | Files and directories the profile defines, which the harness copies from the repository into the worktree before each turn and, for `access: write` (default `read`), merges back after it. Up to 8 entries of `{ "path": ".vulnetix/crews/delivery.md", "access": "write" }`; a path ending in `/` is a directory. It needs `workspace.isolation: worktree`. A write entry lifts the worker's deny on writing exactly that path. Git's files, Belai's state and credentials and the scanner evidence are never synced, and a tracked file outside `.vulnetix` is never written back. It travels with the profile like `knowledge`. See [Files placed in a worktree](fleet.md#files-placed-in-a-worktree). |
 | `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `publish` is `none`, `agent` (the agent may push its branch and open a draft pull request with `PublishBranch`) or `draft_pr` (the harness does so when the item reaches `done`); see [Publishing](fleet.md#publishing). |
 | `memory.enabled`, `memory.max_bytes` | | The worker's lessons file (default 8 KiB, at most 64 KiB). |
-| `budget.max_passes_per_item`, `budget.max_tokens_per_item`, `budget.max_wall_per_item` | | Per-item bounds. |
+| `budget.max_cost_usd_per_item` | number | The estimated cost of the item's model calls, in US dollars, at which the claim ends: the real bound for an autonomous worker. The prices come from the Software Factory's dispatch, or from Belai's built-in table; a model with no known price falls back to the token, pass and wall bounds. |
+| `budget.finalize_at` | number | The fraction (0.5 to 0.95, default 0.85) of any per-item bound at which the harness tells the worker to finalise: stop investigating, commit, record its findings and the next step on the card, publish the branch and record an outcome. The worker then has a short reserve before the bound ends the claim. |
+| `budget.max_passes_per_item`, `budget.max_tokens_per_item`, `budget.max_wall_per_item` | | Per-item safety rails beside the cost bound. A Software Factory dispatch can override every budget value, `kanban.max_attempts` and `kanban.max_continuations`. |
 | `schedule` | string | For a worker, a cron expression (`cron: */15 * * * *`, or a bare five-field expression, `@hourly`, `@daily`): the worker looks for work only at those times. |
 
 Validation fails closed:
@@ -438,7 +441,7 @@ Validation fails closed:
 - a worker needs a `kanban` block with `on_success`;
 - it claims only from `backlog` or `review`;
 - `guardrails: false` is rejected outright;
-- `autonomy: autonomous` needs `budget.max_passes_per_item`;
+- `autonomy: autonomous` needs `budget.max_cost_usd_per_item` or `budget.max_passes_per_item`;
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
 - `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
 - `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;

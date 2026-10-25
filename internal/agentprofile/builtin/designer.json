@@ -14,7 +14,7 @@
   "tools": ["Read", "Grep", "Glob", "Edit", "Write", "Bash", "Git", "GH", "Glab", "WebFetch", "WebSearch", "Vulnetix", "mcp__vulnetix__*", "Skill"],
   "mode": "worker",
   "autonomy": "autonomous",
-  "max_iterations": 12,
+  "max_iterations": 30,
   "kanban": {
     "lists": ["backlog"],
     "labels": ["ui-design"],
@@ -23,11 +23,11 @@
     "handoff_labels": ["build"],
     "handoff_checkpoint": "visual",
     "gates": {"require": true},
-    "max_attempts": 2,
+    "max_attempts": 3,
     "lease": "30m"
   },
   "workspace": {"isolation": "worktree", "read_only": true, "sync": [{"path": ".vulnetix/crews/delivery.md", "access": "write"}]},
-  "budget": {"max_passes_per_item": 4, "max_wall_per_item": "30m"},
+  "budget": {"max_cost_usd_per_item": 8, "finalize_at": 0.85, "max_passes_per_item": 20, "max_wall_per_item": "2h"},
   "memory": {"enabled": true},
   "knowledge": {"paths": [".vulnetix/crews/delivery.md"]}
 }

@@ -99,7 +99,7 @@ func (s *Store) Decide(ref string, d Decision, sessionID string) (Item, error) {
 			if d.Back == Backlog || d.Back == Review {
 				it.Bounces++
 			}
-			it.Attempts = 0
+			it.Attempts, it.Continuations = 0, 0
 		}
 		note := fmt.Sprintf("checkpoint %s %s", reason, verb)
 		if n := CleanBody(d.Note, MaxNoteBytes); n != "" {

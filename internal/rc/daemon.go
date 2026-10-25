@@ -193,6 +193,9 @@ type WorkerStart struct {
 	// AskOff is the request's ask: false (belai agent start -ask-off): a call
 	// that would ask is allowed instead of blocking the item.
 	AskOff bool
+	// Budget is the request's cleaned worker budget as compact JSON; "" when
+	// it carried none. It travels in the environment like Trigger.
+	Budget string
 }
 
 // Child is one session to start.

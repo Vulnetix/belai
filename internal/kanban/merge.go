@@ -154,7 +154,7 @@ func keepAgent(r *Item, local Item) {
 		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
 		r.ClaimedBy, r.ClaimHost, r.ClaimFrom = local.ClaimedBy, local.ClaimHost, local.ClaimFrom
-		r.LeaseUntil, r.Attempts, r.Branch = local.LeaseUntil, local.Attempts, local.Branch
+		r.LeaseUntil, r.Attempts, r.Continuations, r.Branch = local.LeaseUntil, local.Attempts, local.Continuations, local.Branch
 		// The pull request is fill-only: a pulled one stands when this host has
 		// none, so one the forge coordinator opened and recorded on the card
 		// survives a host that never pushed the branch itself.
@@ -224,6 +224,7 @@ func cleanRemote(r Item) Item {
 	r.Hops = max(r.Hops, 0)
 	r.Attempts = max(r.Attempts, 0)
 	r.Bounces = max(r.Bounces, 0)
+	r.Continuations = max(r.Continuations, 0)
 	r.ClaimedBy, r.ClaimHost = CleanTitle(r.ClaimedBy), CleanTitle(r.ClaimHost)
 	if r.ClaimFrom != "" && !r.ClaimFrom.Valid() {
 		r.ClaimFrom = ""

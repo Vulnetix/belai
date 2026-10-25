@@ -194,7 +194,11 @@ Retry budgets are configurable via `config.Settings.Resilience`:
   some: an open-ended objective such as "keep uplifting test coverage" ran 21
   passes and 44M tokens over 7.4 hours (session `f84e8c3a`, 2026-09-25) before
   it was cancelled by hand. Set `max_passes` for open-ended or unattended goals,
-  and for headless runs, where nobody is watching the spend.
+  and for headless runs, where nobody is watching the spend. A fleet worker
+  that reaches the ceiling without having been told to finalise first gets two
+  reserve passes to commit, record its findings and publish before the loop
+  stops; its card is then resumed by the next claim (see
+  [Budgets and continuations](fleet.md#budgets-and-continuations)).
 - `max_clarify_rounds`: bounds the clarify loop (default 3). A round whose
   questions were all asked before ends the loop early.
   A **negative** value is the documented way to disable clarification

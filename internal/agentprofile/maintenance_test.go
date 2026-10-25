@@ -39,8 +39,11 @@ func TestMaintenanceFixersAreShapedLikeTheBuilder(t *testing.T) {
 		if k.Gates == nil || k.Gates.Verify != VerifyEnforce || !k.Gates.Draft {
 			t.Errorf("%s gates %+v: verify enforce and draft", name, k.Gates)
 		}
-		if k.MaxAttempts != 2 {
-			t.Errorf("%s max_attempts %d, want 2", name, k.MaxAttempts)
+		if k.MaxAttempts != 3 {
+			t.Errorf("%s max_attempts %d, want 3", name, k.MaxAttempts)
+		}
+		if p.Budget.MaxCostUSDPerItem <= 0 || p.MaxIterations < 40 {
+			t.Errorf("%s: a cost bound and a full per-pass tool budget, got %+v, %d iterations", name, p.Budget, p.MaxIterations)
 		}
 		if p.IsolationMode() != IsolationWorktree || p.PublishMode() != PublishAgent || p.Memory == nil || !p.Memory.Enabled {
 			t.Errorf("%s: worktree, publish agent and memory", name)

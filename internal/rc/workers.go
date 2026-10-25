@@ -53,6 +53,9 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	// those calls allowed instead; deny rules, the posture, guardrails and the
 	// sandbox still apply. ask: true and no ask keep the block.
 	w.AskOff = r.Ask != nil && !*r.Ask
+	// The factory's per-item budgets and retries for these workers, layered
+	// over their profiles (fleet.Limits). Cleaned here and again by each worker.
+	w.Budget = r.Budget.Encode()
 	// A stored schedule drains by design, so it never stays. Otherwise the
 	// request's idle cap is clamped here, so no value reaches the argv above
 	// the fleet's hard maximum or below zero.
@@ -127,7 +130,7 @@ func runAgentStart(w WorkerStart) (string, error) {
 	cmd.Dir = w.Cwd
 	// The workers, and a crew run's supervisor and the members it starts
 	// later, inherit this environment, so the trigger reaches each of them.
-	cmd.Env = TriggerEnv(os.Environ(), w.Trigger)
+	cmd.Env = BudgetEnv(TriggerEnv(os.Environ(), w.Trigger), w.Budget)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()

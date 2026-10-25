@@ -301,6 +301,12 @@ type RCProfile struct {
 	Lease         string   `json:"lease"`
 	MaxWall       string   `json:"maxWall"`
 	MaxPasses     int      `json:"maxPasses"`
+	// MaxCostUSD, MaxContinuations and MaxIterations are the profile's own per-
+	// item cost bound, continuation limit and per-pass tool budget (0: unset),
+	// before any factory override.
+	MaxCostUSD       float64 `json:"maxCostUsd,omitempty"`
+	MaxContinuations int     `json:"maxContinuations,omitempty"`
+	MaxIterations    int     `json:"maxIterations,omitempty"`
 	// How the console presents the agent (agentprofile identity fields): its
 	// UUID, display name, four colours and avatar id. Presentation only; empty
 	// for a profile that has none, and none of it is a prompt.
@@ -436,6 +442,13 @@ type RCWorker struct {
 	Done    int    `json:"done"`
 	Failed  int    `json:"failed"`
 	Branch  string `json:"branch,omitempty"`
+	// Tokens and CostMicroUSD are the worker's spend over its finished items
+	// (estimated cost, millionths of a dollar; zero for an unpriced model), and
+	// CostLive the item in hand's so far. They only grow while the worker
+	// lives, so the server can charge the difference to the factory's budgets.
+	Tokens       int   `json:"tokens,omitempty"`
+	CostMicroUSD int64 `json:"costMicroUsd,omitempty"`
+	CostLive     int64 `json:"costLive,omitempty"`
 	// Log is the tail of the worker's own log file, startup included:
 	// harness lines and the detached process's stderr, each cleaned by
 	// CleanLogLine. Never a transcript: model output goes to the session.
@@ -619,6 +632,10 @@ type Dispatch struct {
 	// Trigger says what started a "start", "worker" or "crew" request. It is
 	// untrusted provenance: cleaned before use and nil when absent.
 	Trigger *Trigger `json:"trigger,omitempty"`
+	// Budget, on a "worker" or "crew" request, is the factory's per-item
+	// budget and retry settings for the workers it starts, layered over their
+	// profiles. Nil keeps the profiles' own. Cleaned before use.
+	Budget *WorkerBudget `json:"budget,omitempty"`
 	// A "project_prefs" request names an offered directory in Cwd and the flat
 	// preference keys to set (with their values) and to clear. Keys and values
 	// are checked by the host against config.ProjectPrefs' shape.

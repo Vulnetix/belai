@@ -130,6 +130,25 @@ type WorkerClaim struct {
 	handoff []string // ids handed off this claim
 	verdict *VerdictRecord
 	outcome *OutcomeRecord
+	notes   int // notes added to the claimed item this claim
+}
+
+// noteAdded counts a note added to the claimed item.
+func (c *WorkerClaim) noteAdded(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id == c.Item {
+		c.notes++
+	}
+}
+
+// Notes reports how many notes the worker added to its claimed item this
+// claim: a finding recorded for the next claim is progress even when no file
+// changed.
+func (c *WorkerClaim) Notes() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.notes
 }
 
 // owns reports whether the worker may write to item id: the claimed item or
@@ -391,6 +410,9 @@ func (t KanbanUpdate) Execute(ctx context.Context, args map[string]any) (Result,
 	it, err := t.Store.UpdateAs(id, p, t.prov().SessionID, t.holder())
 	if err != nil {
 		return Result{}, kanbanErr(err, id)
+	}
+	if t.Claim != nil && strings.TrimSpace(p.Note) != "" {
+		t.Claim.noteAdded(it.ID)
 	}
 	return kanbanWrite("update", it, fmt.Sprintf("%s updated [%s]", it.Short(), it.List)), nil
 }

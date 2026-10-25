@@ -25,6 +25,7 @@ const (
 	FaultOverflow    = "context_overflow"
 	FaultWallBudget  = "wall_budget"
 	FaultTokenBudget = "token_budget"
+	FaultCostBudget  = "cost_budget"
 	FaultLeaseLost   = "lease_lost"
 	FaultWithheld    = "withheld"
 	FaultWorkspace   = "workspace"
@@ -44,7 +45,7 @@ const (
 
 // FaultCodes lists every code, for the control room's filter and the docs.
 var FaultCodes = []string{FaultUnavailable, FaultRateLimit, FaultTransport, FaultAuth, FaultQuota, FaultRejected,
-	FaultOverflow, FaultWallBudget, FaultTokenBudget, FaultLeaseLost, FaultWithheld, FaultWorkspace,
+	FaultOverflow, FaultWallBudget, FaultTokenBudget, FaultCostBudget, FaultLeaseLost, FaultWithheld, FaultWorkspace,
 	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted, FaultSupervisor}
 
 // Fault is a classified failure.
@@ -56,6 +57,17 @@ type Fault struct {
 	// the item no attempt, and enough of them in a row move the worker to a
 	// fallback.
 	Outage bool
+}
+
+// Budget reports whether the failure is an item budget running out (cost,
+// tokens, wall time or passes) rather than something going wrong: a claim
+// that made progress before it is continued, not failed.
+func (f Fault) Budget() bool {
+	switch f.Code {
+	case FaultWallBudget, FaultTokenBudget, FaultCostBudget, FaultMaxPasses:
+		return true
+	}
+	return false
 }
 
 // providerOutage matches a provider failure that reached the worker only as
@@ -70,6 +82,8 @@ func classifyFault(runErr, cause error, stop run.StopReason) Fault {
 		return Fault{Code: FaultWallBudget}
 	case errors.Is(cause, errTokenBudget):
 		return Fault{Code: FaultTokenBudget}
+	case errors.Is(cause, errCostBudget):
+		return Fault{Code: FaultCostBudget}
 	case errors.Is(cause, errLeaseLost):
 		return Fault{Code: FaultLeaseLost}
 	}
