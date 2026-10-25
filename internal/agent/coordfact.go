@@ -22,7 +22,34 @@ const (
 	CoordTookOver CoordEvent = "took_over"
 	CoordWaiting  CoordEvent = "waiting"
 	CoordFailed   CoordEvent = "failed"
+	// CoordFinalize is the fleet worker's own harness telling the goal loop that
+	// a per-item budget is nearly spent: finalise now. Not a coordinator event.
+	CoordFinalize CoordEvent = "finalize"
 )
+
+// FinalizeReasons are the budgets a finalise fact may name.
+var FinalizeReasons = map[string]bool{"cost": true, "tokens": true, "passes": true, "wall": true}
+
+// FinalizeReservePasses is how many passes a worker gets after it is told to
+// finalise at a pass ceiling.
+const FinalizeReservePasses = 2
+
+// NewFinalizeFact is the fact that tells a worker to finalise because the
+// budget named by reason (a FinalizeReasons word) is nearly spent.
+func NewFinalizeFact(reason string) (CoordFact, error) {
+	if !FinalizeReasons[reason] {
+		return CoordFact{}, errors.New("not a budget")
+	}
+	return CoordFact{event: CoordFinalize, reason: reason}, nil
+}
+
+// finalizeText is the fixed finalise directive for a budget word.
+func finalizeText(reason string) string {
+	return "Budget: this item's " + reason + " budget is nearly spent, and the claim ends when it is. Finalise now, in this pass: stop investigating and do not start new work. " +
+		"Commit what you have. Record on the item with KanbanUpdate what you found, what changed, what remains and the exact next step, so the next claim resumes from it; if you have tools for the item's linked issue, update it too. " +
+		"If the branch has changes and you may publish, call PublishBranch (a draft pull request is fine; say in its description what is unfinished). " +
+		"Then record the outcome with KanbanOutcome if you have it: success only when the work is done and verified, otherwise end the turn with the summary. Unfinished work is kept and resumed; it is not a failure."
+}
 
 // CoordReasons is the coordinator's reason vocabulary (BelaiForgeRequest.reason).
 // A fact carries one of these words, never the coordinator's own text.
@@ -132,6 +159,8 @@ func (f CoordFact) Text() string {
 		return fmt.Sprintf("coordinator is waiting for the GitHub rate limit until %s; stay paused, do not retry publishing", f.until.Format(time.RFC3339))
 	case CoordFailed:
 		return fmt.Sprintf("coordinator could not publish: %s", f.reason)
+	case CoordFinalize:
+		return finalizeText(f.reason)
 	}
 	return ""
 }
@@ -184,6 +213,9 @@ func (s *Session) coordBoundary(ctx context.Context, turns []run.Turn, emit func
 		case CoordTookOver:
 			emit(Event{Kind: EventWarningKind, Warning: "goal stopped: the forge coordinator took over publishing this branch"})
 			return turns, true, nil
+		case CoordFinalize:
+			s.finalizing = true
+			emit(Event{Kind: EventWarningKind, Warning: "finalising: the item's " + f.reason + " budget is nearly spent"})
 		case CoordWaiting:
 			emit(Event{Kind: EventWarningKind, Warning: "waiting for the forge coordinator: GitHub rate limit until " + f.until.Format(time.RFC3339)})
 			next, err := s.waitCoordinator(ctx, f.until)

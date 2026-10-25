@@ -205,7 +205,9 @@ func (s *Session) allTestCommands() []string {
 // derived from content, a SAFE-classified file containing the right token
 // could flip harness state.
 type passLedger struct {
-	passes   int
+	passes int
+	// reserve is the passes granted past the pass ceiling to finalise in.
+	reserve  int
 	goalText string
 	// todoGates counts the completions sent back because the todo list still
 	// had open items (refuseOpenTodos), bounded by maxTodoReprompts.
@@ -752,7 +754,17 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Reply: lastText, Passes: l.passes, GoalSentinel: rolemanager.GoalPartial}, nil
 		}
 
-		if maxPasses > 0 && l.passes >= maxPasses {
+		if maxPasses > 0 && l.passes >= maxPasses+l.reserve && s.turnWorker && !s.finalizing {
+			// A fleet worker reaching its pass ceiling unwarned gets a short
+			// reserve to finalise in: commit, record what it found, publish.
+			// Its work is resumed by the next claim, so this is a hand-off,
+			// not the end.
+			s.finalizing = true
+			l.reserve = FinalizeReservePasses
+			turns = append(turns, directiveTurns(finalizeText("passes"))...)
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("finalising: max passes (%d) reached; %d reserve passes to wrap up", maxPasses, FinalizeReservePasses)})
+		}
+		if maxPasses > 0 && l.passes >= maxPasses+l.reserve {
 			s.turnStop = run.StopMaxPasses
 			return s.goalErrorReport(ctx, system, turns, streaming, emit, run.Result{Passes: l.passes, GoalSentinel: rolemanager.GoalPartial},
 				fmt.Errorf("goal pass loop stopped: max passes (%d) reached", maxPasses))

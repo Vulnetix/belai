@@ -30,6 +30,10 @@ type coordState struct {
 	undelivered *agent.CoordFact
 	// sink queues a fact on the running turn's goal loop; nil between turns.
 	sink func(agent.CoordFact) bool
+	// finalized is set once the item in hand was told to finalise (budget.go),
+	// and finalize holds that fact until a turn's loop takes it.
+	finalized bool
+	finalize  *agent.CoordFact
 }
 
 // beginCoord sets the workspace up to hand its branch to the coordinator and
@@ -121,6 +125,9 @@ func (w *Worker) attachCoord(sink func(agent.CoordFact) bool) func() {
 	w.coord.sink = sink
 	if f := w.coord.undelivered; f != nil && sink(*f) {
 		w.coord.undelivered = nil
+	}
+	if f := w.coord.finalize; f != nil && sink(*f) {
+		w.coord.finalize = nil
 	}
 	w.coordMu.Unlock()
 	return func() {

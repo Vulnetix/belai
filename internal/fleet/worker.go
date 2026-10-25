@@ -194,6 +194,10 @@ type Worker struct {
 	// worker spools for the forge coordinator (coordworker.go). nil, or false,
 	// hands nothing over: a push that fails fails as it always did.
 	Coordinator func() bool
+	// Limits are the Software Factory's budget and retry settings for this
+	// worker's items, layered over the profile's (limits.go); nil keeps the
+	// profile's own.
+	Limits *Limits
 
 	now        func() time.Time
 	surveyed   bool   // kanban.survey already considered this start
@@ -212,10 +216,14 @@ type Worker struct {
 	poolFailed map[Target]bool  // pool targets that failed since the last success (pool.go)
 	crewRun    *CrewRun         // the crew run as last read
 	liveTokens atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
-	coordMu    sync.Mutex
-	coord      coordState        // the forge coordinator's answer for the item in hand
-	guardErr   string            // why the duplicate guard could not list open pull requests, logged once
-	heldLogged map[string]string // backlog cards the duplicate guard holds, with the card in front (dupguard.go)
+	liveCost   atomic.Int64     // the item in hand's estimated cost so far, µ$ (budget.go)
+	price      priceSlot        // the running turn's model price; nil when unknown (budget.go)
+	// unpricedLogged is set once the worker logged that its model has no price.
+	unpricedLogged atomic.Bool
+	coordMu        sync.Mutex
+	coord          coordState        // the forge coordinator's answer for the item in hand
+	guardErr       string            // why the duplicate guard could not list open pull requests, logged once
+	heldLogged     map[string]string // backlog cards the duplicate guard holds, with the card in front (dupguard.go)
 }
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
@@ -252,6 +260,7 @@ func (w *Worker) save() {
 	defer w.saveMu.Unlock()
 	w.Record.Beat = w.clock().UnixMilli()
 	w.Record.TokensLive = int(w.liveTokens.Load())
+	w.Record.CostLive = w.liveCost.Load()
 	if err := w.Registry.Save(w.Record); err != nil {
 		w.logf("registry: %v", err)
 	}
@@ -339,8 +348,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	if w.Runner == nil {
 		w.Runner = w.runAgent
 	}
+	// The hash pins the profile file; the factory's limits are layered over
+	// it after, so they never read as a changed definition.
+	w.Record.ProfileHash = ProfileHash(w.Profile)
+	if w.Limits != nil {
+		w.Profile = w.Limits.Apply(w.Profile)
+	}
 	p := w.Profile
-	w.Record.ProfileHash = ProfileHash(p)
 	w.Record.PID = os.Getpid()
 	w.Record.Repo = w.Repo
 	w.Record.Project, _ = kanban.ProjectFor(w.Repo)
@@ -876,13 +890,21 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	w.draftGates(itemCtx, it)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
+	// The meter adds up the item's cost and tells the worker to finalise once
+	// any budget nears its end (budget.go).
+	meter := w.newMeter(cancel)
+	defer meter.wallTimer(p.WallBudget())()
 	emit := func(e agent.Event) {
+		if e.Kind == agent.EventModelCallKind && e.Usage != nil {
+			meter.call(*e.Usage)
+		}
 		if e.Kind == agent.EventGoalStateKind && e.GoalState != nil {
 			tokMu.Lock()
 			tokens = tokBase + e.GoalState.TokensUsed
 			total := tokens
 			tokMu.Unlock()
 			w.liveTokens.Store(int64(total))
+			meter.goal(total, e.GoalState.Passes)
 			if b := p.Budget; b != nil && b.MaxTokensPerItem > 0 && total > b.MaxTokensPerItem {
 				cancel(errTokenBudget)
 			}
@@ -899,6 +921,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		tokMu.Lock()
 		w.Record.Tokens += tokens
 		tokMu.Unlock()
+		w.Record.CostMicroUSD += meter.spent()
 	}
 
 	ws, err := w.workspace(ctx, it)
@@ -1473,6 +1496,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	}
 	w.Record.Outages = w.outages
 	w.liveTokens.Store(0)
+	w.liveCost.Store(0)
 	if o.failed && o.fault.Code != "" {
 		w.Record.LastFault, w.Record.LastFaultAt = o.fault.Code, w.clock().UnixMilli()
 	}
@@ -1623,6 +1647,8 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		// web apply from this turn.
 		settings, cfg, pol = w.Controls.Turn(settings, cfg, pol)
 	}
+	// The cost bound reckons this turn's calls at its model's price.
+	w.setPrice(cfg)
 	// The pass ceiling is a copy: Resilience is a pointer shared with the
 	// caller's settings.
 	if b := p.Budget; b != nil && b.MaxPassesPerItem > 0 {

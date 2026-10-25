@@ -6,15 +6,15 @@
   "tools": ["Read", "Grep", "Glob", "Bash", "Git", "GH", "Glab", "Skill"],
   "mode": "worker",
   "autonomy": "autonomous",
-  "max_iterations": 10,
+  "max_iterations": 30,
   "kanban": {
     "lists": ["backlog"],
     "labels": ["pr-review"],
     "on_success": {"list": "done", "labels": ["reviewed"], "drop_labels": ["pr-review"]},
-    "max_attempts": 2,
+    "max_attempts": 3,
     "lease": "20m"
   },
   "workspace": {"isolation": "worktree", "read_only": true},
-  "budget": {"max_passes_per_item": 4, "max_wall_per_item": "30m"},
+  "budget": {"max_cost_usd_per_item": 10, "finalize_at": 0.85, "max_passes_per_item": 20, "max_wall_per_item": "2h"},
   "memory": {"enabled": true}
 }

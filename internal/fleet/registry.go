@@ -105,6 +105,11 @@ type Record struct {
 	Draining bool `json:"draining,omitempty"`
 	// TokensLive is the item in hand's token count so far.
 	TokensLive int `json:"tokens_live,omitempty"`
+	// CostMicroUSD is the estimated cost of every item's model calls, and
+	// CostLive the item in hand's so far, in millionths of a dollar. Zero when
+	// the model has no known price.
+	CostMicroUSD int64 `json:"cost_micro_usd,omitempty"`
+	CostLive     int64 `json:"cost_live,omitempty"`
 }
 
 // Registry is the directory of worker records.

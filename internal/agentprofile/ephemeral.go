@@ -6,6 +6,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // EphemeralPrefix starts the name of a profile made from a prompt.
@@ -49,7 +51,7 @@ func Ephemeral(o EphemeralOptions) (AgentProfile, error) {
 		SystemPrompt:  prompt,
 		Mode:          ModeWorker,
 		Autonomy:      AutonomyAutonomous,
-		MaxIterations: 12,
+		MaxIterations: config.DefaultMaxIterations,
 		Tools:         slices.Clone(o.Tools),
 		Ephemeral:     true,
 	}
@@ -79,7 +81,8 @@ func Ephemeral(o EphemeralOptions) (AgentProfile, error) {
 		}
 	}
 	p.Kanban.OnSuccess = Route{List: to}
-	p.Budget = &BudgetSpec{MaxPassesPerItem: 8, MaxWallPerItem: "45m"}
+	// The cost bound is the real limit; passes and wall time are safety rails.
+	p.Budget = &BudgetSpec{MaxCostUSDPerItem: 25, FinalizeAt: DefaultFinalizeAt, MaxPassesPerItem: 40, MaxWallPerItem: "4h"}
 	if err := p.Validate(); err != nil {
 		return AgentProfile{}, err
 	}

@@ -370,10 +370,11 @@ func profileSummary(p agentprofile.AgentProfile) sessionsync.RCProfile {
 		OnSuccess: route(k.OnSuccess), OnFailure: route(k.OnFailure),
 		HandoffTo: nonNil(k.HandoffTo), HandoffLabels: nonNil(k.HandoffLabels),
 		MaxAttempts: k.MaxAttempts, Lease: p.LeaseDuration().String(),
+		MaxContinuations: k.MaxContinuations, MaxIterations: p.MaxIterations,
 		ID: p.ID, DisplayName: p.DisplayName, Palette: slices.Clone(p.Palette), AvatarID: p.AvatarID,
 	}
 	if b := p.Budget; b != nil {
-		out.MaxWall, out.MaxPasses = b.MaxWallPerItem, b.MaxPassesPerItem
+		out.MaxWall, out.MaxPasses, out.MaxCostUSD = b.MaxWallPerItem, b.MaxPassesPerItem, b.MaxCostUSDPerItem
 	}
 	return out
 }

@@ -301,6 +301,12 @@ type RCProfile struct {
 	Lease         string   `json:"lease"`
 	MaxWall       string   `json:"maxWall"`
 	MaxPasses     int      `json:"maxPasses"`
+	// MaxCostUSD, MaxContinuations and MaxIterations are the profile's own per-
+	// item cost bound, continuation limit and per-pass tool budget (0: unset),
+	// before any factory override.
+	MaxCostUSD       float64 `json:"maxCostUsd,omitempty"`
+	MaxContinuations int     `json:"maxContinuations,omitempty"`
+	MaxIterations    int     `json:"maxIterations,omitempty"`
 	// How the console presents the agent (agentprofile identity fields): its
 	// UUID, display name, four colours and avatar id. Presentation only; empty
 	// for a profile that has none, and none of it is a prompt.
@@ -619,6 +625,10 @@ type Dispatch struct {
 	// Trigger says what started a "start", "worker" or "crew" request. It is
 	// untrusted provenance: cleaned before use and nil when absent.
 	Trigger *Trigger `json:"trigger,omitempty"`
+	// Budget, on a "worker" or "crew" request, is the factory's per-item
+	// budget and retry settings for the workers it starts, layered over their
+	// profiles. Nil keeps the profiles' own. Cleaned before use.
+	Budget *WorkerBudget `json:"budget,omitempty"`
 	// A "project_prefs" request names an offered directory in Cwd and the flat
 	// preference keys to set (with their values) and to clear. Keys and values
 	// are checked by the host against config.ProjectPrefs' shape.

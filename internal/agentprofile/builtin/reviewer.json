@@ -15,7 +15,7 @@
   "skills": ["belai-reviewer"],
   "mode": "worker",
   "autonomy": "autonomous",
-  "max_iterations": 10,
+  "max_iterations": 30,
   "kanban": {
     "lists": ["review"],
     "labels": ["needs-review"],
@@ -26,7 +26,7 @@
     "lease": "20m"
   },
   "workspace": {"isolation": "worktree", "publish": "draft_pr", "sync": [{"path": ".vulnetix/crews/delivery.md", "access": "write"}]},
-  "budget": {"max_passes_per_item": 4, "max_wall_per_item": "30m"},
+  "budget": {"max_cost_usd_per_item": 10, "finalize_at": 0.85, "max_passes_per_item": 20, "max_wall_per_item": "2h"},
   "memory": {"enabled": true},
   "knowledge": {"paths": [".vulnetix/crews/delivery.md"]}
 }
