@@ -88,7 +88,7 @@ heartbeat.
   approved, denied or expired in the last ten minutes. The daemon deduplicates
   by id and gives up on a login it cannot store after five heartbeats.
 
-Details and the server's rules: vdb-site `docs/belai-host-attention.md`.
+Details and the server's rules are in the host attention page of the vdb-site docs.
 
 ## Where sessions run
 
