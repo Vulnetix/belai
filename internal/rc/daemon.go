@@ -99,6 +99,18 @@ type Options struct {
 	// ScheduleRemote is the website half of schedule sync (the sync client
 	// unless a test replaces it).
 	ScheduleRemote schedule.Remote
+	// RedeemLogin exchanges the device code of an approved sign-in request for
+	// the login and stores it (attention.go). nil means the daemon cannot store
+	// one and tells the log what to run instead.
+	RedeemLogin func(ctx context.Context, deviceCode string) error
+	// CredentialExpiry says when the current login stops working, when it has
+	// an expiry (a Bearer token login). nil, or false, means it never asks for
+	// a new one. CredentialWarn is how long before the expiry it asks (30m) and
+	// CredentialEvery how often it looks (1m).
+	CredentialExpiry func() (time.Time, bool)
+	CredentialWarn   time.Duration
+	CredentialEvery  time.Duration
+
 	// ScheduleEvery is how often stored schedules are checked and synced
 	// (30s).
 	ScheduleEvery time.Duration
@@ -275,6 +287,9 @@ type Daemon struct {
 	// adopt picks the checkout and the directory for a clone request
 	// (adopt.go); tests replace its engine options.
 	adopt *adopter
+	// requests are the host requests made and not yet settled (attention.go),
+	// by the website's id, under mu.
+	requests map[string]*hostRequest
 }
 
 type child struct {
@@ -300,6 +315,12 @@ func New(o Options) (*Daemon, error) {
 	}
 	if o.Out == nil {
 		o.Out = io.Discard
+	}
+	if o.CredentialWarn <= 0 {
+		o.CredentialWarn = DefaultCredentialWarn
+	}
+	if o.CredentialEvery <= 0 {
+		o.CredentialEvery = DefaultCredentialEvery
 	}
 	if o.Start == nil {
 		o.Start = startChild
@@ -471,6 +492,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.logf("start sessions at %s", d.o.URL)
 
 	go d.heartbeat(ctx)
+	go d.watchCredential(ctx)
 	// Workers run in their own sessions, so an ended one is adopted by the
 	// nearest subreaper; without this that is PID 1, which in a container may
 	// never reap and so fills the process table.
@@ -566,6 +588,9 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 			d.register(ctx, inv)
 		}
 		hb, err := d.o.Client.RCHeartbeatState(ctx, d.o.HostID, d.running(), inv.Workers, inv.Runs)
+		if err == nil && len(hb.Attention) > 0 {
+			d.settleRequests(ctx, hb.Attention)
+		}
 		if err == nil && hb.A2ABlackout != nil {
 			// The organisation's A2A blackout, for every relay on this host.
 			if dir, derr := a2a.DefaultDir(); derr == nil {

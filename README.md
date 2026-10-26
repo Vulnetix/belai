@@ -231,7 +231,7 @@ A custom provider defined in `settings.json` resolves its key from its
 
 Pick a default provider without passing `-provider` every time by setting `BELAI_PROVIDER`.
 
-For a custom state directory, set `BELAI_HOME`. To disable the TUI and keep the old one-shot behaviour, set `BELAI_NO_TUI=1` or run in CI (`CI` is honoured).
+For a custom state directory, set `BELAI_HOME`. To disable the TUI and keep the old one-shot behaviour, set `BELAI_NO_TUI=1` or run in CI (`CI` is honoured). To stop Belai opening a web browser (it already skips this over SSH, without a graphical session, and in `belai rc`), set `BELAI_NO_BROWSER=1`.
 
 Belai creates `~/.vulnetix/belai/` at mode `0700` and credential files at mode `0600`. If you already have a `~/.belai/` directory, it is migrated automatically on the next run. We recommend adding `.vulnetix/belai/` to your repository `.gitignore` — even though the project file only holds references, defence in depth is cheap.
 

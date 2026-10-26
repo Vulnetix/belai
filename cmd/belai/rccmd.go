@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/desktop"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitsync"
@@ -47,6 +48,7 @@ import (
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // dirList is a repeatable --dir flag.
@@ -122,6 +124,11 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		}
 		return 2
 	}
+	// Remote control is for a host nobody sits at, so it never opens a browser
+	// here: a person who is needed is told through the website. The daemon, the
+	// detached copy rcDetach starts, and every session and worker they start
+	// inherit this.
+	os.Setenv(desktop.EnvNoBrowser, "1")
 	allowed, err := netguard.ParseAllowCIDRs(strings.Join(allowCIDRs, ","))
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)
@@ -290,6 +297,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd), Distill: rcDistill(wd), TeleportPush: teleportPushPolicy(wd),
 		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
 		Shell: *webShell, NoClone: *noClone,
+		RedeemLogin: rcRedeemLogin, CredentialExpiry: rcCredentialExpiry(wd),
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)
@@ -349,6 +357,34 @@ func rcClient(wd string) (*sessionsync.Client, error) {
 		return header, nil
 	}
 	return sessionsync.NewClient(sessionsync.BaseURL(os.Getenv("VULNETIX_WEB_URL")), auth, httpclient.Default())
+}
+
+// rcRedeemLogin turns the approved grant of a sign-in request into the Vulnetix
+// CLI's stored login. The grant was minted for this host's own principal, so
+// nobody types a code anywhere; rcClient picks the new login up within five
+// minutes.
+func rcRedeemLogin(ctx context.Context, deviceCode string) error {
+	org, key, err := vulnetixcli.DeviceLogin{}.Redeem(ctx, deviceCode)
+	if err != nil {
+		return err
+	}
+	cli, err := vulnetixcli.Detect()
+	if err != nil {
+		return err
+	}
+	return cli.SaveLogin(ctx, org, key)
+}
+
+// rcCredentialExpiry reads when the current login stops working, for a Bearer
+// token login (an ApiKey never expires, so it reports none).
+func rcCredentialExpiry(wd string) func() (time.Time, bool) {
+	return func() (time.Time, bool) {
+		h, err := credentials.VulnetixAuthHeader(wd)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return sessionsync.BearerExpiry(h)
+	}
 }
 
 func rcLogPath() string {

@@ -38,6 +38,58 @@ in through the browser, turn sync on, offer this directory). Once everything
 passes it starts the daemon in the background and shows its status. `o` or
 `ctrl+y` opens the Hosts page, `s` stops remote control.
 
+## No browser on the host
+
+`belai rc` runs on a host nobody is usually sitting at, so it never opens a web
+browser there, and neither do the sessions and workers it starts. It sets
+`BELAI_NO_BROWSER=1` for itself and everything it launches.
+
+Outside remote control, Belai opens a browser (the `/rc` and Getting started
+sign-in, `o` on a link) only when `internal/desktop` finds a person at the
+screen. It does not when:
+
+- `BELAI_NO_BROWSER` is set (anything but empty, `0`, `false`, `no` or `off`);
+- the process is the detached `belai rc` daemon, or `BELAI_NO_TUI` or `CI` is set;
+- the session is over SSH (`SSH_CONNECTION` or `SSH_TTY`), where the browser
+  would open on the remote side;
+- on Linux and the BSDs, there is no `WAYLAND_DISPLAY` or `DISPLAY`, or no
+  `xdg-open` on the `PATH`.
+
+The TUI then shows the link instead, which it already prints for the sign-in
+grant, and `o` reports why nothing opened.
+
+### Asking a person through the website
+
+When the daemon needs a person, it asks the website instead of a browser. The
+website tells the host's owner through the organisation's configured channel,
+with an Approve and a Deny action, and the daemon reads the answer from its next
+heartbeat.
+
+- **When.** A Bearer token login (a JWT, which expires) is within 30 minutes of
+  its expiry. The daemon checks once a minute and asks for a `login` request with
+  the reason `credential_expiring`. An ApiKey login never expires, so it never
+  asks. A denied or lapsed request is not repeated for 20 minutes.
+- **What it sends.** `POST /hosts/{id}/attention` with a kind (`login` or
+  `approve`), a reason from the server's fixed list, and an optional short
+  subject. It never sends free text, so a compromised host cannot put its own
+  words in front of the owner.
+- **A login request** returns a device code for a grant the server minted for
+  this host's own principal. Nobody types a code anywhere. Once the heartbeat
+  reports the request approved, the daemon redeems the code once and stores the
+  login through `vulnetix auth login --noninteractive --store home`. It picks the
+  new login up within five minutes. If the old login came from
+  `VULNETIX_API_TOKEN`, that variable still wins, so unset it.
+- **Which logins it can serve.** Only one the website still accepts. A host whose
+  login is already rejected cannot be told apart from anyone else, so the website
+  does not take its request; the daemon logs `run vulnetix auth login on this
+  host` and the host shows as offline. The same hint is logged when the website
+  predates host requests.
+- **The outcome** is `attention` on the heartbeat answer: the host's requests
+  approved, denied or expired in the last ten minutes. The daemon deduplicates
+  by id and gives up on a login it cannot store after five heartbeats.
+
+Details and the server's rules: vdb-site `docs/belai-host-attention.md`.
+
 ## Where sessions run
 
 A session runs only in a directory the daemon offers:
@@ -1079,10 +1131,12 @@ avatar id, so the website can draw the agent. They are presentation only.
 
 - **API:** `vdb-site` `api/internal/handler/belai_rc.go`.
   - Host: the host upsert carries the `rc` block, `POST /hosts/{id}/rc/heartbeat`,
-    `POST /hosts/{id}/rc/offline`, the long-poll `GET /hosts/{id}/dispatch`
-    and `POST /dispatches/{id}/ack`.
+    `POST /hosts/{id}/rc/offline`, the long-poll `GET /hosts/{id}/dispatch`,
+    `POST /dispatches/{id}/ack` and `POST /hosts/{id}/attention` (a request for
+    a person, `belai_host_attention.go`).
   - Browser: `GET /hosts`, `POST /hosts/{id}/dispatches`,
-    `GET|DELETE /dispatches/{id}` and `POST /sessions/{id}/stop`.
+    `GET|DELETE /dispatches/{id}`, `POST /sessions/{id}/stop` and
+    `POST /attention/{id}/decide`.
   - Schedules (`belai_schedules.go`): the host pulls with
     `GET /hosts/{id}/schedules?since=` and pushes with `PUT /hosts/{id}/schedules`;
     the page uses `GET|POST /hosts/{id}/schedules`,
@@ -1130,7 +1184,9 @@ avatar id, so the website can draw the agent. They are presentation only.
   `20261004000002_add_belai_agent_library`); `BelaiAgentFileBlob`,
   `BelaiAgentProfileFile`, `BelaiCrew`, `BelaiCrewVersion` and
   `BelaiHostLibrarySync` (saas migration
-  `20261005000001_add_belai_agent_files_and_crews`).
+  `20261005000001_add_belai_agent_files_and_crews`); `BelaiHostAttention` and
+  `CLIAuthCode.boundOrgUuid` (saas migration
+  `20261202000001_add_belai_host_attention`).
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.

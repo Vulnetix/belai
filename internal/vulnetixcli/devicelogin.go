@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/vulnetix/belai/internal/desktop"
 )
 
 // The RFC 8628 device authorization grant the Vulnetix CLI uses for
@@ -187,6 +189,42 @@ func (d DeviceLogin) pollWith(ctx context.Context, g DeviceGrant, fallback time.
 	}
 }
 
+// ErrDevicePending means the grant is not approved yet.
+var ErrDevicePending = errors.New("the login has not been approved yet")
+
+// Redeem exchanges the device code of a grant that is already approved for the
+// org id and API key, once. A `belai rc` host uses it after the website
+// reports its own request approved (the grant was minted for this host's
+// principal, so no one types a code anywhere). Poll is for the interactive
+// flow, where the approval time is not known.
+func (d DeviceLogin) Redeem(ctx context.Context, deviceCode string) (orgID, apiKey string, err error) {
+	var res struct {
+		OrgID string `json:"orgId"`
+		Key   string `json:"apiKey"`
+		Error string `json:"error"`
+	}
+	status, err := d.post(ctx, "/token", map[string]string{"device_code": deviceCode}, &res)
+	if err != nil {
+		return "", "", err
+	}
+	if status == http.StatusOK && res.OrgID != "" && res.Key != "" {
+		org, key, ok := strings.Cut(res.Key, ":")
+		if !ok || org != res.OrgID || key == "" {
+			return "", "", errors.New("unexpected API key format from the Vulnetix login service")
+		}
+		return res.OrgID, key, nil
+	}
+	switch res.Error {
+	case "authorization_pending":
+		return "", "", ErrDevicePending
+	case "expired_token":
+		return "", "", ErrDeviceExpired
+	case "access_denied":
+		return "", "", ErrDeviceDenied
+	}
+	return "", "", fmt.Errorf("the Vulnetix login failed (HTTP %d)", status)
+}
+
 // SaveLogin hands an org id and API key to `vulnetix auth login
 // --noninteractive --store home`, so the CLI writes its own credential file.
 // The key travels in the child's environment only, never its argv, where
@@ -217,25 +255,44 @@ func httpsURL(raw string) bool {
 	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
 
+// NoDesktopError means no browser was opened because this process is not at a
+// person's screen (a detached or headless run, an SSH session, a CI job). The
+// caller shows or sends the URL instead.
+type NoDesktopError struct{ Reason string }
+
+func (e *NoDesktopError) Error() string { return "not opening a browser: " + e.Reason }
+
+// openEnv and startOpener are the seams tests replace.
+var (
+	openEnv     = desktop.SystemEnv
+	startOpener = func(name string, args ...string) error {
+		cmd := exec.Command(name, args...)
+		cmd.Stdout, cmd.Stderr = nil, nil
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		go func() { _ = cmd.Wait() }()
+		return nil
+	}
+)
+
 // OpenBrowser opens an https URL in the user's browser with a fixed argv.
-// Anything but an absolute https URL is refused.
+// Anything but an absolute https URL is refused, and so is a process that is
+// not at a person's screen (internal/desktop): that returns *NoDesktopError
+// without starting anything.
 func OpenBrowser(raw string) error {
 	if !httpsURL(raw) {
 		return errors.New("refusing to open a non-https URL")
 	}
-	var cmd *exec.Cmd
+	if ok, reason := openEnv().CanOpenBrowser(); !ok {
+		return &NoDesktopError{Reason: reason}
+	}
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", raw)
+		return startOpener("open", raw)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", raw)
+		return startOpener("rundll32", "url.dll,FileProtocolHandler", raw)
 	default:
-		cmd = exec.Command("xdg-open", raw)
+		return startOpener("xdg-open", raw)
 	}
-	cmd.Stdout, cmd.Stderr = nil, nil
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() { _ = cmd.Wait() }()
-	return nil
 }

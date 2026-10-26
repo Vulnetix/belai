@@ -1218,6 +1218,11 @@ func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int, wo
 type RCHeartbeatResult struct {
 	// A2ABlackout is the organisation's A2A blackout (docs/a2a.md).
 	A2ABlackout *bool `json:"a2aBlackout,omitempty"`
+	// Attention are this host's requests for a person that were decided or
+	// lapsed in the last few minutes (hostrequest.go). The same entry can come
+	// on several heartbeats; the daemon deduplicates by id. Empty from an older
+	// server.
+	Attention []HostRequest `json:"attention,omitempty"`
 }
 
 // RCHeartbeatState is RCHeartbeat that returns the server's answer.
