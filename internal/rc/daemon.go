@@ -515,8 +515,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 // succeeds or ctx ends.
 func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
-	// PixAssistant: true stays. It is the retired Pix chat drawer's name, but
-	// the website needs it to offer this host to Pix Call (see
+	// PixAssistant: true is the retired Pix chat drawer's name and the website
+	// no longer needs it to offer this host to Pix Call (see
 	// sessionsync.RCInfo.PixAssistant).
 	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
 		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
