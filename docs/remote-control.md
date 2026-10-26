@@ -82,36 +82,85 @@ where it runs.
 The daemon also advertises `canClone`: true while `agents.clone` is on (the
 default, global settings only, read again at each advertisement) and `belai rc`
 runs without `--no-clone`. A Software Factory worker or crew request may then
-name a GitHub repository this machine does not offer, as `clone: {repo:
-"owner/name", ref?: "branch"}` with an empty `cwd`. The website sends one only to
-a self-hosted machine (never a Pix Sandbox, which works on its attached
-repositories) and only for a repository the organisation's GitHub App can read.
+name the GitHub repository it is for, as `clone: {repo: "owner/name", ref?:
+"branch"}`, where `ref` is the designated branch (empty means the default
+branch). The `cwd` may be empty (this machine has no checkout the website knows
+of) or an offered directory, which is then only a hint. The website sends a
+clone only to a self-hosted machine that advertises `canClone` (never a Pix
+Sandbox, which works on its attached repositories) and only for a repository
+the organisation's GitHub App can read. A machine that does not advertise
+`canClone` and gets a request with a `cwd` runs it there, as before.
 
-The daemon:
+The daemon handles one such request at a time, beside the request loop (the
+code is `internal/rc/adopt.go`):
 
-1. checks the request's shape: `owner/name` in GitHub's characters, never a
-   leading dash or a dot segment, and a branch that cannot read as an option;
-2. reuses an offered directory whose origin remote is that repository, if there
-   is one;
-3. otherwise clones it, one clone at a time and beside the request loop, at
-   `<worktrees directory>/repos/<owner>/<name>` through the engine `belai repo
-   sync` uses (`internal/repos`: git as an argv, hooks off, no prompts, https
-   and ssh only, fast-forward only, a dirty or diverged checkout refused rather
-   than reset). An existing clone there is brought up to date the same way.
-   The ref is the request's, else the remote's default branch. Authentication
-   is the GitHub CLI's own credential helper when `gh` is installed and signed
-   in, the same credential a push or a pull request uses; no token is stored,
-   put in a URL or passed as an argument, and a public repository clones
-   without `gh`;
-4. trusts the checkout for the directory only (as a worktree is), adds it to
-   the offered directories with its remote, and advertises it on the next
-   heartbeat, so the next request names it by `cwd`;
-5. starts the workers there with the request's own checks.
+1. **Checks the shape.** `owner/name` in GitHub's characters, never a leading
+   dash or a dot segment, and a branch that cannot read as an option.
+2. **Adopts a checkout.** The candidates are the offered directories whose
+   origin remote is the repository. A primary checkout (its `.git` is a
+   directory) wins over a linked worktree such as a teleport's
+   `~/.vulnetix/worktrees/<key>/tp-...`, and among primaries the request's
+   `cwd` wins when it is one. Next is Belai's own clone at `<worktrees
+   directory>/repos/<owner>/<name>`, offered or not, then the main repository
+   of an offered linked worktree. Only when there is none does the daemon clone
+   the default branch there, once, through the engine `belai repo sync` uses
+   (`internal/repos`: git as an argv, hooks off, no prompts, https and ssh
+   only), and later requests adopt that clone.
+3. **Fetches** the default branch and the designated branch from origin into
+   `refs/remotes/origin/*`. Authentication is the GitHub CLI's own credential
+   helper when `gh` is installed and signed in, the same credential a push or a
+   pull request uses; no token is stored, put in a URL or passed as an
+   argument, and a public repository fetches without `gh`. The default branch
+   is the one `refs/remotes/origin/HEAD` names, else the one origin reports.
+   A failed fetch (offline, signed out, origin down) never refuses a request
+   on a checkout this machine already has: the decision below is made on the
+   refs as last fetched (`origin/*` and the local branches), and the log line
+   and the report say `could not fetch origin (<reason>); using the last
+   fetched refs`. When origin cannot say what its default branch is either,
+   the clone's own branch, `main` or `master` is taken, whichever was fetched
+   before. A designated branch that is not the default, is in neither
+   `origin/*` nor the local branches, and could not be fetched is never
+   invented (origin may have it): the workers run in a detached worktree at
+   the default branch's last fetched tip, and the why line names the branch
+   that could not be found.
+4. **Decides where the workers run.** Uncommitted changes to tracked files make
+   a checkout dirty; untracked files do not.
 
-A refused or failed clone answers the request `refused` with the reason (for
-example `could not clone acme/api: ...`), which the website shows on the step.
-A cloned directory is offered until `belai rc` restarts; the clone stays on
-disk and is reused by the next request for the repository.
+   | The clone | Designated branch | Workers run in |
+   | --- | --- | --- |
+   | on the default branch, clean, level with origin | default | the clone itself |
+   | on the default branch, clean, behind origin | default | the clone, fast-forwarded first |
+   | on the default branch with local commits, or diverged | default | a detached worktree at `origin/<default>` |
+   | on the default branch, dirty | default | a detached worktree at `origin/<default>` |
+   | on another branch, or detached | default | a detached worktree at `origin/<default>` |
+   | any | another branch, already checked out in a clean linked worktree | that worktree, fast-forwarded when behind |
+   | any | another branch that exists locally | a new worktree on the local branch, fast-forwarded only when behind (never reset) |
+   | any | another branch that only origin has | a new worktree on a branch tracking `origin/<branch>` |
+   | any | another branch nobody has | a new worktree on a new branch from `origin/<default>` |
+   | has the branch checked out, or its worktree is dirty | another branch | a detached worktree at the branch's tip |
+
+   The default branch is never checked out a second time and never taken from
+   the checkout that has it. A detached worktree the daemon made earlier is
+   reused while it is clean and has no commits of its own (moved forward to
+   origin's tip when behind); when it is dirty a new one is made beside it.
+   The worktrees live at `<worktrees directory>/<key>/rc-<branch>[-n]`, where
+   `<key>` is the clone's directory name and a short hash of its path, and the
+   daemon refuses to make one through a symbolic link.
+5. **Trusts and offers the directory** for the directory only (as a worktree
+   is), adds it to the offered directories with its remote and advertises it on
+   the next heartbeat. The log says what it chose and why, for example
+   `adopted /home/me/src/website (an offered checkout); main is dirty, so a
+   detached worktree at /home/me/.vulnetix/worktrees/website-d84ce203/rc-main`,
+   and the request's report starts with the same line.
+6. **Starts the workers there** with the request's own checks.
+
+A failure answers the request `refused` with the reason, which the website
+shows on the step: there is no checkout to adopt and the clone fails (`could
+not clone acme/api: ...`), the default branch was never fetched into the
+adopted checkout and cannot be fetched now, or git refuses to make the
+worktree. A directory offered this way is offered
+until `belai rc` restarts; the clone and the worktrees stay on disk and are
+adopted or reused by the next request for the repository.
 
 Cards a worker files carry their checkout's `remote` (owner/name) as well as
 the machine's project key, and a worker started in its own project claims a

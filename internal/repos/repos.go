@@ -197,13 +197,21 @@ func newEngine(r config.GitRepo, o Options) (*engine, error) {
 	if err := libitem.ValidateRepo(r); err != nil {
 		return nil, fmt.Errorf("repository %s is not valid: %w", r.Name, err)
 	}
-	gitPath, err := o.LookPath("git")
-	if err != nil {
-		return nil, errors.New("git is not installed or not on PATH")
-	}
 	dir, err := ResolveDir(o.ReposDir, r)
 	if err != nil {
 		return nil, err
+	}
+	return newEngineAt(r, dir, o)
+}
+
+// newEngineAt is the engine for the checkout at dir, which may be anywhere: a
+// clone under the repos directory or one a caller adopted. o must already have
+// its defaults. r carries the url and visibility the credentials are chosen by;
+// it is not validated as a library repository here.
+func newEngineAt(r config.GitRepo, dir string, o Options) (*engine, error) {
+	gitPath, err := o.LookPath("git")
+	if err != nil {
+		return nil, errors.New("git is not installed or not on PATH")
 	}
 	e := &engine{o: o, repo: r, dir: dir, git: gitPath}
 	e.env = append(proc.ScrubbedEnv(),
@@ -214,11 +222,16 @@ func newEngine(r config.GitRepo, o Options) (*engine, error) {
 	return e, nil
 }
 
+// isSSH reports whether url is an ssh address, scp-like or ssh://.
+func isSSH(url string) bool {
+	return strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://")
+}
+
 // credentials sets up how a private repository authenticates, or fails with the
 // reason it cannot. A public repository gets none.
 func (e *engine) credentials(ctx context.Context) error {
 	if e.repo.Visibility != "private" {
-		if e.o.GitHubCLI && !strings.HasPrefix(e.repo.URL, "git@") {
+		if e.o.GitHubCLI && !isSSH(e.repo.URL) {
 			// Best effort: without gh, or signed out, a public repository still
 			// fetches, and a private one fails with git's own message.
 			if err := e.ghCredentials(ctx); err != nil {
@@ -227,10 +240,117 @@ func (e *engine) credentials(ctx context.Context) error {
 		}
 		return nil
 	}
-	if strings.HasPrefix(e.repo.URL, "git@") {
+	if isSSH(e.repo.URL) {
 		return nil // ssh: the agent and the user's keys, in batch mode
 	}
 	return e.ghCredentials(ctx)
+}
+
+// checkoutDir checks that dir is an absolute path to an existing directory that
+// is not a symbolic link.
+func checkoutDir(dir string) error {
+	if dir == "" || !filepath.IsAbs(dir) {
+		return errors.New("the checkout must be an absolute path")
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("the checkout %s cannot be read", clip(dir))
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", clip(dir))
+	}
+	return nil
+}
+
+// fetchURL reports whether remote is one Fetch may fetch from: https, or ssh
+// in either form, with no password in it and no whitespace.
+func fetchURL(remote string) bool {
+	if remote == "" || strings.ContainsAny(remote, " \t\r\n") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(remote, "https://"):
+		u, err := url.Parse(remote)
+		return err == nil && u.User == nil && u.Host != ""
+	case strings.HasPrefix(remote, "ssh://"):
+		u, err := url.Parse(remote)
+		if err != nil || u.Host == "" {
+			return false
+		}
+		_, hasPassword := u.User.Password()
+		return u.User == nil || !hasPassword
+	case strings.HasPrefix(remote, "git@"):
+		host, path, ok := strings.Cut(strings.TrimPrefix(remote, "git@"), ":")
+		return ok && host != "" && path != "" && !strings.Contains(host, "@") && !strings.HasPrefix(path, "-")
+	}
+	return false
+}
+
+// Fetch fetches branches from origin into refs/remotes/origin/<branch> of the
+// checkout at dir, which may be anywhere (a clone a caller adopted, not only one
+// under the repos directory). remote must be the checkout's configured origin
+// url as written; it decides the credentials as Sync does for a repository
+// whose visibility is not known: over https the GitHub CLI's credential helper
+// when Options.GitHubCLI is set and gh is signed in (best effort), over ssh the
+// agent in batch mode. Git runs hardened: hooks off, no prompts, the scrubbed
+// environment and only the https and ssh transports. A remote-tracking ref is
+// only a mirror, so it is forced; no local branch is touched.
+func Fetch(ctx context.Context, o Options, dir, remote string, branches ...string) error {
+	o = o.withDefaults()
+	if err := checkoutDir(dir); err != nil {
+		return err
+	}
+	if !fetchURL(remote) {
+		return errors.New("origin is not an https or ssh address")
+	}
+	if len(branches) == 0 {
+		return errors.New("no branch to fetch")
+	}
+	specs := make([]string, 0, len(branches))
+	for _, b := range branches {
+		if !libitem.ValidRefName(b) {
+			return fmt.Errorf("%q is not a branch name", clip(b))
+		}
+		specs = append(specs, "+refs/heads/"+b+":refs/remotes/origin/"+b)
+	}
+	e, err := newEngineAt(config.GitRepo{Name: "origin", URL: remote, Visibility: "public"}, dir, o)
+	if err != nil {
+		return err
+	}
+	// The url as written, not after an insteadOf rewrite: the caller names what
+	// the checkout's configuration holds.
+	if got, err := e.gitIn(ctx, "config", "--get", "remote.origin.url"); err != nil || got != remote {
+		return fmt.Errorf("the checkout at %s has origin %q, not %q", clip(dir), clip(got), clip(remote))
+	}
+	if err := e.credentials(ctx); err != nil {
+		return err
+	}
+	e.env = append(e.env, e.o.Env...)
+	args := append([]string{"fetch", "-q", "--no-tags", "--no-recurse-submodules", "origin"}, specs...)
+	if _, err := e.gitIn(ctx, args...); err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	return nil
+}
+
+// Git runs one local git command in the checkout at dir with the hardened argv
+// Sync uses (hooks off, fsmonitor off, every credential helper off) and the
+// scrubbed environment, and returns its standard output, trimmed. It carries no
+// credential, so a command that reaches a remote fails rather than ask.
+func Git(ctx context.Context, o Options, dir string, args ...string) (string, error) {
+	o = o.withDefaults()
+	if err := checkoutDir(dir); err != nil {
+		return "", err
+	}
+	if len(args) == 0 {
+		return "", errors.New("no git command")
+	}
+	e, err := newEngineAt(config.GitRepo{}, dir, o)
+	if err != nil {
+		return "", err
+	}
+	e.env = append(e.env, e.o.Env...)
+	return e.gitIn(ctx, args...)
 }
 
 // ghCredentials points git at the GitHub CLI's credential helper for the

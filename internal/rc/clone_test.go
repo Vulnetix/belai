@@ -43,35 +43,13 @@ func TestParseClone(t *testing.T) {
 	}
 }
 
-// fakeClonedRepo makes a directory that is a git checkout whose origin is the
-// GitHub url of owner/name, as cloneRepo leaves one.
-func fakeClonedRepo(t *testing.T, owner, name string) string {
-	t.Helper()
-	dir := filepath.Join(t.TempDir(), "repos", owner, name)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://github.com/" + owner + "/" + name + ".git"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
-	return dir
-}
-
 // A worker request that names a repository the host does not offer is cloned,
 // offered with its remote on the next advertisement, and its workers start
-// there; a second request for it reuses the checkout. A clone failure refuses
+// there; a second request for it adopts the checkout. A clone failure refuses
 // the request with the reason.
 func TestDaemonClonesARepositoryAndStartsTheWorkersThere(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
-	}
-	t.Setenv("BELAI_HOME", t.TempDir())
-	cloned := fakeClonedRepo(t, "acme", "api")
-	real, _ := Normalize(cloned)
+	f := newAdoptFix(t)
+	real := filepath.Join(f.wt, "repos", "acme", "api")
 	site := &fakeSite{acks: map[string][3]string{}, delivered: make(chan struct{}, 8)}
 	srv := httptest.NewServer(site)
 	defer srv.Close()
@@ -94,19 +72,21 @@ func TestDaemonClonesARepositoryAndStartsTheWorkersThere(t *testing.T) {
 			return "bug-1  idle", nil
 		},
 		CloneEnabled: func() bool { return true },
-		Clone: func(_ context.Context, owner, name, ref string) (string, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			clones = append(clones, owner+"/"+name+"@"+ref)
-			if name == "missing" {
-				return "", errors.New("repository not found")
-			}
-			return cloned, nil
-		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	realClone := f.a.clone
+	f.a.clone = func(ctx context.Context, owner, name, ref string) (string, error) {
+		mu.Lock()
+		clones = append(clones, owner+"/"+name+"@"+ref)
+		mu.Unlock()
+		if name == "missing" {
+			return "", errors.New("repository not found")
+		}
+		return realClone(ctx, owner, name, ref)
+	}
+	d.adopt = f.a
 	site.queue = []sessionsync.Dispatch{
 		{ID: "k1", Kind: "worker", Profile: "belai:bug", Clone: &sessionsync.DispatchClone{Repo: "Acme/API", Ref: "main"}},
 		{ID: "k2", Kind: "worker", Profile: "belai:bug", Clone: &sessionsync.DispatchClone{Repo: "acme/missing"}},
@@ -140,9 +120,10 @@ func TestDaemonClonesARepositoryAndStartsTheWorkersThere(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// A second request for the repository reuses the offered checkout.
-	if _, reason := d.cloneDir(ctx, &sessionsync.DispatchClone{Repo: "acme/api"}); reason != "" {
-		t.Fatalf("reuse refused: %s", reason)
+	// A second request for the repository adopts the offered checkout, with
+	// the offered directory as its hint.
+	if p, why, reason := d.cloneDir(ctx, &sessionsync.DispatchClone{Repo: "acme/api"}, real); reason != "" || p != real || !strings.Contains(why, "adopted "+real) {
+		t.Fatalf("reuse: %q %q %q", p, why, reason)
 	}
 	cancel()
 	<-done
@@ -165,8 +146,78 @@ func TestDaemonClonesARepositoryAndStartsTheWorkersThere(t *testing.T) {
 	}
 	// The clones run beside the request loop, so their order is not fixed.
 	sort.Strings(clones)
-	if strings.Join(clones, ",") != "acme/api@main,acme/missing@" {
+	// A clone is always of the default branch; the designated one is a
+	// decision made after it.
+	if strings.Join(clones, ",") != "acme/api@,acme/missing@" {
 		t.Errorf("clones = %v (the reuse must not clone again)", clones)
+	}
+}
+
+// A request with a cwd and a clone goes through adoption, so a dirty user's
+// checkout is never where the workers run; without canClone it runs in the cwd
+// as before.
+func TestDaemonAdoptsWhenTheRequestHasACwd(t *testing.T) {
+	f := newAdoptFix(t)
+	user := f.userClone("api")
+	if err := os.WriteFile(filepath.Join(user, "a.txt"), []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	site := &fakeSite{acks: map[string][3]string{}, delivered: make(chan struct{}, 8)}
+	srv := httptest.NewServer(site)
+	defer srv.Close()
+	client, err := sessionsync.NewClient(srv.URL, func() (string, error) { return "ApiKey o:k", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var starts []WorkerStart
+	can := true
+	d, err := New(Options{
+		Client: client, HostID: testHost, HeartbeatEvery: 10 * time.Millisecond, PollWait: time.Second, Exe: "/bin/belai",
+		Dirs: []Dir{{Path: user, Name: "api", Source: SourceTrusted}},
+		Inventory: func() Inventory {
+			return Inventory{MaxWorkers: 4, Profiles: []sessionsync.RCProfile{{Name: "belai:bug", Lists: []string{"backlog"}}}}
+		},
+		StartWorkers: func(w WorkerStart) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			starts = append(starts, w)
+			return "bug-1  idle", nil
+		},
+		CloneEnabled: func() bool { mu.Lock(); defer mu.Unlock(); return can },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.adopt = f.a
+	r := sessionsync.Dispatch{ID: "k1", Kind: "worker", Profile: "belai:bug", Cwd: user, Clone: &sessionsync.DispatchClone{Repo: "acme/api"}}
+	d.handle(context.Background(), r)
+	d.wg.Wait()
+	mu.Lock()
+	if len(starts) != 1 || starts[0].Cwd == user || filepath.Base(starts[0].Cwd) != "rc-main" {
+		t.Fatalf("starts = %+v", starts)
+	}
+	wt := starts[0].Cwd
+	mu.Unlock()
+	site.mu.Lock()
+	if a := site.acks["k1"]; a[0] != sessionsync.DispatchStarted || !strings.Contains(a[2], "main is dirty") || !strings.Contains(a[2], "bug-1") {
+		t.Errorf("ack = %v", a)
+	}
+	site.mu.Unlock()
+	if _, ok := Allowed(d.dirs(), wt); !ok {
+		t.Error("the worktree is not offered")
+	}
+	// A host that does not clone runs the request where it was asked.
+	mu.Lock()
+	can = false
+	mu.Unlock()
+	r.ID = "k2"
+	d.handle(context.Background(), r)
+	d.wg.Wait()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != 2 || starts[1].Cwd != user {
+		t.Errorf("starts = %+v", starts)
 	}
 }
 
@@ -192,7 +243,7 @@ func TestDaemonWithoutCloneRefusesAndDoesNotAdvertise(t *testing.T) {
 		if d.canClone() {
 			t.Errorf("%+v: canClone advertised", c)
 		}
-		if _, reason := d.cloneDir(context.Background(), &sessionsync.DispatchClone{Repo: "acme/api"}); !strings.Contains(reason, "does not clone") || called {
+		if _, _, reason := d.cloneDir(context.Background(), &sessionsync.DispatchClone{Repo: "acme/api"}, ""); !strings.Contains(reason, "does not clone") || called {
 			t.Errorf("%+v: reason %q, cloned %v", c, reason, called)
 		}
 	}

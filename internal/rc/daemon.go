@@ -267,10 +267,14 @@ type Daemon struct {
 	// dirsMu guards o.Dirs, which a clone request extends while the daemon
 	// runs (offerDir); every reader takes a snapshot through dirs().
 	dirsMu sync.RWMutex
-	// cloneSlot holds a token while a repository is being cloned;
-	// advertisedClone is the canClone of the last advertisement (under mu).
+	// cloneSlot holds a token while a clone request is adopting, cloning or
+	// preparing a worktree; advertisedClone is the canClone of the last
+	// advertisement (under mu).
 	cloneSlot       chan struct{}
 	advertisedClone bool
+	// adopt picks the checkout and the directory for a clone request
+	// (adopt.go); tests replace its engine options.
+	adopt *adopter
 }
 
 type child struct {
@@ -403,6 +407,7 @@ func New(o Options) (*Daemon, error) {
 	d = &Daemon{o: o, sessions: map[string]*child{}, started: time.Now(), avatarSlot: make(chan struct{}, 1),
 		codeSlot: make(chan struct{}, 2), scanSlot: make(chan struct{}, 1), cloneSlot: make(chan struct{}, 1),
 		libsync: &libSyncState{records: map[string]syncRecord{}}}
+	d.adopt = newAdopter(o.Clone)
 	return d, nil
 }
 
@@ -636,9 +641,13 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
 	case "worker", "crew":
-		if r.Cwd == "" && r.Clone != nil {
-			// A clone can take minutes: it runs beside the poll loop, one at a
-			// time, and the request is answered when it is done (clone.go).
+		if r.Clone != nil && (r.Cwd == "" || d.canClone()) {
+			// The request names its repository: the host adopts a checkout of
+			// it (r.Cwd is only a hint) and picks the directory for the
+			// designated branch, cloning when it has none (adopt.go). That can
+			// take minutes: it runs beside the poll loop, one at a time, and the
+			// request is answered when it is done. A host that does not clone
+			// runs a request with a cwd there, as before.
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

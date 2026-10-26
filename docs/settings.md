@@ -65,15 +65,18 @@ changes nothing else.
 
 `clone repositories` in Agents is `agents.clone` (default on), saved to your
 global settings only. While it is on, `belai rc` advertises `canClone`: a
-Software Factory worker or crew request for a GitHub repository this machine
-does not offer clones it, or reuses the clone, at
+Software Factory worker or crew request that names its GitHub repository adopts
+a checkout this machine already has (a primary checkout before a linked
+worktree), or clones the default branch once at
 `<worktrees directory>/repos/<owner>/<name>` (`BELAI_WORKTREES_DIR`, else
-`~/.vulnetix/worktrees`), offers that directory with its remote and starts the
-workers there. It goes through the engine `belai repo sync` uses (git as an
-argv, hooks off, fast-forward only), with the GitHub CLI's own credential
-helper when `gh` is signed in. No token is stored or put in a URL; a public
-repository clones without `gh`. A failed clone refuses the request with the
-reason. `belai rc -no-clone` turns it off for one daemon. A project layer may
+`~/.vulnetix/worktrees`). The workers run in that checkout only when the
+request is for the default branch and the checkout has it checked out with no
+change to a tracked file; otherwise they run in a worktree of it for the
+request's branch, so your own work in progress is never touched. It goes
+through the engine `belai repo sync` uses (git as an argv, hooks off,
+fast-forward only), with the GitHub CLI's own credential helper when `gh` is
+signed in. No token is stored or put in a URL; a public repository clones
+without `gh`. A failure refuses the request with the reason. `belai rc -no-clone` turns it off for one daemon. A project layer may
 turn it off, never on. See [remote-control.md](remote-control.md#cloning-a-repository-for-the-software-factory).
 
 ### Layout

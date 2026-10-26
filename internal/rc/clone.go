@@ -10,23 +10,24 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/repos"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/trustgate"
 )
 
-// A Software Factory worker or crew request may name a GitHub repository this
-// host does not offer: Dispatch.Clone with an empty Cwd. With agents.clone on
-// (the default) and without `belai rc -no-clone`, the daemon advertises
-// canClone, and such a request clones or reuses
-// <WorktreesDir>/repos/<owner>/<name> through the repository engine `belai repo
-// sync` uses (internal/repos: git as an argv, hooks off, no prompts, https and
-// ssh only, fast-forward only, a dirty or diverged checkout refused). The
-// credential is the GitHub CLI's own, through its git credential helper, as
-// for a push or a pull request: no token is stored, put in a URL or passed as
-// an argument. A public repository fetches without gh. The checkout is trusted
-// for the directory only, offered with its remote, advertised on the next
-// heartbeat, and the workers start there. A failed clone refuses the request
-// with the reason.
+// A Software Factory worker or crew request may name the GitHub repository it
+// is for: Dispatch.Clone, with or without a Cwd. With agents.clone on (the
+// default) and without `belai rc -no-clone`, the daemon advertises canClone.
+// Such a request adopts a checkout this host already has, or clones
+// <WorktreesDir>/repos/<owner>/<name> once, and runs on the designated branch
+// in the checkout or in a worktree of it (adopt.go). Cloning goes through the
+// repository engine `belai repo sync` uses (internal/repos: git as an argv,
+// hooks off, no prompts, https and ssh only). The credential is the GitHub
+// CLI's own, through its git credential helper, as for a push or a pull
+// request: no token is stored, put in a URL or passed as an argument. A public
+// repository fetches without gh. The directory is trusted for the directory
+// only, offered with its remote, advertised on the next heartbeat, and the
+// workers start there. A failure refuses the request with the reason.
 
 // cloneTimeout bounds one clone request, the default branch lookup included.
 const cloneTimeout = 15 * time.Minute
@@ -70,15 +71,16 @@ func (d *Daemon) canClone() bool {
 	return !d.o.NoClone && d.o.CloneEnabled != nil && d.o.CloneEnabled()
 }
 
-// cloneThenStart answers a worker or crew request that names a repository to
-// clone: it clones (one at a time), offers the checkout and starts the workers
-// there, or refuses with the reason.
+// cloneThenStart answers a worker or crew request that names its repository:
+// it adopts or clones a checkout and prepares the directory for the designated
+// branch (one request at a time), offers it and starts the workers there, or
+// refuses with the reason.
 func (d *Daemon) cloneThenStart(ctx context.Context, r sessionsync.Dispatch, ack func(ctx context.Context, id, status, sid, reason string)) {
 	refuse := func(reason string) {
 		d.logf("refused %s %s%s for %s: %s", r.Kind, r.Profile, r.Crew, cloneLabel(r.Clone), reason)
 		ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
 	}
-	cwd, reason := d.cloneDir(ctx, r.Clone)
+	cwd, why, reason := d.cloneDir(ctx, r.Clone, r.Cwd)
 	if reason != "" {
 		refuse(reason)
 		return
@@ -90,59 +92,51 @@ func (d *Daemon) cloneThenStart(ctx context.Context, r sessionsync.Dispatch, ack
 		return
 	}
 	d.logf("started %s %s%s in %s", r.Kind, r.Profile, r.Crew, r.Cwd)
-	ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	// clip keeps the end, so the workers' own report survives a long reason.
+	ack(ctx, r.ID, sessionsync.DispatchStarted, "", clip(why+"\n"+report))
 }
 
-// cloneDir returns the offered directory for a clone request: one this host
-// already offers whose remote is the repository, or a new clone. The second
-// result is the refusal reason, "" on success.
-func (d *Daemon) cloneDir(ctx context.Context, c *sessionsync.DispatchClone) (string, string) {
+// cloneDir returns the offered directory a clone request's workers run in
+// (adopt.go): the adopted checkout itself, or a worktree of it for the
+// designated branch. hint is the request's cwd, "" for none. The second result
+// says what was chosen and why; the third is the refusal reason, "" on
+// success.
+func (d *Daemon) cloneDir(ctx context.Context, c *sessionsync.DispatchClone, hint string) (string, string, string) {
 	if !d.canClone() {
-		return "", "this host does not clone repositories (agents.clone is off or belai rc runs with -no-clone)"
+		return "", "", "this host does not clone repositories (agents.clone is off or belai rc runs with -no-clone)"
 	}
 	owner, name, ok := ParseClone(c)
 	if !ok {
-		return "", "that is not a repository to clone"
+		return "", "", "that is not a repository to clone"
 	}
 	slug := owner + "/" + name
-	if p := d.offeredRemote(slug); p != "" {
-		return p, ""
+	if hint != "" {
+		// Only an offered directory is a hint; anything else is ignored.
+		if p, ok := Allowed(d.dirs(), hint); ok {
+			hint = p
+		} else {
+			hint = ""
+		}
 	}
 	select {
 	case d.cloneSlot <- struct{}{}:
 	case <-ctx.Done():
-		return "", "belai rc is stopping"
+		return "", "", "belai rc is stopping"
 	}
 	defer func() { <-d.cloneSlot }()
-	// Another request may have cloned it while this one waited.
-	if p := d.offeredRemote(slug); p != "" {
-		return p, ""
-	}
 	cctx, cancel := context.WithTimeout(ctx, cloneTimeout)
 	defer cancel()
-	path, err := d.o.Clone(cctx, owner, name, c.Ref)
+	res, err := d.adopt.adopt(cctx, adoptRequest{Owner: owner, Name: name, Ref: c.Ref, Hint: hint, Offered: d.dirs(), CanClone: true})
 	if err != nil {
-		return "", clip("could not clone " + slug + ": " + err.Error())
+		return "", "", clip(err.Error())
 	}
-	path, err = Normalize(path)
-	if err != nil {
-		return "", clip("could not clone " + slug + ": " + err.Error())
+	if res.Cloned && d.offerDir(Dir{Path: res.Clone, Name: filepath.Base(res.Clone), Source: SourceTrusted}) {
+		d.logf("cloned %s into %s and offered it", slug, res.Clone)
 	}
-	if d.offerDir(Dir{Path: path, Name: filepath.Base(path), Source: SourceTrusted}) {
-		d.logf("cloned %s into %s and offered it", slug, path)
-	}
-	return path, ""
-}
-
-// offeredRemote is the offered directory whose origin remote is slug
-// (owner/name, case folded), or "".
-func (d *Daemon) offeredRemote(slug string) string {
-	for _, dir := range d.dirs() {
-		if rd := dirGit(sessionsync.RCDir{Path: dir.Path}); rd.Remote != "" && strings.EqualFold(rd.Remote, slug) {
-			return dir.Path
-		}
-	}
-	return ""
+	d.offerDir(Dir{Path: res.Path, Name: filepath.Base(res.Path), Source: SourceTrusted})
+	why := sanitize.Line(res.Why, 600)
+	d.logf("%s: %s", slug, why)
+	return res.Path, why, ""
 }
 
 // cloneLabel names a clone request for the log, cleaned.
