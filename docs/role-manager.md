@@ -932,8 +932,9 @@ working in this repository.
 | Rule | Where | Pinned by |
 | ---- | ----- | --------- |
 | The main agent prompt ends its cached stable block with the rules, after the voice line | `internal/prompt/system.go` | `TestSystemPartsEndStableWithProseRules`, `TestSealSystemCarriesProseRules` |
-| Every role prompt gets the rules where the classifier client prepares its payload, so a new role is covered without its own edit | `chatClassifier.prepare` in `internal/run/run.go` | `TestClassifierSendsProseRules` |
-| The rules come after the prompt's own output format and after the caveman voice, and their first line says they never override a required output format, so sentinel and JSON payloads still parse | `proserules.Append` | `TestAppend` |
+| Every role prompt with a free-form or JSON reply gets the rules where the classifier client prepares its payload, so a new role is covered without its own edit | `chatClassifier.prepare` in `internal/run/run.go` | `TestClassifierSendsProseRules` |
+| A payload whose reply is one sentinel token (security, and every `AllowReasoningFallback` evaluator) is sent without the rules. With them appended, prompts were refused as "classifier reply was malformed" | `repliesWithToken` in `internal/run/run.go` | `TestSentinelClassifierSendsNoProseRules` |
+| The rules come after the prompt's own output format and after the caveman voice, and their first line says they never override a required output format | `proserules.Append` | `TestAppend` |
 | A prompt that already carries the rules is not given them twice | `proserules.Append` | `TestAppend` |
 | An empty system prompt stays empty: a call without one does not gain one | `proserules.Append` | `TestAppend` |
 | The rules text has no em or en dash | `proserules.Rules` | `TestRulesHaveNoDashPunctuation` |

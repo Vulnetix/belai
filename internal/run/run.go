@@ -1641,9 +1641,12 @@ type chatClassifier struct {
 // It is noted before the call, so a timeout or a provider error still names
 // the model that was asked rather than the agent model. It also closes the
 // payload's system prompt with the prose rules: every role prompt reaches a
-// model through here, so this is the one place they are added.
+// model through here, so this is the one place they are added, except for a
+// payload whose reply is a single token.
 func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPayload) (context.Context, Config, rolemanager.ClassifierPayload) {
-	p.System = proserules.Append(p.System)
+	if !repliesWithToken(p) {
+		p.System = proserules.Append(p.System)
+	}
 	cfg := c.cfg
 	if p.MaxTokens > 0 {
 		cfg.MaxTokens = p.MaxTokens
@@ -1654,6 +1657,15 @@ func (c *chatClassifier) prepare(ctx context.Context, p rolemanager.ClassifierPa
 		role = RoleSecurity
 	}
 	return withUsageRole(ctx, role), cfg, p
+}
+
+// repliesWithToken reports whether the payload's reply is parsed as one
+// sentinel token. Those prompts stay as written: with the prose rules after
+// "reply with a single token and nothing else", prompts were refused as a
+// malformed classifier reply. Security payloads leave UseCase empty; the
+// sentinel evaluators set AllowReasoningFallback.
+func repliesWithToken(p rolemanager.ClassifierPayload) bool {
+	return p.UseCase == "" || p.AllowReasoningFallback
 }
 
 func (c *chatClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
