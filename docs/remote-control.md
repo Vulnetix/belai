@@ -296,8 +296,9 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   allowlist and engages it for agent-mode turns. An older daemon offers none.
 - **Pix assistant sessions.** A start request with `mode: "pix-assistant"`
   comes from the console's Pix assistant ("Ask in repo"). The daemon advertises
-  it with `rc.pixAssistant: true`, and the website never sends one to a host
-  that does not. The request must name one of `rc.PixPersonas` as its
+  it with `rc.pixAssistant: true` up to v0.168; later daemons no longer report
+  the flag, and the website does not need it to offer a host to Pix Call. The
+  daemon still accepts the mode. The request must name one of `rc.PixPersonas` as its
   `profile`: `vuln-scout` (Rubber Duck), `patcher` (Kremvax) or `verifier`
   (Dark Avenger), bare or with the `belai:` prefix. These are worker profiles,
   so they are not in `SessionAgents`; in this mode they are checked against

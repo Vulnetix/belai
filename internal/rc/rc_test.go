@@ -210,7 +210,7 @@ func TestDaemonStartsRefusesAndStops(t *testing.T) {
 	}
 
 	site.mu.Lock()
-	if site.host.RC == nil || len(site.host.RC.Dirs) != 1 || site.host.RC.MaxSessions != 1 || !site.host.RC.PixAssistant {
+	if site.host.RC == nil || len(site.host.RC.Dirs) != 1 || site.host.RC.MaxSessions != 1 || site.host.RC.PixAssistant {
 		t.Errorf("advertised host = %+v", site.host)
 	}
 	a1 := site.acks["d1"]

@@ -173,8 +173,9 @@ type RCInfo struct {
 	// persona), so the website never sends one to an older daemon.
 	//
 	// The name is the retired Pix chat drawer's. vdb-site does not require it
-	// for GET /v1/belai/repo-hosts (Pix Call offers a host without it), so a
-	// release may stop reporting it.
+	// for GET /v1/belai/repo-hosts (Pix Call offers a host without it), so the
+	// daemon no longer reports it. The field stays so an older daemon's
+	// registration still decodes.
 	PixAssistant bool `json:"pixAssistant,omitempty"`
 	// CanClone says a "worker" or "crew" request may name a repository with
 	// Clone and no Cwd: the daemon clones or reuses it under the worktrees

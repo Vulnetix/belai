@@ -409,8 +409,8 @@ answer to a question asked in the console's Pix assistant, started with the
 persona as its `activeProfile`. The host sets both when it activates the session
 and nothing in the transcript changes them. The server stores them on the
 session row and leaves ephemeral sessions out of the session list unless
-`includeEphemeral=1`. The host advertises that it can start such sessions with
-`rc.pixAssistant: true`. See [remote-control.md](remote-control.md).
+`includeEphemeral=1`. Daemons up to v0.168 advertised that they can start such
+sessions with `rc.pixAssistant: true`; later ones omit it. See [remote-control.md](remote-control.md).
 
 ## Server side
 
