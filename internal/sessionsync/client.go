@@ -171,6 +171,13 @@ type RCInfo struct {
 	// PixAssistant says this host takes a start request in the pix-assistant
 	// mode (an ephemeral, read-only session engaged as a security-crew
 	// persona), so the website never sends one to an older daemon.
+	//
+	// Do not stop reporting it. The name is the retired Pix chat drawer's, but
+	// the website's host matching for Pix Call reads it: vdb-site
+	// GET /v1/belai/repo-hosts offers a host only when it reports this flag, and
+	// Pix Call's find_repo and propose_session pick a host through that route.
+	// A daemon that stopped reporting it would leave Pix Call with no host to
+	// offer. vdb-site must stop requiring it, and be deployed, before this goes.
 	PixAssistant bool `json:"pixAssistant,omitempty"`
 	// CanClone says a "worker" or "crew" request may name a repository with
 	// Clone and no Cwd: the daemon clones or reuses it under the worktrees
