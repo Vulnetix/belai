@@ -24,6 +24,12 @@ const (
 	CheckpointPrePR        = "pre_pr"
 )
 
+// CheckpointConflictsUnresolved holds a merge-conflict card whose loop spent
+// every checkout without a resolution that passed its checks
+// (docs/merge-conflicts.md). Only the harness sets it, on a card it blocks, so
+// it is not one of the reasons a profile's route may name.
+const CheckpointConflictsUnresolved = "conflicts-unresolved"
+
 // CheckpointReasons lists every reason a stage may hold a card for.
 var CheckpointReasons = []string{CheckpointPlanApproval, CheckpointRootCause, CheckpointVisual, CheckpointPrePR}
 

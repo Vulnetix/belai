@@ -1073,6 +1073,30 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     comment (including `gh pr merge --auto` and the `gh api` routes to a
     review, comment, merge or auto-merge), `git switch`, `git checkout -b`, `git worktree`, `git config` and
     `git remote` (`fleet.workerGitDeny`).
+  - **The merge-conflict loop is the harness's, attempt by attempt.** For a
+    `merge-conflict` card under `kanban.conflicts` (`internal/fleet/conflicts.go`,
+    the rules in `internal/mergefix`, docs/merge-conflicts.md) the harness makes
+    every checkout, merge, classification, check, commit and push; the model
+    only edits files in the worktree. The card's pull request block is
+    validated (`mergefix.ParseCard`, `forge.ValidBranchName`) and must name the
+    worker's own `origin`. A repeat is decided by the fingerprint of the
+    harness's own classification, never by the model's word, and the checks by
+    exit code through `testrun` (deny or ask blocks the card, never an
+    attempt). The brief, the notes, the commit message and the pull request
+    comment are composed from identifiers only: cleaned paths
+    (`mergefix.NoteFile`), validated refs, choice enums, counts, check names
+    and fingerprints; a check's output only decides which conflicted paths it
+    names. The merge commit is built by the harness (`commit-tree` with the two
+    commits the attempt started from), and the one push outside the item's own
+    branch is that commit to the card's head, as an explicit refspec with no
+    `+` or `--force`, only with `agents.publish` on; a fork's pull request is
+    never pushed to. After that push the card's branch is the pull request's
+    head, the only item branch outside `belai/` a worktree accepts
+    (`fleet.pullRequestHead`): it must be the `head` of the card's own
+    same-repository block on the worker's `origin`, is fetched into
+    `refs/belai/pull/N/head`, and is checked out on a new branch of the card's
+    own, so no local branch of the user's is checked out or moved. The ledger
+    file is in the state directory, mode 0600, with a symlink refusal.
   - **The forge coordinator.** A push or pull request that fails for an
     infrastructure reason (`forge.ClassifyPushError`: a refused or missing
     credential, a rate limit, a 5xx, no `gh`; never a work fault such as a

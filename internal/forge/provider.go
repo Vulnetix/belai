@@ -66,6 +66,8 @@ type Provider interface {
 	OpenPRsWithPrefix(ctx context.Context, dir, prefix string) ([]PR, error)
 	// ClosePR closes the open PR/MR number, leaving comment on it first.
 	ClosePR(ctx context.Context, dir string, number int, comment string) error
+	// CommentPR leaves body as a comment on PR/MR number.
+	CommentPR(ctx context.Context, dir string, number int, body string) error
 }
 
 // withPrefix keeps the PRs whose head branch starts with prefix.
@@ -192,6 +194,14 @@ func (g github) ClosePR(ctx context.Context, dir string, number int, comment str
 		return errors.New("no pull request number")
 	}
 	_, err := run(ctx, g.r, WriteTimeout, dir, "gh", "pr", "close", strconv.Itoa(number), "--comment", comment)
+	return err
+}
+
+func (g github) CommentPR(ctx context.Context, dir string, number int, body string) error {
+	if number <= 0 {
+		return errors.New("no pull request number")
+	}
+	_, err := run(ctx, g.r, WriteTimeout, dir, "gh", "pr", "comment", strconv.Itoa(number), "--body", body)
 	return err
 }
 
@@ -328,6 +338,14 @@ func (g gitlab) ClosePR(ctx context.Context, dir string, number int, comment str
 		return err
 	}
 	_, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "close", strconv.Itoa(number))
+	return err
+}
+
+func (g gitlab) CommentPR(ctx context.Context, dir string, number int, body string) error {
+	if number <= 0 {
+		return errors.New("no merge request number")
+	}
+	_, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "note", strconv.Itoa(number), "-m", body)
 	return err
 }
 

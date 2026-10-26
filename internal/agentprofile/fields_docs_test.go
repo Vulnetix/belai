@@ -61,10 +61,11 @@ func TestProfilesPageDocumentsEveryWorkerField(t *testing.T) {
 		}
 	}
 	for prefix, typ := range map[string]reflect.Type{
-		"kanban.survey.":   reflect.TypeOf(SurveySpec{}),
-		"kanban.security.": reflect.TypeOf(SecuritySpec{}),
-		"kanban.quality.":  reflect.TypeOf(QualitySpec{}),
-		"kanban.gates.":    reflect.TypeOf(GatesSpec{}),
+		"kanban.survey.":    reflect.TypeOf(SurveySpec{}),
+		"kanban.security.":  reflect.TypeOf(SecuritySpec{}),
+		"kanban.quality.":   reflect.TypeOf(QualitySpec{}),
+		"kanban.gates.":     reflect.TypeOf(GatesSpec{}),
+		"kanban.conflicts.": reflect.TypeOf(ConflictsSpec{}),
 	} {
 		for _, k := range jsonKeys(typ) {
 			if !strings.Contains(doc, prefix+k) {

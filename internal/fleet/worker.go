@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/builddetect"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
@@ -78,6 +79,11 @@ type Turn struct {
 	// after the previous round, and Round which round this is (2 or more).
 	Feedback string
 	Round    int
+	// Conflicts, when set, makes this a merge-conflict attempt (conflicts.go):
+	// the harness-composed brief of the conflicts, the attempt ledger and the
+	// strategy to try. It rides as an attachment, and the conflict directive
+	// replaces the workspace directive.
+	Conflicts string
 }
 
 // TurnRunner works one item and returns the goal loop's result.
@@ -188,6 +194,12 @@ type Worker struct {
 	// from the repository's rule files. A lint run goes through RunTests.
 	Lints    func(ctx context.Context) []lintdetect.Linter
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
+	// Builds detects the build checks the merge-conflict loop runs; nil detects
+	// from the worktree's marker files (internal/builddetect). A build runs
+	// through RunTests.
+	Builds func(ctx context.Context) []builddetect.Build
+	// Conflicts is the forge side of the merge-conflict loop; nil uses origin.
+	Conflicts ConflictForge
 	// Reflect distils lessons from a finished item; nil uses the model.
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
 	// Coordinator reports whether belai rc runs on this host to file what the
@@ -929,6 +941,19 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		w.Record.CostMicroUSD += meter.spent()
 	}
 
+	if w.conflictMode(it) {
+		// The harness runs the merge-conflict loop: its own fresh worktree per
+		// attempt, its own checks, and its own push (conflicts.go).
+		o := w.workConflicts(itemCtx, it, claim, emit, nextRound)
+		stopRenew()
+		addTokens()
+		if w.stopped(ctx, itemCtx, it, nil) {
+			return
+		}
+		w.release(ctx, it, o)
+		return
+	}
+
 	ws, err := w.workspace(ctx, it)
 	if err != nil {
 		failure := sanitize.Sanitize(err.Error())
@@ -955,7 +980,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	coordWG.Go(func() { w.watchCoord(coordCtx, it, ws) })
 	stopWatch := sync.OnceFunc(func() { stopCoord(); coordWG.Wait() })
 	defer stopWatch()
-	if ws.Worktree && ws.Branch != it.Branch {
+	// A worktree made from a pull request's head (PRHead) leaves the card on
+	// that head, which every host can fetch, rather than this host's local branch.
+	if ws.Worktree && ws.Branch != it.Branch && ws.PRHead == "" {
 		if err := w.Store.SetBranch(it.ID, w.Record.ID, ws.Branch); err != nil {
 			w.logf("%s: record the branch: %v", it.Short(), err)
 		} else {
@@ -1051,6 +1078,10 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			w.auditCommit(context.WithoutCancel(ctx), it, ws, o.files, "committed")
 		}
 		o.branch = ws.Branch
+		if ws.PRHead != "" && ws.FilesChanged(context.WithoutCancel(ctx)) == 0 {
+			// Nothing new on the local branch: the work is still the pull request's head.
+			o.branch = ws.PRHead
+		}
 		if bad := ws.CommittedSynced(context.WithoutCancel(ctx)); len(bad) > 0 && !o.failed {
 			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the branch commits a crew file the harness keeps out of branches: " + sanitize.Line(strings.Join(bad, ", "), 200)}
 		}
@@ -1424,7 +1455,9 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	case o.to != "" && !o.failed:
 		out.To, out.AddLabels, out.DropLabels = o.to, o.addLabels, o.dropLabels
 	case o.blocked:
-		out.To = kanban.Blocked
+		// The harness's own labels for a blocked card (the merge-conflict loop's
+		// checkpoint), never a model's.
+		out.To, out.AddLabels = kanban.Blocked, o.addLabels
 	case !o.failed:
 		route = k.OnSuccess
 	case o.transient:
@@ -1777,7 +1810,10 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	if t.Setup != "" {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "setup", Label: "workspace setup failure", Body: t.Setup})
 	}
-	if resume := w.resumeDirective(t.Item); resume != "" && t.Setup == "" && t.Workspace != nil {
+	if t.Conflicts != "" {
+		conflictInput(&in, t)
+	}
+	if resume := w.resumeDirective(t.Item); resume != "" && t.Setup == "" && t.Workspace != nil && t.Conflicts == "" {
 		in.Directive = strings.TrimSpace(in.Directive + " " + resume)
 		if stat := t.Workspace.DiffStat(ctx); stat != "" {
 			in.Attachments = append(in.Attachments, run.Attachment{Kind: "resume", Label: "what this item's branch already changed (git diff --stat against its base)", Body: stat})

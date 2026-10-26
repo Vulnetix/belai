@@ -258,6 +258,14 @@ clears one. The `vuln`, `gone` and
 `needs-verify` labels route a card through the
 [security crew](fleet.md#the-security-crew).
 
+The `merge-conflict` label asks for a pull request's merge conflicts to be
+resolved. The card's body names the pull request in a fenced block (`pr`,
+`repo`, `number`, `head`, `base`, `fork`), its `agent.pr` links it, and
+`belai:conflict-resolver` claims it on any machine with the repository. Each
+checkout the harness makes appends one ledger note, `conflict attempt N/5
+<fingerprint>: <file>=<choice>, ... -> <result>`; see
+[Merge conflicts](merge-conflicts.md#the-ledger).
+
 ### The duplicate guard
 
 One fix gets one card at a time and one pull request. Two things used to break that. A finding whose card was done but whose pull request still waited for review came back in the next scan, and the sweep filed a fresh card for it. And several advisories on one package are cleared by the same bump, so each of their cards built it again. A repository saw eleven near-identical bumps of one package this way.
@@ -293,6 +301,15 @@ never a checkpoint, and a label from a newer Belai that this one does not know
 holds the card all the same. A failed stage is retried and then blocked as
 before; it never holds a card. A held card is not claimed, so a decision on a
 card a worker holds is refused.
+
+One checkpoint is the harness's own and no profile can name it:
+`conflicts-unresolved`. The [merge-conflict loop](merge-conflicts.md#the-loop)
+adds `checkpoint:conflicts-unresolved` to a card it moves to `blocked` after
+every checkout failed its checks, so the card waits for a person. Rejecting it
+to `backlog` starts a new round of checkouts, noted `conflict retry: round R`
+and numbered from 1, that still excludes every variation any earlier round
+tried on the same commits (see
+[Retrying an unresolved card](merge-conflicts.md#retrying-an-unresolved-card)).
 
 `/inbox` (or `w` on the screen switcher, `f1`) is the queue of cards waiting on
 you. It lists three kinds, in this order: a card held at a checkpoint, a card

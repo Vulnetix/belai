@@ -71,6 +71,70 @@ type KanbanSpec struct {
 	// Gates turns on acceptance gates for the worker: the tasks it hands on
 	// carry them, and the harness verifies them on the branch. Nil: none.
 	Gates *GatesSpec `json:"gates,omitempty"`
+	// Conflicts turns on the harness's merge-conflict loop for a card labelled
+	// merge-conflict (docs/merge-conflicts.md). Nil: none.
+	Conflicts *ConflictsSpec `json:"conflicts,omitempty"`
+}
+
+// MergeConflictLabel marks a card that asks for a pull request's merge
+// conflicts to be resolved; a worker with kanban.conflicts claims it.
+const MergeConflictLabel = "merge-conflict"
+
+// Merge-conflict loop bounds.
+const (
+	DefaultMaxCheckouts = 5
+	MaxCheckouts        = 10
+)
+
+// ConflictsSpec is a worker's harness-run merge-conflict loop. For a card
+// labelled merge-conflict the harness, not the model, makes up to
+// MaxCheckouts fresh checkouts of the pull request's head with its base
+// merged in, gives the model the conflicts, the ledger of earlier attempts and
+// a strategy to try, classifies the resolution it leaves, refuses one that
+// repeats an earlier attempt, runs the checks, and pushes the merge commit to
+// the pull request's head when they pass.
+type ConflictsSpec struct {
+	// MaxCheckouts is how many fresh checkouts one series may make, 1 to
+	// MaxCheckouts; 0 is DefaultMaxCheckouts.
+	MaxCheckouts int `json:"max_checkouts,omitempty"`
+	// Prefer is the choice the first attempt makes for every hunk and the one
+	// later variations keep where they change nothing: "both" (default, the
+	// current side first), "current" or "incoming".
+	Prefer string `json:"prefer,omitempty"`
+}
+
+// MaxCheckoutsOr is the checkout limit, defaulted.
+func (c ConflictsSpec) MaxCheckoutsOr() int {
+	if c.MaxCheckouts <= 0 {
+		return DefaultMaxCheckouts
+	}
+	return min(c.MaxCheckouts, MaxCheckouts)
+}
+
+// PreferOr is the preferred choice, defaulted.
+func (c ConflictsSpec) PreferOr() string {
+	if c.Prefer == "" {
+		return "both"
+	}
+	return c.Prefer
+}
+
+func (c ConflictsSpec) validate(p AgentProfile) error {
+	if c.MaxCheckouts < 0 || c.MaxCheckouts > MaxCheckouts {
+		return fmt.Errorf("kanban.conflicts.max_checkouts runs 1 to %d (0 is %d)", MaxCheckouts, DefaultMaxCheckouts)
+	}
+	switch c.Prefer {
+	case "", "both", "current", "incoming":
+	default:
+		return fmt.Errorf("kanban.conflicts.prefer must be both, current or incoming, not %q", c.Prefer)
+	}
+	if p.IsolationMode() != IsolationWorktree || p.ReadOnlyWorkspace() {
+		return errors.New("kanban.conflicts needs workspace.isolation: worktree, not read-only (a fresh checkout per attempt)")
+	}
+	if !p.HasTool("Edit") && !p.HasTool("Write") {
+		return errors.New("kanban.conflicts needs Edit or Write: the worker resolves the conflicts in the files")
+	}
+	return nil
 }
 
 // QualityLabel marks a card the harness seeded from a test run. Every handoff
@@ -580,6 +644,11 @@ func (p AgentProfile) validateWorker() error {
 	}
 	if g := k.Gates; g != nil {
 		if err := g.validate(k); err != nil {
+			return err
+		}
+	}
+	if c := k.Conflicts; c != nil {
+		if err := c.validate(p); err != nil {
 			return err
 		}
 	}

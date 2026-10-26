@@ -7,6 +7,11 @@
       "sha256": "6bf8fb18b57285fc4c0ce58880124de6cd600ab0a7863e42a45da91b82c0ede6"
     },
     {
+      "name": "belai:conflict-resolver",
+      "path": "internal/agentprofile/builtin/conflict-resolver.json",
+      "sha256": "cbf214adf824ecdaf6eda46c3d8bc5c227d10609ddfbc748749e204eb29df4ae"
+    },
+    {
       "name": "belai:debug",
       "path": "internal/agentprofile/builtin/debug.json",
       "sha256": "e444dc1a8c40d790b20d6a3faeba01c7efa74192692b10a44ca529719d07ed16"

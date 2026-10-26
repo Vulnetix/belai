@@ -1101,6 +1101,16 @@ changes on or merges: the worker's Bash refuses `gh pr review`, `gh pr comment`
 and `gh pr merge` (see [Publishing](#publishing)), and a person or the website's
 factory acts on the verdict.
 
+`belai:conflict-resolver` is not in the crew either. It claims backlog items
+labelled `merge-conflict`, which the website's factory files for a pull request
+that no longer merges with its base. The harness runs its loop: up to five fresh
+checkouts of the pull request's head with the base merged in, each told what
+the earlier ones chose and how they failed, none allowed to repeat an earlier
+one's choices, each checked for leftover markers, duplicate imports, the build,
+the linters and the tests. The harness, not the model, pushes the passing merge
+to the pull request's head as a fast-forward and comments the attempt ledger on
+the pull request. See [Merge conflicts](merge-conflicts.md).
+
 ### The security crew
 
 Start it with `belai agent start -crew belai:security` or `/fleet`. It works
@@ -1441,9 +1451,13 @@ review, a comment, a merge or an auto-merge (a REST path naming reviews,
 comments or merge, `auto_merge`, or a GraphQL `PullRequestReview`,
 `mergePullRequest` or `AutoMerge` mutation), `git switch`, `git checkout -b`,
 `git worktree`, `git config` and `git remote` are denied in a worker's Bash wherever they appear in a command
-line. `PublishBranch` is the only way to push, because a raw push could send
+line. `PublishBranch` is the only way a model pushes, because a raw push could send
 any ref, `main` included. Publishing needs a GitHub or GitLab `origin` and
-committed work on the branch. The link is recorded on the item.
+committed work on the branch. The link is recorded on the item. The one push
+the harness makes to a branch that is not the item's own is the
+[merge-conflict loop's](merge-conflicts.md#pushing): a merge commit it built and
+checked, to the head of the pull request the card names, as a fast-forward
+with no force, and only with `agents.publish` on.
 
 A review, a comment and an auto-merge are never a worker's to make: the
 factory makes them. The `gh api` rules match the path and not the method, so

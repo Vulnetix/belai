@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/mergefix"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/vaultenv"
 )
@@ -85,6 +86,38 @@ type Workspace struct {
 	filed   map[string]bool
 	// Session is the Belai session doing the work, named in the Session trailer of what the harness commits.
 	Session string
+	// PRHead is the pull request head the worktree was made from, when the
+	// item's branch is one (pullRequestHead); "" otherwise.
+	PRHead string
+}
+
+// fetchPRHead fetches a pull request's head from origin and returns its
+// commit. A test replaces it, because the hardened git refuses a local origin.
+var fetchPRHead = func(ctx context.Context, repo string, c mergefix.Card) (string, error) {
+	refs, err := originForge{}.Fetch(ctx, repo, c)
+	return refs.Head, err
+}
+
+// pullRequestHead resolves an item branch outside belai/: it must be the head
+// of the same-repository pull request the item's own block names, on this
+// repository's origin. Anything else is refused as before.
+func pullRequestHead(ctx context.Context, repo string, it kanban.Item, branch string) (string, error) {
+	refused := fmt.Errorf("worktree: item branch %q is not a %s* branch", branch, BranchPrefix)
+	c, err := mergefix.ParseCard(it.Body)
+	if err != nil || c.Fork || c.Head != branch || kanban.RemoteFor(repo) != c.Repo {
+		return "", refused
+	}
+	if err := forge.ValidBranchName(ctx, hardenedGit("", ""), repo, branch); err != nil {
+		return "", err
+	}
+	sha, err := fetchPRHead(ctx, repo, c)
+	if err != nil {
+		return "", fmt.Errorf("worktree: fetch the pull request's head %s: %w", branch, err)
+	}
+	if sha = kanban.CleanRef(sha); sha == "" {
+		return "", fmt.Errorf("worktree: the pull request's head %s has no commit", branch)
+	}
+	return sha, nil
 }
 
 func randHex(n int) string {
@@ -128,10 +161,19 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 
 	branch := it.Branch
 	newBranch := branch == ""
-	if !newBranch {
-		if !strings.HasPrefix(branch, BranchPrefix) {
-			return nil, fmt.Errorf("worktree: item branch %q is not a %s* branch", branch, BranchPrefix)
+	prHead := ""
+	if !newBranch && !strings.HasPrefix(branch, BranchPrefix) {
+		// The one branch outside belai/ an item may name: the head of the pull
+		// request its own block names, where the merge-conflict loop pushed its
+		// merge. It is fetched from origin and checked out on a new branch of the
+		// item's own, so no local branch of the user's is ever touched.
+		sha, err := pullRequestHead(ctx, repo, it, branch)
+		if err != nil {
+			return nil, err
 		}
+		prHead, newBranch, base = branch, true, sha
+	}
+	if !newBranch {
 		if err := forge.ValidBranchName(ctx, repoRun, repo, branch); err != nil {
 			return nil, err
 		}
@@ -220,7 +262,7 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 		gitDir = filepath.Join(dir, gitDir)
 	}
 	return &Workspace{
-		Dir: dir, Branch: branch, Worktree: true, Base: baseSHA, repo: repo,
+		Dir: dir, Branch: branch, Worktree: true, Base: baseSHA, repo: repo, PRHead: prHead,
 		gitDir: filepath.Clean(gitDir), commonDir: commonDir, dotgit: dotgit,
 		run:     hardenedGit(gitDir, dir, ident...),
 		repoRun: repoRun,
@@ -502,8 +544,10 @@ func (w *Workspace) preparePrivateGit() error {
 		return err
 	}
 	// A symlink as HEAD is read as the legacy symlink form and refused, so HEAD
-	// is a copy. A commit moves the branch's ref, never the HEAD file.
-	for _, name := range []string{"HEAD", "index", "gitdir"} {
+	// is a copy. A commit moves the branch's ref, never the HEAD file. A merge
+	// the harness left uncommitted (the merge-conflict loop) is copied too, so
+	// the model's git status and checkout --ours/--theirs see it.
+	for _, name := range []string{"HEAD", "index", "gitdir", "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG"} {
 		data, err := os.ReadFile(filepath.Join(w.gitDir, name))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
