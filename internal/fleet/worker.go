@@ -47,6 +47,7 @@ import (
 	"github.com/vulnetix/belai/internal/testdetect"
 	"github.com/vulnetix/belai/internal/testrun"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
 )
 
@@ -234,6 +235,9 @@ type Worker struct {
 	liveTokens  atomic.Int64     // the item in hand's tokens so far, set from the turn's goroutine
 	liveCost    atomic.Int64     // the item in hand's estimated cost so far, µ$ (budget.go)
 	price       priceSlot        // the running turn's model price; nil when unknown (budget.go)
+	// sessLog is the transcript log of the last turn that ran, so the checks
+	// and commits of the claim land in its session (measure.go).
+	sessLog atomic.Pointer[turnlog.Log]
 	// unpricedLogged is set once the worker logged that its model has no price.
 	unpricedLogged atomic.Bool
 	coordMu        sync.Mutex
@@ -1270,6 +1274,7 @@ func (w *Worker) workspace(ctx context.Context, it kanban.Item) (*Workspace, err
 		ws, err := PrepareWorktree(ctx, w.Repo, it, base)
 		if ws != nil {
 			ws.Session = w.Record.Session
+			ws.OnCommit = w.recordCommit
 		}
 		return ws, err
 	default:
@@ -1823,6 +1828,10 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "pull_requests", Label: "this item's open pull requests, one per attempt branch", Body: openPRs})
 	}
 	tr := w.transcript(t)
+	// Its assistant entries name the model and cost its calls at the price
+	// this turn runs at: the one the factory sent, else the built-in table.
+	tr.log.SetModel(cfg.Provider, cfg.Model, w.price.Load())
+	w.sessLog.Store(tr.log)
 	link.SetRecorder(tr.log.A2A)
 	emit := func(e agent.Event) {
 		tr.observe(e)

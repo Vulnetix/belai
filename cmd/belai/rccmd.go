@@ -42,6 +42,7 @@ import (
 	"github.com/vulnetix/belai/internal/schedule"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionctl"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/tools"
@@ -1127,6 +1128,9 @@ func rcAfterTurn(ctx context.Context, ctl *rc.Controller, settings config.Settin
 			tlog.System("auto-commit: " + forge.CleanErr(err))
 		case sha != "":
 			tlog.System(fmt.Sprintf("auto-commit %s %s", sha, msg))
+			if c, cerr := sessionmeasure.ReadHead(ctx, forge.NonInteractiveRunner, cwd); cerr == nil {
+				tlog.Commit(c)
+			}
 			project, _ := kanban.ProjectFor(cwd)
 			audit.Emit(audit.Fact{Kind: audit.RepoCommit, ActorKind: audit.ActorAgent, Actor: "belai",
 				SessionID: sessionID, Repo: project, Commit: forge.HeadCommit(ctx, forge.NonInteractiveRunner, cwd), Outcome: "auto_commit"})
@@ -1145,7 +1149,7 @@ func rcAfterTurn(ctx context.Context, ctl *rc.Controller, settings config.Settin
 	sess, _ := ctl.Runner().(*agent.Session)
 	out := headless.RunPostEnd(ctx, headless.PostEnd{
 		Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: s,
-		Session: sess, Trigger: trigger, Observe: tlog.Observe,
+		Session: sess, Trigger: trigger, Observe: tlog.Observe, Checks: tlog.CheckRuns,
 		Notify: tlog.System,
 	})
 	tlog.Flush()

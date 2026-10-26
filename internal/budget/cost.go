@@ -104,3 +104,21 @@ func PriceFor(provider, model string) (Price, bool) {
 	}
 	return best, found >= 0
 }
+
+// CostFor is the cost in millionths of a dollar of one call's usage on
+// provider/model, and whether a price is known. A valid override wins: it is
+// the price the Software Factory sent, or the zero Price of a model the caller
+// knows is free. Otherwise a local provider is known and free, and the built-in
+// table answers for the rest. A model with no price reports false, so a record
+// keeps its tokens and leaves the cost out instead of writing a zero that
+// reads as free.
+func CostFor(provider, model string, override *Price, u transcript.Usage) (int64, bool) {
+	if override != nil && override.Valid() {
+		return override.MicroUSD(u), true
+	}
+	p, ok := PriceFor(provider, model)
+	if !ok {
+		return 0, false
+	}
+	return p.MicroUSD(u), true
+}

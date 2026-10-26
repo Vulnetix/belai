@@ -603,6 +603,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		}
 	}
 	defer tlog.AttachRoleManager()()
+	tlog.SetModel(cfg.Provider, cfg.Model, nil)
 	tlog.User(prompt, nil)
 	// A headless prompt spends tokens like any other session: record them so
 	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
@@ -718,7 +719,7 @@ func postEndTests(ctx context.Context, cfg run.Config, client *http.Client, pol 
 	}
 	out := headless.RunPostEnd(ctx, headless.PostEnd{
 		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
-		Session: sess, Trigger: trigger, Observe: tlog.Observe,
+		Session: sess, Trigger: trigger, Observe: tlog.Observe, Checks: tlog.CheckRuns,
 		Notify: func(s string) { fmt.Fprintln(os.Stderr, s) },
 	})
 	tlog.Flush()

@@ -72,6 +72,9 @@ behaviour, and implementation details.
   its turns, turning it off per session or globally, and the git state the
   website shows
 - [Session sync](session-sync.md): mirroring sessions to the Vulnetix website
+- [Session measures](session-measures.md): the cache tokens, cost, `check_run`
+  and `commit` entries and the finish rollup a session records for the
+  Software Factory
 - [Audit log](audit.md): the hash-chained record of host and agent actions, facts only
   (History and live Sessions) and prompting a live session from the browser.
 - [Remote control](remote-control.md): `belai rc`, which lets the website

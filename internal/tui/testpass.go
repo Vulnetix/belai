@@ -12,6 +12,7 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/testpass"
 )
 
@@ -134,6 +135,12 @@ func (a *App) handleTestPass(m testPassMsg) tea.Cmd {
 	a.testPass.running = false
 	o := m.step.Outcome
 	a.addSystem(o.Line())
+	// Each suite that ran is a check_run entry (docs/session-measures.md).
+	for _, r := range o.Results {
+		if c, ok := sessionmeasure.FromTestrun(r, sessionmeasure.KindTest); ok {
+			a.appendEntry(c.Entry())
+		}
+	}
 	if o.Skipped != "" {
 		a.testPass.fixPasses = 0
 		return nil

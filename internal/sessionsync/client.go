@@ -34,6 +34,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/netguard"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 )
 
 // DefaultWebURL is the Vulnetix console origin; $VULNETIX_WEB_URL overrides it
@@ -1052,10 +1053,16 @@ type EndInfo struct {
 	Reason   string `json:"reason,omitempty"`
 	Error    string `json:"error,omitempty"`
 	ExitCode *int   `json:"exitCode,omitempty"`
+	// Rollup is what the session did, added up from its file when it ends
+	// (docs/session-measures.md). The syncer fills it in; a host that
+	// predates it sends none and the server stores null.
+	Rollup *sessionmeasure.Rollup `json:"rollup,omitempty"`
 }
 
 // empty reports whether the end says nothing.
-func (e EndInfo) empty() bool { return e.Reason == "" && e.Error == "" && e.ExitCode == nil }
+func (e EndInfo) empty() bool {
+	return e.Reason == "" && e.Error == "" && e.ExitCode == nil && e.Rollup == nil
+}
 
 // End moves the session into History, saying nothing of why.
 func (c *Client) End(ctx context.Context, sessionID string) error {

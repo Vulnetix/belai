@@ -262,6 +262,7 @@ func (s *Server) openSession(ctx context.Context, cwd string) (*acpSession, erro
 			ss.log = l
 		}
 	}
+	ss.log.SetModel(ss.provider, ss.model, nil)
 	s.mu.Lock()
 	if !s.recording {
 		s.recording = true
@@ -542,6 +543,8 @@ func (s *Server) postEnd(ctx context.Context, ss *acpSession) {
 	if !ran {
 		return
 	}
+	// The last run of the suites, as check_run entries (docs/session-measures.md).
+	ss.log.CheckRuns(out.Results)
 	say(out.Line())
 	if out.Report != "" {
 		say(out.Report)

@@ -272,6 +272,9 @@ func startShell(ctx context.Context, o SessionOptions, c sessionsync.RemoteComma
 			meta["analysing"] = true
 		}
 		o.Log.Shell(content, meta)
+		if out.Err == nil {
+			o.Log.ShellCheck(c.Shell, out.ExitCode, time.Since(began))
+		}
 		o.Mirror.Nudge()
 		ack(sessionsync.AckAccepted, "")
 		if raise {

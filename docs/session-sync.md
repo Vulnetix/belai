@@ -93,6 +93,8 @@ website never disagree.
 | `firewall_permission` | The role manager found AI Firewall permissions in an admitted prompt and wrote rules for them (written as soon as the offer arrives, shown or not) | `content` is a one-line summary. `meta` holds `offer_id`, `summary`, `backend` (`systemone` or `fast`, who detected it), `rules[{key, name, ruleType, action, pattern, priority, enabled, family, variant, group, stance, intent}]` and `notes`. Rules sharing a `group` are the allow and deny variants of one permission, and `enabled` marks the variant belai selected. Every field passed the firewall's own validation ([firewall permissions](firewall-permissions.md)). The website's sandbox Permissions tab offers it for applying |
 | `firewall_permission_applied` | One rule of an offer was applied, by a click or by auto-apply, or the apply failed | `offer_id`, `rule_key`, `rule_name`, `rule_uuid` (when the CLI reported one), `enabled`, `source` (`tui` or `auto`) and `error` (empty on success) |
 | `intel_state` | A model call moves a plan limit by a percent, or changes the pace, trend or runway word; at most once a minute | `provider`, `at`, `limits[{provider, window, used, resetsAt, observedAt}]`, `pace`, `trend`, `runway`, `roles[{role, tokens}]` (up to 8). Numbers, window names and the harness's own words only, never provider text. The website draws its limit bars and runway from the latest one |
+| `check_run` | A build, test, lint or gate run exited: the post-end test pass, a fleet worker's gate verification, a Bash call or a `!cmd` line that runs a known build, test or lint command | No `content`. `meta` holds `kind` (`build`, `test`, `lint`, `gate`), `program`, `subcommand`, `exit_code`, `duration_ms` and `ok` ([session measures](session-measures.md)) |
+| `commit` | The harness made a commit: a fleet worker's, the TUI's auto-commit or a remote-control session's | No `content`. `meta` holds `sha`, `author_name`, `author_email`, `committer_name`, `committer_email`, `trailers[{key, value}]` and `branch`, read back from git ([session measures](session-measures.md)) |
 
 A decision's `Detail` is never written: only the verdict token and the
 harness's own structure reach the record, as with the live feed.
@@ -367,9 +369,11 @@ and the inbox run on the syncer's own goroutines.
   `interrupted`, or the failed turn's reason (`rate_limited`, `quota_exceeded`,
   `auth_failed`, `timeout`, `budget_exceeded`, `max_turns`, else `error`, from
   `fleet.EndReason`) with its error text (`Syncer.SetEndReason`). A session
-  another one replaces ends `superseded`. Nothing recorded sends no body, and a
-  backfilled session sends none; the server then reads the reason from the
-  transcript. The website names its notification after the reason ("Session
+  another one replaces ends `superseded`. Nothing recorded sends no reason
+  and the server then reads it from the transcript. Every end, a backfilled
+  session's included, also carries a `rollup` of the session's tokens and cost
+  per model, tool calls, active and wait time, check counts and files and
+  lines changed, added up from its file ([session measures](session-measures.md)). The website names its notification after the reason ("Session
   timed out", "Provider rate limit"), not merely "finished"
   (`TestEndCarriesTheReason`).
 - **A session that ends at once is still kept.** Closing the syncer takes the

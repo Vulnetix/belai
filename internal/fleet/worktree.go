@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/mergefix"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
@@ -89,6 +90,10 @@ type Workspace struct {
 	// PRHead is the pull request head the worktree was made from, when the
 	// item's branch is one (pullRequestHead); "" otherwise.
 	PRHead string
+	// OnCommit, when set, receives each commit the harness makes on the
+	// branch (Commit and the conflict resolver's merge), read back from git,
+	// so the session can record it (measure.go).
+	OnCommit func(sessionmeasure.Commit)
 }
 
 // fetchPRHead fetches a pull request's head from origin and returns its
@@ -359,6 +364,7 @@ func (w *Workspace) Commit(ctx context.Context, msg string) (int, error) {
 	if err != nil || sha == "" {
 		return 0, err
 	}
+	w.noteCommit(ctx)
 	return len(paths), nil
 }
 

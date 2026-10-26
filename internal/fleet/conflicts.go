@@ -29,6 +29,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/testrun"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -383,6 +384,7 @@ func (r *conflictRun) attempt(ctx context.Context, n int) (outcome, bool) {
 		return outcome{failed: true, fault: Fault{Code: FaultWorkspace}, note: "the workspace could not be prepared: " + sanitize.Sanitize(err.Error())}, true
 	}
 	ws.Session = w.Record.Session
+	ws.OnCommit = w.recordCommit
 	w.Record.Branch = ws.Branch
 	w.save()
 	keep := false
@@ -736,6 +738,7 @@ func (w *Workspace) commitMerge(ctx context.Context, tree, head, base, msg strin
 		return "", err
 	}
 	_, _ = git(ctx, w.run, w.Dir, "reset", "-q")
+	w.noteCommit(ctx)
 	return sha, nil
 }
 
@@ -852,7 +855,7 @@ func (w *Worker) conflictChecks(ctx context.Context, ws *Workspace, tree conflic
 		builds = append(builds, b)
 	}
 	if plan := buildPlan(builds); len(plan.Argvs) > 0 {
-		results := w.testResultsAt(ctx, ws.Dir, plan)
+		results := w.itemResultsAt(ctx, ws.Dir, plan, sessionmeasure.KindBuild)
 		for i, r := range results {
 			b := builds[i]
 			switch {
@@ -883,7 +886,7 @@ func (w *Worker) conflictChecks(ctx context.Context, ws *Workspace, tree conflic
 		linters = append(linters, l)
 	}
 	if plan := lintPlan(linters); len(plan.Argvs) > 0 {
-		results := w.testResultsAt(ctx, ws.Dir, plan)
+		results := w.itemResultsAt(ctx, ws.Dir, plan, sessionmeasure.KindLint)
 		for i, r := range results {
 			l := linters[i]
 			if unrunnable(r) {
@@ -912,7 +915,7 @@ func (w *Worker) conflictChecks(ctx context.Context, ws *Workspace, tree conflic
 
 	plan := testrun.BuildPlan(w.suitesAt(ctx, ws.Dir), w.Settings.TestsCommand(), "full", nil)
 	if len(plan.Argvs) > 0 {
-		for _, r := range w.testResultsAt(ctx, ws.Dir, plan) {
+		for _, r := range w.itemResultsAt(ctx, ws.Dir, plan, sessionmeasure.KindTest) {
 			switch {
 			case unrunnable(r):
 				c.blocked = fmt.Sprintf("the test suite %s could not run (%s)", r.Suite, r.Status)

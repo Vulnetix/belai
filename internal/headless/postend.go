@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/testpass"
+	"github.com/vulnetix/belai/internal/testrun"
 )
 
 // PostEnd is one headless post-end test pass: the CLI's `-prompt` run and an
@@ -36,6 +37,9 @@ type PostEnd struct {
 	Fix testpass.Fixer
 	// Notify receives one harness line per step. Optional.
 	Notify func(string)
+	// Checks receives the results of each run of the suites (turnlog.Log's
+	// CheckRuns writes them as check_run entries). Optional.
+	Checks func([]testrun.Result)
 }
 
 // ShouldPostEnd reports whether the user's settings run the pass at trigger t
@@ -81,6 +85,7 @@ func RunPostEnd(ctx context.Context, p PostEnd) testpass.Outcome {
 		Gate:    testpass.NewGate(p.Cfg, p.Client, nil, pol),
 		Report:  reportClassifier(p),
 		Notify:  p.Notify,
+		Checks:  p.Checks,
 	}
 	if p.Settings.TestsOnFail() != "off" {
 		switch {

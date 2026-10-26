@@ -107,6 +107,11 @@ type Config struct {
 	Fix Fixer
 	// Notify receives one harness-composed line per step. Optional.
 	Notify func(string)
+	// Checks receives the results of every run of the suites, once per run,
+	// so a surface can record each as a check_run entry. A fail-branch pass
+	// runs the suites again, and Run returns only the last outcome, which is
+	// why the results are handed over here as they happen. Optional.
+	Checks func([]testrun.Result)
 }
 
 // Outcome is the harness result of one pass.
@@ -192,6 +197,9 @@ func RunOnce(ctx context.Context, cfg Config, trigger Trigger, fixPasses int) St
 		cfg.Notify(fmt.Sprintf("running tests: %s", strings.Join(plan.Names, ", ")))
 	}
 	out.Results = testrun.RunPlan(sandbox.WithPolicy(ctx, cfg.Sandbox), opts, plan)
+	if cfg.Checks != nil {
+		cfg.Checks(out.Results)
+	}
 	out.Passed = testrun.AllPassed(out.Results)
 
 	if out.Passed {

@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/quality"
 	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/testdetect"
 	"github.com/vulnetix/belai/internal/testrun"
 )
@@ -137,7 +138,7 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 
 	var results []testrun.Result
 	if len(plan.Argvs) > 0 {
-		results = w.testResultsAt(ctx, ws.Dir, plan)
+		results = w.itemResultsAt(ctx, ws.Dir, plan, sessionmeasure.KindTest)
 	}
 	resultAt := func(i int) testrun.Result {
 		if i >= 0 && i < len(results) {

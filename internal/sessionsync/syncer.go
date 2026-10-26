@@ -402,16 +402,19 @@ func (s *Syncer) endInfo(id, fallback string) EndInfo {
 	return info
 }
 
-// end ends id with the reason recorded for it.
-func (s *Syncer) end(ctx context.Context, id string) error {
-	return s.opts.Client.EndWith(ctx, id, s.endInfo(id, ""))
+// end ends id with the reason recorded for it and the rollup of the session
+// file at path.
+func (s *Syncer) end(ctx context.Context, id, path string) error {
+	info := s.endInfo(id, "")
+	info.Rollup = rollupOf(path)
+	return s.opts.Client.EndWith(ctx, id, info)
 }
 
 // endReplaced ends id because another session took its place, whatever its
 // last turn said.
-func (s *Syncer) endReplaced(ctx context.Context, id string) error {
+func (s *Syncer) endReplaced(ctx context.Context, id, path string) error {
 	_ = s.endInfo(id, "")
-	return s.opts.Client.EndWith(ctx, id, EndInfo{Reason: EndSuperseded})
+	return s.opts.Client.EndWith(ctx, id, EndInfo{Reason: EndSuperseded, Rollup: rollupOf(path)})
 }
 
 func (s *Syncer) Close(timeout time.Duration) {
@@ -473,7 +476,7 @@ func (s *Syncer) run(ctx context.Context) {
 					s.sendAcks(fctx, &pendingAcks)
 				}
 				if cur.registered {
-					_ = s.end(fctx, cur.info.ID)
+					_ = s.end(fctx, cur.info.ID, cur.info.Path)
 				}
 			}
 			cancel()
@@ -492,7 +495,7 @@ func (s *Syncer) run(ctx context.Context) {
 					defer cancel()
 					_ = s.upload(fctx, prev)
 					// Another session took this one's place.
-					_ = s.endReplaced(fctx, prev.info.ID)
+					_ = s.endReplaced(fctx, prev.info.ID, prev.info.Path)
 				}()
 			}
 			cur = &tail{info: info, serverLast: -1}
@@ -556,7 +559,7 @@ func (s *Syncer) takeQueued(ctx context.Context, cur *tail, pending *[]ack) *tai
 			}
 			if cur != nil && cur.registered {
 				_ = s.upload(ctx, cur)
-				_ = s.endReplaced(ctx, cur.info.ID)
+				_ = s.endReplaced(ctx, cur.info.ID, cur.info.Path)
 			}
 			cur = &tail{info: info, serverLast: -1}
 		case m := <-s.meta:
@@ -880,7 +883,7 @@ func (s *Syncer) Backfill(ctx context.Context, infos []SessionInfo) (int, error)
 		if !t.registered {
 			continue // no file, nothing to upload
 		}
-		if err := s.opts.Client.End(ctx, info.ID); err != nil {
+		if err := s.opts.Client.EndWith(ctx, info.ID, EndInfo{Rollup: rollupOf(info.Path)}); err != nil {
 			return done, fmt.Errorf("%s: %w", info.ID, err)
 		}
 		done++

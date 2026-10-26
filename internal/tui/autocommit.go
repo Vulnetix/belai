@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 )
 
 // maxTaskPaths caps the number of distinct paths one goal turn collects for
@@ -28,6 +29,9 @@ type autoCommitMsg struct {
 	full string
 	msg  string
 	err  error
+	// commit is the commit as the session records it (docs/session-measures.md);
+	// nil when git could not read it back.
+	commit *sessionmeasure.Commit
 }
 
 // observeTaskDiff feeds one tool's observed file changes to the auto-commit
@@ -91,7 +95,13 @@ func (a *App) flushAutoCommit(res run.Result) tea.Cmd {
 		if err == nil && sha != "" && audit.Enabled() {
 			full = forge.HeadCommit(context.Background(), runner, workdir)
 		}
-		return autoCommitMsg{sha: sha, full: full, msg: msg, err: err}
+		var rec *sessionmeasure.Commit
+		if err == nil && sha != "" {
+			if c, cerr := sessionmeasure.ReadHead(context.Background(), runner, workdir); cerr == nil {
+				rec = &c
+			}
+		}
+		return autoCommitMsg{sha: sha, full: full, msg: msg, err: err, commit: rec}
 	}
 }
 
@@ -103,6 +113,9 @@ func (a *App) handleAutoCommit(m autoCommitMsg) tea.Cmd {
 		a.addSystem("auto-commit: " + forge.CleanErr(m.err))
 	case m.sha != "":
 		a.addSystem(fmt.Sprintf("auto-commit %s %s", m.sha, m.msg))
+		if m.commit != nil {
+			a.appendEntry(m.commit.Entry())
+		}
 		// The audit log names the commit and the session that made it, not the
 		// message, which is text from the goal's objective.
 		project, _ := kanban.ProjectFor(a.workdir)

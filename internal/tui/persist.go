@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -210,9 +211,11 @@ func (a *App) persistMessage(i int) {
 			meta["model"] = m.Model
 		}
 		if m.Usage != nil {
-			meta["prompt_tokens"] = m.Usage.PromptTokens
-			meta["completion_tokens"] = m.Usage.CompletionTokens
-			meta["total_tokens"] = m.Usage.Total()
+			// Tokens, cache tokens and, when the model has a list price, the
+			// cost of the call (docs/session-measures.md).
+			provider, _ := meta["provider"].(string)
+			model, _ := meta["model"].(string)
+			sessionmeasure.AddUsage(meta, provider, model, nil, *m.Usage)
 		}
 		if len(m.ToolCalls) > 0 {
 			// Only answered calls are written, so a forced flush of an aborted
@@ -232,6 +235,7 @@ func (a *App) persistMessage(i int) {
 		a.appendEntry(timedEntry(m, session.Entry{Type: "assistant", Role: "assistant", Content: m.Text(), Meta: meta}))
 	case "tool":
 		content := m.Text()
+		whole := content // the exit line is at the end, which the cap below cuts
 		meta := map[string]any{
 			"tool_call_id": m.ToolCallID,
 			"tool_name":    m.ToolName,
@@ -249,6 +253,11 @@ func (a *App) persistMessage(i int) {
 			meta["diff"] = d.Wire(maxDiffWireBytes)
 		}
 		a.appendEntry(timedEntry(m, session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID}))
+		if sessionmeasure.IsBash(m.ToolName) {
+			if c, ok := sessionmeasure.FromBashArgs(m.ToolArgs, whole, m.DurationMS); ok {
+				a.appendEntry(c.Entry())
+			}
+		}
 	case "reasoning":
 		meta := map[string]any{}
 		if m.Provider != "" {
@@ -271,6 +280,7 @@ func (a *App) persistMessage(i int) {
 		a.appendEntry(timedEntry(m, session.Entry{Type: m.ToolName, Role: components.A2ARole, Content: m.Text(), Meta: m.Meta}))
 	case components.ShellRole:
 		content := m.Text()
+		whole := content
 		meta := map[string]any{
 			"command":  m.ShellCommand(),
 			"shell_id": m.ToolCallID,
@@ -282,6 +292,12 @@ func (a *App) persistMessage(i int) {
 			content = truncateUTF8(content, maxToolResultBytes)
 		}
 		a.appendEntry(timedEntry(m, session.Entry{Type: components.ShellRole, Role: components.ShellRole, Content: content, Meta: meta}))
+		// A line that did not start ("failed: ...") has no exit to record.
+		if !strings.HasPrefix(whole, "failed: ") {
+			if c, ok := sessionmeasure.FromBash(m.ShellCommand(), whole, m.DurationMS); ok {
+				a.appendEntry(c.Entry())
+			}
+		}
 	case "rolemanager":
 		if m.Persisted {
 			return // written when the decision was made (recordActivity)

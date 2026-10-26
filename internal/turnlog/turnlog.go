@@ -14,10 +14,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionmeasure"
+	"github.com/vulnetix/belai/internal/testrun"
 	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/transcript"
 	"github.com/vulnetix/belai/internal/vulnid"
 )
 
@@ -42,6 +46,14 @@ type Log struct {
 	// unchanged list is not written again.
 	lastTodos string
 
+	// provider, model and price say who the assistant entries are by and what
+	// they cost (SetModel). usage is the provider-reported usage of the model
+	// calls since the last assistant entry, written onto the next one.
+	provider, model string
+	price           *budget.Price
+	usage           transcript.Usage
+	hasUsage        bool
+
 	turnID    string
 	turnStart time.Time
 }
@@ -51,6 +63,20 @@ func New(w *session.Writer) *Log { return &Log{w: w} }
 
 // Writer is the underlying writer, or nil.
 func (l *Log) Writer() *session.Writer { return l.w }
+
+// SetModel names the model the following assistant entries are by, and the
+// price a call on it is costed at: the one the Software Factory sent, or nil
+// for Belai's built-in table. A local provider is free and a model with no
+// price gets tokens and no cost (budget.CostFor). Call it again when the
+// session changes model.
+func (l *Log) SetModel(provider, model string, price *budget.Price) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.provider, l.model, l.price = provider, model, price
+	l.mu.Unlock()
+}
 
 // User writes a user turn and returns its entry id ("" when not written).
 func (l *Log) User(text string, meta map[string]any) string {
@@ -162,7 +188,67 @@ func (l *Log) Flush() {
 	l.mu.Unlock()
 	l.vulns.Observe(text)
 	if strings.TrimSpace(text) != "" || len(calls) > 0 {
-		l.w.Assistant(text, calls, nil)
+		l.w.Assistant(text, calls, l.assistantMeta())
+	}
+}
+
+// assistantMeta is the meta of the assistant entry being written: the model
+// and, when a model call reported usage since the last entry, its tokens, cache
+// tokens and cost. Taking the usage clears it, so a call is counted once.
+func (l *Log) assistantMeta() map[string]any {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	meta := map[string]any{}
+	if l.provider != "" {
+		meta["provider"] = l.provider
+	}
+	if l.model != "" {
+		meta["model"] = l.model
+	}
+	if l.hasUsage {
+		sessionmeasure.AddUsage(meta, l.provider, l.model, l.price, l.usage)
+		l.usage, l.hasUsage = transcript.Usage{}, false
+	}
+	return meta
+}
+
+// CheckRuns records the suites a test pass ran as check_run entries. A suite
+// that never ran (refused, no binary) is not a check.
+func (l *Log) CheckRuns(results []testrun.Result) {
+	if l == nil || l.w == nil {
+		return
+	}
+	for _, r := range results {
+		if c, ok := sessionmeasure.FromTestrun(r, sessionmeasure.KindTest); ok {
+			l.w.Entry(c.Entry())
+		}
+	}
+}
+
+// ShellCheck records a finished shell line as a check_run when it is a known
+// build, test or lint command. exit is the line's exit code; the caller passes
+// only lines that ran to an exit.
+func (l *Log) ShellCheck(command string, exit int, dur time.Duration) {
+	if l == nil || l.w == nil {
+		return
+	}
+	if cls, ok := sessionmeasure.ClassifyLine(command); ok {
+		l.w.Entry(sessionmeasure.Check{Kind: cls.Kind, Program: cls.Program, Subcommand: cls.Subcommand,
+			ExitCode: exit, DurationMS: max(dur.Milliseconds(), 0)}.Entry())
+	}
+}
+
+// Check records one check run.
+func (l *Log) Check(c sessionmeasure.Check) {
+	if l != nil && l.w != nil {
+		l.w.Entry(c.Entry())
+	}
+}
+
+// Commit records a commit the harness made.
+func (l *Log) Commit(c sessionmeasure.Commit) {
+	if l != nil && l.w != nil {
+		l.w.Entry(c.Entry())
 	}
 }
 
@@ -199,6 +285,17 @@ func (l *Log) Observe(e agent.Event) {
 		}
 		l.diffs[e.ToolCallID] = e.Diff.Wire(maxDiffWireBytes)
 		l.mu.Unlock()
+	case agent.EventModelCallKind:
+		if e.Usage != nil {
+			l.mu.Lock()
+			l.usage.PromptTokens += e.Usage.PromptTokens
+			l.usage.CompletionTokens += e.Usage.CompletionTokens
+			l.usage.TotalTokens += e.Usage.TotalTokens
+			l.usage.CacheReadTokens += e.Usage.CacheReadTokens
+			l.usage.CacheWriteTokens += e.Usage.CacheWriteTokens
+			l.hasUsage = true
+			l.mu.Unlock()
+		}
 	case agent.EventToolResultKind:
 		l.Flush()
 		var extra map[string]any
@@ -209,6 +306,11 @@ func (l *Log) Observe(e agent.Event) {
 		}
 		l.mu.Unlock()
 		l.w.ToolWith(e.ToolCallID, e.ToolName, e.ToolArgs, "done", e.ToolResult, extra)
+		if sessionmeasure.IsBash(e.ToolName) {
+			if c, ok := sessionmeasure.FromBashArgs(e.ToolArgs, e.ToolResult, e.Duration.Milliseconds()); ok {
+				l.w.Entry(c.Entry())
+			}
+		}
 		l.vulns.Observe(e.ToolResult)
 	case agent.EventWarningKind:
 		if e.Warning != "" {
@@ -278,6 +380,18 @@ func (l *Log) TurnStarted(facts map[string]any) {
 	meta := map[string]any{}
 	for k, v := range facts {
 		meta[k] = v
+	}
+	// The footer facts name the model the turn runs on, so its assistant
+	// entries carry it. A switch drops a price set for the earlier model.
+	if p, _ := facts["provider"].(string); p != "" {
+		if m, _ := facts["model"].(string); m != "" {
+			l.mu.Lock()
+			if p != l.provider || m != l.model {
+				l.price = nil
+			}
+			l.provider, l.model = p, m
+			l.mu.Unlock()
+		}
 	}
 	meta["turn_id"], meta["state"], meta["started_at"] = id, "started", l.turnStart.UnixMilli()
 	l.w.Entry(session.Entry{Type: "turn_state", Role: "system", Meta: meta})

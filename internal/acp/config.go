@@ -198,6 +198,7 @@ func (s *Server) rebuild(ctx context.Context, ss *acpSession, provider, model st
 	ss.mu.Lock()
 	ss.agent, ss.provider, ss.model, ss.toggles = ag, provider, model, t
 	ss.mu.Unlock()
+	ss.log.SetModel(provider, model, nil)
 	return nil
 }
 

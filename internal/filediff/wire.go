@@ -85,6 +85,17 @@ func wireRow(r Row) WireRow {
 	return w
 }
 
+// Stat is the file's added and removed line counts. A transcript written by
+// Wire carries them (Stat counted them before any row was clipped); one that
+// carries rows without counts is counted from its rows.
+func (f WireFile) Stat() (added, removed int) {
+	if f.Adds != 0 || f.Dels != 0 || len(f.Rows) == 0 {
+		return f.Adds, f.Dels
+	}
+	c := WireChange{Files: []WireFile{f}}.Change()
+	return Stat(c.Files[0].Rows())
+}
+
 // Change rebuilds a renderable Change from its wire form. The file bodies are
 // gone, so each FileChange carries its rows in Stored instead; Rows returns
 // them as they were and nothing re-diffs.
