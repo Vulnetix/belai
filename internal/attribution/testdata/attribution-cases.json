@@ -65,6 +65,45 @@
             ]
         },
         {
+            "name": "a person who signs the commit signs off and the bot is the co-author",
+            "ctx": {
+                "bot": "vulnetix",
+                "commitAs": { "name": "Ada Lovelace", "email": "ada@example.com" },
+                "human": { "name": "Someone Else", "email": "else@example.com" }
+            },
+            "lines": [
+                "Co-authored-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>",
+                "Signed-off-by: Ada Lovelace <ada@example.com>"
+            ]
+        },
+        {
+            "name": "commitAs keeps the session and vulnerability links",
+            "ctx": {
+                "bot": "pix",
+                "commitAs": { "name": "Ada Lovelace", "email": "ada@example.com" },
+                "sessionId": "ses_123",
+                "vulnIds": ["CVE-2021-44228"]
+            },
+            "lines": [
+                "Co-authored-by: Pix [bot] <security@vulnetix.com>",
+                "Signed-off-by: Ada Lovelace <ada@example.com>",
+                "Session: https://vulnetix.com/resolve/factory-session?id=ses_123",
+                "Vulnerability: https://vulnetix.com/vdb/CVE-2021-44228"
+            ]
+        },
+        {
+            "name": "an unusable commitAs falls back to the bot sign-off",
+            "ctx": {
+                "bot": "vulnetix",
+                "commitAs": { "name": "Ada", "email": "nope" },
+                "human": { "name": "Grace Hopper", "email": "grace@example.com" }
+            },
+            "lines": [
+                "Co-authored-by: Grace Hopper <grace@example.com>",
+                "Signed-off-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>"
+            ]
+        },
+        {
             "name": "a GCVE record with no path links the repository",
             "ctx": { "bot": "vulnetix", "vulnIds": ["GCVE-110-NPM-2026-001552"] },
             "lines": [

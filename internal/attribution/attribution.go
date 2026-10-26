@@ -45,7 +45,11 @@ type Human struct {
 type Context struct {
 	Bot Bot `json:"bot"`
 	// Human is nil for a cron, a webhook or a batch job.
-	Human       *Human   `json:"human,omitempty"`
+	Human *Human `json:"human,omitempty"`
+	// CommitAs is the person whose GitHub user makes and signs the commit with their own signing
+	// key. They sign off and Bot becomes the co-author. It replaces Human; an unusable value is
+	// ignored and the bot signs off as usual.
+	CommitAs    *Human   `json:"commitAs,omitempty"`
 	SessionID   string   `json:"sessionId,omitempty"`
 	FindingUUID string   `json:"findingUuid,omitempty"`
 	VulnIDs     []string `json:"vulnIds,omitempty"`
@@ -130,6 +134,9 @@ func Trailers(c Context) []string {
 		co = *h
 	}
 	lines := []string{"Co-authored-by: " + person(co), "Signed-off-by: " + person(Bots[c.Bot])}
+	if signer := cleanHuman(c.CommitAs); signer != nil {
+		lines = []string{"Co-authored-by: " + person(Bots[c.Bot]), "Signed-off-by: " + person(*signer)}
+	}
 
 	if c.SessionID != "" && sessionID.MatchString(c.SessionID) {
 		lines = append(lines, "Session: "+origin+"/resolve/factory-session?id="+url.QueryEscape(c.SessionID))
