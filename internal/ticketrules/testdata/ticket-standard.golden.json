@@ -1,0 +1,48 @@
+{
+  "comment": "The ticket standard (vdb-site docs/factory.md 2.9.1). vdb-site factoryTicketIssues and belai internal/ticketrules.Check must return these codes, in this order, for each case. Copy changes to belai internal/ticketrules/testdata/ticket-standard.golden.json.",
+  "sections": ["User story", "Context", "Success criteria", "Definition of done", "Todo", "Out of scope"],
+  "cases": [
+    {
+      "name": "a complete ticket",
+      "title": "Rotate the Stripe key committed in billing/config.ts",
+      "body": "## User story\nAs the billing service maintainer, I want the exposed key replaced, so that nobody holding it can create charges.\n\n## Context\nsecret_scanning_alert #41, reported active by GitHub.\n\n## Success criteria\n- Given the old key, when it calls the API, then it is refused.\n- The service reads the new key from the vault.\n\n## Definition of done\nThe organisation's list.\n\n## Todo\n- [ ] Confirm the key is live\n- [ ] Roll the key\n- [ ] Replace the literal with a vault read\n\n## Out of scope\nOther keys in the repository.",
+      "codes": []
+    },
+    {
+      "name": "no title and no sections",
+      "title": "",
+      "body": "fix it",
+      "codes": ["title_missing", "section_missing", "section_missing", "section_missing", "section_missing", "section_missing", "section_missing"]
+    },
+    {
+      "name": "title too long",
+      "title": "This title keeps going well past the seventy character limit that the standard sets",
+      "body": "## User story\nAs a maintainer, I want x, so that y.\n## Context\nc\n## Success criteria\n- a\n- b\n## Definition of done\nd\n## Todo\n- [ ] one\n- [ ] two\n- [ ] three\n## Out of scope\nz",
+      "codes": ["title_too_long"]
+    },
+    {
+      "name": "sections out of order",
+      "title": "Fix the login redirect",
+      "body": "## Context\nc\n## User story\nAs a user of the app, I want to land where I was, so that I do not lose my place.\n## Success criteria\n- a\n- b\n## Definition of done\nd\n## Todo\n- [ ] one\n- [ ] two\n- [ ] three\n## Out of scope\nz",
+      "codes": ["section_order"]
+    },
+    {
+      "name": "user story shape, counts and an empty section",
+      "title": "Fix the login redirect",
+      "body": "## User story\nFix the redirect.\n## Context\nc\n## Success criteria\n- only one\n## Definition of done\n\n## Todo\n- [ ] one\n- two without a box\n## Out of scope\nz",
+      "codes": ["user_story_shape", "criteria_count", "section_empty", "todo_count"]
+    },
+    {
+      "name": "an unknown section is a question, not a gap",
+      "title": "Decide on egress to telemetry.example.net",
+      "body": "## User story\nUnknown: which team owns the dev-box sandbox?\n## Context\nc\n## Success criteria\n- a\n- b\n## Definition of done\nd\n## Todo\n- [ ] one\n- [x] two\n- [ ] three\n## Out of scope\nz",
+      "codes": []
+    },
+    {
+      "name": "private details",
+      "title": "Fix the build on 10.0.0.12",
+      "body": "## User story\nAs a maintainer, I want x, so that y. Ask alice@example.com.\n## Context\nSee /home/alice/src/app.\n## Success criteria\n- a\n- b\n## Definition of done\nd\n## Todo\n- [ ] one\n- [ ] two\n- [ ] three\n## Out of scope\nz",
+      "codes": ["private_email", "private_ip", "private_path"]
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/ticketrules"
 )
 
 // The kanban tools read and write the global board (internal/kanban). They are
@@ -82,6 +83,10 @@ type WorkerClaim struct {
 	// HandoffLabels the labels it may carry. Both empty disables handoffs.
 	HandoffTo     []string
 	HandoffLabels []string
+	// Tickets is true for a profile that files cards for people in the ticket
+	// standard (metadata "tickets": "standard"): the directive carries the
+	// standard and a handoff that misses part of it is sent back with the gaps.
+	Tickets bool
 	// HandoffCheckpoint, when set, is the checkpoint every handoff is held at
 	// for a person. The harness sets it from the profile; it is not an argument.
 	HandoffCheckpoint string
@@ -575,6 +580,11 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 	title, _ := argString(args, "title")
 	body, _ := argString(args, "body")
 	in := kanban.ItemInput{Title: title, Body: body, List: kanban.Backlog, Parent: c.Item, Hops: c.Hops + 1}
+	if c.Tickets {
+		if issues := ticketrules.Check(title, body); len(issues) > 0 {
+			return Result{}, errors.New(ticketrules.Message(issues))
+		}
+	}
 	if raw, ok := argString(args, "list"); ok && strings.TrimSpace(raw) != "" {
 		l, ok := kanban.ParseList(raw)
 		if !ok || (l != kanban.Backlog && l != kanban.Review) {

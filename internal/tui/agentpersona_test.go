@@ -179,7 +179,7 @@ func TestNewAppStartsWithItsOwnPersona(t *testing.T) {
 // name with the role, and completing an argument keeps the names that are typed.
 func TestPickerAndNoticeUseThePersona(t *testing.T) {
 	a := personaApp(t)
-	a.width = 600 // the strip is clipped to the window; keep every chip in view
+	a.width = 2000 // the strip is clipped to the window; keep every chip in view
 	a.openAgentPicker()
 
 	row := a.renderAgentPicker()

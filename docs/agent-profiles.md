@@ -192,13 +192,35 @@ its report, never what it may do.
 | `belai:designer` | Sanzo Wada | A design brief of journeys and the states to check |
 | `belai:planner` | Henry Gantt | A one-page plan of small tasks with their gates |
 | `belai:repro` | Grace Hopper | A case file from reproduction to root cause |
+| `belai:pr-steward` | William Strunk | One comment listing what a pull request lacks and how to fix it |
+| `belai:dep-strategist` | Ines Lockhart | What the bot changed against how the repository resolves |
+| `belai:dep-scope` | Hedda Bramble | The importers by path, then the one-line scope move |
+| `belai:secret-triager` | Mallory | Fixture, example or real, with the evidence by path |
+| `belai:tea-publisher` | Earl Grey | Each artifact with its TEA type and digest |
+| `belai:test-fixer` | Margaret Hamilton | The failing test, its cause, the fix and the command that proves it |
+| `belai:ci-explainer` | Richard Feynman | The failing step, the lines that matter, the cause |
+| `belai:flaky-hunter` | Heisenbug | Each flaky test with its flips and runs |
+| `belai:ticket-writer` | Taiichi Ohno | The ticket itself, in the ticket standard |
+| `belai:alert-triager` | Florence Nightingale | Reachable or not, where it runs, exploited or not |
+| `belai:workflow-hardener` | Auguste Kerckhoffs | Each workflow finding with the line and the change |
+| `belai:release-steward` | Johannes Gutenberg | Notes by kind of change, assets, follow-up cards |
+| `belai:repo-onboarder` | Karl Baedeker | The repository profile, then what was added |
+| `belai:package-reviewer` | Harvey Wiley | A recommendation, the facts that decided it, the ticket |
+| `belai:ai-capability-reviewer` | Karel Capek | What each tool can reach, then the recommendation |
+| `belai:egress-reviewer` | Heimdall | Why the agent asked, what is known of the host, the rule to add |
+| `belai:conflict-resolver` | Solomon | Which side each hunk kept and the checks after the merge |
 
 Each avatar is a drawing of Pix in the agent's colours with one detail that
 suggests its work, and it passes the same `internal/svgguard` check as a drawing
 a host makes for the builder. The files are in
 `internal/agentprofile/builtin/avatars`, named by the profile's `avatar_id`,
 which is a version 5 UUID of `avatar:` and the profile name. They are drawn once
-and shipped, not generated at run time. The console serves its own copy of each
+and shipped, not generated at run time. The event workflow agents (from `belai:pr-steward` on) were drawn from
+the persona whose work is closest (a reviewer from Isadora Pell, a fixer from Odo Brannigan)
+by `tools/recolor-avatar`, which moves every colour of the template to the new palette in
+OKLCH, keeps the neutrals and admits the result through `svgguard`. The guard admits only
+plain ASCII in the accessible label, which is why the AI capability reviewer is "Karel
+Capek" without the accent. The console serves its own copy of each
 file, and a test compares the two. The background agents (`belai:vulnetix-scanner`
 and the `belai:deps-*` set) are not shown by name anywhere, so they have no persona.
 
@@ -507,6 +529,27 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:lint-fixer` | backlog items labelled `lint-drift`, on a worktree branch; its lint sweep files those cards | review, labelled `needs-review`, once the harness has verified the card's gates on the branch |
 | `belai:conflict-resolver` | backlog items labelled `merge-conflict`; the harness runs up to five fresh checkouts of the pull request with its base merged in, never repeating a variation | review, labelled `needs-review`, once the merge passed its checks and was pushed to the pull request's head as a fast-forward; blocked at `checkpoint:conflicts-unresolved` after five failures. See [Merge conflicts](merge-conflicts.md) |
 | `belai:pr-reviewer` | backlog items labelled `pr-review`, read-only | done, labelled `reviewed`, with a verdict and its findings as a note on the card; it never approves, comments on or merges |
+| `belai:pr-steward` | backlog items labelled `sf:pr-quality`, read-only | done; its reply is the one pull request comment the workflow posts |
+| `belai:dep-strategist` | backlog items labelled `sf:dep-check`, on a worktree branch | review, labelled `needs-review`, with a corrected draft pull request when the bot used the wrong tool or lockfile |
+| `belai:dep-scope` | backlog items labelled `sf:dep-scope`, on a worktree branch | review, labelled `needs-review`, with a draft pull request that moves a dependency only tests or tooling import |
+| `belai:secret-triager` | backlog items labelled `sf:secret-triage`, read-only | review, labelled `ticket`: a proposed dismissal with its reason, or rotation steps |
+| `belai:tea-publisher` | backlog items labelled `sf:tea-publish`, read-only | done, with each artifact's TEA type and digest; the workflow signs and publishes |
+| `belai:ci-explainer` | backlog items labelled `sf:explain-failure`, read-only | done; its reply is the failure comment |
+| `belai:flaky-hunter` | backlog items labelled `sf:flaky`, read-only | review, labelled `ticket`, with each flaky test's history |
+| `belai:ticket-writer` | backlog items labelled `sf:ticket`, read-only | done, with a handoff labelled `ticket` in the ticket standard |
+| `belai:alert-triager` | backlog items labelled `sf:alert-triage`, read-only | review, labelled `ticket`: a VEX draft, a lowered priority or an urgent card |
+| `belai:workflow-hardener` | backlog items labelled `sf:workflow-review`, read-only | done; its reply is the review of the workflow changes |
+| `belai:release-steward` | backlog items labelled `sf:release`, read-only | review, labelled `ticket`, with the notes, the assets and the follow-up cards |
+| `belai:repo-onboarder` | backlog items labelled `sf:onboard`, on a worktree branch | review, labelled `needs-review`, with one draft pull request of the missing basics |
+| `belai:package-reviewer` | backlog items labelled `sf:package-review`, read-only | review, labelled `ticket`, with an allow or deny recommendation; a person decides |
+| `belai:ai-capability-reviewer` | backlog items labelled `sf:ai-review`, read-only | review, labelled `ticket`, with an approve, narrower or deny recommendation |
+| `belai:egress-reviewer` | backlog items labelled `sf:egress-review`, read-only, without web tools | review, labelled `ticket`, with an allow or deny recommendation; it never contacts the host |
+
+A profile whose metadata says `"tickets": "standard"` files its cards in the ticket
+standard (`internal/ticketrules`): the worker directive carries the standard, and
+a handoff that misses part of it is sent back to the agent with the gaps named.
+The check is the same one vdb-site runs (`factory_ticket.go`); both read
+`internal/ticketrules/testdata/ticket-standard.golden.json`.
 
 The crews `belai:delivery` and `belai:security` start one scout, two
 builders or patchers, and one reviewer or verifier. The flow crews `belai:feature`,

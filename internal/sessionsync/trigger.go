@@ -32,7 +32,7 @@ type Trigger struct {
 var (
 	triggerSources = map[string]bool{"pix_call": true, "console": true, "finding": true, "pull_request": true,
 		"fleet": true, "workflow": true, "pix_assistant": true}
-	triggerVias = map[string]bool{"webhook": true, "cron": true, "manual": true, "kanban": true, "finding": true, "label": true}
+	triggerVias = map[string]bool{"webhook": true, "cron": true, "manual": true, "kanban": true, "finding": true, "label": true, "firewall": true}
 )
 
 // Caps on the cleaned fields, in runes.
@@ -215,6 +215,13 @@ func (t Trigger) Sentence() string {
 			b.WriteString(", triggered by a finding")
 			if t.Subject != "" {
 				b.WriteString(" (" + t.Subject + ")")
+			}
+		case "firewall":
+			// A package firewall, AI firewall or sandbox egress sighting
+			// (vdb-site docs/factory.md 14); Event is package.first_seen and the like.
+			b.WriteString(", triggered by a firewall sighting")
+			if t.Event != "" {
+				b.WriteString(" (" + t.Event + ")")
 			}
 		}
 	default:

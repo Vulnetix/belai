@@ -2,19 +2,44 @@
   "schema": 4,
   "profiles": [
     {
+      "name": "belai:ai-capability-reviewer",
+      "path": "internal/agentprofile/builtin/ai-capability-reviewer.json",
+      "sha256": "12318f63c5eebdd8f2140500835c07d72150b23e8d6432003415dbe5037cdab5"
+    },
+    {
+      "name": "belai:alert-triager",
+      "path": "internal/agentprofile/builtin/alert-triager.json",
+      "sha256": "820d808d7e0747b8d9c75066a8b81a28a5fbf122608a1447a88e6e33b8cb18e0"
+    },
+    {
       "name": "belai:builder",
       "path": "internal/agentprofile/builtin/builder.json",
       "sha256": "6bf8fb18b57285fc4c0ce58880124de6cd600ab0a7863e42a45da91b82c0ede6"
     },
     {
+      "name": "belai:ci-explainer",
+      "path": "internal/agentprofile/builtin/ci-explainer.json",
+      "sha256": "e079c56260d6386f38c07019b9cdfb236995c6ba7fe44006864a1a91f8ccb5db"
+    },
+    {
       "name": "belai:conflict-resolver",
       "path": "internal/agentprofile/builtin/conflict-resolver.json",
-      "sha256": "cbf214adf824ecdaf6eda46c3d8bc5c227d10609ddfbc748749e204eb29df4ae"
+      "sha256": "230ce00559f6ca25805cacd3662f60639f76162e713594c6fb452410fdd8ec30"
     },
     {
       "name": "belai:debug",
       "path": "internal/agentprofile/builtin/debug.json",
       "sha256": "e444dc1a8c40d790b20d6a3faeba01c7efa74192692b10a44ca529719d07ed16"
+    },
+    {
+      "name": "belai:dep-scope",
+      "path": "internal/agentprofile/builtin/dep-scope.json",
+      "sha256": "35f1787934d1b6d539d69987512fee06e2cba9a75a33b0a1407ecf93fb6e1a4d"
+    },
+    {
+      "name": "belai:dep-strategist",
+      "path": "internal/agentprofile/builtin/dep-strategist.json",
+      "sha256": "d1234307c61758e9dac2b1c0c4b89cd99b7e0373ee4871f509d1bb849f0e8211"
     },
     {
       "name": "belai:deps-apple",
@@ -82,14 +107,29 @@
       "sha256": "ffa16862621c692f84de5f2ae15dda4bec124c73bd52db890582083d3ea52b61"
     },
     {
+      "name": "belai:egress-reviewer",
+      "path": "internal/agentprofile/builtin/egress-reviewer.json",
+      "sha256": "7b0fc70d331a4acff2d1f728d4dd57f887c31b4ba5872f3c6e21c6fb8f87f629"
+    },
+    {
       "name": "belai:fanout",
       "path": "internal/agentprofile/builtin/fanout.json",
       "sha256": "1a117aa7c73b3fd52d3d4669162cfe975b605cc3c98e9db928bb22cb7aa17b59"
     },
     {
+      "name": "belai:flaky-hunter",
+      "path": "internal/agentprofile/builtin/flaky-hunter.json",
+      "sha256": "098f02fddab4dc59341fbc91788fcc38a8260f1e3d5f5f4c354c7c6a795f6a4b"
+    },
+    {
       "name": "belai:lint-fixer",
       "path": "internal/agentprofile/builtin/lint-fixer.json",
       "sha256": "036f3ab22577e112fab2de6d9d5e71f135662e1ab2b0002c78b9b6117ba00024"
+    },
+    {
+      "name": "belai:package-reviewer",
+      "path": "internal/agentprofile/builtin/package-reviewer.json",
+      "sha256": "f1f45954bd6613384e2757ceada5e51869c6e275e6ed657c0119c1256459cd0b"
     },
     {
       "name": "belai:patcher",
@@ -112,6 +152,21 @@
       "sha256": "b7f79d6d26855c287dd8c6da6a5f91baa7ceee191b25290349e8e7dc8409129c"
     },
     {
+      "name": "belai:pr-steward",
+      "path": "internal/agentprofile/builtin/pr-steward.json",
+      "sha256": "0107521214d9750d323db13be402d01e5997e2e344501fe2ec8cc0340392bc5a"
+    },
+    {
+      "name": "belai:release-steward",
+      "path": "internal/agentprofile/builtin/release-steward.json",
+      "sha256": "b0af3687a23d79fac691005cfa126d6959747b10c5767efd708b73de16f7b742"
+    },
+    {
+      "name": "belai:repo-onboarder",
+      "path": "internal/agentprofile/builtin/repo-onboarder.json",
+      "sha256": "c4dd6f69a5d5648dd1c464b3724b1802c7c2f27d5b7f691b6cfdcb5440258402"
+    },
+    {
       "name": "belai:repro",
       "path": "internal/agentprofile/builtin/repro.json",
       "sha256": "53ef56006f3df35ca1c496dcb6028e7b4c70514936bbdd0d3f5a166d98846738"
@@ -127,9 +182,24 @@
       "sha256": "17ec6ff462bfb969a17a1ea1e3abda43b6c151341fd0d763a533ecd0cfa066de"
     },
     {
+      "name": "belai:secret-triager",
+      "path": "internal/agentprofile/builtin/secret-triager.json",
+      "sha256": "e4e3a2274f0f5284664930503a236fc3f61fb0bee53dcda97e39248a11d4954d"
+    },
+    {
+      "name": "belai:tea-publisher",
+      "path": "internal/agentprofile/builtin/tea-publisher.json",
+      "sha256": "1eeab143c04af61ae1590fca0674fa3d868f2e1a3bfb256dbebead57416221ea"
+    },
+    {
       "name": "belai:test-fixer",
       "path": "internal/agentprofile/builtin/test-fixer.json",
-      "sha256": "3f79a40cf9cca29c60b58b2044e4d66e909c73b26703988cabd5f357d1996a1d"
+      "sha256": "2e7f1fb10ce4a92e6f9f37bef4fbc6cba70c340c42f03a92362798335e7dd16e"
+    },
+    {
+      "name": "belai:ticket-writer",
+      "path": "internal/agentprofile/builtin/ticket-writer.json",
+      "sha256": "3061a0dc24e1d93e7570e8bc2ea59fd95753101862604ee477748cc4cf5c0b7a"
     },
     {
       "name": "belai:triage",
@@ -155,6 +225,11 @@
       "name": "belai:vulnetix-scanner",
       "path": "internal/agentprofile/builtin/vulnetix-scanner.json",
       "sha256": "b1996ae81b95f63315c42b7be31d48deb8c3611a6de84c5838b518fb1bc1eadc"
+    },
+    {
+      "name": "belai:workflow-hardener",
+      "path": "internal/agentprofile/builtin/workflow-hardener.json",
+      "sha256": "3b5fa37a9c576c0a60aa569149867b10261da929f70d321be6719cc0f170620b"
     }
   ],
   "crews": [
@@ -238,6 +313,11 @@
       "sha256": "2c76030a28f28896650f12be89024daadcd91762bd06802cd4aca2f70e9c2005"
     },
     {
+      "name": "2cf5346b-fd7e-5160-a622-beb60079ae12",
+      "path": "internal/agentprofile/builtin/avatars/2cf5346b-fd7e-5160-a622-beb60079ae12.svg",
+      "sha256": "254182514dfc9754a9bc91f1ce9194dd31ac5219c67bfcfeb9918e08d11a9c63"
+    },
+    {
       "name": "3e8f176f-1538-5d79-b2c7-2eb35edfe989",
       "path": "internal/agentprofile/builtin/avatars/3e8f176f-1538-5d79-b2c7-2eb35edfe989.svg",
       "sha256": "27615d42bba5611aca528321c720f5943bd4c95568bbda947f2962a74383de26"
@@ -248,14 +328,29 @@
       "sha256": "42c3b7bab1316ba9fbb4073aa5dc2e1bf0186fe2163e10abb31ca418bceb4c1c"
     },
     {
+      "name": "44d01535-d4cd-58f2-afe0-12bce44aa588",
+      "path": "internal/agentprofile/builtin/avatars/44d01535-d4cd-58f2-afe0-12bce44aa588.svg",
+      "sha256": "1593c80f94ab1a919562300881131c89fa525e94add63fbe64391a0b81ab50da"
+    },
+    {
       "name": "47b621eb-90fd-53d0-9127-c28e09c2d120",
       "path": "internal/agentprofile/builtin/avatars/47b621eb-90fd-53d0-9127-c28e09c2d120.svg",
       "sha256": "4caa3f7eff9ce9172e416cb123ee57d4345c072138338dde37d05c0c3fdfee9a"
     },
     {
+      "name": "49e5a66f-24fa-51cc-a04b-65efce944f75",
+      "path": "internal/agentprofile/builtin/avatars/49e5a66f-24fa-51cc-a04b-65efce944f75.svg",
+      "sha256": "88f5bb4760f2cbad3a4266016aa7bfc54460f13069497120c4f4147a6bc23673"
+    },
+    {
       "name": "52f09d1b-981d-59e9-b770-2eec1e628b49",
       "path": "internal/agentprofile/builtin/avatars/52f09d1b-981d-59e9-b770-2eec1e628b49.svg",
       "sha256": "131ce951f34b56d092f1208b9a7d0e418054df36138270004f578dbc8337b346"
+    },
+    {
+      "name": "54746107-a440-578f-a7e0-053c932ee430",
+      "path": "internal/agentprofile/builtin/avatars/54746107-a440-578f-a7e0-053c932ee430.svg",
+      "sha256": "06ae1b1efe00352afbae58f79a8bc309e41fa5f21405a81346f292a7adca6f9f"
     },
     {
       "name": "68ecfd9b-2058-5fae-aaf9-f028e781d490",
@@ -268,6 +363,11 @@
       "sha256": "92db67d71b9a9911edee12d26ae586a69f6294fd5a22f29b7c35e93a5e0e586b"
     },
     {
+      "name": "7ae5ffb0-da20-5576-a060-1ea29ab41e20",
+      "path": "internal/agentprofile/builtin/avatars/7ae5ffb0-da20-5576-a060-1ea29ab41e20.svg",
+      "sha256": "46c6c7211ad9a7ae194cb8432a5716da5e95a54a074d04fd31e80b8e41329766"
+    },
+    {
       "name": "85d6dca1-af97-5646-9e64-a704a4677ce0",
       "path": "internal/agentprofile/builtin/avatars/85d6dca1-af97-5646-9e64-a704a4677ce0.svg",
       "sha256": "1e8d48004514ee846f68eb6efd50acfc8259beab3d299f778a84f858029cdc4d"
@@ -278,14 +378,74 @@
       "sha256": "c0cd02110df186e3032a495c429332c22e3bfd347cab119488801306c3854350"
     },
     {
+      "name": "8d486b29-6960-5dd2-867d-317d44c9bc67",
+      "path": "internal/agentprofile/builtin/avatars/8d486b29-6960-5dd2-867d-317d44c9bc67.svg",
+      "sha256": "eed864bf41e9bcc0a1e8cdcb0af0dd52fb064b0789979d64c865f24900271192"
+    },
+    {
+      "name": "911e9599-0f98-5ff3-bd87-6edb6b2af7ee",
+      "path": "internal/agentprofile/builtin/avatars/911e9599-0f98-5ff3-bd87-6edb6b2af7ee.svg",
+      "sha256": "c4db53bf683350f3bda293db8bfaa9f2d87769396d024999e1f31c2f4e1e8727"
+    },
+    {
+      "name": "968ecad4-3bbe-5cb8-80ce-976b63e0f969",
+      "path": "internal/agentprofile/builtin/avatars/968ecad4-3bbe-5cb8-80ce-976b63e0f969.svg",
+      "sha256": "7db289ff68e6166569fd90a837d6920d2f027260e568588600622176d8ba2108"
+    },
+    {
+      "name": "af83476a-cb2a-539e-9a7b-12b05a9c5af6",
+      "path": "internal/agentprofile/builtin/avatars/af83476a-cb2a-539e-9a7b-12b05a9c5af6.svg",
+      "sha256": "d35b2c03d4205ae48296e9090b2f598c35b954813f54a869c84a80d0b0cc1a2e"
+    },
+    {
+      "name": "ba85fe08-2de4-5925-b407-8c2dd8e1a8b2",
+      "path": "internal/agentprofile/builtin/avatars/ba85fe08-2de4-5925-b407-8c2dd8e1a8b2.svg",
+      "sha256": "617db36672b208c4cf3d5e61e1002b7c7b5a4d35907470c52d25254185174111"
+    },
+    {
       "name": "c01d2efa-df5a-53b6-a64c-6393ea717267",
       "path": "internal/agentprofile/builtin/avatars/c01d2efa-df5a-53b6-a64c-6393ea717267.svg",
       "sha256": "9c98c405c0debb698f169045e103fccf443159c45bf17d915afbac7a8a1944d7"
     },
     {
+      "name": "c0cb3ee7-8a59-541d-9958-b5ff90cb6958",
+      "path": "internal/agentprofile/builtin/avatars/c0cb3ee7-8a59-541d-9958-b5ff90cb6958.svg",
+      "sha256": "e9584670fff16aeea3931d9a162b0702211509181b8fd8910197296a0eafbc24"
+    },
+    {
+      "name": "c385c133-2dbd-5d08-be97-ae1d2f481bc0",
+      "path": "internal/agentprofile/builtin/avatars/c385c133-2dbd-5d08-be97-ae1d2f481bc0.svg",
+      "sha256": "38b6f1c1bb47a790c5f840be4d55852b7915f24450e1d5d981d80ba95b3236f4"
+    },
+    {
+      "name": "ce31c8c2-c260-52ef-8b67-8e6f3fe97394",
+      "path": "internal/agentprofile/builtin/avatars/ce31c8c2-c260-52ef-8b67-8e6f3fe97394.svg",
+      "sha256": "fbb820d96db4359b8f00a2497eb18f0fcd822734e62e7027662b54987b472b15"
+    },
+    {
+      "name": "cec0f4c7-58ff-5f5f-b185-be52ce421ee3",
+      "path": "internal/agentprofile/builtin/avatars/cec0f4c7-58ff-5f5f-b185-be52ce421ee3.svg",
+      "sha256": "0cb5fd0f2030803e311efd9f71b5a56c310f5a07b1455a0f23a84868b2ec38b0"
+    },
+    {
+      "name": "efc87233-c2d5-59e5-98f5-a4faf01d9090",
+      "path": "internal/agentprofile/builtin/avatars/efc87233-c2d5-59e5-98f5-a4faf01d9090.svg",
+      "sha256": "5abcd04d9d23145ffc1a5e333e725dee61cf98a504d3ec55e6890df72b212605"
+    },
+    {
       "name": "f3975b72-74bd-5927-aee0-d7be0f73e6e2",
       "path": "internal/agentprofile/builtin/avatars/f3975b72-74bd-5927-aee0-d7be0f73e6e2.svg",
       "sha256": "37c68d95adb29299dadda463cf96416e05d8cd5ff205b8d1d5db16198539962a"
+    },
+    {
+      "name": "f6da0810-a071-5974-9879-64b0d157f7d2",
+      "path": "internal/agentprofile/builtin/avatars/f6da0810-a071-5974-9879-64b0d157f7d2.svg",
+      "sha256": "2681e9d4c6a1df533a461a00022e13b2f7ff69e3a6c27fe52208c549bf3c4bc4"
+    },
+    {
+      "name": "ff36fd24-c750-551d-b09f-6f371b1c9127",
+      "path": "internal/agentprofile/builtin/avatars/ff36fd24-c750-551d-b09f-6f371b1c9127.svg",
+      "sha256": "b6526bc959fcd2876e779416b1f1fc823fdca0f1992f9f67ad0e34d34435f28e"
     }
   ]
 }

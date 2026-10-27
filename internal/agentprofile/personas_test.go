@@ -17,6 +17,11 @@ var personaProfiles = []string{
 	"belai:scout", "belai:builder", "belai:reviewer",
 	"belai:triage-vulns", "belai:debug", "belai:fanout", "belai:plan-handoff",
 	"belai:designer", "belai:planner", "belai:repro",
+	// The event workflow agents (docs/agent-profiles.md, "Built-in personas").
+	"belai:pr-steward", "belai:dep-strategist", "belai:dep-scope", "belai:secret-triager", "belai:tea-publisher",
+	"belai:test-fixer", "belai:ci-explainer", "belai:flaky-hunter", "belai:ticket-writer", "belai:alert-triager",
+	"belai:workflow-hardener", "belai:release-steward", "belai:repo-onboarder", "belai:package-reviewer",
+	"belai:ai-capability-reviewer", "belai:egress-reviewer", "belai:conflict-resolver",
 }
 
 func TestBuiltinPersonas(t *testing.T) {

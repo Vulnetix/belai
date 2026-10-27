@@ -117,6 +117,8 @@ func TestTriggerSentence(t *testing.T) {
 			`Started by workflow "Board", triggered by a kanban card (K-1a2b3c).`},
 		{"workflow finding", Trigger{Source: "workflow", Via: "finding", WorkflowName: "Triage"},
 			`Started by workflow "Triage", triggered by a finding.`},
+		{"firewall sighting", Trigger{Source: "workflow", Via: "firewall", WorkflowName: "New package review", Event: "package.first_seen"},
+			`Started by workflow "New package review", triggered by a firewall sighting (package.first_seen).`},
 		{"pix call with note", Trigger{Source: "pix_call", Note: "patch the log4j finding in the API"},
 			`Started from a Pix Call at the user's request: patch the log4j finding in the API.`},
 		{"pix call", Trigger{Source: "pix_call"}, `Started from a Pix Call at the user's request.`},

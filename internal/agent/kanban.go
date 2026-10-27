@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/ticketrules"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/wire"
@@ -277,6 +278,9 @@ func workerDirective(c *tools.WorkerClaim) string {
 			ids = append(ids, kanban.ShortID(id))
 		}
 		fmt.Fprintf(&b, " You may add notes with KanbanUpdate to these related items, but not edit or move them: %s.", strings.Join(ids, ", "))
+	}
+	if c.Tickets {
+		b.WriteString("\n\n" + ticketrules.Rules)
 	}
 	return b.String()
 }
