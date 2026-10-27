@@ -184,7 +184,7 @@
     {
       "name": "belai:secret-triager",
       "path": "internal/agentprofile/builtin/secret-triager.json",
-      "sha256": "e4e3a2274f0f5284664930503a236fc3f61fb0bee53dcda97e39248a11d4954d"
+      "sha256": "2ed23b1428562e0ea803983a2a07be5c4eee20432108c819e65f8c545f169498"
     },
     {
       "name": "belai:tea-publisher",
