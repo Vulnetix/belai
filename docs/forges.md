@@ -96,6 +96,9 @@ and a failed push there reads as the failure it is
 
 A worker's Bash may not open, merge, approve or comment on a pull request with
 `tea` or `fj` either, as with `gh` and `glab` ([fleet.md](fleet.md#publishing)).
+When `tea` is installed and signed in, the read-only `Tea` tool lists pull
+requests, issues, releases, repositories and branches; its results are
+classified like `GH`'s and `Glab`'s.
 
 ## Repository keys
 

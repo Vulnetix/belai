@@ -335,3 +335,27 @@ func TestNativeFileContentToolsClassify(t *testing.T) {
 		}
 	}
 }
+
+// Tea is read-only: listings and whoami, never a view that shares a verb with
+// a write, and its results are classified.
+func TestTeaIsReadOnlyAndClassified(t *testing.T) {
+	var tea cloudSpec
+	for _, cs := range cloudSpecs {
+		if cs.name == "Tea" {
+			tea = cs
+		}
+	}
+	if tea.name == "" || cloudNative(tea).kind != KindRemote {
+		t.Fatalf("Tea = %+v", tea)
+	}
+	for _, ok := range []string{"pulls list", "issues list --state closed", "whoami"} {
+		if !cloudAllowed(tea, ok) {
+			t.Errorf("%q refused", ok)
+		}
+	}
+	for _, bad := range []string{"pulls create", "pulls 3", "pulls merge 3", "pr approve 3", "comment 3 hi", "issues create", "releases create", "repos create", "login add"} {
+		if cloudAllowed(tea, bad) {
+			t.Errorf("%q allowed", bad)
+		}
+	}
+}

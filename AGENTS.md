@@ -37,7 +37,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a control or bidi stripper, a loopback test or a shell splitter.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
-  `Read` (a file's bytes), `GH`/`Glab`/`AWS` results (`KindRemote`, third-party
+  `Read` (a file's bytes), `GH`/`Glab`/`Tea`/`AWS` results (`KindRemote`, third-party
   repository text, log events and bucket objects), `RepoRead` and the native tools that can print a file's
   contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
