@@ -21,7 +21,7 @@ var personaProfiles = []string{
 	"belai:pr-steward", "belai:dep-strategist", "belai:dep-scope", "belai:secret-triager", "belai:tea-publisher",
 	"belai:test-fixer", "belai:ci-explainer", "belai:flaky-hunter", "belai:ticket-writer", "belai:alert-triager",
 	"belai:workflow-hardener", "belai:release-steward", "belai:repo-onboarder", "belai:package-reviewer",
-	"belai:ai-capability-reviewer", "belai:egress-reviewer", "belai:conflict-resolver", "belai:github-investigator",
+	"belai:ai-capability-reviewer", "belai:egress-reviewer", "belai:conflict-resolver", "belai:github-investigator", "belai:workflow-fixer",
 }
 
 func TestBuiltinPersonas(t *testing.T) {

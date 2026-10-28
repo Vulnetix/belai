@@ -232,6 +232,11 @@
       "sha256": "b1996ae81b95f63315c42b7be31d48deb8c3611a6de84c5838b518fb1bc1eadc"
     },
     {
+      "name": "belai:workflow-fixer",
+      "path": "internal/agentprofile/builtin/workflow-fixer.json",
+      "sha256": "a791139d94c3f9bc6506b31bf903dc6d871aa554ccecd5ef37bda54444716099"
+    },
+    {
       "name": "belai:workflow-hardener",
       "path": "internal/agentprofile/builtin/workflow-hardener.json",
       "sha256": "3b5fa37a9c576c0a60aa569149867b10261da929f70d321be6719cc0f170620b"
@@ -366,6 +371,11 @@
       "name": "6bc0737b-f5a2-51b8-9857-fd8527c55b58",
       "path": "internal/agentprofile/builtin/avatars/6bc0737b-f5a2-51b8-9857-fd8527c55b58.svg",
       "sha256": "92db67d71b9a9911edee12d26ae586a69f6294fd5a22f29b7c35e93a5e0e586b"
+    },
+    {
+      "name": "71ea7e32-2001-5b27-bdad-075750ddc091",
+      "path": "internal/agentprofile/builtin/avatars/71ea7e32-2001-5b27-bdad-075750ddc091.svg",
+      "sha256": "1dcee9891580c5efadbc326f7406a6bc44da6c4d61ed65fa7138a7fb864373f3"
     },
     {
       "name": "7ae5ffb0-da20-5576-a060-1ea29ab41e20",

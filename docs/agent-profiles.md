@@ -209,6 +209,7 @@ its report, never what it may do.
 | `belai:ai-capability-reviewer` | Karel Capek | What each tool can reach, then the recommendation |
 | `belai:egress-reviewer` | Heimdall | Why the agent asked, what is known of the host, the rule to add |
 | `belai:github-investigator` | Vidocq | Expected, needs an owner, or incident, then what to revoke or rotate first |
+| `belai:workflow-fixer` | Brunel | The rule, the one change that closes it, and what a reviewer should check |
 | `belai:conflict-resolver` | Solomon | Which side each hunk kept and the checks after the merge |
 
 Each avatar is a drawing of Pix in the agent's colours with one detail that
@@ -546,6 +547,7 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:ai-capability-reviewer` | backlog items labelled `sf:ai-review`, read-only | review, labelled `ticket`, with an approve, narrower or deny recommendation |
 | `belai:egress-reviewer` | backlog items labelled `sf:egress-review`, read-only, without web tools | review, labelled `ticket`, with an allow or deny recommendation; it never contacts the host |
 | `belai:github-investigator` | backlog items labelled `sf:github-investigate` (a risky GitHub event vdb-site recorded), read-only | review, labelled `ticket`, saying expected, needs an owner, or incident; it never changes GitHub |
+| `belai:workflow-fixer` | backlog items labelled `sf:fix-workflow` (one GitHub posture finding), changes only `.github/workflows` and `.github/actions` | review, labelled `needs-review`, with one draft pull request; it never changes settings or merges |
 
 A profile whose metadata says `"tickets": "standard"` files its cards in the ticket
 standard (`internal/ticketrules`): the worker directive carries the standard, and
