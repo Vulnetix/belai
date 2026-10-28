@@ -122,6 +122,11 @@
       "sha256": "098f02fddab4dc59341fbc91788fcc38a8260f1e3d5f5f4c354c7c6a795f6a4b"
     },
     {
+      "name": "belai:github-investigator",
+      "path": "internal/agentprofile/builtin/github-investigator.json",
+      "sha256": "2888725cb64579830f2926fb53f33b281cf84bb974a924cb2b7f5624013e2894"
+    },
+    {
       "name": "belai:lint-fixer",
       "path": "internal/agentprofile/builtin/lint-fixer.json",
       "sha256": "036f3ab22577e112fab2de6d9d5e71f135662e1ab2b0002c78b9b6117ba00024"
@@ -225,6 +230,11 @@
       "name": "belai:vulnetix-scanner",
       "path": "internal/agentprofile/builtin/vulnetix-scanner.json",
       "sha256": "b1996ae81b95f63315c42b7be31d48deb8c3611a6de84c5838b518fb1bc1eadc"
+    },
+    {
+      "name": "belai:workflow-fixer",
+      "path": "internal/agentprofile/builtin/workflow-fixer.json",
+      "sha256": "a791139d94c3f9bc6506b31bf903dc6d871aa554ccecd5ef37bda54444716099"
     },
     {
       "name": "belai:workflow-hardener",
@@ -363,6 +373,11 @@
       "sha256": "92db67d71b9a9911edee12d26ae586a69f6294fd5a22f29b7c35e93a5e0e586b"
     },
     {
+      "name": "71ea7e32-2001-5b27-bdad-075750ddc091",
+      "path": "internal/agentprofile/builtin/avatars/71ea7e32-2001-5b27-bdad-075750ddc091.svg",
+      "sha256": "1dcee9891580c5efadbc326f7406a6bc44da6c4d61ed65fa7138a7fb864373f3"
+    },
+    {
       "name": "7ae5ffb0-da20-5576-a060-1ea29ab41e20",
       "path": "internal/agentprofile/builtin/avatars/7ae5ffb0-da20-5576-a060-1ea29ab41e20.svg",
       "sha256": "46c6c7211ad9a7ae194cb8432a5716da5e95a54a074d04fd31e80b8e41329766"
@@ -426,6 +441,11 @@
       "name": "cec0f4c7-58ff-5f5f-b185-be52ce421ee3",
       "path": "internal/agentprofile/builtin/avatars/cec0f4c7-58ff-5f5f-b185-be52ce421ee3.svg",
       "sha256": "0cb5fd0f2030803e311efd9f71b5a56c310f5a07b1455a0f23a84868b2ec38b0"
+    },
+    {
+      "name": "e31e6e94-b91f-53b8-b2fd-436cf7e6cf14",
+      "path": "internal/agentprofile/builtin/avatars/e31e6e94-b91f-53b8-b2fd-436cf7e6cf14.svg",
+      "sha256": "624e617728591bb561d7d6fd91bf3cc95b8ec26752183afc5c7a1a3a9cc4ba7b"
     },
     {
       "name": "efc87233-c2d5-59e5-98f5-a4faf01d9090",

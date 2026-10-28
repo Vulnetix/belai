@@ -219,7 +219,12 @@ func (t Trigger) Sentence() string {
 		case "firewall":
 			// A package firewall, AI firewall or sandbox egress sighting
 			// (vdb-site docs/factory.md 14); Event is package.first_seen and the like.
-			b.WriteString(", triggered by a firewall sighting")
+			// The github-risk source's events are github.*: a risky GitHub change.
+			if strings.HasPrefix(t.Event, "github.") {
+				b.WriteString(", triggered by a risky GitHub event")
+			} else {
+				b.WriteString(", triggered by a firewall sighting")
+			}
 			if t.Event != "" {
 				b.WriteString(" (" + t.Event + ")")
 			}
