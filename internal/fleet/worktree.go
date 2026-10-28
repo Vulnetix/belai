@@ -938,15 +938,19 @@ func (w *Workspace) originHead(ctx context.Context) string {
 // this machine: the token for the child process only, and a credential helper
 // for that one host that reads it through gh. On Gitea or Forgejo it is the
 // host's forge token (forge.ForgeToken, the vault's first), read by a helper
-// from the child's environment. It returns nothing for any other remote, or
+// from the child's environment; on GitLab the same, but only a token named
+// for the host (BELAI_FORGE_TOKEN_<HOST>), so a push that worked with the
+// machine's own credential keeps doing so. It returns nothing for any other remote, or
 // when no such token is held, and then the push behaves as it always did.
 func publishAuth(rem forge.Remote, now time.Time) (env, gitArgs []string) {
 	if rem.Host == "" {
 		return nil, nil
 	}
-	if rem.Kind == forge.KindGitea || rem.Kind == forge.KindForgejo {
+	if rem.Kind == forge.KindGitea || rem.Kind == forge.KindForgejo || rem.Kind == forge.KindGitLab {
 		token, from := forge.ForgeToken(rem.Kind, rem.Host)
-		if token == "" {
+		// On GitLab only a token named for the host is used: a GITLAB_TOKEN
+		// set for glab must not replace the git credential pushes already use.
+		if token == "" || (rem.Kind == forge.KindGitLab && from != forge.HostTokenEnv(rem.Host)) {
 			return nil, nil
 		}
 		return []string{from + "=" + token},

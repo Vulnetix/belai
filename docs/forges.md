@@ -51,7 +51,10 @@ scheme, port or path is refused when the settings are validated.
 ## Tokens
 
 GitHub and GHES use the GitHub CLI's sign-in (`gh auth login`, with
-`--hostname` for GHES) and GitLab uses `glab`'s, as before.
+`--hostname` for GHES) and GitLab uses `glab`'s, as before. A fleet push to
+GitLab uses the machine's own git credential unless
+`BELAI_FORGE_TOKEN_<HOST>` is set for that host; `GITLAB_TOKEN` alone never
+replaces it.
 
 Gitea and Forgejo have no CLI Belai drives. It talks to `https://<host>/api/v1`
 with a personal access token read from the first variable of these that is

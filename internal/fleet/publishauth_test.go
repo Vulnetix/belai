@@ -76,3 +76,17 @@ func TestPublishAuthUsesTheForgeTokenOnGitea(t *testing.T) {
 		t.Fatalf("another host's token was used: %v", env)
 	}
 }
+
+// On GitLab only a token named for the host is used, so a GITLAB_TOKEN set for
+// glab never replaces the credential a push already used.
+func TestPublishAuthOnGitLabNeedsAHostToken(t *testing.T) {
+	withVaultToken(t, vaultenv.Var{Name: "GITLAB_TOKEN", Value: "glpat-exampletoken01"})
+	if env, args := publishAuth(forge.Remote{Kind: forge.KindGitLab, Host: "gitlab.com"}, time.Now()); env != nil || args != nil {
+		t.Fatalf("GITLAB_TOKEN was used: %v %v", env, args)
+	}
+	withVaultToken(t, vaultenv.Var{Name: "BELAI_FORGE_TOKEN_GITLAB_COM", Value: "glpat-exampletoken02"})
+	env, args := publishAuth(forge.Remote{Kind: forge.KindGitLab, Host: "gitlab.com"}, time.Now())
+	if !slices.Equal(env, []string{"BELAI_FORGE_TOKEN_GITLAB_COM=glpat-exampletoken02"}) || strings.Contains(strings.Join(args, " "), "glpat-") {
+		t.Fatalf("env = %v args = %v", env, args)
+	}
+}

@@ -51,7 +51,7 @@ var giteaWIPRE = regexp.MustCompile(`(?i)^\s*(wip:|\[wip\])\s*`)
 // tokenEnvFor is the environment variables a token for host is read from,
 // in order: one named for the host, then the kind's own.
 func tokenEnvFor(kind, host string) []string {
-	names := []string{"BELAI_FORGE_TOKEN_" + hostEnv(host)}
+	names := []string{HostTokenEnv(host)}
 	switch kind {
 	case KindForgejo:
 		names = append(names, "FORGEJO_TOKEN", "GITEA_TOKEN")
@@ -62,6 +62,9 @@ func tokenEnvFor(kind, host string) []string {
 	}
 	return names
 }
+
+// HostTokenEnv is the variable named for one host: BELAI_FORGE_TOKEN_<HOST>.
+func HostTokenEnv(host string) string { return "BELAI_FORGE_TOKEN_" + hostEnv(host) }
 
 // hostEnv is host as an environment variable suffix: upper-cased, every
 // character but a letter or a digit an underscore ("codeberg.org" is
