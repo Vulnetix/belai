@@ -134,9 +134,13 @@ where it runs.
 The daemon also advertises `canClone`: true while `agents.clone` is on (the
 default, global settings only, read again at each advertisement) and `belai rc`
 runs without `--no-clone`. A Software Factory worker or crew request may then
-name the GitHub repository it is for, as `clone: {repo: "owner/name", ref?:
+name the repository it is for, as `clone: {repo: "owner/name", ref?:
 "branch"}`, where `ref` is the designated branch (empty means the default
-branch). The `cwd` may be empty (this machine has no checkout the website knows
+branch). A repository off github.com also carries `host`, `forge` (`ghes`,
+`gitea`, `forgejo` or `gitlab`) and `cloneUrl`, which must be exactly
+`https://<host>/<owner>/<name>.git`; a GitLab owner may be a group path. A
+request whose `cloneUrl` names anything else, or whose `forge` is not one of
+those, is refused ([forges.md](forges.md)). The `cwd` may be empty (this machine has no checkout the website knows
 of) or an offered directory, which is then only a hint. The website sends a
 clone only to a self-hosted machine that advertises `canClone` (never a Pix
 Sandbox, which works on its attached repositories) and only for a repository
@@ -146,14 +150,16 @@ the organisation's GitHub App can read. A machine that does not advertise
 The daemon handles one such request at a time, beside the request loop (the
 code is `internal/rc/adopt.go`):
 
-1. **Checks the shape.** `owner/name` in GitHub's characters, never a leading
-   dash or a dot segment, and a branch that cannot read as an option.
+1. **Checks the shape.** `owner/name` in GitHub's characters (on another forge,
+   up to eight owner segments, and the host and clone URL above), never a
+   leading dash or a dot segment, and a branch that cannot read as an option.
 2. **Adopts a checkout.** The candidates are the offered directories whose
    origin remote is the repository. A primary checkout (its `.git` is a
    directory) wins over a linked worktree such as a teleport's
    `~/.vulnetix/worktrees/<key>/tp-...`, and among primaries the request's
    `cwd` wins when it is one. Next is Belai's own clone at `<worktrees
-   directory>/repos/<owner>/<name>`, offered or not, then the main repository
+   directory>/repos/<owner>/<name>` (`repos/<host>/<owner>/<name>` off
+   github.com, a port's `:` written `_`), offered or not, then the main repository
    of an offered linked worktree. Only when there is none does the daemon clone
    the default branch there, once, through the engine `belai repo sync` uses
    (`internal/repos`: git as an argv, hooks off, no prompts, https and ssh
@@ -162,7 +168,9 @@ code is `internal/rc/adopt.go`):
    `refs/remotes/origin/*`. Authentication is the GitHub CLI's own credential
    helper when `gh` is installed and signed in, the same credential a push or a
    pull request uses; no token is stored, put in a URL or passed as an
-   argument, and a public repository fetches without `gh`. The default branch
+   argument, and a public repository fetches without `gh`. On Gitea, Forgejo
+   and GitLab it is the host's forge token, read by a credential helper from
+   git's own environment ([forges.md](forges.md#tokens)). The default branch
    is the one `refs/remotes/origin/HEAD` names, else the one origin reports.
    A failed fetch (offline, signed out, origin down) never refuses a request
    on a checkout this machine already has: the decision below is made on the

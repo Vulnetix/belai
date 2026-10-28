@@ -134,7 +134,7 @@ func workspaceDirective(ws *Workspace, publish bool, mode string) string {
 	case publish:
 		b.WriteString("Publishing: when the work is committed and verified, call " + tools.PublishBranchName + " with a pull request title and a description of what changed and how you verified it, to push this branch to origin and open a draft pull request (it returns the one already open, and pushes new commits when called again). `git push`, `gh pr create` and `glab mr create` are not available; " + tools.PublishBranchName + " is the only way to push.")
 	case mode != agentprofile.PublishNone:
-		b.WriteString("Publishing is not available for this run (no GitHub or GitLab origin, or agents.publish is off): nothing is pushed from here, and the branch moves on through the kanban board.")
+		b.WriteString("Publishing is not available for this run (no GitHub, GitLab, Gitea or Forgejo origin, or agents.publish is off): nothing is pushed from here, and the branch moves on through the kanban board.")
 	default:
 		b.WriteString("This agent does not publish: nothing is pushed from here, and the branch moves on through the kanban board.")
 	}

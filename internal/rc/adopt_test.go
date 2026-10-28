@@ -216,11 +216,11 @@ func newAdoptFix(t *testing.T) *adoptFix {
 	f.a = &adopter{opts: opts,
 		root:  func() (string, error) { return f.wt, nil },
 		trust: func(dir string) error { f.trusted = append(f.trusted, dir); return nil },
-		clone: func(ctx context.Context, owner, name, ref string) (string, error) {
+		clone: func(ctx context.Context, t CloneTarget, ref string) (string, error) {
 			f.clones++
 			o := opts
 			o.ReposDir = filepath.Join(f.wt, "repos")
-			return cloneWith(ctx, owner, name, ref, o, func(string) error { return nil })
+			return cloneWith(ctx, t, ref, o, func(string) error { return nil })
 		},
 	}
 	return f

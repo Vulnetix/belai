@@ -18,6 +18,10 @@ import (
 //	head: <head ref>
 //	base: <base ref>
 //	fork: true|false
+//
+// Off github.com the repo line is host/owner/name and the link is the forge's
+// own: /pulls/N on Gitea and Forgejo, /-/merge_requests/N on GitLab, where the
+// owner may be a group path.
 type Card struct {
 	PR     string
 	Repo   string
@@ -28,9 +32,9 @@ type Card struct {
 }
 
 var (
-	cardRepoRE = regexp.MustCompile(`^[a-z0-9_.][a-z0-9_.-]{0,99}/[a-z0-9_.][a-z0-9_.-]{0,99}$`)
+	cardRepoRE = regexp.MustCompile(`^[a-z0-9_.][a-z0-9_.-]{0,99}(/[a-z0-9_.][a-z0-9_.-]{0,99}){1,8}$`)
 	cardRefRE  = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
-	cardPRRE   = regexp.MustCompile(`^https://([a-z0-9.-]+)/([^/\s]+)/([^/\s]+)/pull/([0-9]{1,9})$`)
+	cardPRRE   = regexp.MustCompile(`^https://([a-z0-9.-]+)/((?:[^/\s]+/){1,8}?[^/\s]+)/(?:pull|pulls|-/merge_requests)/([0-9]{1,9})$`)
 )
 
 // ValidRef reports whether ref is a branch name the card may carry: plain
@@ -90,7 +94,7 @@ func ParseCard(body string) (Card, error) {
 	}
 	c := Card{PR: vals["pr"], Repo: vals["repo"], Head: vals["head"], Base: vals["base"]}
 	if !cardRepoRE.MatchString(c.Repo) {
-		return Card{}, errors.New("repo is not a lower-case owner/name")
+		return Card{}, errors.New("repo is not a lower-case owner/name (host/owner/name off github.com)")
 	}
 	n, err := strconv.Atoi(vals["number"])
 	if err != nil || n <= 0 {
@@ -114,7 +118,13 @@ func ParseCard(body string) (Card, error) {
 	if m == nil {
 		return Card{}, errors.New("pr is not a pull request link")
 	}
-	if strings.ToLower(m[2]+"/"+m[3]) != c.Repo || m[4] != strconv.Itoa(c.Number) {
+	want := strings.ToLower(m[2])
+	if m[1] != "github.com" {
+		want = m[1] + "/" + want
+	} else if strings.Count(want, "/") != 1 || !strings.HasSuffix(c.PR, "/pull/"+m[3]) {
+		return Card{}, errors.New("pr is not a pull request link")
+	}
+	if want != c.Repo || m[3] != strconv.Itoa(c.Number) {
 		return Card{}, errors.New("pr names another repository or number than repo and number")
 	}
 	return c, nil

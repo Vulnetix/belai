@@ -48,7 +48,7 @@ type CreatePRArgs struct {
 
 // Provider drives one forge's CLI.
 type Provider interface {
-	// Kind is KindGitHub or KindGitLab.
+	// Kind is KindGitHub, KindGitLab, KindGitea or KindForgejo.
 	Kind() string
 	// Noun is "PR" or "MR".
 	Noun() string
@@ -95,6 +95,8 @@ func For(rem Remote, r Runner, look LookPath) (Provider, string) {
 			return nil, "glab not installed — MR and CI actions need the GitLab CLI (https://gitlab.com/gitlab-org/cli)"
 		}
 		return gitlab{r: r}, ""
+	case KindGitea, KindForgejo:
+		return newGitea(rem)
 	}
 	if rem.Host == "" {
 		return nil, "no origin remote"

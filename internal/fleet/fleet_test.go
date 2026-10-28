@@ -519,7 +519,7 @@ func TestPublishNeedsAForgeOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Remove(context.Background())
-	if _, err := ws.PublishBranch(context.Background(), "t", "b"); err == nil || !strings.Contains(err.Error(), "no GitHub or GitLab origin") {
+	if _, err := ws.PublishBranch(context.Background(), "t", "b"); err == nil || !strings.Contains(err.Error(), "no GitHub, GitLab, Gitea or Forgejo origin") {
 		t.Fatalf("publish without origin: %v", err)
 	}
 }

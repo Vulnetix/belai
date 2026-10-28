@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -68,7 +69,15 @@ type Options struct {
 	// visibility the caller does not know (a Software Factory clone, which may
 	// be private): the credential is still gh's own, never stored or put in a URL.
 	GitHubCLI bool
+	// TokenEnv names the environment variable holding an https token for the
+	// repository's host (a Gitea, Forgejo or GitLab access token, chosen by
+	// forge.ForgeToken). git's credential helper reads it from the environment
+	// of the call, so the token is never stored, put in a URL or an argument.
+	TokenEnv string
 }
+
+// tokenEnvRE is the shape of a TokenEnv name: it is spliced into a helper.
+var tokenEnvRE = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
 
 // Result says what a sync did.
 type Result struct {
@@ -230,6 +239,9 @@ func isSSH(url string) bool {
 // credentials sets up how a private repository authenticates, or fails with the
 // reason it cannot. A public repository gets none.
 func (e *engine) credentials(ctx context.Context) error {
+	if e.o.TokenEnv != "" && !isSSH(e.repo.URL) {
+		return e.tokenCredentials()
+	}
 	if e.repo.Visibility != "private" {
 		if e.o.GitHubCLI && !isSSH(e.repo.URL) {
 			// Best effort: without gh, or signed out, a public repository still
@@ -351,6 +363,26 @@ func Git(ctx context.Context, o Options, dir string, args ...string) (string, er
 	}
 	e.env = append(e.env, e.o.Env...)
 	return e.gitIn(ctx, args...)
+}
+
+// tokenCredentials points git at a helper that answers the https host's
+// credential from TokenEnv, passed in the call's environment only.
+func (e *engine) tokenCredentials() error {
+	if !tokenEnvRE.MatchString(e.o.TokenEnv) {
+		return fmt.Errorf("%s: bad token variable name", e.repo.Name)
+	}
+	u, err := url.Parse(e.repo.URL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("%s: not an https url", e.repo.Name)
+	}
+	v := e.o.Getenv(e.o.TokenEnv)
+	if v == "" {
+		return fmt.Errorf("%s is fetched over https with $%s, which is not set", e.repo.Name, e.o.TokenEnv)
+	}
+	e.env = append(e.env, e.o.TokenEnv+"="+v)
+	e.env = append(e.env, e.o.Env...)
+	e.credArg = []string{"-c", "credential.https://" + u.Host + `.helper=!f() { test "$1" = get || exit 0; echo username=oauth2; echo "password=$` + e.o.TokenEnv + `"; }; f`}
+	return nil
 }
 
 // ghCredentials points git at the GitHub CLI's credential helper for the

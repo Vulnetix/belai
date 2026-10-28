@@ -341,6 +341,8 @@ func newAdopter(clone Cloner) *adopter {
 
 // adoptRequest is one clone request, checked.
 type adoptRequest struct {
+	// Target is the repository; Owner and Name are its owner and name.
+	Target      CloneTarget
 	Owner, Name string
 	// Ref is the designated branch, "" for the default.
 	Ref string
@@ -370,8 +372,10 @@ func isPrimary(dir string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// remoteIs reports whether dir is a checkout root whose origin is slug.
-func remoteIs(dir, slug string) bool {
+// remoteIs reports whether dir is a checkout root whose origin is slug on
+// host ("" is github.com): the same owner/name on two forges is two
+// repositories.
+func remoteIs(dir, slug string, host ...string) bool {
 	info, ok := gitinfo.Detect(dir)
 	if !ok {
 		return false
@@ -380,7 +384,11 @@ func remoteIs(dir, slug string) bool {
 		return false
 	}
 	rd := dirGit(sessionsync.RCDir{Path: dir})
-	return rd.Remote != "" && strings.EqualFold(rd.Remote, slug)
+	want := "github.com"
+	if len(host) > 0 && host[0] != "" {
+		want = strings.Split(strings.ToLower(host[0]), ":")[0]
+	}
+	return rd.Remote != "" && strings.EqualFold(rd.Remote, slug) && strings.EqualFold(rd.Host, want)
 }
 
 // mainOf is the main checkout of the linked worktree at dir, or "".
@@ -406,7 +414,11 @@ func (a *adopter) mainOf(ctx context.Context, dir string) string {
 // adopt picks or clones the checkout, fetches, decides and prepares the
 // directory. The error text is the refusal reason.
 func (a *adopter) adopt(ctx context.Context, q adoptRequest) (adoptResult, error) {
+	if q.Target.Owner == "" {
+		q.Target = CloneTarget{Owner: q.Owner, Name: q.Name}
+	}
 	slug := q.Owner + "/" + q.Name
+	host := q.Target.Host
 	root, err := a.root()
 	if err != nil {
 		return adoptResult{}, fmt.Errorf("the worktrees directory: %v", err)
@@ -415,7 +427,7 @@ func (a *adopter) adopt(ctx context.Context, q adoptRequest) (adoptResult, error
 	var offered []adoptCand
 	var linked []string
 	for _, d := range q.Offered {
-		if !remoteIs(d.Path, slug) {
+		if !remoteIs(d.Path, slug, host) {
 			continue
 		}
 		if isPrimary(d.Path) {
@@ -425,13 +437,13 @@ func (a *adopter) adopt(ctx context.Context, q adoptRequest) (adoptResult, error
 		}
 	}
 	belai := ""
-	if p, err := Normalize(filepath.Join(root, "repos", q.Owner, q.Name)); err == nil && isPrimary(p) && remoteIs(p, slug) {
+	if p, err := Normalize(filepath.Join(root, "repos", q.Target.reposDir())); err == nil && isPrimary(p) && remoteIs(p, slug, host) {
 		belai = p
 	}
 	var mains []string
 	if len(offered) == 0 && belai == "" {
 		for _, l := range linked {
-			if m := a.mainOf(ctx, l); m != "" && remoteIs(m, slug) {
+			if m := a.mainOf(ctx, l); m != "" && remoteIs(m, slug, host) {
 				mains = append(mains, m)
 			}
 		}
@@ -442,7 +454,7 @@ func (a *adopter) adopt(ctx context.Context, q adoptRequest) (adoptResult, error
 		if !q.CanClone {
 			return res, fmt.Errorf("this host has no checkout of %s and does not clone repositories (agents.clone is off or belai rc runs with -no-clone)", slug)
 		}
-		p, err := a.clone(ctx, q.Owner, q.Name, "")
+		p, err := a.clone(ctx, q.Target, "")
 		if err != nil {
 			return res, fmt.Errorf("could not clone %s: %v", slug, err)
 		}
@@ -517,6 +529,12 @@ func (a *adopter) localDefault(ctx context.Context, clone string, has func(strin
 func (a *adopter) read(ctx context.Context, clone string, q adoptRequest, root string) (adoptFacts, error) {
 	f := adoptFacts{Clone: clone}
 	url := gitinfo.OriginURL(clone)
+	// A forge other than github.com authenticates with its own token.
+	opts := a.opts
+	if q.Target.Host != "" {
+		t := cloneOptions(q.Target, opts.ReposDir)
+		opts.GitHubCLI, opts.TokenEnv = t.GitHubCLI, t.TokenEnv
+	}
 	has := func(ref string) bool {
 		_, err := a.git(ctx, clone, "rev-parse", "--verify", "-q", ref+"^{commit}")
 		return err == nil
@@ -531,10 +549,10 @@ func (a *adopter) read(ctx context.Context, clone string, q adoptRequest, root s
 	}
 	def := originHead(clone)
 	if !validBranch(def) {
-		r := config.GitRepo{Name: cloneItemName(q.Owner, q.Name), URL: "https://github.com/" + q.Owner + "/" + q.Name + ".git",
-			Visibility: "public", Auth: "none", Dir: q.Owner + "/" + q.Name,
+		r := config.GitRepo{Name: cloneItemName(q.Owner, q.Name), URL: q.Target.cloneURL(),
+			Visibility: "public", Auth: "none", Dir: filepath.ToSlash(q.Target.reposDir()),
 			Refs: []config.GitRef{{Kind: config.GitRefBranch, Name: "main"}}}
-		b, err := repos.DefaultBranch(ctx, r, a.opts)
+		b, err := repos.DefaultBranch(ctx, r, opts)
 		if err != nil {
 			stale(err)
 			b = a.localDefault(ctx, clone, has)
@@ -553,7 +571,7 @@ func (a *adopter) read(ctx context.Context, clone string, q adoptRequest, root s
 	}
 	f.Default, f.Designated = def, want
 	if f.Stale == "" {
-		if err := repos.Fetch(ctx, a.opts, clone, url, def); err != nil {
+		if err := repos.Fetch(ctx, opts, clone, url, def); err != nil {
 			stale(err)
 		}
 	}
@@ -572,7 +590,7 @@ func (a *adopter) read(ctx context.Context, clone string, q adoptRequest, root s
 	if want != def {
 		fetched := false
 		if f.Stale == "" {
-			err := repos.Fetch(ctx, a.opts, clone, url, want)
+			err := repos.Fetch(ctx, opts, clone, url, want)
 			switch {
 			case err == nil:
 				fetched = true

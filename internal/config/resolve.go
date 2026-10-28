@@ -1,10 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/forge"
 )
 
 // Source is the provenance of a setting value, ordered lowest to highest
@@ -123,6 +126,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if projectTestsWidens(proj.Tests) {
 		eff.Notes = append(eff.Notes, "project tests settings ignored except post_end off and lower budgets (the post-end test pass is the user's opt-in)")
 	}
+	// A forge host decides where a forge token is sent, so a repository may
+	// not name one.
+	if len(proj.Forges) > 0 {
+		proj.Forges = nil
+		eff.Notes = append(eff.Notes, "project forges ignored (forge hosts are global; set them in your own settings)")
+	}
 	if proj.LSP != nil && len(proj.LSP.Servers) > 0 {
 		proj.LSP.Servers = nil
 		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
@@ -163,6 +172,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		return eff, err
 	}
 	SetActiveJevThresholds(eff.Settings.JevThresholds())
+	forge.SetHosts(eff.Settings.Forges)
 
 	return eff, nil
 }
@@ -175,6 +185,7 @@ func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
 		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateForges,
 	} {
 		if err := v(s); err != nil {
 			return err
@@ -486,6 +497,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Origin["context_windows"] = src
 	}
+	if s.Forges != nil && src != SourceProject && src != SourceProjectPrefs {
+		if e.Settings.Forges == nil {
+			e.Settings.Forges = map[string]string{}
+		}
+		for k, v := range s.Forges {
+			e.Settings.Forges[k] = v
+		}
+		e.Origin["forges"] = src
+	}
 	if s.Providers != nil {
 		if e.Settings.Providers == nil {
 			e.Settings.Providers = map[string]ProviderProfile{}
@@ -681,4 +701,20 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// ValidateForges checks the forges setting: each key a host name, each value
+// a kind forge.SetHosts knows.
+func ValidateForges(s Settings) error {
+	for host, kind := range s.Forges {
+		if strings.TrimSpace(host) == "" || strings.ContainsAny(host, "/:@ ") {
+			return fmt.Errorf("forges: %q is not a host name", host)
+		}
+		switch strings.ToLower(kind) {
+		case forge.HostGitHub, forge.HostGHES, forge.HostGitea, forge.HostForgejo, forge.HostGitLab:
+		default:
+			return fmt.Errorf("forges: %s is %q; use github, ghes, gitea, forgejo or gitlab", host, kind)
+		}
+	}
+	return nil
 }

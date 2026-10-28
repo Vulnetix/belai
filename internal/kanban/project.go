@@ -42,11 +42,16 @@ func ProvenanceFor(workdir, sessionID, hostID string) Provenance {
 	return Provenance{SessionID: sessionID, HostID: hostID, Project: name, ProjectKey: key, Remote: RemoteFor(abs), Dir: abs}
 }
 
-// RemoteFor is workdir's origin remote as owner/name (NormRemote), or "" when
-// it is not a forge checkout. Every checkout of one repository, on any
-// machine, has the same remote, where each has its own ProjectKey.
+// RemoteFor is workdir's origin remote as owner/name on github.com and
+// host/owner/name on any other forge (NormRemote), or "" when it is not a
+// forge checkout. Every checkout of one repository, on any machine, has the
+// same remote, where each has its own ProjectKey; the host keeps acme/app on
+// github.com and on a Gitea apart.
 func RemoteFor(workdir string) string {
 	if rem, ok := forge.ParseRemote(gitinfo.OriginURL(workdir)); ok {
+		if h := strings.ToLower(rem.Host); h != "" && h != "github.com" {
+			return NormRemote(h + "/" + rem.Slug())
+		}
 		return NormRemote(rem.Slug())
 	}
 	return ""

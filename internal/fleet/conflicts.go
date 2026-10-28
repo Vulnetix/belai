@@ -240,7 +240,7 @@ func (w *Worker) workConflicts(ctx context.Context, it kanban.Item, claim *tools
 	}
 	if remote := kanban.RemoteFor(w.Repo); remote != card.Repo {
 		if remote == "" {
-			remote = "not a GitHub or GitLab remote"
+			remote = "not a GitHub, GitLab, Gitea or Forgejo remote"
 		}
 		return block(fmt.Sprintf("the card names %s, but this repository's origin is %s", card.Repo, remote))
 	}
@@ -1185,7 +1185,7 @@ func (originForge) Fetch(ctx context.Context, repo string, c mergefix.Card) (Con
 	origin, _ := git(ctx, repoRun, top, "remote", "get-url", "origin")
 	rem, ok := forge.ParseRemote(origin)
 	if !ok {
-		return ConflictRefs{}, errors.New("the repository has no GitHub or GitLab origin remote")
+		return ConflictRefs{}, errors.New("the repository has no GitHub, GitLab, Gitea or Forgejo origin remote")
 	}
 	runner, credArgs := hardenedGit("", "", ident...), []string(nil)
 	if env, helper := publishAuth(rem, time.Now()); len(env) > 0 {
