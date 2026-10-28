@@ -46,6 +46,9 @@ behaviour, and implementation details.
 - [A2A messaging](a2a.md): agents broadcast what they work on, message each
   other and answer in a side-turn, keep repo memory (`RepoMemoryRead`,
   `RepoMemoryWrite`), and the A2A blackout that stops relay between hosts.
+- [Forges](forges.md): github.com, GitHub Enterprise Server, Gitea, Forgejo and
+  GitLab: how a remote's forge is found, the `forges` setting, tokens, and what
+  works on each.
 - [Kanban](kanban.md): the global board, its lists and tools, the TUI pane and
   how it syncs with the website.
 - [The BKAN file format](bkan.md): how the board file is built byte by byte, the

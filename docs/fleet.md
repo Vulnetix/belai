@@ -1450,10 +1450,13 @@ empty branch behind.
 review, a comment, a merge or an auto-merge (a REST path naming reviews,
 comments or merge, `auto_merge`, or a GraphQL `PullRequestReview`,
 `mergePullRequest` or `AutoMerge` mutation), `git switch`, `git checkout -b`,
-`git worktree`, `git config` and `git remote` are denied in a worker's Bash wherever they appear in a command
+`git worktree`, `git config` and `git remote` are denied, and so are the same
+writes through Gitea's `tea` (`tea pulls create`, `merge`, `approve`, `reject`,
+`review`, the `tea pr` forms and `tea comment`) and Forgejo's `fj` (`fj pr
+create`, `merge`, `comment`), in a worker's Bash wherever they appear in a command
 line. `PublishBranch` is the only way a model pushes, because a raw push could send
-any ref, `main` included. Publishing needs a GitHub or GitLab `origin` and
-committed work on the branch. The link is recorded on the item. The one push
+any ref, `main` included. Publishing needs a GitHub, GHES, GitLab, Gitea or
+Forgejo `origin` ([forges.md](forges.md)) and committed work on the branch. The link is recorded on the item. The one push
 the harness makes to a branch that is not the item's own is the
 [merge-conflict loop's](merge-conflicts.md#pushing): a merge commit it built and
 checked, to the head of the pull request the card names, as a fast-forward
@@ -1501,7 +1504,9 @@ repository. `forge.ClassifyPushError` sorts the failure from the error text into
 a fixed word; a failure that is the branch's (a rejected non-fast-forward,
 nothing to publish, a hook that declined it) or one it does not recognise is
 never handed over and reads as before. Only a GitHub `origin` and an item
-attempt branch (`belai/K-xxxxxx/a<n>`) are handed over.
+attempt branch (`belai/K-xxxxxx/a<n>`) are handed over. The coordinator is not
+available on GHES, GitLab, Gitea or Forgejo: a failed push there reads as the
+failure it is ([forges.md](forges.md#what-works-where)).
 
 To hand it over, the worker writes the git bundle of
 `<base>..refs/heads/<branch>` to `~/.vulnetix/belai/forge/<requestId>.bundle`

@@ -1027,8 +1027,8 @@ execution is a **fixed command shape**, not an arbitrary command string:
   owned by …") rather than returning an empty listing that would read as
   "no repositories at all".
 - Cloud/SaaS CLIs — `GH`, `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`,
-  `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Stripe`,
-  `OnePassword`, `Bitwarden` — are offered only when capability detection
+  `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Tea`,
+  `Stripe`, `OnePassword`, `Bitwarden` — are offered only when capability detection
   finds the CLI installed **and** its read-only auth probe exits cleanly.
   Only read-only subcommands are offered: each CLI carries a prefix allowlist
   and anything outside it is rejected.
@@ -1044,7 +1044,9 @@ Security rules for native tools:
 - Every local tool is **read-only by construction** (`KindNative`), so it
   survives the read-only master switch and may run in the concurrent read-only
   fan-out.
-- `GH` and `Glab` return arbitrary third-party text (PR bodies, issue
+- `Tea` (Gitea and Forgejo) offers listings and `whoami` only: tea's view
+  commands share a verb with its writes, so no view is allowed.
+- `GH`, `Glab` and `Tea` return arbitrary third-party text (PR bodies, issue
   comments, file contents), so they report `KindRemote`. Like `Read`,
   `WebFetch`, `WebSearch`, and `Bash`, `KindRemote` results go through the
   classifier before promotion. `RepoRead` is `KindRead` for the same reason.

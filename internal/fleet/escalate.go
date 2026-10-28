@@ -185,7 +185,7 @@ func (w *Workspace) Escalate(ctx context.Context, kind, failure string) (string,
 		return "", err
 	}
 	if rem.Kind != forge.KindGitHub {
-		return "", errors.New("the forge coordinator publishes to GitHub only")
+		return "", errors.New("the forge coordinator is not available on " + rem.Host + ": it publishes to GitHub only")
 	}
 	if err := w.absorbObjects(); err != nil {
 		return "", err

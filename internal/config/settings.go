@@ -62,6 +62,12 @@ type Settings struct {
 	// ContextWindows overrides the built-in context-window size (in tokens)
 	// for specific model ids. Use it for models Belai does not know.
 	ContextWindows map[string]int `json:"context_windows,omitempty"`
+	// Forges names the forge behind a git host Belai cannot tell by name:
+	// host to github, ghes, gitea, forgejo or gitlab (forge.SetHosts). A
+	// Gitea or Forgejo host named here gets the API provider and the token
+	// from BELAI_FORGE_TOKEN_<HOST>, FORGEJO_TOKEN or GITEA_TOKEN. Global
+	// only: a repository cannot point Belai's tokens at a host.
+	Forges map[string]string `json:"forges,omitempty"`
 	// ShowSessionNames toggles session names in the status bar (default on).
 	ShowSessionNames *bool `json:"show_session_names,omitempty"`
 	// Resilience controls provider retry and tool-loop budgets.

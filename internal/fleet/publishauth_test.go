@@ -59,3 +59,34 @@ func TestPublishAuthPrefersGHTokenAndIgnoresAnExpiredOne(t *testing.T) {
 		t.Fatalf("an expired token was used: %v", env)
 	}
 }
+
+// On Gitea or Forgejo the host's forge token reaches the push through a helper
+// that reads it from the child's environment, never from an argument.
+func TestPublishAuthUsesTheForgeTokenOnGitea(t *testing.T) {
+	withVaultToken(t, vaultenv.Var{Name: "BELAI_FORGE_TOKEN_CODEBERG_ORG", Value: "fj_exampletoken0001"})
+	env, args := publishAuth(forge.Remote{Kind: forge.KindForgejo, Host: "codeberg.org"}, time.Now())
+	if !slices.Equal(env, []string{"BELAI_FORGE_TOKEN_CODEBERG_ORG=fj_exampletoken0001"}) {
+		t.Fatalf("env = %v", env)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "credential.https://codeberg.org.helper=!f()") || !strings.Contains(joined, "$BELAI_FORGE_TOKEN_CODEBERG_ORG") || strings.Contains(joined, "fj_") {
+		t.Fatalf("args = %v", args)
+	}
+	if env, _ := publishAuth(forge.Remote{Kind: forge.KindGitea, Host: "git.example.com"}, time.Now()); env != nil {
+		t.Fatalf("another host's token was used: %v", env)
+	}
+}
+
+// On GitLab only a token named for the host is used, so a GITLAB_TOKEN set for
+// glab never replaces the credential a push already used.
+func TestPublishAuthOnGitLabNeedsAHostToken(t *testing.T) {
+	withVaultToken(t, vaultenv.Var{Name: "GITLAB_TOKEN", Value: "glpat-exampletoken01"})
+	if env, args := publishAuth(forge.Remote{Kind: forge.KindGitLab, Host: "gitlab.com"}, time.Now()); env != nil || args != nil {
+		t.Fatalf("GITLAB_TOKEN was used: %v %v", env, args)
+	}
+	withVaultToken(t, vaultenv.Var{Name: "BELAI_FORGE_TOKEN_GITLAB_COM", Value: "glpat-exampletoken02"})
+	env, args := publishAuth(forge.Remote{Kind: forge.KindGitLab, Host: "gitlab.com"}, time.Now())
+	if !slices.Equal(env, []string{"BELAI_FORGE_TOKEN_GITLAB_COM=glpat-exampletoken02"}) || strings.Contains(strings.Join(args, " "), "glpat-") {
+		t.Fatalf("env = %v args = %v", env, args)
+	}
+}

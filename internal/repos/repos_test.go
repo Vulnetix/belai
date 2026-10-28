@@ -868,3 +868,51 @@ func TestGitHubCLIIsOptionalForAPublicURL(t *testing.T) {
 		t.Fatalf("no gh: %v", err)
 	}
 }
+
+func TestTokenEnvUsesAHelperAndNeverATokenInTheArgv(t *testing.T) {
+	o := newOrigin(t)
+	rec := &recorder{}
+	opts := o.opts(t.TempDir())
+	opts.Run = rec.run
+	opts.TokenEnv = "BELAI_FORGE_TOKEN_EXAMPLE_TEST"
+	opts.Getenv = func(k string) string {
+		if k == opts.TokenEnv {
+			return "fj_secret"
+		}
+		return ""
+	}
+	if _, err := Sync(context.Background(), privateRepo(testURL), opts); err != nil {
+		t.Fatal(err)
+	}
+	var sawHelper, sawToken bool
+	for _, c := range rec.git() {
+		for _, a := range c.argv {
+			if strings.HasPrefix(a, "credential.https://example.test.helper=") && strings.Contains(a, "$BELAI_FORGE_TOKEN_EXAMPLE_TEST") {
+				sawHelper = true
+			}
+			if strings.Contains(a, "fj_secret") {
+				t.Errorf("a token reached a git argv: %v", c.argv)
+			}
+		}
+		if hasEnv(c, "BELAI_FORGE_TOKEN_EXAMPLE_TEST=fj_secret") {
+			sawToken = true
+		}
+	}
+	if !sawHelper || !sawToken {
+		t.Errorf("helper %v, token in the environment %v", sawHelper, sawToken)
+	}
+	for _, c := range rec.calls {
+		if filepath.Base(c.argv[0]) == "gh" {
+			t.Errorf("gh ran for a token-authenticated host: %v", c.argv)
+		}
+	}
+
+	opts.Getenv = func(string) string { return "" }
+	if _, err := Sync(context.Background(), privateRepo(testURL), opts); err == nil || !strings.Contains(err.Error(), "which is not set") {
+		t.Fatalf("unset token: %v", err)
+	}
+	opts.TokenEnv = "X; rm -rf /"
+	if _, err := Sync(context.Background(), privateRepo(testURL), opts); err == nil || !strings.Contains(err.Error(), "bad token variable name") {
+		t.Fatalf("bad name: %v", err)
+	}
+}

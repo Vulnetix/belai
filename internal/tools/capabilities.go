@@ -354,6 +354,20 @@ var cloudSpecs = []cloudSpec{
 		classify: true,
 	},
 	{
+		// Gitea's CLI, which Forgejo serves too. Only listings and the signed-in
+		// login: tea's view commands share a verb with its writes (`pulls 3`
+		// beside `pulls create`), so they are left out.
+		name: "Tea", binary: "tea",
+		desc:  "Query Gitea or Forgejo (read-only): the signed-in login and pull request, issue, release, repository and branch listings.",
+		probe: []string{"whoami"},
+		prefixes: []string{
+			"whoami", "login list", "logins list",
+			"pulls list", "pr list", "issues list", "issue list",
+			"releases list", "release list", "repos list", "branches list",
+		},
+		classify: true,
+	},
+	{
 		name: "Stripe", binary: "stripe",
 		desc:     "Inspect Stripe configuration (read-only).",
 		probe:    []string{"config", "--list"},

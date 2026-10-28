@@ -30,7 +30,13 @@ base: <base ref>
 fork: true|false
 ```
 
-Every key is required, once. `repo` must be a lower-case `owner/name`, `number`
+Off github.com `repo` is `host/owner/name` and `pr` is the forge's own link:
+`https://<host>/<owner>/<name>/pulls/N` on Gitea and Forgejo,
+`https://<host>/<group>/<name>/-/merge_requests/N` on GitLab (the group may
+be nested) and `https://<host>/<owner>/<name>/pull/N` on GHES.
+
+Every key is required, once. `repo` must be a lower-case `owner/name`
+(`host/owner/name` off github.com), `number`
 a positive integer, `head` and `base` plain branch names (letters, digits and
 `. _ / -`, no leading `-`, no `..`, no empty or dotted segment, no `.lock`
 suffix, and `git check-ref-format` must accept them), and the `pr` link must

@@ -33,7 +33,7 @@ var listOpenCardPRs = func(ctx context.Context, repo string) ([]forge.PR, error)
 	origin, _ := git(ctx, repoRun, top, "remote", "get-url", "origin")
 	rem, ok := forge.ParseRemote(origin)
 	if !ok {
-		return nil, errors.New("the repository has no GitHub or GitLab origin remote")
+		return nil, errors.New("the repository has no GitHub, GitLab, Gitea or Forgejo origin remote")
 	}
 	run := repoRun
 	if env, _ := publishAuth(rem, time.Now()); len(env) > 0 {

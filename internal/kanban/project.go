@@ -42,14 +42,41 @@ func ProvenanceFor(workdir, sessionID, hostID string) Provenance {
 	return Provenance{SessionID: sessionID, HostID: hostID, Project: name, ProjectKey: key, Remote: RemoteFor(abs), Dir: abs}
 }
 
-// RemoteFor is workdir's origin remote as owner/name (NormRemote), or "" when
-// it is not a forge checkout. Every checkout of one repository, on any
-// machine, has the same remote, where each has its own ProjectKey.
+// RemoteFor is workdir's origin remote as owner/name on github.com and
+// host/owner/name on any other forge (NormRemote), or "" when it is not a
+// forge checkout. Every checkout of one repository, on any machine, has the
+// same remote, where each has its own ProjectKey; the host keeps acme/app on
+// github.com and on a Gitea apart.
 func RemoteFor(workdir string) string {
 	if rem, ok := forge.ParseRemote(gitinfo.OriginURL(workdir)); ok {
+		if h := strings.ToLower(rem.Host); h != "" && h != "github.com" {
+			return NormRemote(h + "/" + rem.Slug())
+		}
 		return NormRemote(rem.Slug())
 	}
 	return ""
+}
+
+// LegacyRemote is the owner/name an older Belai wrote for a remote off
+// github.com, before remotes kept their host: rem without its host, or "" when
+// rem names no host. A GitHub owner holds no dot or colon, so a first segment
+// with one is a host.
+func LegacyRemote(rem string) string {
+	host, rest, ok := strings.Cut(rem, "/")
+	if !ok || !strings.ContainsAny(host, ".:") || !strings.Contains(rest, "/") {
+		return ""
+	}
+	return rest
+}
+
+// SameRemote reports whether two normalised remotes name one repository: the
+// same, or one is the host-qualified form of the other's older owner/name.
+func SameRemote(a, b string) bool {
+	a, b = NormRemote(a), NormRemote(b)
+	if a == "" || b == "" {
+		return false
+	}
+	return a == b || LegacyRemote(a) == b || LegacyRemote(b) == a
 }
 
 // remoteRE is a normalised remote: owner/name, or a nested group path of a

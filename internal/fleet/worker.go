@@ -1905,6 +1905,11 @@ var workerGitDeny = []string{
 	"Bash(*gh api*/reviews*)", "Bash(*gh api*/comments*)", "Bash(*gh api*/merge*)", "Bash(*gh api*auto_merge*)",
 	"Bash(*gh api*PullRequestReview*)", "Bash(*gh api*mergePullRequest*)", "Bash(*gh api*AutoMerge*)",
 	"Bash(*glab mr approve*)", "Bash(*glab mr note*)",
+	// The same writes through the Gitea and Forgejo CLIs (tea's pulls has the
+	// alias pr; fj is Forgejo's).
+	"Bash(*tea pulls create*)", "Bash(*tea pulls merge*)", "Bash(*tea pulls approve*)", "Bash(*tea pulls reject*)", "Bash(*tea pulls review*)",
+	"Bash(*tea pr create*)", "Bash(*tea pr merge*)", "Bash(*tea pr approve*)", "Bash(*tea pr reject*)", "Bash(*tea pr review*)",
+	"Bash(*tea comment*)", "Bash(*fj pr create*)", "Bash(*fj pr merge*)", "Bash(*fj pr comment*)",
 	"Bash(*git switch*)", "Bash(*git checkout -b*)", "Bash(*git worktree*)",
 	"Bash(*git config*)", "Bash(*git remote*)",
 }

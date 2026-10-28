@@ -173,6 +173,7 @@ var extraToolNames = map[string]bool{
 	"RepoRead":       true,
 	"GH":             true,
 	"Glab":           true,
+	"Tea":            true,
 	"PublishBranch":  true,
 	"Git":            true,
 	"A2AMessage":     true,

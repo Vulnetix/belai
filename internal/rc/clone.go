@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/repos"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -33,30 +34,118 @@ import (
 const cloneTimeout = 15 * time.Minute
 
 // cloneOwnerRE and cloneNameRE are the owner and name a clone request may
-// carry: GitHub's own characters, never a leading dash or a dot segment.
+// carry: GitHub's own characters, never a leading dash or a dot segment. On
+// another forge each segment of a group path is an owner.
 var (
 	cloneOwnerRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,99}$`)
+	cloneSegRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 	cloneNameRE  = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._-]{0,99}$`)
+	cloneHostRE  = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:[0-9]{1,5})?$`)
 )
 
-// Cloner clones or reuses owner/name at ref ("" is the remote's default
+// CloneTarget is the repository a clone request names: Owner and Name, and
+// for a forge other than github.com its Host, Forge kind and https URL.
+type CloneTarget struct {
+	Host, Forge, Owner, Name, URL string
+}
+
+// Slug is owner/name.
+func (t CloneTarget) Slug() string { return t.Owner + "/" + t.Name }
+
+// Label names the target for logs and refusals: owner/name on github.com,
+// host/owner/name elsewhere.
+func (t CloneTarget) Label() string {
+	if t.Host == "" {
+		return t.Slug()
+	}
+	return t.Host + "/" + t.Slug()
+}
+
+// cloneURL is the https URL the clone fetches.
+func (t CloneTarget) cloneURL() string {
+	if t.URL != "" {
+		return t.URL
+	}
+	return "https://github.com/" + t.Owner + "/" + t.Name + ".git"
+}
+
+// reposDir is where the checkout lives under <WorktreesDir>/repos:
+// owner/name for github.com, host/owner/name elsewhere.
+func (t CloneTarget) reposDir() string {
+	if t.Host == "" {
+		return filepath.Join(t.Owner, t.Name)
+	}
+	return filepath.Join(strings.ReplaceAll(t.Host, ":", "_"), filepath.FromSlash(t.Owner), t.Name)
+}
+
+// Cloner clones or reuses a target at ref ("" is the remote's default
 // branch) and returns the checkout, trusted for the directory. The error text
 // is the refusal reason.
-type Cloner func(ctx context.Context, owner, name, ref string) (string, error)
+type Cloner func(ctx context.Context, t CloneTarget, ref string) (string, error)
 
 // ParseClone checks a clone request and returns its owner and name, or false.
 func ParseClone(c *sessionsync.DispatchClone) (owner, name string, ok bool) {
+	t, ok := ParseCloneTarget(c)
+	return t.Owner, t.Name, ok
+}
+
+// ParseCloneTarget checks a clone request and returns its target, or false.
+// A request for another forge must name a kind Belai knows and an https URL
+// that is exactly that host's owner/name; anything else is refused.
+func ParseCloneTarget(c *sessionsync.DispatchClone) (CloneTarget, bool) {
 	if c == nil {
-		return "", "", false
-	}
-	owner, name, found := strings.Cut(strings.TrimSuffix(strings.TrimSpace(c.Repo), ".git"), "/")
-	if !found || !cloneOwnerRE.MatchString(owner) || !cloneNameRE.MatchString(name) || name == "." || name == ".." {
-		return "", "", false
+		return CloneTarget{}, false
 	}
 	if c.Ref != "" && !validBranch(c.Ref) {
-		return "", "", false
+		return CloneTarget{}, false
 	}
-	return strings.ToLower(owner), strings.ToLower(name), true
+	repo := strings.TrimSuffix(strings.TrimSpace(c.Repo), ".git")
+	if c.Host == "" {
+		if c.Forge != "" || c.CloneURL != "" {
+			return CloneTarget{}, false
+		}
+		owner, name, found := strings.Cut(repo, "/")
+		if !found || !cloneOwnerRE.MatchString(owner) || !cloneNameRE.MatchString(name) || name == "." || name == ".." {
+			return CloneTarget{}, false
+		}
+		return CloneTarget{Owner: strings.ToLower(owner), Name: strings.ToLower(name)}, true
+	}
+	host := strings.ToLower(c.Host)
+	switch c.Forge {
+	case forge.HostGHES, forge.HostGitea, forge.HostForgejo, forge.HostGitLab:
+	default:
+		return CloneTarget{}, false
+	}
+	if !cloneHostRE.MatchString(host) || host == "github.com" {
+		return CloneTarget{}, false
+	}
+	// The website names the repository host/owner/name, so a Belai that
+	// predates host refuses it rather than cloning github.com's; the bare
+	// owner/name is read too.
+	if p := host + "/"; len(repo) > len(p) && strings.EqualFold(repo[:len(p)], p) {
+		repo = repo[len(p):]
+	}
+	i := strings.LastIndexByte(repo, '/')
+	if i <= 0 {
+		return CloneTarget{}, false
+	}
+	owner, name := repo[:i], repo[i+1:]
+	segs := strings.Split(owner, "/")
+	if len(segs) > 8 || !cloneNameRE.MatchString(name) || name == "." || name == ".." {
+		return CloneTarget{}, false
+	}
+	for _, s := range segs {
+		if !cloneSegRE.MatchString(s) || strings.Contains(s, "..") {
+			return CloneTarget{}, false
+		}
+	}
+	t := CloneTarget{Host: host, Forge: c.Forge, Owner: strings.ToLower(owner), Name: strings.ToLower(name)}
+	want := "https://" + host + "/" + t.Owner + "/" + t.Name + ".git"
+	if !strings.EqualFold(c.CloneURL, want) {
+		return CloneTarget{}, false
+	}
+	t.URL = want
+	return t, true
 }
 
 // cloneSettingOn reports whether the user's agents.clone is on. It reads the
@@ -105,11 +194,11 @@ func (d *Daemon) cloneDir(ctx context.Context, c *sessionsync.DispatchClone, hin
 	if !d.canClone() {
 		return "", "", "this host does not clone repositories (agents.clone is off or belai rc runs with -no-clone)"
 	}
-	owner, name, ok := ParseClone(c)
+	t, ok := ParseCloneTarget(c)
 	if !ok {
 		return "", "", "that is not a repository to clone"
 	}
-	slug := owner + "/" + name
+	slug := t.Label()
 	if hint != "" {
 		// Only an offered directory is a hint; anything else is ignored.
 		if p, ok := Allowed(d.dirs(), hint); ok {
@@ -126,7 +215,7 @@ func (d *Daemon) cloneDir(ctx context.Context, c *sessionsync.DispatchClone, hin
 	defer func() { <-d.cloneSlot }()
 	cctx, cancel := context.WithTimeout(ctx, cloneTimeout)
 	defer cancel()
-	res, err := d.adopt.adopt(cctx, adoptRequest{Owner: owner, Name: name, Ref: c.Ref, Hint: hint, Offered: d.dirs(), CanClone: true})
+	res, err := d.adopt.adopt(cctx, adoptRequest{Target: t, Owner: t.Owner, Name: t.Name, Ref: c.Ref, Hint: hint, Offered: d.dirs(), CanClone: true})
 	if err != nil {
 		return "", "", clip(err.Error())
 	}
@@ -141,8 +230,8 @@ func (d *Daemon) cloneDir(ctx context.Context, c *sessionsync.DispatchClone, hin
 
 // cloneLabel names a clone request for the log, cleaned.
 func cloneLabel(c *sessionsync.DispatchClone) string {
-	if owner, name, ok := ParseClone(c); ok {
-		return owner + "/" + name
+	if t, ok := ParseCloneTarget(c); ok {
+		return t.Label()
 	}
 	return "an invalid repository"
 }
@@ -157,24 +246,42 @@ func cloneItemName(owner, name string) string {
 	return strings.TrimRight(n, ".-_")
 }
 
-// cloneRepo is the daemon's Cloner: <WorktreesDir>/repos/<owner>/<name> through
-// the repos engine, with the GitHub CLI's credential when it is signed in, then
-// trusted for the directory.
-func cloneRepo(ctx context.Context, owner, name, ref string) (string, error) {
+// cloneRepo is the daemon's Cloner: <WorktreesDir>/repos/<owner>/<name>
+// (host/owner/name off github.com) through the repos engine, then trusted for
+// the directory. The credential is the GitHub CLI's own on github.com and
+// GHES, and on Gitea, Forgejo and GitLab the token forge.ForgeToken finds for
+// the host, read from the environment by git's credential helper.
+func cloneRepo(ctx context.Context, t CloneTarget, ref string) (string, error) {
 	root, err := config.WorktreesDir()
 	if err != nil {
 		return "", err
 	}
-	opts := repos.Options{ReposDir: filepath.Join(root, "repos"), GitHubCLI: true}
-	return cloneWith(ctx, owner, name, ref, opts, func(dir string) error { return trustgate.Grant(dir, nil) })
+	return cloneWith(ctx, t, ref, cloneOptions(t, filepath.Join(root, "repos")), func(dir string) error { return trustgate.Grant(dir, nil) })
+}
+
+// cloneOptions are the repos engine's options for a target.
+func cloneOptions(t CloneTarget, reposDir string) repos.Options {
+	opts := repos.Options{ReposDir: reposDir, GitHubCLI: true}
+	switch t.Forge {
+	case forge.HostGitea, forge.HostForgejo, forge.HostGitLab:
+		kind := map[string]string{forge.HostGitea: forge.KindGitea, forge.HostForgejo: forge.KindForgejo, forge.HostGitLab: forge.KindGitLab}[t.Forge]
+		if _, from := forge.ForgeToken(kind, strings.Split(t.Host, ":")[0]); from != "" {
+			opts.GitHubCLI, opts.TokenEnv = false, from
+		}
+	}
+	return opts
 }
 
 // cloneWith is cloneRepo with its engine options and trust grant replaceable
 // in tests.
-func cloneWith(ctx context.Context, owner, name, ref string, opts repos.Options, trust func(string) error) (string, error) {
+func cloneWith(ctx context.Context, t CloneTarget, ref string, opts repos.Options, trust func(string) error) (string, error) {
+	itemName := cloneItemName(t.Owner, t.Name)
+	if t.Host != "" {
+		itemName = cloneItemName(strings.ReplaceAll(t.Host, ":", "-")+"-"+strings.ReplaceAll(t.Owner, "/", "-"), t.Name)
+	}
 	r := config.GitRepo{
-		Name: cloneItemName(owner, name), URL: "https://github.com/" + owner + "/" + name + ".git",
-		Visibility: "public", Auth: "none", Dir: owner + "/" + name,
+		Name: itemName, URL: t.cloneURL(),
+		Visibility: "public", Auth: "none", Dir: filepath.ToSlash(t.reposDir()),
 		Refs: []config.GitRef{{Kind: config.GitRefBranch, Name: "main"}},
 	}
 	if ref == "" {

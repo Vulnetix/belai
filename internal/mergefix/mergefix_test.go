@@ -480,6 +480,33 @@ func TestParseCard(t *testing.T) {
 	}
 }
 
+func TestParseCardOnOtherForges(t *testing.T) {
+	card := func(pr, repo string) string {
+		return "```\npr: " + pr + "\nrepo: " + repo + "\nnumber: 7\nhead: feature\nbase: main\nfork: false\n```\n"
+	}
+	for pr, repo := range map[string]string{
+		"https://codeberg.org/acme/app/pulls/7":                       "codeberg.org/acme/app",
+		"https://gitlab.example.com/group/sub/app/-/merge_requests/7": "gitlab.example.com/group/sub/app",
+		"https://ghe.corp/acme/app/pull/7":                            "ghe.corp/acme/app",
+	} {
+		c, err := ParseCard(card(pr, repo))
+		if err != nil || c.Repo != repo || c.Number != 7 {
+			t.Errorf("%s: %+v %v", pr, c, err)
+		}
+	}
+	for name, bad := range map[string]string{
+		"other host":       card("https://codeberg.org/acme/app/pulls/7", "evil.example/acme/app"),
+		"nested on github": card("https://github.com/a/b/app/pull/7", "a/b/app"),
+		"pulls on github":  card("https://github.com/acme/app/pulls/7", "acme/app"),
+		"host on github":   card("https://github.com/acme/app/pull/7", "github.com/acme/app"),
+		"issue link":       card("https://codeberg.org/acme/app/issues/7", "codeberg.org/acme/app"),
+	} {
+		if _, err := ParseCard(bad); err == nil {
+			t.Errorf("%s: parsed", name)
+		}
+	}
+}
+
 func TestImplicatedNamesOnlyConflictedFiles(t *testing.T) {
 	out := "# pkg\n./pkg/a.go:12:3: undefined: x\nb.cs(4,1): error CS0101\nsee c.go for details\n"
 	got := Implicated(out, []string{"a.go", "pkg/a.go", "b.cs", "c.go"})

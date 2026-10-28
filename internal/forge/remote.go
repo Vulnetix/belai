@@ -5,10 +5,12 @@ import (
 	"strings"
 )
 
-// Provider kinds.
+// Provider kinds. Gitea and Forgejo share one provider (the Gitea API).
 const (
 	KindGitHub  = "github"
 	KindGitLab  = "gitlab"
+	KindGitea   = "gitea"
+	KindForgejo = "forgejo"
 	KindGeneric = "generic"
 )
 
@@ -18,7 +20,7 @@ type Remote struct {
 	Host  string // lower-cased, no port
 	Owner string // everything before the repo segment (GitLab subgroups included)
 	Repo  string // final path segment without .git
-	Kind  string // KindGitHub, KindGitLab or KindGeneric
+	Kind  string // KindGitHub, KindGitLab, KindGitea, KindForgejo or KindGeneric
 }
 
 // Slug returns owner/repo, or "" when either part is unknown.
@@ -82,9 +84,13 @@ func build(host, path string) Remote {
 	return Remote{Host: host, Owner: owner, Repo: repo, Kind: kindFor(host)}
 }
 
-// kindFor maps a host to a provider kind. Self-hosted GitLab is recognised by
-// name; a GitHub Enterprise host with an arbitrary name stays generic.
+// kindFor maps a host to a provider kind: the forges setting first
+// (hosts.go), then GitHub and GitLab by name. A GitHub Enterprise, Gitea or
+// Forgejo host the setting does not name stays generic.
 func kindFor(host string) string {
+	if k := configuredKind(host); k != "" {
+		return k
+	}
 	switch {
 	case host == "github.com" || strings.HasSuffix(host, ".github.com") || strings.HasPrefix(host, "github."):
 		return KindGitHub

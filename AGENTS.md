@@ -37,7 +37,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a control or bidi stripper, a loopback test or a shell splitter.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
-  `Read` (a file's bytes), `GH`/`Glab`/`AWS` results (`KindRemote`, third-party
+  `Read` (a file's bytes), `GH`/`Glab`/`Tea`/`AWS` results (`KindRemote`, third-party
   repository text, log events and bucket objects), `RepoRead` and the native tools that can print a file's
   contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
@@ -788,6 +788,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   It renders only as a report card or a headless stderr line. It never
   reaches a model turn, a system block or telemetry, and matched text is
   never carried.
+- **Forge tokens go only to hosts the user named.** A Gitea or Forgejo host is
+  known only from the `forges` setting in the user's own layers, or as
+  `codeberg.org`; a project's `forges` is dropped (`config.Resolve`) and a
+  host's name never makes it one (`forge.kindFor`). The token is read from
+  `BELAI_FORGE_TOKEN_<HOST>` or the kind's own variable, sent only as the
+  `Authorization` header to that host's `/api/v1`, and reaches git through a
+  credential helper scoped to that host that reads it from the child's
+  environment (`repos.tokenCredentials`, `fleet.publishAuth`): never in a URL
+  or an argv. A Software Factory clone off github.com is refused unless its
+  `cloneUrl` is exactly `https://<host>/<owner>/<name>.git`
+  (`rc.ParseCloneTarget`). Do not add a host guess for Gitea or Forgejo.
 - **Kiro tokens go only to pinned AWS hosts.** `internal/kiroauth` sends
   the AWS sign-in only to `oidc.<region>.amazonaws.com` and the access token
   only to `q.`/`codewhisperer.<region>.amazonaws.com` (or a loopback mock),

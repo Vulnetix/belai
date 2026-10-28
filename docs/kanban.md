@@ -24,8 +24,9 @@ Each item records the session that added it, the project (the `origin`
 remote's repository name, or the repository directory's name), the directory
 it was filed from, and a history of moves and notes. It also records the
 project key (the repository root's path key, which differs on every machine)
-and, for a forge checkout, the `remote` as `owner/name` in lower case, which is
-the same on every machine. A worker started in its own project claims an item
+and, for a forge checkout, the `remote` as `owner/name` in lower case
+(`host/owner/name` on a forge other than github.com, [forges.md](forges.md#repository-keys)),
+which is the same on every machine. A worker started in its own project claims an item
 whose key is its project's, and also one whose `remote` is its checkout's
 remote (or whose project is that `owner/name`, as the Software Factory writes
 it), so a card filed on your laptop is claimable by a worker in a checkout of

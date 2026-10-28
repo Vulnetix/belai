@@ -195,6 +195,13 @@ type RCInfo struct {
 type DispatchClone struct {
 	Repo string `json:"repo"`
 	Ref  string `json:"ref,omitempty"`
+	// Host, Forge and CloneURL name a repository on a forge other than
+	// github.com (ghes, gitea, forgejo or gitlab); all three are empty for
+	// github.com. Repo is then the forge's own owner/name, the owner a GitLab
+	// group path when it is one.
+	Host     string `json:"host,omitempty"`
+	Forge    string `json:"forge,omitempty"`
+	CloneURL string `json:"cloneUrl,omitempty"`
 }
 
 // The RCInfo.Features this build sends.

@@ -33,6 +33,8 @@ func TestParseClone(t *testing.T) {
 		{&sessionsync.DispatchClone{Repo: "acme/-api"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/.."}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "https://github.com/acme/api"}, "", "", false},
+		// A forge repository's host/owner/name never reads as a github.com one.
+		{&sessionsync.DispatchClone{Repo: "codeberg.org/acme/app"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/api", Ref: "--upload-pack=x"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/api", Ref: "a..b"}, "", "", false},
 	} {
@@ -77,14 +79,14 @@ func TestDaemonClonesARepositoryAndStartsTheWorkersThere(t *testing.T) {
 		t.Fatal(err)
 	}
 	realClone := f.a.clone
-	f.a.clone = func(ctx context.Context, owner, name, ref string) (string, error) {
+	f.a.clone = func(ctx context.Context, tg CloneTarget, ref string) (string, error) {
 		mu.Lock()
-		clones = append(clones, owner+"/"+name+"@"+ref)
+		clones = append(clones, tg.Owner+"/"+tg.Name+"@"+ref)
 		mu.Unlock()
-		if name == "missing" {
+		if tg.Name == "missing" {
 			return "", errors.New("repository not found")
 		}
-		return realClone(ctx, owner, name, ref)
+		return realClone(ctx, tg, ref)
 	}
 	d.adopt = f.a
 	site.queue = []sessionsync.Dispatch{
@@ -235,7 +237,7 @@ func TestDaemonWithoutCloneRefusesAndDoesNotAdvertise(t *testing.T) {
 		called := false
 		d, err := New(Options{Client: client, HostID: testHost, NoClone: c.noClone,
 			CloneEnabled: func() bool { return c.setting },
-			Clone:        func(context.Context, string, string, string) (string, error) { called = true; return "", nil },
+			Clone:        func(context.Context, CloneTarget, string) (string, error) { called = true; return "", nil },
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -303,7 +305,7 @@ func TestCloneWithUsesTheReposEngine(t *testing.T) {
 			"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=url." + bare + ".insteadOf", "GIT_CONFIG_VALUE_0=https://github.com/acme/api.git"}}
 	var trusted []string
 	trust := func(dir string) error { trusted = append(trusted, dir); return nil }
-	path, err := cloneWith(context.Background(), "acme", "api", "", opts, trust)
+	path, err := cloneWith(context.Background(), CloneTarget{Owner: "acme", Name: "api"}, "", opts, trust)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +315,40 @@ func TestCloneWithUsesTheReposEngine(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(path, "a.txt")); err != nil || string(b) != "one\n" {
 		t.Fatalf("checkout: %q %v", b, err)
 	}
-	if again, err := cloneWith(context.Background(), "acme", "api", "trunk", opts, trust); err != nil || again != path {
+	if again, err := cloneWith(context.Background(), CloneTarget{Owner: "acme", Name: "api"}, "trunk", opts, trust); err != nil || again != path {
 		t.Fatalf("reuse: %q %v", again, err)
+	}
+}
+
+func TestParseCloneTarget(t *testing.T) {
+	ok := func(c *sessionsync.DispatchClone, label, dir string) {
+		t.Helper()
+		tg, good := ParseCloneTarget(c)
+		if !good || tg.Label() != label || tg.reposDir() != dir || tg.cloneURL() != strings.ToLower(c.CloneURL) {
+			t.Errorf("%+v = %+v %v", c, tg, good)
+		}
+	}
+	ok(&sessionsync.DispatchClone{Repo: "acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "https://codeberg.org/acme/app.git"},
+		"codeberg.org/acme/app", filepath.Join("codeberg.org", "acme", "app"))
+	ok(&sessionsync.DispatchClone{Repo: "codeberg.org/acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "https://codeberg.org/acme/app.git"},
+		"codeberg.org/acme/app", filepath.Join("codeberg.org", "acme", "app"))
+	ok(&sessionsync.DispatchClone{Repo: "Group/Sub/app", Host: "gitlab.example.com", Forge: "gitlab", CloneURL: "https://gitlab.example.com/group/sub/app.git"},
+		"gitlab.example.com/group/sub/app", filepath.Join("gitlab.example.com", "group", "sub", "app"))
+	ok(&sessionsync.DispatchClone{Repo: "acme/app", Host: "git.example.com:3000", Forge: "gitea", CloneURL: "https://git.example.com:3000/acme/app.git"},
+		"git.example.com:3000/acme/app", filepath.Join("git.example.com_3000", "acme", "app"))
+	for _, c := range []*sessionsync.DispatchClone{
+		{Repo: "acme/app", Host: "codeberg.org", Forge: "svn", CloneURL: "https://codeberg.org/acme/app.git"},
+		{Repo: "acme/app", Host: "codeberg.org", Forge: "forgejo"},
+		{Repo: "acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "https://evil.example/acme/app.git"},
+		{Repo: "acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "http://codeberg.org/acme/app.git"},
+		{Repo: "acme/app", Host: "github.com", Forge: "ghes", CloneURL: "https://github.com/acme/app.git"},
+		{Repo: "a/../app", Host: "gitlab.example.com", Forge: "gitlab", CloneURL: "https://gitlab.example.com/a/../app.git"},
+		{Repo: "acme/app", Host: "Bad_Host", Forge: "gitea", CloneURL: "https://bad_host/acme/app.git"},
+		{Repo: "acme/app", Forge: "gitea"},
+		{Repo: "acme/app", CloneURL: "https://github.com/acme/app.git"},
+	} {
+		if tg, good := ParseCloneTarget(c); good {
+			t.Errorf("%+v accepted as %+v", c, tg)
+		}
 	}
 }
