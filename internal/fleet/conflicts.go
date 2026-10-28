@@ -238,7 +238,7 @@ func (w *Worker) workConflicts(ctx context.Context, it kanban.Item, claim *tools
 	if err != nil {
 		return block(err.Error())
 	}
-	if remote := kanban.RemoteFor(w.Repo); remote != card.Repo {
+	if remote := kanban.RemoteFor(w.Repo); !kanban.SameRemote(remote, card.Repo) {
 		if remote == "" {
 			remote = "not a GitHub, GitLab, Gitea or Forgejo remote"
 		}

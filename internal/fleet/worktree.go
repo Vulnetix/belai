@@ -109,7 +109,7 @@ var fetchPRHead = func(ctx context.Context, repo string, c mergefix.Card) (strin
 func pullRequestHead(ctx context.Context, repo string, it kanban.Item, branch string) (string, error) {
 	refused := fmt.Errorf("worktree: item branch %q is not a %s* branch", branch, BranchPrefix)
 	c, err := mergefix.ParseCard(it.Body)
-	if err != nil || c.Fork || c.Head != branch || kanban.RemoteFor(repo) != c.Repo {
+	if err != nil || c.Fork || c.Head != branch || !kanban.SameRemote(kanban.RemoteFor(repo), c.Repo) {
 		return "", refused
 	}
 	if err := forge.ValidBranchName(ctx, hardenedGit("", ""), repo, branch); err != nil {

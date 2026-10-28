@@ -57,6 +57,28 @@ func RemoteFor(workdir string) string {
 	return ""
 }
 
+// LegacyRemote is the owner/name an older Belai wrote for a remote off
+// github.com, before remotes kept their host: rem without its host, or "" when
+// rem names no host. A GitHub owner holds no dot or colon, so a first segment
+// with one is a host.
+func LegacyRemote(rem string) string {
+	host, rest, ok := strings.Cut(rem, "/")
+	if !ok || !strings.ContainsAny(host, ".:") || !strings.Contains(rest, "/") {
+		return ""
+	}
+	return rest
+}
+
+// SameRemote reports whether two normalised remotes name one repository: the
+// same, or one is the host-qualified form of the other's older owner/name.
+func SameRemote(a, b string) bool {
+	a, b = NormRemote(a), NormRemote(b)
+	if a == "" || b == "" {
+		return false
+	}
+	return a == b || LegacyRemote(a) == b || LegacyRemote(b) == a
+}
+
 // remoteRE is a normalised remote: owner/name, or a nested group path of a
 // forge that has them, in lower case.
 var remoteRE = regexp.MustCompile(`^[a-z0-9_.][a-z0-9_.-]{0,99}(/[a-z0-9_.][a-z0-9_.-]{0,99}){1,7}$`)

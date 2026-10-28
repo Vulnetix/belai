@@ -495,7 +495,6 @@ func TestParseCardOnOtherForges(t *testing.T) {
 		}
 	}
 	for name, bad := range map[string]string{
-		"host dropped":     card("https://codeberg.org/acme/app/pulls/7", "acme/app"),
 		"other host":       card("https://codeberg.org/acme/app/pulls/7", "evil.example/acme/app"),
 		"nested on github": card("https://github.com/a/b/app/pull/7", "a/b/app"),
 		"pulls on github":  card("https://github.com/acme/app/pulls/7", "acme/app"),

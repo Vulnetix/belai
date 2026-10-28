@@ -124,7 +124,10 @@ func ParseCard(body string) (Card, error) {
 	} else if strings.Count(want, "/") != 1 || !strings.HasSuffix(c.PR, "/pull/"+m[3]) {
 		return Card{}, errors.New("pr is not a pull request link")
 	}
-	if want != c.Repo || m[3] != strconv.Itoa(c.Number) {
+	// A card written before cards off github.com named their host carries the
+	// bare owner/name; it is still that pull request.
+	legacy := m[1] != "github.com" && strings.ToLower(m[2]) == c.Repo
+	if (want != c.Repo && !legacy) || m[3] != strconv.Itoa(c.Number) {
 		return Card{}, errors.New("pr names another repository or number than repo and number")
 	}
 	return c, nil

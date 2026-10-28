@@ -363,7 +363,13 @@ func (r ClaimRequest) sameRepository(it Item) bool {
 	if rem == "" {
 		return false
 	}
-	return NormRemote(it.Remote) == rem || NormRemote(it.Project) == rem
+	if NormRemote(it.Remote) == rem || NormRemote(it.Project) == rem {
+		return true
+	}
+	// An item filed before remotes off github.com kept their host carries
+	// the bare owner/name; it is still this checkout's.
+	legacy := LegacyRemote(rem)
+	return legacy != "" && (NormRemote(it.Remote) == legacy || NormRemote(it.Project) == legacy)
 }
 
 func claimLocked(it *Item, r ClaimRequest, now int64) {

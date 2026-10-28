@@ -101,4 +101,6 @@ Factory clone name a repository by `owner/name` on github.com and by
 `host/owner/name` on any other forge, lower-cased. A GitLab owner may be a
 group path (`gitlab.example.com/group/sub/app`). So `acme/app` on github.com
 and `acme/app` on a Gitea stay apart, and a card for one is never claimed by a
-checkout of the other.
+checkout of the other. An item or card written before remotes off github.com
+kept their host carries the bare `owner/name`; it still matches the checkout
+it was filed from (`kanban.SameRemote`), so no older card is stranded.
