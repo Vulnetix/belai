@@ -33,6 +33,8 @@ func TestParseClone(t *testing.T) {
 		{&sessionsync.DispatchClone{Repo: "acme/-api"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/.."}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "https://github.com/acme/api"}, "", "", false},
+		// A forge repository's host/owner/name never reads as a github.com one.
+		{&sessionsync.DispatchClone{Repo: "codeberg.org/acme/app"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/api", Ref: "--upload-pack=x"}, "", "", false},
 		{&sessionsync.DispatchClone{Repo: "acme/api", Ref: "a..b"}, "", "", false},
 	} {
@@ -327,6 +329,8 @@ func TestParseCloneTarget(t *testing.T) {
 		}
 	}
 	ok(&sessionsync.DispatchClone{Repo: "acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "https://codeberg.org/acme/app.git"},
+		"codeberg.org/acme/app", filepath.Join("codeberg.org", "acme", "app"))
+	ok(&sessionsync.DispatchClone{Repo: "codeberg.org/acme/app", Host: "codeberg.org", Forge: "forgejo", CloneURL: "https://codeberg.org/acme/app.git"},
 		"codeberg.org/acme/app", filepath.Join("codeberg.org", "acme", "app"))
 	ok(&sessionsync.DispatchClone{Repo: "Group/Sub/app", Host: "gitlab.example.com", Forge: "gitlab", CloneURL: "https://gitlab.example.com/group/sub/app.git"},
 		"gitlab.example.com/group/sub/app", filepath.Join("gitlab.example.com", "group", "sub", "app"))

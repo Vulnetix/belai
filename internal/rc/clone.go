@@ -119,6 +119,12 @@ func ParseCloneTarget(c *sessionsync.DispatchClone) (CloneTarget, bool) {
 	if !cloneHostRE.MatchString(host) || host == "github.com" {
 		return CloneTarget{}, false
 	}
+	// The website names the repository host/owner/name, so a Belai that
+	// predates host refuses it rather than cloning github.com's; the bare
+	// owner/name is read too.
+	if p := host + "/"; len(repo) > len(p) && strings.EqualFold(repo[:len(p)], p) {
+		repo = repo[len(p):]
+	}
 	i := strings.LastIndexByte(repo, '/')
 	if i <= 0 {
 		return CloneTarget{}, false

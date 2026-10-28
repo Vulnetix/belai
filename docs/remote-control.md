@@ -136,7 +136,8 @@ default, global settings only, read again at each advertisement) and `belai rc`
 runs without `--no-clone`. A Software Factory worker or crew request may then
 name the repository it is for, as `clone: {repo: "owner/name", ref?:
 "branch"}`, where `ref` is the designated branch (empty means the default
-branch). A repository off github.com also carries `host`, `forge` (`ghes`,
+branch). A repository off github.com is named `host/owner/name` in `repo`
+(the bare `owner/name` is read too) and also carries `host`, `forge` (`ghes`,
 `gitea`, `forgejo` or `gitlab`) and `cloneUrl`, which must be exactly
 `https://<host>/<owner>/<name>.git`; a GitLab owner may be a group path. A
 request whose `cloneUrl` names anything else, or whose `forge` is not one of
