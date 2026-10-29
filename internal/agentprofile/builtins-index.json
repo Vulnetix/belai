@@ -127,6 +127,21 @@
       "sha256": "2888725cb64579830f2926fb53f33b281cf84bb974a924cb2b7f5624013e2894"
     },
     {
+      "name": "belai:guardian-aws-investigator",
+      "path": "internal/agentprofile/builtin/guardian-aws-investigator.json",
+      "sha256": "8da0f265b056f070623547b3d162cf3b24722e067176acbbf750eca7ed019bd4"
+    },
+    {
+      "name": "belai:guardian-cloudflare-investigator",
+      "path": "internal/agentprofile/builtin/guardian-cloudflare-investigator.json",
+      "sha256": "514513a89a58c6f9a18491a064751f4faf2bbc71e90dd658263c97e834e1dff1"
+    },
+    {
+      "name": "belai:guardian-remediator",
+      "path": "internal/agentprofile/builtin/guardian-remediator.json",
+      "sha256": "a0062063f31227866d4c57b96fd4bfec56cc2b0bd2818bd354239ec6e0c2e2c8"
+    },
+    {
       "name": "belai:lint-fixer",
       "path": "internal/agentprofile/builtin/lint-fixer.json",
       "sha256": "036f3ab22577e112fab2de6d9d5e71f135662e1ab2b0002c78b9b6117ba00024"

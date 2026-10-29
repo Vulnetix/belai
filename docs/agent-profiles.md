@@ -548,6 +548,9 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:egress-reviewer` | backlog items labelled `sf:egress-review`, read-only, without web tools | review, labelled `ticket`, with an allow or deny recommendation; it never contacts the host |
 | `belai:github-investigator` | backlog items labelled `sf:github-investigate` (a risky GitHub event vdb-site recorded), read-only | review, labelled `ticket`, saying expected, needs an owner, or incident; it never changes GitHub |
 | `belai:workflow-fixer` | backlog items labelled `sf:fix-workflow` (one GitHub posture finding), changes only `.github/workflows` and `.github/actions` | review, labelled `needs-review`, with one draft pull request; it never changes settings or merges |
+| `belai:guardian-aws-investigator` | backlog items labelled `sf:guardian-aws` (rows a Guardian search found in AWS logs), read-only, with `AWS` and `WebFetch` | review, labelled `ticket`, saying benign, needs an owner, or incident, with a source for every claim; it never changes the account |
+| `belai:guardian-cloudflare-investigator` | backlog items labelled `sf:guardian-cloudflare` (rows a Guardian search found in Cloudflare logs), read-only, with `CF` and `WebFetch` | review, labelled `ticket`, saying benign, needs an owner, or incident, with a source for every claim; it never changes the account |
+| `belai:guardian-remediator` | backlog items labelled `sf:guardian-remediate` (an investigation's remediation), on a worktree branch, with no cloud tool | review, labelled `needs-review`, with one draft pull request of the infrastructure-as-code change, or the commands and their rollback in the ticket when the resource is not in code |
 
 A profile whose metadata says `"tickets": "standard"` files its cards in the ticket
 standard (`internal/ticketrules`): the worker directive carries the standard, and

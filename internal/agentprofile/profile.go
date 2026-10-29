@@ -149,7 +149,7 @@ var knownToolNames = map[string]bool{
 // board, the Vulnetix CLI and forge CLIs when installed, deferred-tool
 // loading, supervised processes and the local repository index. A profile
 // that sets an allowlist can still keep them.
-var extraToolNames = map[string]bool{
+var extraToolNames = withNativeToolNames(map[string]bool{
 	"KanbanSearch":   true,
 	"KanbanUpdate":   true,
 	"KanbanMove":     true,
@@ -178,7 +178,7 @@ var extraToolNames = map[string]bool{
 	"Git":            true,
 	"A2AMessage":     true,
 	"A2AAck":         true,
-}
+})
 
 // nativeToolNames are the native catalogue's tools (tools.CatalogueNames): the
 // cloud and SaaS CLIs, the local read-only commands, and the repository tools.
@@ -191,10 +191,15 @@ var nativeToolNames = []string{
 	"Netlify", "Doctl", "Stripe", "OnePassword", "Bitwarden", "CF",
 }
 
-func init() {
+// withNativeToolNames adds the native catalogue to the extra tools. It runs as
+// the variable's initialiser, not in an init function, because the built-in
+// profiles are loaded and validated during package variable initialisation,
+// before any init function: a built-in that names AWS or CF must see them.
+func withNativeToolNames(m map[string]bool) map[string]bool {
 	for _, n := range nativeToolNames {
-		extraToolNames[n] = true
+		m[n] = true
 	}
+	return m
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
