@@ -1039,7 +1039,7 @@ execution is a **fixed command shape**, not an arbitrary command string:
   `--raw-field`, `--input`, `-X POST`) is refused. This is the gate that
   makes `gh api repos/OWNER/REPO/contents/...` available in plan mode.
 - `AWS` reads caller identity, S3 listings, CloudWatch logs and metrics and a
-  set of describe and list operations. For Guardian investigations it also runs `cloudtrail lookup-events`,
+  set of describe and list operations. For [Guardian](guardian.md) investigations it also runs `cloudtrail lookup-events`,
   `route53resolver list-*` and `get-*`, `wafv2 get-*` and `list-*`,
   `guardduty get-*` and `list-*`, `ecs describe-*` and `list-*`,
   `ssm describe-*`, `iam get-*` (which covers `get-credential-report`),

@@ -552,6 +552,16 @@ reaches the same board outcome as a stored profile with the same declarations.
 | `belai:guardian-cloudflare-investigator` | backlog items labelled `sf:guardian-cloudflare` (rows a Guardian search found in Cloudflare logs), read-only, with `CF` and `WebFetch` | review, labelled `ticket`, saying benign, needs an owner, or incident, with a source for every claim; it never changes the account |
 | `belai:guardian-remediator` | backlog items labelled `sf:guardian-remediate` (an investigation's remediation), on a worktree branch, with no cloud tool | review, labelled `needs-review`, with one draft pull request of the infrastructure-as-code change, or the commands and their rollback in the ticket when the resource is not in code |
 
+The three Guardian workers follow the investigation contract in
+[Guardian](guardian.md). Two of their rules live in the prompt alone, because
+nothing enforces them per profile. A profile has no WebFetch host list or
+permission rules of its own, so the documentation hosts an investigator may
+fetch, and the remediator's use of `Bash` for git only, are rules each keeps. A
+permission rule in settings (`WebFetch(https://docs.aws.amazon.com/*)`) applies
+to every agent on the host, not to one profile. A built-in profile
+carries no facts, so to pin an investigator to one AWS account, copy it and
+declare `aws_role_arn`, `aws_account_id`, `aws_region` and `runbook`.
+
 A profile whose metadata says `"tickets": "standard"` files its cards in the ticket
 standard (`internal/ticketrules`): the worker directive carries the standard, and
 a handoff that misses part of it is sent back to the agent with the gaps named.

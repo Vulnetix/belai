@@ -33,6 +33,9 @@ behaviour, and implementation details.
   definitions, schema, lifecycle, autonomy, the profile builder, and
   [facts](agent-profiles.md#facts) that point the cloud tools at an account, a
   cluster or a Terraform directory.
+- [Guardian investigations](guardian.md): the three workers Guardian (the
+  Vulnetix SIEM) workflows dispatch, the investigation contract, and the `AWS`
+  and `CF` reads they use.
 - [Importing from other harnesses](agent-import.md): `belai library scan` searches a
   host for commands, skills, prompts, agents, crews, documents and Belai's own
   settings kept by other agent harnesses and says what an import would make of
