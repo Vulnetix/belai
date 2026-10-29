@@ -232,7 +232,7 @@ var cloudSpecs = []cloudSpec{
 	},
 	{
 		name: "AWS", binary: "aws",
-		desc: "Query AWS (read-only): caller identity, S3 listing, CloudWatch logs and metrics, and describe/list operations. " +
+		desc: "Query AWS (read-only): caller identity, S3 listing, CloudWatch logs and metrics, CloudTrail lookups, and describe/list/get operations for IAM, WAF, GuardDuty, ECS, SSM, Config, ELB and bucket settings. " +
 			"Pass role_arn to run the command as an IAM role: the harness checks whether the role is already the caller and assumes it when it is not. " +
 			"A role the profile declares (aws_role_arn) is used without asking; any other role asks the user.",
 		probe: []string{"sts", "get-caller-identity"},
@@ -248,6 +248,23 @@ var cloudSpecs = []cloudSpec{
 			"iam list-users", "iam list-roles",
 			"lambda list-functions",
 			"eks list-clusters",
+			// The investigation surface (docs/guardian.md): who did what
+			// (CloudTrail, IAM), what is exposed (WAF, buckets, load
+			// balancers, resolver rules) and what the detectors said. A
+			// trailing * stands for the rest of one operation name, so
+			// "wafv2 get-*" admits get-web-acl and never update-web-acl.
+			// generate-credential-report only asks IAM to build the report
+			// that get-credential-report then reads; it changes no identity.
+			"cloudtrail lookup-events",
+			"route53resolver list-*", "route53resolver get-*",
+			"wafv2 get-*", "wafv2 list-*",
+			"guardduty get-*", "guardduty list-*",
+			"ecs describe-*", "ecs list-*",
+			"ssm describe-*",
+			"iam get-*", "iam generate-credential-report",
+			"s3api get-bucket-*", "s3api get-public-access-block",
+			"configservice describe-*",
+			"elbv2 describe-*",
 		},
 		gate: awsGate,
 		// Log events, bucket objects and tags are written by applications and
@@ -500,13 +517,41 @@ func awsGate(cmd string) error {
 }
 
 // cloudAllowed reports whether cmd is one of the spec's read-only prefixes.
+// A prefix ending in "*" matches an operation name that starts with the text
+// before the star and goes on with at least one lower-case letter, digit or
+// hyphen, so "iam get-*" admits "iam get-role" but not "iam get-" on its own.
 func cloudAllowed(cs cloudSpec, cmd string) bool {
 	for _, p := range cs.prefixes {
+		if stem, ok := strings.CutSuffix(p, "*"); ok {
+			if operationMatches(stem, cmd) {
+				return true
+			}
+			continue
+		}
 		if cmd == p || strings.HasPrefix(cmd, p+" ") {
 			return true
 		}
 	}
 	return false
+}
+
+// operationMatches reports whether cmd is stem plus the rest of one operation
+// name, then the end of the command or a space.
+func operationMatches(stem, cmd string) bool {
+	rest, ok := strings.CutPrefix(cmd, stem)
+	if !ok {
+		return false
+	}
+	word, _, _ := strings.Cut(rest, " ")
+	if word == "" {
+		return false
+	}
+	for _, r := range word {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // CapabilitiesOf builds a Capabilities holding the named local and cloud

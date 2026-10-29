@@ -1038,6 +1038,19 @@ execution is a **fixed command shape**, not an arbitrary command string:
   must not begin with a `mutation`, and any write flag (`-f`, `-F`, `--field`,
   `--raw-field`, `--input`, `-X POST`) is refused. This is the gate that
   makes `gh api repos/OWNER/REPO/contents/...` available in plan mode.
+- `AWS` reads caller identity, S3 listings, CloudWatch logs and metrics and a
+  set of describe and list operations. For Guardian investigations it also runs `cloudtrail lookup-events`,
+  `route53resolver list-*` and `get-*`, `wafv2 get-*` and `list-*`,
+  `guardduty get-*` and `list-*`, `ecs describe-*` and `list-*`,
+  `ssm describe-*`, `iam get-*` (which covers `get-credential-report`),
+  `iam generate-credential-report`, `s3api get-bucket-*`,
+  `s3api get-public-access-block`, `configservice describe-*` and
+  `elbv2 describe-*`. A trailing `*` stands for the rest of one operation
+  name in lower-case letters, digits and hyphens, so `iam get-*` admits
+  `iam get-role` and never `iam put-role-policy`. `ssm get-parameter` is not
+  on the list, because it returns secrets. `--profile`, `--endpoint-url`,
+  `--ca-bundle`, `--no-verify-ssl` and `--no-sign-request` are refused on
+  every command.
 
 Security rules for native tools:
 
