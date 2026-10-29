@@ -137,6 +137,20 @@ func (s *Store) Names(now time.Time) []string {
 	return out
 }
 
+// Lookup returns the value of one variable a command may have at now. It is for
+// a tool that makes the request itself instead of starting a process (the CF
+// tool's bearer token); the caller must never put the value in a result.
+func (s *Store) Lookup(name string, now time.Time) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.live(now) {
+		if v.Name == name {
+			return v.Value, true
+		}
+	}
+	return "", false
+}
+
 // HasActive reports whether any variable would be injected at now.
 func (s *Store) HasActive(now time.Time) bool {
 	s.mu.RLock()

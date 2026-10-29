@@ -919,7 +919,7 @@ func CatalogueNames() []string {
 	for _, c := range cloudCatalog() {
 		names = append(names, c.name)
 	}
-	names = append(names, "Vulnetix", "Repos", "RepoFiles", "RepoRead")
+	names = append(names, CFName, "Vulnetix", "Repos", "RepoFiles", "RepoRead")
 	return names
 }
 
@@ -943,6 +943,11 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd, ix repoindex.Index) [
 		if caps.Has(c.name) {
 			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
+	}
+	// CF makes its own GET requests (cloudflare.go): no binary, offered when
+	// detection found a token the API accepts.
+	if caps.Has(CFName) {
+		out = append(out, &Cloudflare{})
 	}
 	if caps.Has("Vulnetix") {
 		out = append(out, &Vulnetix{Root: root, Cwd: cwd})

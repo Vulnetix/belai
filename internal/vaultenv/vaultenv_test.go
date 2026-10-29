@@ -169,3 +169,22 @@ func TestScrubBytesCatchesTheJSONEscapedFormInATranscriptLine(t *testing.T) {
 		t.Fatalf("transcript line leaked: %s", got)
 	}
 }
+
+func TestLookupFollowsTheLeaseAndExpiry(t *testing.T) {
+	s := storeWith(
+		Var{Name: "CLOUDFLARE_API_TOKEN", Value: secret},
+		Var{Name: "OLD_TOKEN", Value: "expired-value-1", ExpiresAt: time.Now().Add(-time.Minute)},
+	)
+	if v, ok := s.Lookup("CLOUDFLARE_API_TOKEN", time.Now()); !ok || v != secret {
+		t.Fatalf("Lookup = %q, %v", v, ok)
+	}
+	if _, ok := s.Lookup("OLD_TOKEN", time.Now()); ok {
+		t.Error("an expired variable was returned")
+	}
+	if _, ok := s.Lookup("MISSING", time.Now()); ok {
+		t.Error("a variable the vault never granted was returned")
+	}
+	if _, ok := s.Lookup("CLOUDFLARE_API_TOKEN", time.Now().Add(2*time.Hour)); ok {
+		t.Error("a variable was returned after the lease ended")
+	}
+}

@@ -344,7 +344,9 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 	// .Plan() rather than relying on PlanMode alone keeps the advertised
 	// list and the enforced list the same, so the preamble below cannot
 	// promise a Bash the gate will refuse.
-	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan().Without("AskUserQuestion") // a subagent cannot ask the user
+	// A subagent cannot ask the user, and never holds the CF tool's token
+	// (docs/agent-profiles.md: subagents get no cloud credentials).
+	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan().Without("AskUserQuestion", tools.CFName)
 	// A subagent may search the kanban board, never write it: repository
 	// text it read must not be able to persist into the global board.
 	if s.kanban != nil && s.kanban.on {

@@ -1416,6 +1416,7 @@ var vendorToolColors = map[string]lipgloss.TerminalColor{
 	"Stripe":      lipgloss.Color("#635BFF"),
 	"OnePassword": lipgloss.Color("#0085FF"),
 	"Bitwarden":   lipgloss.Color("#175DDC"),
+	"CF":          lipgloss.Color("#F38020"),
 }
 
 // toolNameStyle returns the style for a tool row's name: the vendor colour for
@@ -1449,7 +1450,7 @@ var nativeToolNames = map[string]bool{
 	"AWS": true, "GH": true, "Glab": true, "Tea": true, "AZ": true, "GCloud": true,
 	"Kubectl": true, "Terraform": true, "Pulumi": true, "Heroku": true,
 	"Fly": true, "Vercel": true, "Netlify": true, "Doctl": true,
-	"Stripe": true, "OnePassword": true, "Bitwarden": true,
+	"Stripe": true, "OnePassword": true, "Bitwarden": true, "CF": true,
 }
 
 func isNativeTool(name string) bool { return nativeToolNames[name] }

@@ -60,8 +60,9 @@ func (m *Manager) runRecovery(id string) {
 		caps = tools.DetectDefault()
 	}
 
+	// A recovery subagent never holds the CF tool's token.
 	reg := tools.DefaultWithCaps(workdir, true, caps, ix).Plan().
-		With(&tools.SubAgentLog{Logs: m}, &tools.ProcessRestart{Ctl: m})
+		With(&tools.SubAgentLog{Logs: m}, &tools.ProcessRestart{Ctl: m}).Without(tools.CFName)
 
 	sess, err := agent.NewSession(agent.Options{
 		Cfg:           m.cfg,

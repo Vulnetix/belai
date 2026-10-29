@@ -1051,6 +1051,25 @@ execution is a **fixed command shape**, not an arbitrary command string:
   on the list, because it returns secrets. `--profile`, `--endpoint-url`,
   `--ca-bundle`, `--no-verify-ssl` and `--no-sign-request` are refused on
   every command.
+- Cloudflare API: `CF` has no CLI behind it. It makes its own GET requests to
+  `https://api.cloudflare.com/client/v4/<path>` (`internal/tools/cloudflare.go`).
+  The model passes the path, such as `zones/ZONE_ID/dns_records?type=A`, and
+  an optional `method` that must be `GET`. Any other method, any other host
+  or scheme, credentials or a port in the URL, a fragment, whitespace, a
+  backslash and a `..` in any percent-encoded spelling are refused before a
+  request is made. Redirects are not followed, the body is capped at 64 KiB
+  and the result is `KindRemote`, so it is classified. The bearer is the
+  vault variable `CLOUDFLARE_API_TOKEN` (or the same name in Belai's own
+  environment on a host without a vault). The tool reads it itself, because
+  `proc.ScrubbedEnv` drops `CLOUDFLARE_*` from every subprocess; it is
+  redacted and vault-scrubbed out of every result. `CF` is offered when the
+  token is held and `GET zones?per_page=1` answers 200 with `success: true`.
+  The probe never calls `/user/tokens/verify`, which answers 401 to a
+  zone-scoped token. The verdict is kept in memory per token for 30 minutes
+  and checked on every detection, so a token from a vault lease that arrives
+  after the first session is picked up by the next one. Explore and recovery
+  subagents never get `CF`. A permission rule matches the path, for example
+  `CF(zones/*)`.
 
 Security rules for native tools:
 

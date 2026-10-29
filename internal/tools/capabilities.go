@@ -75,6 +75,9 @@ type CapabilityProbe struct {
 	// Run executes a read-only probe command and reports whether it exited
 	// cleanly (the authentication check). nil means "no auth probe available".
 	Run func(ctx context.Context, name string, args ...string) bool
+	// Cloudflare reports whether the CF tool's token can read the API (GET
+	// zones?per_page=1). nil means the CF tool is not offered.
+	Cloudflare func(ctx context.Context) bool
 }
 
 // defaultProbe is the real capability probe: exec.LookPath for presence and a
@@ -105,16 +108,36 @@ const detectTimeout = 2 * time.Second
 func DetectDefault() Capabilities {
 	detectMu.Lock()
 	defer detectMu.Unlock()
-	if detectMemo != nil && time.Since(detectAt) < probeCacheTTL {
-		return *detectMemo
+	if detectMemo == nil || time.Since(detectAt) >= probeCacheTTL {
+		cache := openProbeCache()
+		probe := defaultProbe()
+		probe.Run = cache.cachedRun(probe.Run)
+		caps := Detect(context.Background(), probe, detectTimeout)
+		cache.save()
+		detectMemo, detectAt = &caps, time.Now()
 	}
-	cache := openProbeCache()
-	probe := defaultProbe()
-	probe.Run = cache.cachedRun(probe.Run)
-	caps := Detect(context.Background(), probe, detectTimeout)
-	cache.save()
-	detectMemo, detectAt = &caps, time.Now()
-	return caps
+	// CF is decided on every call (detectCloudflare keeps its own verdict per
+	// token): the vault lease that carries its token can arrive after the
+	// first session in this process was built.
+	return detectMemo.withCloud(CFName, detectCloudflare(context.Background()))
+}
+
+// withCloud returns a copy of c with the named cloud tool on or off. The memo
+// is shared, so it is never changed in place.
+func (c Capabilities) withCloud(name string, on bool) Capabilities {
+	out := Capabilities{local: map[string]bool{}, cloud: map[string]bool{}}
+	for k, v := range c.local {
+		out.local[k] = v
+	}
+	for k, v := range c.cloud {
+		out.cloud[k] = v
+	}
+	if on {
+		out.cloud[name] = true
+	} else {
+		delete(out.cloud, name)
+	}
+	return out
 }
 
 // Detect builds a Capabilities set from a probe. Binary presence is checked
@@ -184,6 +207,13 @@ func Detect(ctx context.Context, probe CapabilityProbe, timeout time.Duration) C
 			}(cs)
 		}
 		wg.Wait()
+	}
+	if probe.Cloudflare != nil {
+		cctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if probe.Cloudflare(cctx) {
+			caps.cloud[CFName] = true
+		}
 	}
 	return caps
 }

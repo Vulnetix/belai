@@ -27,6 +27,7 @@ func allToolNames(t *testing.T) []string {
 	// Tools that are not catalogue entries name themselves; RepoFiles and
 	// RepoRead are built from a repository index, and need only their names.
 	seen[(&Vulnetix{}).Definition().Name] = true
+	seen[(&Cloudflare{}).Definition().Name] = true
 	seen[(&RepoList{}).Definition().Name] = true
 	seen["RepoFiles"], seen["RepoRead"] = true, true
 	// The A2A tools are added to a session with an A2A endpoint (WithA2A).

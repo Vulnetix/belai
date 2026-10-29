@@ -188,7 +188,7 @@ var nativeToolNames = []string{
 	"Cat", "Head", "Tail", "File", "Strings", "LS", "Find", "JQ", "YQ", "Sed", "Awk", "Cut",
 	"Sort", "Uniq", "WC", "Tr", "Paste", "Join", "Echo", "Date", "Pwd", "Env", "Diff", "Cmp",
 	"AWS", "AZ", "GCloud", "Kubectl", "Terraform", "Pulumi", "Heroku", "Fly", "Vercel",
-	"Netlify", "Doctl", "Stripe", "OnePassword", "Bitwarden",
+	"Netlify", "Doctl", "Stripe", "OnePassword", "Bitwarden", "CF",
 }
 
 func init() {
