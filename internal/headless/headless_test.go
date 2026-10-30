@@ -94,13 +94,21 @@ func TestHostID(t *testing.T) {
 
 func TestSyncClient(t *testing.T) {
 	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	// The gates are tested with a usable credential in place, so only the
+	// setting can be what returns nil.
 	t.Run("kanban off returns nil", func(t *testing.T) {
-		if c := SyncClient(syncSettings(false, true), t.TempDir()); c != nil {
+		emptyHome(t)
+		workdir := t.TempDir()
+		tokenCredential(t, workdir)
+		if c := SyncClient(syncSettings(false, true), workdir); c != nil {
 			t.Fatalf("SyncClient() = %+v, want nil with kanban off", c)
 		}
 	})
 	t.Run("sync off returns nil", func(t *testing.T) {
-		if c := SyncClient(syncSettings(true, false), t.TempDir()); c != nil {
+		emptyHome(t)
+		workdir := t.TempDir()
+		tokenCredential(t, workdir)
+		if c := SyncClient(syncSettings(true, false), workdir); c != nil {
 			t.Fatalf("SyncClient() = %+v, want nil with sync off", c)
 		}
 	})
@@ -134,8 +142,14 @@ func TestSyncClient(t *testing.T) {
 
 func TestA2ASyncClient(t *testing.T) {
 	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	// config.Settings{} has sync on (the default), so the off case sets it
+	// explicitly and supplies a usable credential: only the setting can
+	// return nil.
 	t.Run("sync off returns nil", func(t *testing.T) {
-		if c := a2aSyncClient(config.Settings{}, t.TempDir()); c != nil {
+		emptyHome(t)
+		workdir := t.TempDir()
+		tokenCredential(t, workdir)
+		if c := a2aSyncClient(syncSettings(true, false), workdir); c != nil {
 			t.Fatalf("a2aSyncClient() = %+v, want nil with sync off", c)
 		}
 	})
@@ -211,46 +225,73 @@ func TestKanban(t *testing.T) {
 	})
 }
 
+// queuedBoard points BELAI_HOME at a fresh directory and queues one item on
+// the default board, so its outbox has something a flush could upload.
+func queuedBoard(t *testing.T) *kanban.Store {
+	t.Helper()
+	t.Setenv("BELAI_HOME", t.TempDir())
+	emptyHome(t)
+	store, err := kanban.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.Add(kanban.ItemInput{Title: "flush me"}, kanban.Provenance{}); err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+// outboxLen is the number of items still waiting to be uploaded.
+func outboxLen(t *testing.T, store *kanban.Store) int {
+	t.Helper()
+	out, err := store.Outbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(out)
+}
+
 func TestFlushKanban(t *testing.T) {
 	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
-	t.Run("disabled settings return early", func(t *testing.T) {
-		FlushKanban(syncSettings(false, true), t.TempDir())
-		FlushKanban(syncSettings(true, false), t.TempDir())
+	t.Run("disabled settings leave the outbox alone", func(t *testing.T) {
+		store := queuedBoard(t)
+		workdir := t.TempDir()
+		tokenCredential(t, workdir)
+		FlushKanban(syncSettings(false, true), workdir)
+		FlushKanban(syncSettings(true, false), workdir)
+		if n := outboxLen(t, store); n != 1 {
+			t.Fatalf("outbox holds %d items after a disabled flush, want 1", n)
+		}
 	})
 	t.Run("empty outbox returns early", func(t *testing.T) {
 		t.Setenv("BELAI_HOME", t.TempDir())
 		emptyHome(t)
 		FlushKanban(syncSettings(true, true), t.TempDir())
-	})
-	t.Run("non-empty outbox without a client returns early", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("BELAI_HOME", home)
-		emptyHome(t)
 		store, err := kanban.OpenDefault()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := store.Add(kanban.ItemInput{Title: "flush me"}, kanban.Provenance{}); err != nil {
-			t.Fatal(err)
+		if n := outboxLen(t, store); n != 0 {
+			t.Fatalf("outbox holds %d items, want 0", n)
 		}
+	})
+	t.Run("non-empty outbox without a client keeps its items", func(t *testing.T) {
+		store := queuedBoard(t)
 		FlushKanban(syncSettings(true, true), t.TempDir())
+		if n := outboxLen(t, store); n != 1 {
+			t.Fatalf("outbox holds %d items with no client, want 1", n)
+		}
 	})
-	t.Run("best-effort flush of a dirty outbox", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("BELAI_HOME", home)
-		emptyHome(t)
-		store, err := kanban.OpenDefault()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, _, err := store.Add(kanban.ItemInput{Title: "flush me"}, kanban.Provenance{}); err != nil {
-			t.Fatal(err)
-		}
+	t.Run("a failed best-effort flush keeps the queued item", func(t *testing.T) {
+		store := queuedBoard(t)
 		workdir := t.TempDir()
 		tokenCredential(t, workdir)
-		// The loopback client has no server behind it: the flush must be
-		// swallowed, not panic or hang.
+		// The loopback client has no server behind it: the flush fails, is
+		// swallowed, and the item waits for the next one.
 		FlushKanban(syncSettings(true, true), workdir)
+		if n := outboxLen(t, store); n != 1 {
+			t.Fatalf("outbox holds %d items after a failed flush, want 1", n)
+		}
 	})
 }
 
