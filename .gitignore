@@ -12,6 +12,7 @@
 # Test artifacts
 *.test
 *.out
+*.cover
 coverage.txt
 
 # Go workspace
