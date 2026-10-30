@@ -91,7 +91,7 @@ func TestRootWalksUpToGoMod(t *testing.T) {
 	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/temp\n")
 	nested := filepath.Join(root, "internal", "p", "sub")
 	writeFile(t, filepath.Join(nested, "p.go"), "package sub\n")
-	chdir(t, nested)
+	t.Chdir(nested)
 	if got := Root(t); got != root {
 		t.Fatalf("Root() = %q, want %q", got, root)
 	}
@@ -214,21 +214,7 @@ func inModule(t *testing.T, files map[string]string) {
 	for name, data := range files {
 		writeFile(t, filepath.Join(root, name), data)
 	}
-	chdir(t, root)
-}
-
-// chdir changes the working directory for the rest of the test and restores
-// the previous one when the test ends.
-func chdir(t *testing.T, dir string) {
-	t.Helper()
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
+	t.Chdir(root)
 }
 
 // stopped is the panic failRecorder raises to emulate Fatalf's abort.
