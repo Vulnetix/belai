@@ -1,6 +1,6 @@
 # Bot attribution trailers
 
-Last Updated: 2026-10-26
+Last Updated: 2026-10-30
 
 Inside a Pix sandbox, what Belai commits carries `Co-authored-by`, `Signed-off-by: Pix [bot]` and links to the
 session and any vulnerability ids. The package is `internal/attribution`; the rules and the other builders are
@@ -17,6 +17,8 @@ website's shared cases.
 - `Workspace.ensureAttribution` runs in `PublishBranch`. It rebases the branch's own commits (`Base..HEAD`) to add
   trailers a repository's own `core.hooksPath` kept the hook from adding. A failed rewrite is aborted and the
   branch is published as it was.
-- The duplicate-pull-request close comment carries the trailers too.
+- A pull request body or comment (`attribution.Markdown`: the duplicate-pull-request close comment, the
+  merge-conflict comment) carries the link lines only (`attribution.Links`: Session, Finding,
+  Vulnerability, Advisory). `Co-authored-by` and `Signed-off-by` belong to commits alone.
 - The worker contract tells the model that trailers are added for it and are not to be written, edited or removed.
 - Not covered: `internal/teleport/changes/push.go` commits as `teleport@vulnetix.invalid`, which is not Pix.

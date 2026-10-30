@@ -195,24 +195,38 @@
         },
         {
             "name": "a body goes before its hidden marker",
-            "ctx": { "bot": "vulnetix" },
+            "ctx": { "bot": "vulnetix", "sessionId": "ses_1" },
             "markdown": true,
             "text": "Opened by the factory.\n\n<!-- vulnetix-factory run=1 node=2 -->",
-            "want": "Opened by the factory.\n\nCo-authored-by: Pix [bot] <security@vulnetix.com>\nSigned-off-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>\n\n<!-- vulnetix-factory run=1 node=2 -->"
+            "want": "Opened by the factory.\n\nSession: https://vulnetix.com/resolve/factory-session?id=ses_1\n\n<!-- vulnetix-factory run=1 node=2 -->"
         },
         {
             "name": "a body with its marker is left alone the second time",
-            "ctx": { "bot": "vulnetix" },
+            "ctx": { "bot": "vulnetix", "sessionId": "ses_1" },
             "markdown": true,
-            "text": "Opened by the factory.\n\nCo-authored-by: Pix [bot] <security@vulnetix.com>\nSigned-off-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>\n\n<!-- vulnetix-factory run=1 node=2 -->",
-            "want": "Opened by the factory.\n\nCo-authored-by: Pix [bot] <security@vulnetix.com>\nSigned-off-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>\n\n<!-- vulnetix-factory run=1 node=2 -->"
+            "text": "Opened by the factory.\n\nSession: https://vulnetix.com/resolve/factory-session?id=ses_1\n\n<!-- vulnetix-factory run=1 node=2 -->",
+            "want": "Opened by the factory.\n\nSession: https://vulnetix.com/resolve/factory-session?id=ses_1\n\n<!-- vulnetix-factory run=1 node=2 -->"
         },
         {
             "name": "a markdown body whose last paragraph looks like a trailer still gets a blank line",
-            "ctx": { "bot": "pix" },
+            "ctx": { "bot": "pix", "vulnIds": ["CVE-2021-44228"] },
             "markdown": true,
             "text": "Note: this is prose.",
-            "want": "Note: this is prose.\n\nCo-authored-by: vulnetix[bot] <176591487+vulnetix[bot]@users.noreply.github.com>\nSigned-off-by: Pix [bot] <security@vulnetix.com>"
+            "want": "Note: this is prose.\n\nVulnerability: https://vulnetix.com/vdb/CVE-2021-44228"
+        },
+        {
+            "name": "a markdown body carries no Co-authored-by or Signed-off-by, which belong to a commit",
+            "ctx": { "bot": "pix", "human": { "name": "Ada Lovelace", "email": "ada@example.com" }, "sessionId": "ses_1" },
+            "markdown": true,
+            "text": "Closed as a duplicate of #4.",
+            "want": "Closed as a duplicate of #4.\n\nSession: https://vulnetix.com/resolve/factory-session?id=ses_1"
+        },
+        {
+            "name": "a markdown body with nothing to link is left alone",
+            "ctx": { "bot": "vulnetix", "human": { "name": "Ada Lovelace", "email": "ada@example.com" } },
+            "markdown": true,
+            "text": "Opened by the forge coordinator.",
+            "want": "Opened by the forge coordinator."
         }
     ]
 }

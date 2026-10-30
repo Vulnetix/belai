@@ -89,7 +89,8 @@ func Message(msg, sessionID string, vulnIDs ...string) string {
 	return Append(msg, c, false)
 }
 
-// Markdown does the same for a pull request body or a comment.
+// Markdown adds the link lines (Links) to a pull request body or a comment written in sessionID,
+// and returns it unchanged outside a Pix sandbox.
 func Markdown(text, sessionID string, vulnIDs ...string) string {
 	c, ok := ForSession(sessionID, vulnIDs...)
 	if !ok {

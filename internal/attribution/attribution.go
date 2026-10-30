@@ -1,7 +1,10 @@
 // Package attribution builds the trailer block that every Pix [bot] and
-// vulnetix[bot] action on GitHub carries: commit messages, pull request bodies,
-// issue comments and reviews. Code appends it after the text is written, so a
-// model never has to reproduce an email address or a link.
+// vulnetix[bot] action on GitHub carries. A commit message gets every line; a
+// pull request body, an issue, a comment or a review gets the links only
+// (Session, Finding, Vulnerability, Advisory), because Co-authored-by and
+// Signed-off-by mean something to git and nothing in Markdown. Code appends the
+// block after the text is written, so a model never has to reproduce an email
+// address or a link.
 //
 // It mirrors website/src/shared/attribution-trailers.ts and vdb-site/api/internal/attribution. The cases in
 // testdata/attribution-cases.json are the website's attribution-cases.json;
@@ -169,11 +172,24 @@ func Trailers(c Context) []string {
 	return lines
 }
 
+// Links is Trailers without Co-authored-by and Signed-off-by: what a pull
+// request body, an issue, a comment or a review carries. It may be empty.
+func Links(c Context) []string {
+	var out []string
+	for _, l := range Trailers(c) {
+		if !strings.HasPrefix(l, "Co-authored-by: ") && !strings.HasPrefix(l, "Signed-off-by: ") {
+			out = append(out, l)
+		}
+	}
+
+	return out
+}
+
 // Append adds the block to the end of a message. It is safe to run twice: a
 // line already present is not added again. In a commit message the lines join
 // the last paragraph when that is already all trailers ("Refs: #12"), so git
 // reads one block. With markdown set (a body or a comment) the block goes before
-// a trailing hidden marker and always after a blank line.
+// a trailing hidden marker and always after a blank line, and holds Links only.
 func Append(text string, c Context, markdown bool) string {
 	all := strings.Split(text, "\n")
 	end := len(all)
@@ -197,8 +213,12 @@ func Append(text string, c Context, markdown bool) string {
 	for _, l := range strings.Split(body, "\n") {
 		present[strings.TrimSpace(l)] = true
 	}
+	lines := Trailers(c)
+	if markdown {
+		lines = Links(c)
+	}
 	var missing []string
-	for _, l := range Trailers(c) {
+	for _, l := range lines {
 		if !present[l] {
 			missing = append(missing, l)
 		}
