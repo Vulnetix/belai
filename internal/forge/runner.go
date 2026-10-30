@@ -87,7 +87,6 @@ func HardenedGit(gitDir, workTree string, extraEnv ...string) Runner {
 				"-c", "core.fsmonitor=false",
 				"-c", "protocol.file.allow=never",
 				"-c", "credential.interactive=never",
-				"-c", "commit.gpgsign=false",
 			}
 			if gitDir != "" {
 				pre = append(pre, "--git-dir="+gitDir, "--work-tree="+workTree)
