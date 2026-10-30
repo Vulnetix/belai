@@ -61,9 +61,9 @@ func landlockProbe(exe string) (int, error) {
 // applyLandlock builds the ruleset and restricts this thread with it. From
 // here on the thread and everything it starts have only the plan's rights.
 func applyLandlock(plan llPlan, abi int) error {
-	attr := unix.LandlockRulesetAttr{Access_fs: llHandledFS(abi)}
+	attr := unix.LandlockRulesetAttr{Handled_access_fs: llHandledFS(abi)}
 	if plan.Net {
-		attr.Access_net = llNetBindTCP | llNetConnectTCP
+		attr.Handled_access_net = llNetBindTCP | llNetConnectTCP
 	}
 	fd, _, e := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
 	if e != 0 {
