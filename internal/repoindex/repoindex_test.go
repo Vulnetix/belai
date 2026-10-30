@@ -172,7 +172,7 @@ func TestScanFindsWorktreeGitFile(t *testing.T) {
 	ix := Scan(context.Background(), filepath.Join(root, "other"))
 	found := false
 	for _, e := range ix.Entries() {
-		if strings.Contains(e.Path, "work") {
+		if e.Path == worktree {
 			found = true
 			if e.Owner != "Vulnetix" || e.Name != "belai" {
 				t.Fatalf("worktree entry malformed: %+v", e)
