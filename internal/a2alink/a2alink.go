@@ -62,6 +62,14 @@ const SideTurnTimeout = 2 * time.Minute
 // any goroutine.
 type Recorder func(entryType, content string, meta map[string]any)
 
+// Session is the part of agent.Session the link tells and answers for, so
+// tests can substitute a small fake (internal/agent's Session is a struct).
+type Session interface {
+	Peer(agent.PeerNote) bool
+	SideReply(context.Context, agent.SideReplyInput) (agent.SideReplyResult, error)
+	SetFilesHook(func([]string))
+}
+
 // Options configures a Link.
 type Options struct {
 	Workdir   string
@@ -102,7 +110,7 @@ type Link struct {
 	rec    atomic.Pointer[Recorder]
 
 	mu      sync.Mutex
-	sess    *agent.Session
+	sess    Session
 	pending []agent.PeerNote
 	closed  bool
 }
@@ -249,6 +257,10 @@ func (l *Link) Hub() tools.A2AHub {
 
 // Stamp is the source of a RepoMemoryWrite note's harness facts.
 func (l *Link) Stamp() func() repomemory.Stamp {
+	if l == nil {
+		var zero repomemory.Stamp
+		return func() repomemory.Stamp { return zero }
+	}
 	return func() repomemory.Stamp {
 		self := l.node.Self()
 		out := repomemory.Stamp{HostID: l.hostID, AgentID: self.ID, SessionID: self.SessionID}
@@ -273,8 +285,13 @@ func (l *Link) Install(reg *tools.Registry) *tools.Registry {
 
 // Attach binds the session the link tells and answers for, and hands it the
 // notes that arrived before it existed.
-func (l *Link) Attach(s *agent.Session) {
+func (l *Link) Attach(s Session) {
 	if l == nil || s == nil {
+		return
+	}
+	// A nil *agent.Session is a non-nil Session; storing it would panic on
+	// the first note or side turn.
+	if as, ok := s.(*agent.Session); ok && as == nil {
 		return
 	}
 	s.SetFilesHook(func(paths []string) { l.node.Broadcaster().AddFiles(paths...) })
@@ -314,7 +331,7 @@ func (l *Link) Close() {
 	l.wg.Wait()
 }
 
-func (l *Link) session() *agent.Session {
+func (l *Link) session() Session {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.sess
