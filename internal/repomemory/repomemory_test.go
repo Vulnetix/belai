@@ -7,10 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/belai/internal/gittest"
 )
 
 const agentID = "11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222"
@@ -179,28 +182,6 @@ func TestRepoKey(t *testing.T) {
 	}
 }
 
-// withoutGitEnv drops GIT_* variables for this test: an outer checkout's
-// GIT_DIR would otherwise make every directory resolve to that repository.
-func withoutGitEnv(t *testing.T) {
-	t.Helper()
-	saved := map[string]string{}
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "GIT_") {
-			if i := strings.IndexByte(kv, '='); i > 0 {
-				saved[kv[:i]] = kv[i+1:]
-			}
-		}
-	}
-	for k := range saved {
-		os.Unsetenv(k)
-	}
-	t.Cleanup(func() {
-		for k, v := range saved {
-			os.Setenv(k, v)
-		}
-	})
-}
-
 func gitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
@@ -216,7 +197,7 @@ func TestKeyForDir(t *testing.T) {
 	if got := KeyForDir(""); got != "" {
 		t.Errorf("KeyForDir(empty) = %q", got)
 	}
-	withoutGitEnv(t)
+	gittest.Isolate(t)
 
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
@@ -495,9 +476,17 @@ func TestApply(t *testing.T) {
 		t.Fatalf("the newest note kept is %q", last)
 	}
 
-	// Re-applying the same version still rewrites: the win test is >=, so a
-	// pull that carries the exact bytes already stored counts as changed.
-	if changed, err := Apply(dir, got[:10]); err != nil || changed != 1 {
-		t.Fatalf("Apply(what is stored) = %d, %v, want 1, nil", changed, err)
+	// Re-applying what is already stored leaves the store as it was.
+	if _, err := Apply(dir, got[:10]); err != nil {
+		t.Fatalf("Apply(what is stored): %v", err)
+	}
+	again, _ := s.All()
+	if len(again) != len(got) {
+		t.Fatalf("%d notes after re-applying, want %d", len(again), len(got))
+	}
+	for i := range got {
+		if !reflect.DeepEqual(again[i], got[i]) {
+			t.Fatalf("note %d changed on re-apply: %+v, want %+v", i, again[i], got[i])
+		}
 	}
 }
