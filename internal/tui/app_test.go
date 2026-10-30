@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/gittest"
 	"github.com/vulnetix/belai/internal/inputhistory"
 	"github.com/vulnetix/belai/internal/promptlib"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -59,6 +60,11 @@ func TestMain(m *testing.M) {
 	os.Setenv("PI_PROVIDER", "")
 	os.Setenv("BELAI_MODEL", "")
 	os.Setenv("BELAI_EFFORT", "")
+	// A Belai sandbox or a git hook exports GIT_DIR, GIT_WORK_TREE and
+	// friends aimed at another repository. The fixtures' git and the app's own
+	// (workdiff runs git with proc.ScrubbedEnv, which keeps GIT_*) must see
+	// only the repositories these tests build.
+	gittest.IsolateProcess()
 	os.Exit(m.Run())
 }
 
