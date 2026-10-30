@@ -23,7 +23,6 @@ import (
 	"github.com/vulnetix/belai/internal/mergefix"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sessionmeasure"
-	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // BranchPrefix starts every branch a worker creates or accepts from an item.
@@ -933,45 +932,11 @@ func (w *Workspace) originHead(ctx context.Context) string {
 	return ""
 }
 
-// publishAuth returns the environment and git arguments that let a push and the
-// GitHub CLI act with the GITHUB_TOKEN (or GH_TOKEN) the secrets vault granted
-// this machine: the token for the child process only, and a credential helper
-// for that one host that reads it through gh. On Gitea or Forgejo it is the
-// host's forge token (forge.ForgeToken, the vault's first), read by a helper
-// from the child's environment; on GitLab the same, but only a token named
-// for the host (BELAI_FORGE_TOKEN_<HOST>), so a push that worked with the
-// machine's own credential keeps doing so. It returns nothing for any other remote, or
-// when no such token is held, and then the push behaves as it always did.
+// publishAuth is the credential a push and the forge CLI use: forge.RemoteAuth.
+// With no token for the remote it returns nothing and the push behaves as it
+// always did.
 func publishAuth(rem forge.Remote, now time.Time) (env, gitArgs []string) {
-	if rem.Host == "" {
-		return nil, nil
-	}
-	if rem.Kind == forge.KindGitea || rem.Kind == forge.KindForgejo || rem.Kind == forge.KindGitLab {
-		token, from := forge.ForgeToken(rem.Kind, rem.Host)
-		// On GitLab only a token named for the host is used: a GITLAB_TOKEN
-		// set for glab must not replace the git credential pushes already use.
-		if token == "" || (rem.Kind == forge.KindGitLab && from != forge.HostTokenEnv(rem.Host)) {
-			return nil, nil
-		}
-		return []string{from + "=" + token},
-			[]string{"-c", "credential.https://" + rem.Host + ".helper=", "-c", "credential.https://" + rem.Host +
-				`.helper=!f() { test "$1" = get || exit 0; echo username=oauth2; echo "password=$` + from + `"; }; f`}
-	}
-	if rem.Kind != forge.KindGitHub {
-		return nil, nil
-	}
-	token := ""
-	for _, kv := range vaultenv.Default.Environ(now) {
-		if name, val, ok := strings.Cut(kv, "="); ok && val != "" && (name == "GH_TOKEN" || (name == "GITHUB_TOKEN" && token == "")) {
-			token = val
-		}
-	}
-	if token == "" {
-		return nil, nil
-	}
-
-	return []string{"GH_TOKEN=" + token, "GITHUB_TOKEN=" + token},
-		[]string{"-c", "credential.https://" + rem.Host + ".helper=", "-c", "credential.https://" + rem.Host + ".helper=!gh auth git-credential"}
+	return forge.RemoteAuth(rem, now)
 }
 
 // nothingToPublish explains an empty branch. Uncommitted edits only need a

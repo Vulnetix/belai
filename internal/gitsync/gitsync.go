@@ -100,6 +100,9 @@ type Hygiene struct {
 	dir string
 	run forge.Runner
 	now func() time.Time
+	// runEnv runs git with a forge token from the secrets vault in the
+	// child's environment alone. Belai's own environment never holds it.
+	runEnv func(env ...string) forge.Runner
 
 	mu       sync.Mutex
 	enabled  bool
@@ -119,7 +122,8 @@ func New(dir string, enabled bool, run forge.Runner) *Hygiene {
 	if run == nil {
 		run = forge.NonInteractiveRunner
 	}
-	return &Hygiene{dir: dir, run: run, now: time.Now, enabled: enabled, kick: make(chan struct{}, 1)}
+	return &Hygiene{dir: dir, run: run, now: time.Now, runEnv: forge.NonInteractiveRunnerEnv,
+		enabled: enabled, kick: make(chan struct{}, 1)}
 }
 
 // Enabled reports whether the sync runs before turns.
@@ -221,7 +225,8 @@ func (h *Hygiene) Sync(ctx context.Context) Result {
 	} else if dirty != "" {
 		return skip("uncommitted changes")
 	}
-	if _, err := h.git(ctx, forge.ReadTimeout, "remote", "get-url", "origin"); err != nil {
+	originURL, err := h.git(ctx, forge.ReadTimeout, "remote", "get-url", "origin")
+	if err != nil {
 		return skip("no origin remote")
 	}
 	// A rebase writes commits, so git needs a committer identity. Without one
@@ -230,7 +235,16 @@ func (h *Hygiene) Sync(ctx context.Context) Result {
 	if _, err := h.git(ctx, forge.ReadTimeout, "var", "GIT_COMMITTER_IDENT"); err != nil {
 		return skip("git has no user.name and user.email set, which a rebase needs")
 	}
-	if _, err := h.git(ctx, forge.WriteTimeout, "fetch", "--prune", "origin"); err != nil {
+	// A private origin is fetched with the forge token the vault granted this
+	// machine, as a fleet push is (forge.RemoteAuth). A Pix sandbox has no
+	// other credential: the clone's token was for that one process.
+	fetchRun, fetchArgs := h.run, []string(nil)
+	if rem, ok := forge.ParseRemote(originURL); ok {
+		if env, args := forge.RemoteAuth(rem, h.now()); len(env) > 0 {
+			fetchRun, fetchArgs = h.runEnv(env...), args
+		}
+	}
+	if _, err := h.gitWith(ctx, fetchRun, forge.WriteTimeout, append(fetchArgs, "fetch", "--prune", "origin")...); err != nil {
 		return fail(OutcomeError, "fetch origin: "+err.Error())
 	}
 	base := h.defaultBase(ctx)
@@ -309,10 +323,14 @@ func (h *Hygiene) diverged(ctx context.Context) bool {
 // running outside the agent's sandbox, so repository config that would run a
 // program on its own (the filesystem monitor, hooks) is switched off for it.
 func (h *Hygiene) git(ctx context.Context, timeout time.Duration, argv ...string) (string, error) {
+	return h.gitWith(ctx, h.run, timeout, argv...)
+}
+
+func (h *Hygiene) gitWith(ctx context.Context, run forge.Runner, timeout time.Duration, argv ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	full := append([]string{"git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + os.DevNull}, argv...)
-	out, err := h.run(ctx, h.dir, full...)
+	out, err := run(ctx, h.dir, full...)
 
 	return strings.TrimSpace(string(out)), err
 }

@@ -5,11 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // g runs git in dir and fails the test on error; it returns trimmed stdout.
@@ -338,6 +340,58 @@ func TestWatchPushesOnChangeOnly(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the switch change was never pushed")
+	}
+}
+
+// A private GitHub origin is fetched with the vault's token: in the child's
+// environment and through gh's credential helper, never as a git argument.
+func TestSyncFetchesWithTheVaultGitHubToken(t *testing.T) {
+	work, other := repos(t)
+	commit(t, other, "b.txt", "b\n", "upstream work")
+	g(t, other, "push", "origin", "main")
+	// The forge is read from origin's URL, so it names github.com; the fetch
+	// itself is sent on to the local bare repository.
+	origin := g(t, work, "remote", "get-url", "origin")
+	g(t, work, "remote", "set-url", "origin", "https://github.com/acme/app.git")
+
+	vaultenv.Default.Replace([]vaultenv.Var{{Name: "GITHUB_TOKEN", Value: "ghp_exampletoken0001"}}, time.Now().Add(time.Hour))
+	t.Cleanup(func() { vaultenv.Default.Replace(nil, time.Time{}) })
+
+	h := newHygiene(work)
+	var gotEnv, gotArgv []string
+	h.runEnv = func(env ...string) forge.Runner {
+		gotEnv = env
+		return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+			gotArgv = argv
+			local := append(slices.Clone(argv[:len(argv)-1]), origin, "+refs/heads/*:refs/remotes/origin/*")
+			return forge.NonInteractiveRunner(ctx, dir, local...)
+		}
+	}
+	if res := h.Sync(context.Background()); res.Outcome != OutcomeSynced {
+		t.Fatalf("result = %+v", res)
+	}
+	if !slices.Contains(gotEnv, "GH_TOKEN=ghp_exampletoken0001") {
+		t.Fatalf("fetch env = %v", gotEnv)
+	}
+	joined := strings.Join(gotArgv, " ")
+	if !strings.Contains(joined, "credential.https://github.com.helper=!gh auth git-credential") || !strings.Contains(joined, "fetch --prune origin") {
+		t.Fatalf("fetch argv = %v", gotArgv)
+	}
+	if strings.Contains(joined, "ghp_") {
+		t.Fatalf("the token reached a git argument: %v", gotArgv)
+	}
+}
+
+// Without a vault token the fetch runs as it always did.
+func TestSyncFetchesWithoutATokenAsBefore(t *testing.T) {
+	work, _ := repos(t)
+	h := newHygiene(work)
+	h.runEnv = func(...string) forge.Runner {
+		t.Fatal("runEnv used with no token")
+		return nil
+	}
+	if res := h.Sync(context.Background()); res.Outcome != OutcomeCurrent {
+		t.Fatalf("result = %+v", res)
 	}
 }
 

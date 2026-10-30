@@ -40,7 +40,18 @@ func ExecRunner(ctx context.Context, dir string, argv ...string) ([]byte, error)
 // not prompt for credentials or open an editor, so a call that would wait for
 // a person fails at once instead of hanging until its timeout.
 func NonInteractiveRunner(ctx context.Context, dir string, argv ...string) ([]byte, error) {
-	return execRun(ctx, dir, []string{"GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "GCM_INTERACTIVE=never"}, argv)
+	return execRun(ctx, dir, nonInteractiveEnv, argv)
+}
+
+var nonInteractiveEnv = []string{"GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "GCM_INTERACTIVE=never"}
+
+// NonInteractiveRunnerEnv is NonInteractiveRunner with extra environment for
+// the child alone, such as the token RemoteAuth returns.
+func NonInteractiveRunnerEnv(extraEnv ...string) Runner {
+	env := append(append([]string(nil), nonInteractiveEnv...), extraEnv...)
+	return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+		return execRun(ctx, dir, env, argv)
+	}
 }
 
 func execRun(ctx context.Context, dir string, env []string, argv []string) ([]byte, error) {
