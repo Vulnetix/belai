@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -101,6 +102,9 @@ type gettingStartedState struct {
 	loginBusy   bool
 	loginErr    string
 	loginCancel context.CancelFunc
+	// loginPhase is written by the poll's goroutine and read by the view:
+	// what happens after the browser approved (gsLoginWaiting and on).
+	loginPhase *atomic.Int32
 
 	// Enable step.
 	enabling  bool
@@ -319,6 +323,13 @@ func (a *App) baseCtx() context.Context {
 	return context.Background()
 }
 
+// The login step's phases after the code is shown.
+const (
+	gsLoginWaiting  int32 = iota // waiting for the browser
+	gsLoginSaving                // approved; the CLI is checking and saving the key
+	gsLoginRetrying              // the CLI's check refused the new key; trying again
+)
+
 func (a *App) gsPoll(g vulnetixcli.DeviceGrant) tea.Cmd {
 	st := &a.gsState
 	path := st.cliPath
@@ -327,13 +338,24 @@ func (a *App) gsPoll(g vulnetixcli.DeviceGrant) tea.Cmd {
 		st.loginCancel()
 	}
 	st.loginCancel = cancel
+	phase := &atomic.Int32{}
+	st.loginPhase = phase
 	return func() tea.Msg {
 		org, key, err := vulnetixcli.DeviceLogin{}.Poll(ctx, g)
 		if err != nil {
 			return gsLoginDoneMsg{err: err}
 		}
-		return gsLoginDoneMsg{err: vulnetixcli.CLI{Path: path}.SaveLogin(ctx, org, key)}
+		phase.Store(gsLoginSaving)
+		return gsLoginDoneMsg{err: vulnetixcli.CLI{Path: path}.SaveLogin(ctx, org, key, func() { phase.Store(gsLoginRetrying) })}
 	}
+}
+
+// gsLoginPhase is the login step's phase, gsLoginWaiting before a poll starts.
+func (st *gettingStartedState) gsLoginPhase() int32 {
+	if st.loginPhase == nil {
+		return gsLoginWaiting
+	}
+	return st.loginPhase.Load()
 }
 
 // gsEnable turns the AI Firewall on in the global settings and installs the
@@ -798,6 +820,13 @@ func (a *App) gettingStartedView() string {
 		}
 	case gsLogin:
 		switch {
+		case st.grant != nil && st.loginBusy && st.gsLoginPhase() == gsLoginSaving:
+			line("Approved in the browser. Saving the login with the Vulnetix CLI…")
+			help = components.HelpBar("esc", "cancel")
+		case st.grant != nil && st.loginBusy && st.gsLoginPhase() == gsLoginRetrying:
+			line("Approved in the browser. The Vulnetix API has not accepted the new key yet.")
+			line(muted.Render("A new key can take up to a minute to reach it. Trying again for about a minute and a half…"))
+			help = components.HelpBar("esc", "cancel")
 		case st.grant != nil && st.loginBusy:
 			line("Approve this login in your browser:")
 			line("")

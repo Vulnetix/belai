@@ -225,11 +225,34 @@ func (d DeviceLogin) Redeem(ctx context.Context, deviceCode string) (orgID, apiK
 	return "", "", fmt.Errorf("the Vulnetix login failed (HTTP %d)", status)
 }
 
+// saveLoginWaits are the pauses between attempts when the CLI's own check
+// refuses a key the login service has only just issued. The Vulnetix API reads
+// organisations from a replica and keeps a missing secret for 60 seconds, so a
+// key checked the moment the browser approves it can be refused for about a
+// minute; `vulnetix auth login` run by hand is slower and rarely sees it. The
+// waits add up to 95 seconds, past that window. A var so tests can shrink it.
+var saveLoginWaits = []time.Duration{5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, 30 * time.Second}
+
+// saveLoginTimeout caps one `vulnetix auth login` run. The CLI's own check
+// retries a 503 and allows 30 seconds a request, more than DefaultTimeout.
+const saveLoginTimeout = 60 * time.Second
+
+// ErrLoginNotAccepted means the browser approved the login but the Vulnetix
+// API still refused the key it issued after every retry. The wrapped text says
+// what the CLI reported.
+var ErrLoginNotAccepted = errors.New("the browser approved the login, but the Vulnetix API has not accepted the new key yet")
+
 // SaveLogin hands an org id and API key to `vulnetix auth login
 // --noninteractive --store home`, so the CLI writes its own credential file.
 // The key travels in the child's environment only, never its argv, where
 // other local users could read it from the process list.
-func (c CLI) SaveLogin(ctx context.Context, orgID, apiKey string) error {
+//
+// The CLI tests the key before it saves it. When that test refuses the key or
+// the run times out, SaveLogin tries again after each of saveLoginWaits,
+// calling onRetry (when not nil) before each pause, and returns an error
+// wrapping ErrLoginNotAccepted if the key is still refused. Any other failure
+// is returned at once.
+func (c CLI) SaveLogin(ctx context.Context, orgID, apiKey string, onRetry ...func()) error {
 	env := []string{"VULNETIX_ORG_ID=" + orgID, "VULNETIX_API_KEY=" + apiKey}
 	for _, e := range probeEnv() {
 		k, _, _ := strings.Cut(e, "=")
@@ -238,15 +261,62 @@ func (c CLI) SaveLogin(ctx context.Context, orgID, apiKey string) error {
 		}
 	}
 	c.Env = env
-	res, err := c.Exec(ctx, "--disable-memory", "auth", "login", "--noninteractive", "--store", "home")
-	if err != nil {
-		msg := strings.TrimSpace(ansi.Strip(res.Stderr + "\n" + res.Stdout))
-		if len(msg) > 300 {
-			msg = msg[len(msg)-300:]
-		}
-		return fmt.Errorf("vulnetix auth login: %s", strings.Join(strings.Fields(msg), " "))
+	if c.Timeout == 0 {
+		c.Timeout = saveLoginTimeout
 	}
-	return nil
+	var reason string
+	for attempt := 0; ; attempt++ {
+		res, err := c.Exec(ctx, "--disable-memory", "auth", "login", "--noninteractive", "--store", "home")
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		reason = loginFailureText(res)
+		if !loginRetryable(res) {
+			return fmt.Errorf("vulnetix auth login: %s", reason)
+		}
+		if attempt >= len(saveLoginWaits) {
+			break
+		}
+		for _, f := range onRetry {
+			if f != nil {
+				f()
+			}
+		}
+		t := time.NewTimer(saveLoginWaits[attempt])
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+	return fmt.Errorf("%w (vulnetix auth login: %s) · choose log in again in a minute, or run vulnetix auth login in a terminal and then /welcome", ErrLoginNotAccepted, reason)
+}
+
+// loginFailureText is the end of what a failed `vulnetix auth login` printed,
+// on one line and at most 300 bytes.
+func loginFailureText(res Result) string {
+	msg := strings.TrimSpace(ansi.Strip(res.Stderr + "\n" + res.Stdout))
+	if res.TimedOut {
+		msg = strings.TrimSpace(msg + " (timed out)")
+	}
+	if len(msg) > 300 {
+		msg = msg[len(msg)-300:]
+	}
+	return strings.Join(strings.Fields(msg), " ")
+}
+
+// loginRetryable reports whether a failed run is the CLI's key check refusing
+// or not finishing, which a fresh key can outlast, rather than a bad argument
+// or a credential store that cannot be written.
+func loginRetryable(res Result) bool {
+	if res.TimedOut {
+		return true
+	}
+	return strings.Contains(strings.ToLower(res.Stderr+"\n"+res.Stdout), "authentication test failed")
 }
 
 // httpsURL reports whether raw is an absolute https URL.

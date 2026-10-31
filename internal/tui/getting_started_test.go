@@ -389,3 +389,35 @@ func TestMCPCleanDropsHTMLFromAServerError(t *testing.T) {
 		t.Fatalf("the status and page title should survive: %q", got)
 	}
 }
+
+// Vulnetix/belai#40: after the browser approved, the view kept saying "Waiting
+// for approval" while the CLI checked the key, and then showed only the CLI's
+// error. It now says the login was approved and that a new key is being retried.
+func TestGettingStartedLoginSaysWhatHappensAfterApproval(t *testing.T) {
+	a := openWelcome(t, 110)
+	st := &a.gsState
+	st.step, st.loginBusy = gsLogin, true
+	st.grant = &vulnetixcli.DeviceGrant{UserCode: "ABCD-EFGH", VerificationURI: "https://www.vulnetix.com/cli/device"}
+
+	if page := gsPlain(a.gettingStartedView()); !strings.Contains(page, "Waiting for approval") {
+		t.Fatalf("before a poll, the view should wait for approval:\n%s", page)
+	}
+	a.gsPoll(*st.grant) // sets the phase; the returned command is not run
+	if st.loginCancel != nil {
+		defer st.loginCancel()
+	}
+	for phase, want := range map[int32]string{
+		gsLoginWaiting:  "Waiting for approval",
+		gsLoginSaving:   "Approved in the browser. Saving the login",
+		gsLoginRetrying: "has not accepted the new key yet",
+	} {
+		st.loginPhase.Store(phase)
+		if page := gsPlain(a.gettingStartedView()); !strings.Contains(page, want) {
+			t.Errorf("phase %d: view lacks %q:\n%s", phase, want, page)
+		}
+	}
+	st.loginPhase.Store(gsLoginRetrying)
+	if page := gsPlain(a.gettingStartedView()); strings.Contains(page, "ABCD-EFGH") {
+		t.Errorf("an approved login still shows the code to check:\n%s", page)
+	}
+}

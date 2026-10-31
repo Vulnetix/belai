@@ -200,6 +200,16 @@ reopen it.
      `vulnetix auth login --noninteractive --store home` through that child's
      environment only (never its argv), so the CLI stays the only writer of
      `~/.vulnetix/credentials.json`.
+     The CLI checks the key against the Vulnetix API before saving it, and
+     the API can refuse a key it issued moments ago for up to a minute (it
+     reads organisations from a replica and caches a missing secret for 60
+     seconds). When the CLI's check fails ("authentication test failed") or
+     does not finish, Belai says the browser approved the login and runs the
+     same command again after 5, 10, 20, 30 and 30 seconds (each run capped at
+     60 seconds). Any other CLI failure is shown at once. If the key is still
+     refused, the error keeps the CLI's own reason and suggests logging in
+     again in a minute, or running `vulnetix auth login` in a terminal and
+     then `/welcome`.
 4. **AI Firewall and MCP** — once a credential loads, Belai sets
    `vulnetix.firewall_enabled: true` in the **global** settings, adds the
    Vulnetix MCP server, and pushes the configured provider keys to the
