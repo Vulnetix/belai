@@ -47,6 +47,8 @@ var manifestFiles = map[string]Info{
 	"package.json":        m("package.json", "npm"),
 	"yarn.lock":           lock("yarn.lock", "npm"),
 	"pnpm-lock.yaml":      lock("pnpm-lock.yaml", "npm"),
+	// bun.lockb (binary, Bun before 1.2) is not parsed by the CLI, so it is absent.
+	"bun.lock": lock("bun.lock", "npm"),
 	// Python
 	"pyproject.toml":   m("pyproject.toml", "pypi"),
 	"requirements.txt": m("requirements.txt", "pypi"),

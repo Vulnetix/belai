@@ -17,6 +17,7 @@ func TestDetect(t *testing.T) {
 	}{
 		{"package.json", "", "package.json", "npm", false},
 		{"web/package-lock.json", "", "package-lock.json", "npm", true},
+		{"app/bun.lock", "", "bun.lock", "npm", true},
 		{"go.mod", "", "go.mod", "golang", false},
 		{"svc/Cargo.lock", "", "Cargo.lock", "cargo", true},
 		{"environment.yaml", "", "environment.yml", "conda", false},
@@ -150,5 +151,13 @@ func TestEcosystemProfilesAreReadOnlyBuiltins(t *testing.T) {
 		if len(p.Tools) == 0 {
 			t.Errorf("%s: an empty tool list means every tool", name)
 		}
+	}
+}
+
+// Bun's binary lockfile is not parsed by the Vulnetix CLI, so changing it must
+// not start a check that has nothing to read; its text bun.lock does.
+func TestBunBinaryLockIsNotAManifest(t *testing.T) {
+	if info, ok := Detect("app/bun.lockb", ""); ok {
+		t.Fatalf("bun.lockb detected as %+v", info)
 	}
 }
