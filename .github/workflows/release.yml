@@ -481,8 +481,11 @@ jobs:
 
       - name: Install the Vulnetix CLI
         run: |
-          curl -fsSL https://cli.vulnetix.com/install.sh \
-            | sh -s -- --install-dir "$HOME/.local/bin" --version "$CLI_VERSION"
+          # Download to a file, never `curl | sh`: a failed download would
+          # otherwise run an empty script and pass the step.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 \
+            -o "$RUNNER_TEMP/vulnetix-install.sh" https://cli.vulnetix.com/install.sh
+          sh "$RUNNER_TEMP/vulnetix-install.sh" --install-dir "$HOME/.local/bin" --version "$CLI_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # Not fatal: `tea release` drops a file it cannot read and says so.
