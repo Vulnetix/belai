@@ -251,8 +251,21 @@ func TestBelaiRCCommandFiresAStoredSchedule(t *testing.T) {
 	if r.LastStatus != schedule.StatusStarted {
 		fail("schedule record = %+v, want status %q", r, schedule.StatusStarted)
 	}
-	waitUntil(t, 60*time.Second, func() bool { return e.item(short).List == "review" }, "item in review")
-	waitUntil(t, 40*time.Second, func() bool {
+	// The same 90 seconds TestScheduledAgentRunsThroughTheDaemon allows: this runs a second
+	// time under the Pix Sandbox build tag in CI, beside every other package's
+	// race tests, and 60 seconds was not always enough there. A timeout prints
+	// what belai rc said, since the worker's progress is only visible there.
+	waitFor := func(limit time.Duration, ok func() bool, what string) {
+		t.Helper()
+		for end := time.Now().Add(limit); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+			if ok() {
+				return
+			}
+		}
+		fail("timed out waiting for: %s (item %s is in %q)", what, short, e.item(short).List)
+	}
+	waitFor(90*time.Second, func() bool { return e.item(short).List == "review" }, "item in review")
+	waitFor(40*time.Second, func() bool {
 		return strings.Contains(e.mustBelai("agent", "ps"), "no workers running")
 	}, "worker exited")
 }
