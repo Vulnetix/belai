@@ -50,6 +50,10 @@ type fakeServer struct {
 	acks           map[string]string
 	gzipped        int // entry posts that arrived gzip-encoded
 	failPost       int // fail this many entry posts with 500
+	// poison fails with 500 every entry post holding a line with this
+	// content: a line the server can never store.
+	poison string
+	posts  int // entry posts received
 	// controls is what the website holds for the session and sends back with
 	// a registration and with every heartbeat.
 	controls *Controls
@@ -112,6 +116,13 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body = zr
 		}
 		_ = json.NewDecoder(body).Decode(&in)
+		f.posts++
+		for _, e := range in.Entries {
+			if f.poison != "" && e.Content == f.poison {
+				http.Error(w, "boom", 500)
+				return
+			}
+		}
 		if f.entries[parts[1]] == nil {
 			f.entries[parts[1]] = map[int64]Entry{}
 		}

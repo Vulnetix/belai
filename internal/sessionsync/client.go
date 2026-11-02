@@ -913,12 +913,36 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	case status == http.StatusConflict:
 		return ErrConflict
 	case status < 200 || status > 299:
-		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, status)
+		return &StatusError{Method: method, Path: path, Status: status}
 	}
 	if out != nil && len(data) > 0 {
 		return json.Unmarshal(data, out)
 	}
 	return nil
+}
+
+// StatusError is an HTTP status the client has no sentinel for: the request
+// reached the server and was answered, but not with success.
+type StatusError struct {
+	Method, Path string
+	Status       int
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("sessionsync: %s %s: HTTP %d", e.Method, e.Path, e.Status)
+}
+
+// rejectedBatch reports whether err says the server answered an entry upload
+// and could not take it: a 5xx, or a 400 or 413 refusing the body. Those are
+// what one bad line in a batch produces. A transport failure, a refused
+// credential (401), a gone session (404) and rate limiting (429) are not:
+// they say nothing about the lines.
+func rejectedBatch(err error) bool {
+	var se *StatusError
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Status >= 500 || se.Status == http.StatusBadRequest || se.Status == http.StatusRequestEntityTooLarge
 }
 
 // defaultMaxBody caps a response the client reads.

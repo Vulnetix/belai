@@ -2,6 +2,7 @@ package sessionsync
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -447,6 +448,10 @@ type tail struct {
 	dirty      bool
 	lastBeat   time.Time
 	ctlGen     int
+	// rejectAt is the offset of the batch the server last rejected, and
+	// rejects how many times in a row it has (postBatch).
+	rejectAt int64
+	rejects  int
 }
 
 func (s *Syncer) run(ctx context.Context) {
@@ -739,7 +744,7 @@ func (s *Syncer) upload(ctx context.Context, t *tail) error {
 		if len(batch) == 0 {
 			return nil
 		}
-		last, err := s.opts.Client.PostEntries(ctx, t.info.ID, batch)
+		last, err := s.postBatch(ctx, t, batch)
 		if err != nil {
 			return err
 		}
@@ -781,6 +786,55 @@ func (s *Syncer) upload(ctx context.Context, t *tail) error {
 	return flush()
 }
 
+// postBatch uploads one batch, keeping one bad line from wedging the session.
+//
+// A failed batch is not advanced past, so a line the server can never store
+// would fail the same batch on every retry, and nothing after it would reach
+// the website. So once the server has rejected a batch starting at the same
+// offset rejectsBeforeSplit times in a row (rejectedBatch: a 5xx, 400 or
+// 413), the batch is sent one entry at a time. An entry the server still
+// rejects is replaced by unsyncedEntry, but only when the placeholder itself
+// is then accepted: that shows the server is up and the line is the problem.
+// If the placeholder is rejected too, the server is down, nothing is replaced,
+// and the batch is retried as before.
+func (s *Syncer) postBatch(ctx context.Context, t *tail, batch []Entry) (int64, error) {
+	last, err := s.opts.Client.PostEntries(ctx, t.info.ID, batch)
+	if err == nil || !rejectedBatch(err) {
+		if err == nil {
+			t.rejects = 0
+		}
+		return last, err
+	}
+	if t.rejectAt != t.offset {
+		t.rejectAt, t.rejects = t.offset, 0
+	}
+	t.rejects++
+	if t.rejects < rejectsBeforeSplit {
+		return 0, err
+	}
+	last = -1
+	for _, e := range batch {
+		l, err := s.opts.Client.PostEntries(ctx, t.info.ID, []Entry{e})
+		if err != nil {
+			if !rejectedBatch(err) {
+				return 0, err
+			}
+			if l, err = s.opts.Client.PostEntries(ctx, t.info.ID, []Entry{unsyncedEntry(e.Seq)}); err != nil {
+				return 0, err
+			}
+			s.setErr(fmt.Errorf("line %d not synced: the server could not store it", e.Seq))
+		}
+		last = max(last, l)
+	}
+	t.rejects = 0
+	return last, nil
+}
+
+// rejectsBeforeSplit is how many times in a row the server may reject a batch
+// before postBatch sends its entries one at a time. With the syncer's backoff
+// (2 s, then 4 s) a bad line holds the session back for about six seconds.
+const rejectsBeforeSplit = 3
+
 // parseLine turns one JSONL line into an upload entry. A line that is not a
 // valid entry still takes its seq, so the website's sequence has no hole.
 func parseLine(line []byte, seq int64) Entry {
@@ -789,7 +843,12 @@ func parseLine(line []byte, seq int64) Entry {
 			Content: fmt.Sprintf("[line of %d bytes not synced]", len(line))}
 	}
 	var e Entry
-	if err := json.Unmarshal(line, &e); err != nil || e.Type == "" {
+	if err := json.Unmarshal(line, &e); err != nil {
+		return Entry{Seq: seq, ID: fmt.Sprintf("invalid-%d", seq), Type: "invalid"}
+	}
+	cleanNUL(&e)
+	// The server refuses a type it cannot index (empty, or over 64 bytes).
+	if e.Type == "" || len(e.Type) > 64 {
 		return Entry{Seq: seq, ID: fmt.Sprintf("invalid-%d", seq), Type: "invalid"}
 	}
 	e.Seq = seq
@@ -800,6 +859,65 @@ func parseLine(line []byte, seq int64) Entry {
 		e.Meta = nil
 	}
 	return e
+}
+
+// nulEscape is how a NUL is spelled inside JSON.
+var nulEscape = []byte(`\u0000`)
+
+// cleanNUL removes U+0000 from an entry before it is uploaded. A line can hold
+// one (a tool result that printed a binary file), and PostgreSQL text cannot:
+// a raw NUL fails the server's insert, and a `\u0000` kept in meta fails every
+// read that casts meta to jsonb. The server cleans uploads too; this keeps an
+// older server from refusing the batch. The file on disk is never changed.
+func cleanNUL(e *Entry) {
+	for _, f := range []*string{&e.ID, &e.ParentID, &e.Type, &e.Role, &e.Content, &e.SubagentID} {
+		if strings.IndexByte(*f, 0) >= 0 {
+			*f = strings.ReplaceAll(*f, "\x00", "")
+		}
+	}
+	if !bytes.Contains(e.Meta, nulEscape) {
+		return
+	}
+	dec := json.NewDecoder(bytes.NewReader(e.Meta))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(stripNULValue(v)) == nil {
+		e.Meta = json.RawMessage(bytes.TrimRight(buf.Bytes(), "\n"))
+	}
+}
+
+// stripNULValue removes NUL characters from every string in a decoded JSON
+// value, object keys included.
+func stripNULValue(v any) any {
+	switch t := v.(type) {
+	case string:
+		return strings.ReplaceAll(t, "\x00", "")
+	case []any:
+		for i := range t {
+			t[i] = stripNULValue(t[i])
+		}
+		return t
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[strings.ReplaceAll(k, "\x00", "")] = stripNULValue(x)
+		}
+		return out
+	}
+	return v
+}
+
+// unsyncedEntry stands in for a line the server would not store, so the
+// website's sequence has no hole and the lines after it are not held back.
+func unsyncedEntry(seq int64) Entry {
+	return Entry{Seq: seq, ID: fmt.Sprintf("unsynced-%d", seq), Type: "system",
+		Content: "[line not synced: the server could not store it]"}
 }
 
 // observe folds display metadata the file carries into the session info.

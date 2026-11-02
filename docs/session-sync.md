@@ -25,7 +25,26 @@ the Vulnetix website. Two console pages show it:
   - A restarted host asks for the server's high-water mark and sends only what
     is missing.
   - A malformed or oversized line still takes its `seq` as a placeholder, so
-    the sequence never has a hole.
+    the sequence never has a hole. A line whose `type` is empty or over 64
+    bytes is malformed too: the server would refuse it.
+  - NUL characters (U+0000) are removed before upload. A line can hold one (a
+    tool result that printed a binary file), and PostgreSQL text cannot: a raw
+    NUL fails the server's insert, and a `\u0000` kept in `meta` fails every
+    read that casts it to jsonb. Every string field loses its NULs, and `meta`
+    is re-encoded without them, keys included, when it holds the escape; a
+    `meta` without one is sent byte for byte. The file on disk is never
+    changed. The server removes them as well, for older hosts.
+  - One bad line never wedges the session. A failed batch is re-sent from the
+    same offset, so a line the server can never store would otherwise fail
+    every retry and hold back everything after it. When the server rejects
+    the batch at one offset three times in a row (an answer of 5xx, 400 or
+    413; a transport failure, 401, 404 or 429 does not count), the batch is
+    sent one entry at a time. An entry it still rejects is replaced by a
+    `system` placeholder, id `unsynced-<seq>`, content
+    `[line not synced: the server could not store it]`, and `/sync` shows
+    which line. The replacement happens only when the placeholder itself is
+    accepted, which shows the server is up and the line is the problem; a
+    server that rejects the placeholder too is down, and nothing is replaced.
   - `/tree` keeps this true. Continuing from an earlier point appends a
     `branch` line and later lines parent to the chosen entry, so the file only
     grows. The website still orders lines by `seq`; a branch appears as further
