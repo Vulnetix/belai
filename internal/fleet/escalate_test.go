@@ -474,3 +474,33 @@ func TestPushUpToDateCountsWhenOriginHasTheCommit(t *testing.T) {
 		t.Fatalf("pushes = %d, want 3", pushes)
 	}
 }
+
+// The publish step reads the same check: a push that exits non-zero after
+// "Everything up-to-date" with origin at the local commit goes on to the pull
+// request instead of noting "draft pull request not opened".
+func TestPublishUpToDateGoesOnToThePullRequest(t *testing.T) {
+	testEnv(t)
+	ws, _ := githubWorktree(t)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	head, err := git(context.Background(), ws.run, ws.Dir, "rev-parse", "refs/heads/"+ws.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const prURL = "https://github.com/acme/app/pull/7"
+	pushes := 0
+	inner := upToDateRunner(ws.run, head, &pushes)
+	ws.run = func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+		if len(argv) > 2 && argv[0] == "gh" && argv[1] == "pr" && argv[2] == "view" {
+			return []byte(`{"number":7,"title":"t","state":"OPEN","url":"` + prURL + `","isDraft":true}`), nil
+		}
+		return inner(ctx, dir, argv...)
+	}
+	url, err := ws.PublishBranch(context.Background(), "t", "b")
+	if err != nil || url != prURL || pushes != 1 {
+		t.Fatalf("PublishBranch = %q, %v (pushes %d); want the open pull request", url, err, pushes)
+	}
+}
