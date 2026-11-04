@@ -391,6 +391,22 @@ func (s *Syncer) SetEndReason(info EndInfo) {
 	s.ends[s.live] = info
 }
 
+// SetEndReasonFor is SetEndReason for the session id, registered yet or not.
+// A host that runs one session after another (a fleet worker's turns) names
+// the session it means, so a short turn that ends before its registration
+// still says why, and a reason never lands on the session it replaced.
+func (s *Syncer) SetEndReasonFor(id string, info EndInfo) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ends == nil {
+		s.ends = map[string]EndInfo{}
+	}
+	s.ends[id] = info
+}
+
 // endInfo takes what was recorded for id; fallback is used when nothing was.
 func (s *Syncer) endInfo(id, fallback string) EndInfo {
 	s.mu.Lock()
@@ -411,11 +427,14 @@ func (s *Syncer) end(ctx context.Context, id, path string) error {
 	return s.opts.Client.EndWith(ctx, id, info)
 }
 
-// endReplaced ends id because another session took its place, whatever its
-// last turn said.
+// endReplaced ends id because another session took its place. The reason
+// recorded for it (how its last turn ended) is kept; superseded is said only
+// when nothing was recorded, so a host that ran the session to an outcome
+// before starting the next one reports that outcome.
 func (s *Syncer) endReplaced(ctx context.Context, id, path string) error {
-	_ = s.endInfo(id, "")
-	return s.opts.Client.EndWith(ctx, id, EndInfo{Reason: EndSuperseded, Rollup: rollupOf(path)})
+	info := s.endInfo(id, EndSuperseded)
+	info.Rollup = rollupOf(path)
+	return s.opts.Client.EndWith(ctx, id, info)
 }
 
 func (s *Syncer) Close(timeout time.Duration) {
@@ -502,6 +521,9 @@ func (s *Syncer) run(ctx context.Context) {
 					// Another session took this one's place.
 					_ = s.endReplaced(fctx, prev.info.ID, prev.info.Path)
 				}()
+			} else if cur != nil {
+				// Never registered, so never ended: drop what was recorded.
+				_ = s.endInfo(cur.info.ID, "")
 			}
 			cur = &tail{info: info, serverLast: -1}
 			s.setLive("", Status{SessionID: info.ID, LastSeq: -1})
@@ -565,6 +587,8 @@ func (s *Syncer) takeQueued(ctx context.Context, cur *tail, pending *[]ack) *tai
 			if cur != nil && cur.registered {
 				_ = s.upload(ctx, cur)
 				_ = s.endReplaced(ctx, cur.info.ID, cur.info.Path)
+			} else if cur != nil {
+				_ = s.endInfo(cur.info.ID, "")
 			}
 			cur = &tail{info: info, serverLast: -1}
 		case m := <-s.meta:

@@ -387,9 +387,21 @@ and the inbox run on the syncer's own goroutines.
   after every turn the TUI and `belai rc-session` record `completed`,
   `interrupted`, or the failed turn's reason (`rate_limited`, `quota_exceeded`,
   `auth_failed`, `timeout`, `budget_exceeded`, `max_turns`, else `error`, from
-  `fleet.EndReason`) with its error text (`Syncer.SetEndReason`). A session
-  another one replaces ends `superseded`. Nothing recorded sends no reason
-  and the server then reads it from the transcript. Every end, a backfilled
+  `fleet.EndReason`) with its error text (`Syncer.SetEndReason`). A fleet
+  worker records each turn's outcome for that turn's session by id
+  (`Syncer.SetEndReasonFor`, `fleet.turnEnd`), so a short turn that ends
+  before its session registers still says why: the outcome it recorded with
+  `KanbanOutcome` (success `goal_complete`, failure `error`, blocked
+  `goal_paused`), else the item budget or lease that stopped it (`timeout`,
+  `budget_exceeded`, `interrupted`), else the turn's error
+  (`fleet.EndReason`), else the goal loop's stop (`goal_complete`,
+  `max_turns`, `goal_paused` for a stalled or incomplete goal). A session
+  another one replaces keeps the reason its last turn recorded and ends
+  `superseded` only when none was recorded
+  (`TestEndReasonForNamedSession`).
+  A reason recorded for a session that never registered is dropped when the
+  next one replaces it. Nothing recorded sends no reason and the server then
+  reads it from the transcript. Every end, a backfilled
   session's included, also carries a `rollup` of the session's tokens and cost
   per model, tool calls, active and wait time, check counts and files and
   lines changed, added up from its file ([session measures](session-measures.md)). The website names its notification after the reason ("Session

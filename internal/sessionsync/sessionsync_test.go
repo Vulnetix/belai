@@ -899,8 +899,8 @@ func TestEphemeralOriginReachTheRegistration(t *testing.T) {
 	}
 }
 
-// The end call says why: a replaced session was superseded, and Close sends
-// what the runner last recorded for the live one.
+// The end call says why: a replaced session keeps what its last turn
+// recorded, and Close sends what the runner last recorded for the live one.
 func TestEndCarriesTheReason(t *testing.T) {
 	fake := newFake()
 	srv := httptest.NewServer(fake)
@@ -924,11 +924,59 @@ func TestEndCarriesTheReason(t *testing.T) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	var first, last EndInfo
-	if err := json.Unmarshal([]byte(fake.endBodies[testSess]), &first); err != nil || first.Reason != EndSuperseded {
+	if err := json.Unmarshal([]byte(fake.endBodies[testSess]), &first); err != nil || first.Reason != EndCompleted || first.Rollup == nil {
 		t.Fatalf("replaced session's end = %q", fake.endBodies[testSess])
 	}
 	if err := json.Unmarshal([]byte(fake.endBodies[second]), &last); err != nil || last.Reason != EndTimeout || last.Error != "wall budget of 30m reached" {
 		t.Fatalf("live session's end = %q", fake.endBodies[second])
+	}
+}
+
+// A host running sessions one after another names the session it records
+// for. The reason is kept even when it is recorded before the session
+// registers, and it never lands on another session.
+func TestEndReasonForNamedSession(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	dir := t.TempDir()
+	const second = "33333333-3333-4333-8333-333333333333"
+	const third = "55555555-5555-4555-8555-555555555555"
+	p1, p2, p3 := filepath.Join(dir, "1.jsonl"), filepath.Join(dir, "2.jsonl"), filepath.Join(dir, "3.jsonl")
+	appendLines(t, p1, line("a", "user", "1"))
+	appendLines(t, p2, line("b", "user", "2"))
+	appendLines(t, p3, line("c", "user", "3"))
+
+	s := startSyncer(t, srv, false)
+	// Recorded before the syncer has even seen the session.
+	s.SetEndReasonFor(testSess, EndInfo{Reason: EndRateLimited, Error: "provider returned 429"})
+	s.Activate(SessionInfo{ID: testSess, Path: p1})
+	eventually(t, "first session", func() bool { return fake.count(testSess) == 1 })
+	s.Activate(SessionInfo{ID: second, Path: p2})
+	eventually(t, "first ended", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.ended[testSess] })
+	eventually(t, "second session", func() bool { return fake.count(second) == 1 })
+	// Nothing recorded for the second: it was superseded.
+	s.Activate(SessionInfo{ID: third, Path: p3})
+	eventually(t, "second ended", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.ended[second] })
+	eventually(t, "third session", func() bool { return fake.count(third) == 1 })
+	s.SetEndReasonFor(third, EndInfo{Reason: EndGoalComplete})
+	s.SetEndReasonFor("", EndInfo{Reason: EndError})
+	s.Close(time.Second)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for id, want := range map[string]EndInfo{
+		testSess: {Reason: EndRateLimited, Error: "provider returned 429"},
+		second:   {Reason: EndSuperseded},
+		third:    {Reason: EndGoalComplete},
+	} {
+		var got EndInfo
+		if err := json.Unmarshal([]byte(fake.endBodies[id]), &got); err != nil || got.Reason != want.Reason || got.Error != want.Error {
+			t.Errorf("%s end = %q, want reason %q error %q", id, fake.endBodies[id], want.Reason, want.Error)
+		}
+	}
+	if n := len(s.ends); n != 0 {
+		t.Errorf("%d recorded reasons left after every session ended", n)
 	}
 }
 
