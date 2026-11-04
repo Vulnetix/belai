@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
@@ -379,5 +381,96 @@ func TestWorkerCompletesWhenTheCoordinatorTookOver(t *testing.T) {
 	got, _ := store.Get(it.ID)
 	if got.List != kanban.Review || got.PR != "https://github.com/acme/app/pull/12" || got.Attempts != 0 {
 		t.Fatalf("item %s, PR %q, attempts %d; want review with the coordinator's PR and no attempt", got.List, got.PR, got.Attempts)
+	}
+}
+
+// A push error keeps git's stderr, so a cause that git's closing lines hide
+// (the workflow-scope refusal before "error: failed to push some refs" and the
+// hints) still hands the branch over, through any wrapping.
+func TestHandOffFromAWrappedCLIError(t *testing.T) {
+	_, reg := testEnv(t)
+	ws, _ := githubWorktree(t)
+	ws.SetCoordinator(&Coordinator{Registry: reg.Dir(), Worker: "t-builder-1a2b3c", Item: escItem, Title: "t"})
+
+	cause := &forge.CLIError{
+		Argv0:   "git",
+		Summary: "error: failed to push some refs to 'https://github.com/acme/app.git'",
+		Stderr: "To https://github.com/acme/app.git\n" +
+			"! [remote rejected] belai/K-7a1b2c/a1 -> belai/K-7a1b2c/a1 (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\n" +
+			"error: failed to push some refs to 'https://github.com/acme/app.git'",
+	}
+	err := ws.handOff(context.Background(), ForgeKindPush, fmt.Errorf("push the work in progress: %w", cause))
+	var esc *EscalatedError
+	if !errors.As(err, &esc) || esc.Failure != forge.FailureAuth || esc.Kind != ForgeKindPush || !ws.Filed(esc.RequestID) {
+		t.Fatalf("a workflow-scope refusal must be handed over as auth: %v", err)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("the hand-off must keep its cause: %v", err)
+	}
+
+	// The same tail with a rejected non-fast-forward is the branch's fault.
+	work := &forge.CLIError{Argv0: "git", Summary: "! [rejected] b -> b (non-fast-forward)",
+		Stderr: "! [rejected] b -> b (non-fast-forward)\nerror: failed to push some refs\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."}
+	if got := ws.handOff(context.Background(), ForgeKindPush, work); got != error(work) {
+		t.Fatalf("a work fault must stand: %v", got)
+	}
+}
+
+// upToDateRunner answers push with a non-zero exit after "Everything
+// up-to-date" and ls-remote with remoteSHA; every other call runs for real.
+func upToDateRunner(real forge.Runner, remoteSHA string, pushes *int) forge.Runner {
+	return func(ctx context.Context, dir string, argv ...string) ([]byte, error) {
+		for i, a := range argv {
+			if i == 0 {
+				continue
+			}
+			switch a {
+			case "push":
+				*pushes++
+				return nil, &forge.CLIError{Argv0: "git", Summary: `exit status 1 after "Everything up-to-date"`, Stderr: "Everything up-to-date", UpToDate: true}
+			case "ls-remote":
+				ref := argv[len(argv)-1]
+				if remoteSHA == "" {
+					return nil, nil
+				}
+				return []byte(remoteSHA + "\t" + ref + "\n"), nil
+			}
+		}
+		return real(ctx, dir, argv...)
+	}
+}
+
+// A push that exits non-zero after "Everything up-to-date" is published when
+// origin's ref holds the local commit, and stays a failure otherwise.
+func TestPushUpToDateCountsWhenOriginHasTheCommit(t *testing.T) {
+	testEnv(t)
+	ws, _ := githubWorktree(t)
+	head, err := git(context.Background(), ws.run, ws.Dir, "rev-parse", "refs/heads/"+ws.Branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := ws.run
+	pushes := 0
+
+	ws.run = upToDateRunner(real, head, &pushes)
+	if err := ws.PushBranch(context.Background()); err != nil {
+		t.Fatalf("origin holds the commit, so the push landed: %v", err)
+	}
+
+	ws.run = upToDateRunner(real, strings.Repeat("0", 40), &pushes)
+	err = ws.PushBranch(context.Background())
+	if ce := forge.AsCLIError(err); ce == nil || !ce.UpToDate {
+		t.Fatalf("origin at another commit: the push error must stand, got %v", err)
+	}
+	if err.Error() != `git: exit status 1 after "Everything up-to-date"` {
+		t.Fatalf("Error() = %q", err.Error())
+	}
+
+	ws.run = upToDateRunner(real, "", &pushes)
+	if err := ws.PushBranch(context.Background()); forge.AsCLIError(err) == nil {
+		t.Fatalf("origin without the branch: the push error must stand, got %v", err)
+	}
+	if pushes != 3 {
+		t.Fatalf("pushes = %d, want 3", pushes)
 	}
 }

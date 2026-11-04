@@ -716,7 +716,7 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 	// An explicit refspec: exactly this branch, to the same name.
 	ref := "refs/heads/" + w.Branch
 	pushArgs := append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)
-	if _, err := git(ctx, run, w.Dir, pushArgs...); err != nil {
+	if _, err := git(ctx, run, w.Dir, pushArgs...); err != nil && !w.pushLanded(ctx, run, credArgs, ref, err) {
 		return "", w.handOff(ctx, ForgeKindPullRequest, err)
 	}
 	head, _ := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
@@ -805,10 +805,37 @@ func (w *Workspace) PushBranch(ctx context.Context) error {
 		credArgs = helper
 	}
 	ref := "refs/heads/" + w.Branch
-	if _, err := git(ctx, run, w.Dir, append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)...); err != nil {
+	if _, err := git(ctx, run, w.Dir, append(slices.Clone(credArgs), "push", "--set-upstream", "origin", ref+":"+ref)...); err != nil && !w.pushLanded(ctx, run, credArgs, ref, err) {
 		return w.handOff(ctx, ForgeKindPush, err)
 	}
 	return nil
+}
+
+// pushLanded reports whether a push that exited non-zero after git printed
+// "Everything up-to-date" left origin's ref at the local branch's commit. git
+// prints that line only once every ref was accepted or already current; a
+// non-zero exit after it comes from closing the transport (the remote
+// helper's exit status), so the branch is published. origin is asked rather
+// than trusted: only a ref that holds exactly the local commit counts.
+func (w *Workspace) pushLanded(ctx context.Context, run forge.Runner, credArgs []string, ref string, err error) bool {
+	ce := forge.AsCLIError(err)
+	if ce == nil || !ce.UpToDate {
+		return false
+	}
+	local, lerr := git(ctx, w.run, w.Dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	if lerr != nil || local == "" {
+		return false
+	}
+	out, rerr := git(ctx, run, w.Dir, append(slices.Clone(credArgs), "ls-remote", "origin", ref)...)
+	if rerr != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if sha, name, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok && name == ref && sha == local {
+			return true
+		}
+	}
+	return false
 }
 
 // originRemote is the repository's GitHub, GitLab, Gitea or Forgejo origin.
