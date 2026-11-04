@@ -79,3 +79,50 @@ func TestLeaseOnlyPushDoesNotBumpUpdated(t *testing.T) {
 		t.Fatalf("pushes %d err %v", len(remote.pushed), err)
 	}
 }
+
+// A host that edited a card another host holds keeps its newer edit on a pull,
+// and still takes the later lease the claiming host pushed: otherwise it would
+// reap the live claim before its own edit reached the backend.
+func TestPulledLeaseReachesALocallyEditedClaim(t *testing.T) {
+	src := testStore(t)
+	clock := time.UnixMilli(60_000_000)
+	src.now = func() time.Time { return clock }
+	addItem(t, src, ItemInput{Title: "worked elsewhere"})
+	r := claimReq("w-remote")
+	r.Host = "host-2"
+	claimed, err := src.Claim(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := ToWire(claimed)
+	wire.Version = 1
+
+	s := testStore(t)
+	s.now = func() time.Time { return clock }
+	if _, err := s.Merge([]Item{FromWire(wire)}, 1); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(time.Minute)
+	body := "a note from this host"
+	if _, err := s.Update(claimed.ID, Patch{Body: &body}, "sess-1"); err != nil {
+		t.Fatal(err)
+	}
+	renewed := wire
+	agent := *wire.Agent
+	agent.LeaseUntil = claimed.LeaseUntil + r.Lease.Milliseconds()
+	renewed.Agent, renewed.Version = &agent, 2
+	if _, err := s.Merge([]Item{FromWire(renewed)}, 2); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(claimed.ID)
+	if !got.Dirty || got.Body != body {
+		t.Fatalf("the local edit did not survive the pull: %+v", got)
+	}
+	if got.LeaseUntil != agent.LeaseUntil || got.LeaseSynced != agent.LeaseUntil {
+		t.Fatalf("lease %d synced %d, want the pulled %d", got.LeaseUntil, got.LeaseSynced, agent.LeaseUntil)
+	}
+	clock = time.UnixMilli(claimed.LeaseUntil).Add(2 * MinLease)
+	if n, err := s.Reap("host-1"); err != nil || n != 0 {
+		t.Fatalf("the renewed claim was reaped: n=%d err=%v", n, err)
+	}
+}

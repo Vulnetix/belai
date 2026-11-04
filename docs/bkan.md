@@ -571,11 +571,11 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 
 The routing and claim fields travel in one optional `agent` object
 (`sessionsync.KanbanAgent`). A pull without it keeps the host's own values.
-When a pulled copy of the same claim wins last-writer-wins, the later of the
-two leases stands, because most renewals stay on the host. A lease-only push
-(a renewal, `updatedAt` unchanged) is not a newer edit: the website keeps
-every stored field and only takes the later `agent.leaseUntil` when
-`agent.claimedBy` matches the stored claim.
+When a pulled copy of the same claim arrives, the later of the two leases
+stands whichever side wins last-writer-wins, because most renewals stay on the
+host. A lease-only push (a renewal, `updatedAt` unchanged) is not a newer
+edit: the website keeps every stored field and only takes the later
+`agent.leaseUntil` when `agent.claimedBy` matches the stored claim.
 
 `Board.Cursor` is local only as well. It is the `since` parameter of
 `GET /v1/belai/kanban/items`.

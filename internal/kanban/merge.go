@@ -124,6 +124,16 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 					local.PR = r.PR
 					changed++
 				}
+				// It also takes a later lease of the same claim: another
+				// host's renewal must reach a card this host edited, or the
+				// card is reaped under a live worker before the edit is pushed.
+				if r.remoteAgent && local.ClaimedBy != "" && r.ClaimedBy == local.ClaimedBy {
+					local.LeaseSynced = max(local.LeaseSynced, r.LeaseUntil)
+					if r.LeaseUntil > local.LeaseUntil {
+						local.LeaseUntil = r.LeaseUntil
+						changed++
+					}
+				}
 				continue
 			}
 			r.History = hist
