@@ -22,3 +22,16 @@ func TestSandboxPickerHidesStockWorkersAI(t *testing.T) {
 		t.Fatalf("builtin models = %v", ids)
 	}
 }
+
+// A Pix Sandbox holds no key for openai: with nothing configured a web session
+// runs on the built-in models.
+func TestSandboxFallsBackToTheBuiltinModels(t *testing.T) {
+	m := buildModels(config.Settings{}, noState, noEnv, []string{"builtin"})
+	if m.Default.Provider != "builtin" || m.Default.Model != "pix-smart" {
+		t.Fatalf("default = %+v", m.Default)
+	}
+	// A configured provider still wins.
+	if got := buildModels(config.Settings{Provider: "anthropic"}, noState, noEnv, nil).Default.Provider; got != "anthropic" {
+		t.Fatalf("configured provider = %q", got)
+	}
+}

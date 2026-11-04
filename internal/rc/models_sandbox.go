@@ -7,8 +7,11 @@ import "strings"
 // In the Pix Sandbox build the stock Workers AI provider looks configured (the
 // sandbox places credential placeholders) but its models are refused by the
 // gateway, so the advertised list leaves it out and offers "builtin" instead.
+// With nothing configured a web session runs on "builtin" too (Pix Smart), not
+// on a provider the sandbox holds no key for.
 func init() {
 	hideProvider = func(name string) bool {
 		return strings.EqualFold(name, "cloudflare-workers-ai")
 	}
+	defaultProvider = "builtin"
 }

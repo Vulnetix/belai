@@ -85,6 +85,11 @@ func checkOverride(prov, model, effort string, models func() *sessionsync.RCMode
 // configured provider.
 var hideProvider func(name string) bool
 
+// defaultProvider is the provider a web session runs on when neither the
+// settings, the saved state nor the environment name one. A build variant sets
+// it in init(): the Pix Sandbox build runs on its built-in models.
+var defaultProvider = "openai"
+
 // buildModels is LocalModels with its inputs passed in.
 func buildModels(s config.Settings, loadState func() (config.State, error), env func(string) string, configured []string) *sessionsync.RCModels {
 	prov, model := config.SelectedModel(s, loadState)
@@ -96,7 +101,7 @@ func buildModels(s config.Settings, loadState func() (config.State, error), env 
 		prov = strings.ToLower(strings.TrimSpace(env("PI_PROVIDER")))
 	}
 	if prov == "" {
-		prov = "openai"
+		prov = defaultProvider
 	}
 	if model == "" {
 		model = run.DefaultModel(prov)

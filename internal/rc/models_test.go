@@ -28,8 +28,8 @@ func TestBuildModelsDefaultFollowsSettingsThenState(t *testing.T) {
 
 func TestBuildModelsFallsBackToTheResolveDefault(t *testing.T) {
 	m := buildModels(config.Settings{}, noState, noEnv, nil)
-	if m.Default.Provider != "openai" || m.Default.Model == "" {
-		t.Fatalf("default = %+v, want openai with its default model", m.Default)
+	if m.Default.Provider != defaultProvider || m.Default.Model == "" {
+		t.Fatalf("default = %+v, want %s with its default model", m.Default, defaultProvider)
 	}
 	env := func(k string) string {
 		if k == "BELAI_PROVIDER" {
