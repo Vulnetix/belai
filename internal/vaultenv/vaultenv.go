@@ -50,6 +50,12 @@ type Var struct {
 	// here on every call, so an expired variable is not injected even before the
 	// next lease refresh.
 	ExpiresAt time.Time
+
+	// Plain marks a variable the vault says is not a secret (a region, a time
+	// zone, a proxy URL). It is injected like any other but never scrubbed, so
+	// source text that happens to contain the value reads as written. A plain
+	// value need not reach MinLen, since nothing is matched against it.
+	Plain bool
 }
 
 // String never shows the value.
@@ -85,10 +91,15 @@ func (s *Store) Replace(vars []Var, leaseUntil time.Time) {
 	}
 	out := make([]Var, 0, len(vars))
 	for _, v := range vars {
-		if v.Name == "" || len(v.Value) < MinLen {
+		if v.Name == "" || v.Value == "" || (!v.Plain && len(v.Value) < MinLen) {
 			continue
 		}
 		out = append(out, v)
+		if v.Plain {
+			// Injected, never scrubbed. A value this process already saw as a
+			// secret stays known, so what was hidden before stays hidden.
+			continue
+		}
 		if s.known[v.Name] != v.Value {
 			s.known[v.Name] = v.Value
 			s.scrubber = nil

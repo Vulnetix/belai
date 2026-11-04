@@ -36,6 +36,10 @@ func (c *Client) VaultEnv(ctx context.Context, hostID string) ([]vaultenv.Var, t
 			Name      string `json:"name"`
 			Value     string `json:"value"`
 			ExpiresAt int64  `json:"expiresAt"`
+			// Plain marks a variable that is not a secret: it is injected but
+			// never scrubbed. An older server omits it, so every variable stays
+			// a secret there.
+			Plain bool `json:"plain"`
 		} `json:"env"`
 		LeaseSeconds int `json:"leaseSeconds"`
 	}
@@ -53,7 +57,7 @@ func (c *Client) VaultEnv(ctx context.Context, hostID string) ([]vaultenv.Var, t
 		if total > maxVaultEnvBytes {
 			return nil, 0, errors.New("sessionsync: the vault's environment is too large")
 		}
-		v := vaultenv.Var{Name: e.Name, Value: e.Value}
+		v := vaultenv.Var{Name: e.Name, Value: e.Value, Plain: e.Plain}
 		if e.ExpiresAt > 0 {
 			v.ExpiresAt = time.UnixMilli(e.ExpiresAt)
 		}

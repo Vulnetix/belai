@@ -188,3 +188,39 @@ func TestLookupFollowsTheLeaseAndExpiry(t *testing.T) {
 		t.Error("a variable was returned after the lease ended")
 	}
 }
+
+func TestPlainVariableIsInjectedButNeverScrubbed(t *testing.T) {
+	s := storeWith(
+		Var{Name: "AWS_DEFAULT_REGION", Value: "us-east-1", Plain: true},
+		Var{Name: "TZ", Value: "UTC", Plain: true},
+		Var{Name: "NPM_TOKEN", Value: secret},
+	)
+	env := strings.Join(s.Environ(time.Now()), "\n")
+	for _, want := range []string{"AWS_DEFAULT_REGION=us-east-1", "TZ=UTC", "NPM_TOKEN=" + secret} {
+		if !strings.Contains(env, want) {
+			t.Fatalf("%q not injected: %q", want, env)
+		}
+	}
+	got := s.Scrub("region us-east-1, zone UTC, token " + secret)
+	if got != "region us-east-1, zone UTC, token [vault:NPM_TOKEN]" {
+		t.Fatalf("plain values must read as written, secrets scrubbed: %q", got)
+	}
+	if h := s.Hits(); h["AWS_DEFAULT_REGION"] != 0 || h["NPM_TOKEN"] != 1 {
+		t.Fatalf("hits %v", h)
+	}
+}
+
+func TestShortValueIsRefusedUnlessPlain(t *testing.T) {
+	s := storeWith(Var{Name: "SHORT_TOKEN", Value: "abc"}, Var{Name: "EMPTY", Value: "", Plain: true})
+	if env := s.Environ(time.Now()); len(env) != 0 {
+		t.Fatalf("a short secret or an empty plain value was injected: %v", env)
+	}
+}
+
+func TestAValueSeenAsASecretStaysScrubbedWhenItTurnsPlain(t *testing.T) {
+	s := storeWith(Var{Name: "AWS_DEFAULT_REGION", Value: "ap-southeast-2"})
+	s.Replace([]Var{{Name: "AWS_DEFAULT_REGION", Value: "ap-southeast-2", Plain: true}}, time.Now().Add(time.Hour))
+	if got := s.Scrub("ap-southeast-2"); got != "[vault:AWS_DEFAULT_REGION]" {
+		t.Fatalf("a value hidden earlier in this process must stay hidden: %q", got)
+	}
+}

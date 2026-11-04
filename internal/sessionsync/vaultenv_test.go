@@ -156,3 +156,16 @@ func vaultItoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+func TestVaultEnvReadsThePlainFlagAndOldServersOmitIt(t *testing.T) {
+	f := &fakeVault{env: `{"env":[{"name":"AWS_DEFAULT_REGION","value":"us-east-1","plain":true},{"name":"NPM_TOKEN","value":"npm-token-value-1"}],"leaseSeconds":600}`}
+	c, stop := newVaultClient(t, f)
+	defer stop()
+	vars, _, err := c.VaultEnv(context.Background(), "h1")
+	if err != nil || len(vars) != 2 {
+		t.Fatalf("%v %v", vars, err)
+	}
+	if !vars[0].Plain || vars[1].Plain {
+		t.Fatalf("plain must be read from the answer and default to false: %+v", vars)
+	}
+}
