@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -260,6 +261,13 @@ func (s *Supervisor) finish(run CrewRun, cancelled bool) error {
 	return err
 }
 
+// SharedCap is the worker cap every start but a Software Factory one fills
+// up to: max less the reserved slots, clamped so at least one slot stays
+// open (config.ReservedUnder). A max of zero or less is no cap.
+func SharedCap(max, reserved int) int {
+	return max - config.ReservedUnder(reserved, max)
+}
+
 // Reconcile starts the workers the allocation lacks and drains the surplus.
 // It returns a reason to end the run when the scope has run dry (a run that
 // does not stay ends after a quiet window with nothing to claim anywhere).
@@ -299,7 +307,15 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 	if max <= 0 {
 		max = s.Max
 	}
-	want := Allocate(run, dem, max)
+	// The run fills only up to the shared cap, below the slots kept for the
+	// Software Factory. A factory run may go past it, to the full cap, for a
+	// member that has a card waiting (the dispatch that brought it), so an
+	// idle staying member never sits in a reserved slot.
+	shared := SharedCap(max, run.ReservedWorkers)
+	want := Allocate(run, dem, shared)
+	if run.Factory {
+		want = Allocate(run, dem, max)
+	}
 	live := s.Registry.RunWorkers(run.ID)
 	have := map[Slot][]Record{}
 	for _, rec := range live {
@@ -353,8 +369,12 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 	running := len(live) - draining
 	for _, k := range sortedSlots(want) {
 		need := want[k] - (len(have[k]) - countDraining(have[k]))
+		limit := shared
+		if run.Factory && dem(k.Profile, k.Repo) > 0 {
+			limit = max
+		}
 		for range max0(need) {
-			if max > 0 && running >= max {
+			if limit > 0 && running >= limit {
 				break
 			}
 			spawn := s.Spawn
@@ -363,7 +383,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 			}
 			id, err := spawn(SpawnOptions{Exe: s.Exe, Repo: k.Repo, Profile: k.Profile, Crew: run.Crew, Run: run.ID,
 				Provider: run.StartTarget(k.Profile).Provider, Model: run.StartTarget(k.Profile).Model, Effort: run.Effort, Stay: true, StayIdleMax: time.Duration(run.StayIdleMaxSecs) * time.Second,
-				MaxWorkers: max, WebControls: run.WebControls, AskOff: run.AskOff})
+				MaxWorkers: limit, WebControls: run.WebControls, AskOff: run.AskOff})
 			if err != nil {
 				s.logf("start %s in %s: %v", k.Profile, k.Repo, err)
 				break

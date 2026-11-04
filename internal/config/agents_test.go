@@ -80,3 +80,51 @@ func TestResolveAgentsClone(t *testing.T) {
 		t.Fatal("a project turned agents.clone back on")
 	}
 }
+
+// agents.factory_reserved_workers is 0 by default, comes from the user's
+// layers only, and is clamped below the cap so one slot stays open.
+func TestResolveAgentsFactoryReservedWorkers(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	resolve := func(global, project *AgentsSettings) Settings {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Agents: global}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Agents: project}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings
+	}
+	if n := resolve(nil, nil).FactoryReservedWorkers(); n != 0 {
+		t.Fatalf("default %d, want 0", n)
+	}
+	if n := resolve(&AgentsSettings{MaxWorkers: intPtr(28), FactoryReservedWorkers: intPtr(4)}, nil).FactoryReservedWorkers(); n != 4 {
+		t.Fatalf("global %d, want 4", n)
+	}
+	if n := resolve(&AgentsSettings{FactoryReservedWorkers: intPtr(2)}, &AgentsSettings{FactoryReservedWorkers: intPtr(0)}).FactoryReservedWorkers(); n != 2 {
+		t.Fatalf("a project changed the reservation: %d", n)
+	}
+	if n := resolve(&AgentsSettings{MaxWorkers: intPtr(3), FactoryReservedWorkers: intPtr(9)}, nil).FactoryReservedWorkers(); n != 2 {
+		t.Fatalf("clamped %d, want 2 under a cap of 3", n)
+	}
+	s := Settings{Agents: &AgentsSettings{FactoryReservedWorkers: intPtr(9)}}
+	if n := s.FactoryReservedWorkersUnder(28); n != 9 {
+		t.Fatalf("under 28: %d", n)
+	}
+	if n := s.FactoryReservedWorkersSetting(); n != 9 {
+		t.Fatalf("setting: %d", n)
+	}
+	if n := (Settings{Agents: &AgentsSettings{FactoryReservedWorkers: intPtr(-3)}}).FactoryReservedWorkersSetting(); n != 0 {
+		t.Fatalf("negative: %d", n)
+	}
+	for _, c := range []struct{ reserved, limit, want int }{{4, 28, 4}, {4, 4, 3}, {1, 1, 0}, {3, 0, 0}, {-1, 8, 0}} {
+		if got := ReservedUnder(c.reserved, c.limit); got != c.want {
+			t.Errorf("ReservedUnder(%d, %d) = %d, want %d", c.reserved, c.limit, got, c.want)
+		}
+	}
+}

@@ -34,6 +34,7 @@ import (
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionctl"
+	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/trustgate"
 )
 
@@ -563,6 +564,32 @@ func workerCap(settings config.Settings, override int) int {
 	return override
 }
 
+// factoryReserved is the reserved worker count for one start: the
+// -factory-reserved-workers belai rc passed, or the user's
+// agents.factory_reserved_workers. A repository cannot set it. It is clamped
+// under the cap where the cap is known (startCap, fleet.SharedCap).
+func factoryReserved(flagValue int) int {
+	if flagValue >= 0 {
+		return flagValue
+	}
+	g, err := config.LoadGlobal()
+	if err != nil {
+		return 0
+	}
+	return g.FactoryReservedWorkersSetting()
+}
+
+// startCap is the worker cap one start checks against: workerCap, less the
+// slots agents.factory_reserved_workers keeps for the Software Factory unless
+// the start is a factory dispatch (its trigger names a workflow run).
+func startCap(settings config.Settings, override, reserved int, factory bool) int {
+	limit := workerCap(settings, override)
+	if factory {
+		return limit
+	}
+	return fleet.SharedCap(limit, reserved)
+}
+
 func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stderr io.Writer) (int, error) {
 	crewName := fs.String("crew", "", "start every member of a crew")
 	replicas := fs.Int("replicas", 1, "workers of the profile")
@@ -570,6 +597,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	providerName := fs.String("provider", "", "provider override")
 	model := fs.String("model", "", "model override")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
+	reservedFlag := fs.Int("factory-reserved-workers", -1, "slots of the worker cap only a Software Factory start may fill, in place of agents.factory_reserved_workers (set by `belai rc --factory-reserved-workers`)")
 	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
 	stayIdle := fs.Duration("stay-idle-max", 0, "with -stay, workers (and a crew run) give up after this long with nothing to claim (default 6h, at most 24h)")
 	drain := fs.Bool("drain", false, "workers exit once nothing is left to claim even when their profile has a cron schedule (set by `belai rc` for a stored schedule)")
@@ -614,11 +642,16 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if *crewName == "" && (len(dirs) > 0 || len(pool) > 0 || len(memberModels) > 0 || *effort != "" || *switchAfter != 0 || *finalRetry != 0) {
 		return 2, errors.New("-dir, -pool, -member-model, -effort, -switch-after and -final-retry need -crew")
 	}
+	// belai rc passes a dispatch's trigger in the environment; a workflow
+	// trigger is a Software Factory start, which may fill the reserved slots.
+	factory := sessionsync.FactoryTrigger(os.Getenv(calltrace.EnvTrigger))
+	reserved := factoryReserved(*reservedFlag)
 	if *crewName != "" {
 		// A crew is one run over its scope, supervised: the same settings the
 		// control room edits while it runs.
 		return startCrewRun(crewLaunch{crew: *crewName, dirs: dirs, trust: *trust, provider: *providerName, model: *model,
 			effort: *effort, pool: pool, memberModels: memberModels, switchAfter: *switchAfter, finalRetry: *finalRetry, maxWorkers: *maxWorkers,
+			reserved: reserved, factory: factory,
 			stay: *stay, stayIdle: *stayIdle, fill: *fill, webCtl: *webControls, askOff: *askOff, stdout: stdout, waitForWorkers: 8 * time.Second})
 	}
 	wd, _ := os.Getwd()
@@ -659,11 +692,12 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if err != nil {
 		return 1, err
 	}
-	max := workerCap(settings, *maxWorkers)
+	max := startCap(settings, *maxWorkers, reserved, factory)
 	// Each worker reserves its own slot; it must do so under the cap this
-	// start was checked against, or an rc --max start fails in every child.
+	// start was checked against, or an rc --max start fails in every child
+	// and a start outside the reserved slots could take one in its child.
 	spawnMax := 0
-	if *maxWorkers > 0 {
+	if *maxWorkers > 0 || max != workerCap(settings, *maxWorkers) {
 		spawnMax = max
 	}
 	exe, err := os.Executable()
@@ -676,6 +710,9 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if err := reg.WithCrewStart("", repo, false, func() error {
 		live, _ := reg.Live()
 		if len(live)+*replicas > max {
+			if held := workerCap(settings, *maxWorkers) - max; held > 0 {
+				return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers) less %d reserved for the Software Factory (agents.factory_reserved_workers)", *replicas, len(live)+*replicas, max+held, held)
+			}
 			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", *replicas, len(live)+*replicas, max)
 		}
 		for range *replicas {

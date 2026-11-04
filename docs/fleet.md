@@ -552,7 +552,8 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
 - **The run file is the crew's settings.** A launch writes
   `~/.vulnetix/belai/agents/run/crews/<run>.json`: the scope and each
   directory's weight, the members and their replicas, the provider pool, the
-  effort, `max_workers`, and whether the run stays. The
+  effort, `max_workers`, the reserved worker count and whether a factory
+  dispatch launched or joined it, and whether the run stays. The
   [control room](#the-control-room) edits the same file while the crew runs;
   every edit is numbered (`seq`) and says who made it.
 - **A scope has no limit on directories.** The supervisor only counts claimable
@@ -564,8 +565,8 @@ belai agent start -crew belai:delivery -dir ~/src/api:3 -dir ~/src/web -dir ~/sr
   the unpaused directories in proportion to weight × claimable cards (largest
   remainder; a tie goes to the heavier directory). A profile with no work
   anywhere is spread by weight alone, so a scout still surveys. The total is
-  cut to `max_workers`, dropping the slots with the least work per worker
-  first. Missing workers are started, and surplus ones are drained (they finish
+  cut to `max_workers` less `factory_reserved_workers` ([Settings](#settings)),
+  dropping the slots with the least work per worker first. Missing workers are started, and surplus ones are drained (they finish
   the card in hand, then leave), idle ones first and none younger than a
   minute, so the crew follows the work without thrashing.
 - **A worker still runs in one repository at a time.** Each directory's
@@ -1656,7 +1657,7 @@ and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
 ## Settings
 
 ```json
-{ "agents": { "enabled": true, "max_workers": 4, "publish": true } }
+{ "agents": { "enabled": true, "max_workers": 4, "factory_reserved_workers": 0, "publish": true } }
 ```
 
 - `enabled` turns workers on or off. A project may turn it off, never on.
@@ -1666,6 +1667,20 @@ and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
   an explicit `--max N` (see [Remote control](remote-control.md#fleet-workers)).
   A project that lowered the cap still holds it: the start uses the lower of
   the two. Without the flag, `max_workers` applies.
+- `factory_reserved_workers` keeps that many slots of the cap for Software
+  Factory dispatches (default 0). A start whose trigger names a workflow run
+  (`BELAI_SESSION_TRIGGER` with source `workflow`, which only the website
+  writes) may fill the whole cap. Any other start, from the console, a Pix
+  Call, a stored schedule or the terminal through `belai agent start`, is
+  refused once it would pass `max_workers` less the reserved count. A crew
+  run fills only up to the same lower cap, and its members reserve their slots
+  under it, so staying crews leave the reserved slots free. A crew run that a
+  factory dispatch launched or joined may go past it, up to the full cap, only
+  for a member with a claimable card waiting in that directory. The count is
+  clamped below the cap, so one slot always stays open. It is read from your
+  own settings only: a project cannot change it. `belai rc
+  --factory-reserved-workers N` replaces it for that daemon and the starts it
+  makes. The TUI's `/fleet` start does not apply it.
 - `publish` allows `workspace.publish: draft_pr`. A project may turn it off,
   never on.
 

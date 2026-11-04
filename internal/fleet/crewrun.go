@@ -148,6 +148,13 @@ type CrewRun struct {
 	// the run said ask: false, so a call that would ask is allowed instead of
 	// blocking the item.
 	AskOff bool `json:"ask_off,omitempty"`
+	// ReservedWorkers is agents.factory_reserved_workers when the run was
+	// launched (or belai rc --factory-reserved-workers): the slots of the cap
+	// its fills leave free (SharedCap). Factory says a Software Factory
+	// dispatch launched or joined the run: such a run may fill a reserved slot
+	// for a member whose card is waiting, never for one with nothing to claim.
+	ReservedWorkers int  `json:"reserved_workers,omitempty"`
+	Factory         bool `json:"factory,omitempty"`
 
 	State      RunState `json:"state"`
 	Reason     string   `json:"reason,omitempty"`
@@ -286,6 +293,8 @@ func (r CrewRun) Validate() error {
 		return fmt.Errorf("a crew run's pool holds at most %d targets", MaxPool)
 	case r.MaxWorkers < 0:
 		return errors.New("max workers cannot be negative")
+	case r.ReservedWorkers < 0:
+		return errors.New("reserved workers cannot be negative")
 	}
 	for _, t := range r.Pool {
 		if t.Model == "" {

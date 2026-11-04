@@ -37,6 +37,8 @@ type crewLaunch struct {
 	memberModels            []string // -member-model PROFILE=PROVIDER/MODEL
 	switchAfter, finalRetry int
 	maxWorkers              int
+	reserved                int  // agents.factory_reserved_workers, or belai rc's flag (CrewRun.ReservedWorkers)
+	factory                 bool // a Software Factory dispatch launched or joins the run (CrewRun.Factory)
 	stay, fill, webCtl      bool
 	askOff                  bool          // -ask-off: every member starts with it (CrewRun.AskOff)
 	stayIdle                time.Duration // with stay: the run's idle cap, zero for the default
@@ -125,6 +127,7 @@ func startCrewRun(l crewLaunch) (int, error) {
 		run.Pool = append(run.Pool, fleet.Target{Provider: l.provider, Model: l.model})
 	}
 	run.Effort, run.MaxWorkers, run.Stay, run.WebControls, run.AskOff = l.effort, l.maxWorkers, l.stay, l.webCtl, l.askOff
+	run.ReservedWorkers, run.Factory = max(l.reserved, 0), l.factory
 	if l.stay {
 		run.StayIdleMaxSecs = stayIdleSecs(l.stayIdle)
 	}
@@ -177,6 +180,11 @@ func joinCrewRun(reg *fleet.Registry, live fleet.CrewRun, scope []fleet.ScopeDir
 			cr.Stay, cr.StayIdleMaxSecs = true, stayIdleSecs(l.stayIdle)
 			stayed = true
 		}
+		// A factory dispatch that joins the run brings a card its members may
+		// fill a reserved slot for; the reservation itself follows the latest
+		// start. Neither changes what the start reports.
+		cr.Factory = cr.Factory || l.factory
+		cr.ReservedWorkers = max(l.reserved, 0)
 		return nil
 	})
 	if err != nil {

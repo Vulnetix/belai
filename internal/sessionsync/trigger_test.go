@@ -144,3 +144,19 @@ func TestTriggerSentence(t *testing.T) {
 		t.Errorf("sentence spans lines: %q", s)
 	}
 }
+
+// Only a workflow trigger, which the server alone writes, marks a Software
+// Factory start.
+func TestTriggerFactory(t *testing.T) {
+	if (*Trigger)(nil).Factory() || FactoryTrigger("") || FactoryTrigger("not json") {
+		t.Fatal("no trigger reads as the factory")
+	}
+	if !FactoryTrigger(`{"source":"workflow","via":"webhook","runId":"r1"}`) || !(&Trigger{Source: "Workflow"}).Factory() {
+		t.Fatal("a workflow trigger is the factory")
+	}
+	for _, src := range []string{"console", "pix_call", "fleet", "finding", "pull_request", "pix_assistant"} {
+		if FactoryTrigger(`{"source":"` + src + `"}`) {
+			t.Errorf("source %s read as the factory", src)
+		}
+	}
+}

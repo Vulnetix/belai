@@ -101,6 +101,21 @@ func (t *Trigger) Clean() *Trigger {
 	return c
 }
 
+// Factory reports whether the trigger names a Software Factory run: only the
+// server writes the workflow source (a browser request cannot), so it marks a
+// dispatch that may fill the worker slots agents.factory_reserved_workers
+// keeps back. It decides capacity only, never what a worker may do.
+func (t *Trigger) Factory() bool {
+	c := t.Clean()
+	return c != nil && c.Source == "workflow"
+}
+
+// FactoryTrigger reports whether a raw trigger a parent passed on
+// (BELAI_SESSION_TRIGGER) names a Software Factory run.
+func FactoryTrigger(raw string) bool {
+	return ParseTrigger(raw).Factory()
+}
+
 // triggerLine is sanitize.Line: control and bidi runes, newlines and delimiter
 // markup removed, whitespace folded, capped at max runes.
 func triggerLine(s string, max int) string { return sanitize.Line(s, max) }

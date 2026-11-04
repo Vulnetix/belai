@@ -2320,6 +2320,13 @@ type AgentsSettings struct {
 	// daemon advertises it as canClone. Default on; `belai rc -no-clone` turns
 	// it off for one daemon. Read from the user's global settings only.
 	Clone *bool `json:"clone,omitempty"`
+	// FactoryReservedWorkers is how many of the worker cap only a Software
+	// Factory dispatch may fill: any other start, and a crew run topping
+	// itself up with nothing waiting, stops that many short of the cap, so a
+	// host full of staying crews still takes the factory's next card. Default
+	// 0; clamped below the cap (FactoryReservedWorkersUnder). Read from the
+	// user's layers only: a project layer cannot change it.
+	FactoryReservedWorkers *int `json:"factory_reserved_workers,omitempty"`
 }
 
 // tighten applies a project layer: it may turn Enabled and Publish off and
@@ -2369,6 +2376,9 @@ func (a *AgentsSettings) merge(o *AgentsSettings) {
 	if o.Clone != nil {
 		a.Clone = o.Clone
 	}
+	if o.FactoryReservedWorkers != nil {
+		a.FactoryReservedWorkers = o.FactoryReservedWorkers
+	}
 }
 
 // AgentsCloneEnabled reports whether `belai rc` may clone a repository a
@@ -2394,6 +2404,37 @@ func (s Settings) MaxWorkers() int {
 		return DefaultMaxWorkers
 	}
 	return *s.Agents.MaxWorkers
+}
+
+// FactoryReservedWorkers is agents.factory_reserved_workers under
+// agents.max_workers.
+func (s Settings) FactoryReservedWorkers() int {
+	return s.FactoryReservedWorkersUnder(s.MaxWorkers())
+}
+
+// FactoryReservedWorkersUnder is agents.factory_reserved_workers clamped
+// under a worker cap that may differ from agents.max_workers (belai rc
+// --max-workers).
+func (s Settings) FactoryReservedWorkersUnder(limit int) int {
+	return ReservedUnder(s.FactoryReservedWorkersSetting(), limit)
+}
+
+// FactoryReservedWorkersSetting is agents.factory_reserved_workers as set,
+// zero when unset or negative, before it is clamped under a cap.
+func (s Settings) FactoryReservedWorkersSetting() int {
+	if s.Agents == nil || s.Agents.FactoryReservedWorkers == nil {
+		return 0
+	}
+	return max(*s.Agents.FactoryReservedWorkers, 0)
+}
+
+// ReservedUnder clamps a reserved worker count to [0, limit-1], so at least
+// one slot stays open to every start. A limit of zero or less reserves nothing.
+func ReservedUnder(reserved, limit int) int {
+	if limit <= 0 || reserved <= 0 {
+		return 0
+	}
+	return min(reserved, limit-1)
 }
 
 // KanbanEnabled reports whether the global kanban board is on. Default on.

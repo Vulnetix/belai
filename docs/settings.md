@@ -79,6 +79,16 @@ signed in. No token is stored or put in a URL; a public repository clones
 without `gh`. A failure refuses the request with the reason. `belai rc -no-clone` turns it off for one daemon. A project layer may
 turn it off, never on. See [remote-control.md](remote-control.md#cloning-a-repository-for-the-software-factory).
 
+### Reserved worker slots
+
+`agents.factory_reserved_workers` (default 0) has no row in `/settings`; set it
+in your global settings file. It keeps that many slots of `agents.max_workers`
+for Software Factory dispatches: every other start, and a crew run topping
+itself up with no card waiting, stops that many short of the cap. It is clamped
+below the cap, a project layer cannot change it, and `belai rc
+--factory-reserved-workers N` replaces it for one daemon. See
+[fleet.md](fleet.md#settings).
+
 ### Layout
 
 `ui.layout` (the `layout` row in Display, and a per-project preference) sets how
