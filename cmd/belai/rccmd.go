@@ -64,7 +64,8 @@ type cidrList []string
 func (c *cidrList) String() string     { return strings.Join(*c, ",") }
 func (c *cidrList) Set(v string) error { *c = append(*c, v); return nil }
 
-const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--idle DURATION] [--detach]
+const rcUsage = `usage: belai rc [--dir PATH]... [--max N] [--max-workers N] [--factory-reserved-workers N]
+                [--idle DURATION] [--detach]
                 [--web-controls [--web-allow-guardrails-off]] [--web-project-settings]
                 [--web-shell] [--allow-private-cidr CIDR]... [--no-clone]
        belai rc --status
@@ -96,6 +97,11 @@ repository this machine does not offer clones it under the worktrees directory
 in, offers it, and starts the workers there. --no-clone turns that off for
 this daemon.
 
+--factory-reserved-workers N keeps N slots of the fleet worker cap for
+Software Factory dispatches, in place of agents.factory_reserved_workers: any
+other start, and a crew topping itself up with no card waiting, stops N short of
+the cap. N is clamped below the cap.
+
 Needs a Vulnetix CLI browser login (vulnetix auth login).
 `
 
@@ -108,6 +114,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	fs.Var(&dirs, "dir", "also offer this directory (repeatable); it is trusted, as with -trust-dir")
 	max := fs.Int("max", rc.DefaultMax, "sessions to run at once; when given without --max-workers, also the fleet worker cap in place of agents.max_workers")
 	maxWorkers := fs.Int("max-workers", 0, "fleet workers to run at once, in place of agents.max_workers; sessions stay capped by --max")
+	reservedWorkers := fs.Int("factory-reserved-workers", 0, "slots of the fleet worker cap only a Software Factory dispatch may fill, in place of agents.factory_reserved_workers")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end a session after this long without a prompt")
 	detach := fs.Bool("detach", false, "run in the background; logs go to ~/.vulnetix/belai/rc/rc.log")
 	status := fs.Bool("status", false, "show whether remote control is running")
@@ -149,6 +156,10 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	if flagGiven(fs, "max-workers") && *maxWorkers < 1 {
 		fmt.Fprintln(stderr, "belai rc: --max-workers must be at least 1")
+		return 2
+	}
+	if *reservedWorkers < 0 {
+		fmt.Fprintln(stderr, "belai rc: --factory-reserved-workers cannot be negative")
 		return 2
 	}
 	url := rc.ManageURL(os.Getenv("VULNETIX_WEB_URL"))
@@ -294,7 +305,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
-		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
+		Max: *max, MaxWorkers: workerOverride(fs, *max, *maxWorkers), ReservedWorkers: reservedOverride(fs, *reservedWorkers), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 		Schedules: schedules, DrawAvatar: rcDrawAvatar(wd), Distill: rcDistill(wd), TeleportPush: teleportPushPolicy(wd),
 		Controls: *webControls, GuardrailsOff: *webGuardrailsOff, ProjectSettings: *webProjectSettings,
 		Shell: *webShell, NoClone: *noClone,
@@ -322,6 +333,16 @@ func workerOverride(fs *flag.FlagSet, max, maxWorkers int) int {
 		return max
 	}
 	return 0
+}
+
+// reservedOverride is the reserved worker count passed to the daemon, or nil
+// to keep agents.factory_reserved_workers: --factory-reserved-workers when
+// given, even as 0.
+func reservedOverride(fs *flag.FlagSet, n int) *int {
+	if !flagGiven(fs, "factory-reserved-workers") {
+		return nil
+	}
+	return &n
 }
 
 // flagGiven reports whether the named flag was set on the command line.

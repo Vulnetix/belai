@@ -375,6 +375,15 @@ cap, as before. A repository whose settings lower `agents.max_workers` still
 holds its own cap. With neither flag, `agents.max_workers` (default 4)
 applies.
 
+`--factory-reserved-workers N` keeps N slots of that cap for Software Factory
+dispatches, in place of `agents.factory_reserved_workers` (default 0), and is
+passed to every start as `belai agent start -factory-reserved-workers N`. A
+start whose trigger is a workflow run may fill the whole cap; any other start,
+and a crew topping itself up with no card waiting, stops N short of it
+([fleet settings](fleet.md#settings)). N is clamped below the cap. The daemon
+advertises the clamped count as `reservedWorkers`, so the website refuses a
+start that is not the factory's before it reaches the host.
+
 ### Ask and trigger on a start request
 
 A dispatch from the long poll (`GET /hosts/{id}/dispatch`) may carry two more
@@ -642,7 +651,9 @@ Remote control also tells the website about this host's
 predict what will happen to them:
 
 - **Catalogue.** The host upsert's `rc` block carries `agents.max_workers`
-  (always: 4 when unset, or the `--max-workers`/`--max` override), `canClone`
+  (always: 4 when unset, or the `--max-workers`/`--max` override),
+  `reservedWorkers` (`agents.factory_reserved_workers` or
+  `--factory-reserved-workers`, clamped below the cap, left out when 0), `canClone`
   ([Cloning a repository](#cloning-a-repository-for-the-software-factory))
   and every worker profile's routing (lists, labels, `on_success`,
   `on_failure`, handoffs, attempts, lease and budget) and every crew with its

@@ -46,7 +46,7 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 	if why := checkOverride(r.Provider, r.Model, "", d.o.Models); why != "" {
 		return "", why
 	}
-	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, Drain: drain, Provider: r.Provider, Model: r.Model,
+	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers, ReservedWorkers: d.o.ReservedWorkers, Drain: drain, Provider: r.Provider, Model: r.Model,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, Trigger: encodeTrigger(r.Trigger)}
 	// A worker cannot ask: a call that would ask blocks its item. A request's
 	// ask: false (the organization's ask_permission for factory runs) makes
@@ -157,6 +157,9 @@ func agentStartArgs(w WorkerStart) []string {
 	args := []string{"agent", "start"}
 	if w.MaxWorkers > 0 {
 		args = append(args, "-max-workers", strconv.Itoa(w.MaxWorkers))
+	}
+	if w.ReservedWorkers != nil {
+		args = append(args, "-factory-reserved-workers", strconv.Itoa(max(*w.ReservedWorkers, 0)))
 	}
 	if w.Drain {
 		args = append(args, "-drain")

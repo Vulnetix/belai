@@ -132,9 +132,15 @@ type RCInfo struct {
 	// MaxWorkers is agents.max_workers; Profiles and Crews are the worker
 	// profiles and crews this host can start. Harness facts only: names,
 	// lists, labels and limits, never a prompt.
-	MaxWorkers int         `json:"maxWorkers"`
-	Profiles   []RCProfile `json:"profiles"`
-	Crews      []RCCrew    `json:"crews"`
+	MaxWorkers int `json:"maxWorkers"`
+	// ReservedWorkers is how many of MaxWorkers only a Software Factory
+	// dispatch may fill (agents.factory_reserved_workers, or belai rc
+	// --factory-reserved-workers), already clamped below MaxWorkers. Any other
+	// start is refused once it would pass MaxWorkers less this. Absent from an
+	// older daemon and when nothing is reserved.
+	ReservedWorkers int         `json:"reservedWorkers,omitempty"`
+	Profiles        []RCProfile `json:"profiles"`
+	Crews           []RCCrew    `json:"crews"`
 	// Agents are the agent profiles a web-started session can be engaged
 	// with (agent mode): names only, never a prompt or a tool list. Nil from
 	// an older daemon, which offers no choice.

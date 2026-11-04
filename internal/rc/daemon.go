@@ -51,8 +51,12 @@ type Options struct {
 	// MaxWorkers, when set, is the fleet worker cap for workers this daemon
 	// starts and reports, in place of agents.max_workers (belai rc --max).
 	MaxWorkers int
-	Idle       time.Duration
-	URL        string
+	// ReservedWorkers, when set, is how many of the worker cap only a
+	// Software Factory dispatch may fill, in place of
+	// agents.factory_reserved_workers (belai rc --factory-reserved-workers).
+	ReservedWorkers *int
+	Idle            time.Duration
+	URL             string
 	// Out receives one line per event (stderr, or the log when detached).
 	Out     io.Writer
 	LogPath string
@@ -203,6 +207,9 @@ type WorkerStart struct {
 	Provider, Model string
 	// MaxWorkers overrides agents.max_workers for this start when set.
 	MaxWorkers int
+	// ReservedWorkers overrides agents.factory_reserved_workers for this
+	// start when set (belai agent start -factory-reserved-workers).
+	ReservedWorkers *int
 	// Drain makes the workers exit once nothing is left to claim, whatever
 	// cron schedule their profile carries (a stored schedule fires them).
 	Drain bool
@@ -379,6 +386,14 @@ func New(o Options) (*Daemon, error) {
 			return inv
 		}
 	}
+	if o.ReservedWorkers != nil {
+		read, n := o.Inventory, max(*o.ReservedWorkers, 0)
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.ReservedWorkers = n
+			return inv
+		}
+	}
 	if o.PauseWorker == nil {
 		o.PauseWorker = setWorkerPaused
 	}
@@ -495,12 +510,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 		sessionsync.NewMemoryReplicator(d.o.Client, d.o.HostID, repomemory.Root(dir)).Start(ctx)
 	}
 
-	d.register(ctx, d.o.Inventory())
+	inv := d.o.Inventory()
+	d.register(ctx, inv)
 	audit.Emit(audit.Fact{Kind: audit.HostRCOnline, ActorKind: audit.ActorHarness,
 		Data: map[string]string{"version": d.o.Host.BelaiVersion}})
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.dirs()), plural(len(d.dirs()), "y", "ies"), d.o.Max)
 	if d.o.MaxWorkers > 0 {
 		d.logf("up to %d fleet workers (overrides agents.max_workers)", d.o.MaxWorkers)
+	}
+	if n := config.ReservedUnder(inv.ReservedWorkers, inv.MaxWorkers); n > 0 {
+		d.logf("%d of %d fleet worker slots reserved for the Software Factory", n, inv.MaxWorkers)
 	}
 	d.logf("start sessions at %s", d.o.URL)
 
@@ -531,7 +550,7 @@ func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	// PixAssistant is not reported: it was the retired Pix chat drawer's flag
 	// and the website no longer needs it to offer this host to Pix Call (see
 	// sessionsync.RCInfo.PixAssistant).
-	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
+	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers, ReservedWorkers: config.ReservedUnder(inv.ReservedWorkers, inv.MaxWorkers),
 		Profiles: inv.Profiles, Crews: inv.Crews, Agents: inv.Agents, Items: inv.Items, Commands: inv.Commands, Models: inv.Models, Knowledge: inv.Knowledge,
 		Controls: d.o.Controls, GuardrailsOff: d.o.Controls && d.o.GuardrailsOff, ProjectSettings: d.o.ProjectSettings,
 		Features: []string{sessionsync.FeatureWorktree, sessionsync.FeatureCheckout}}

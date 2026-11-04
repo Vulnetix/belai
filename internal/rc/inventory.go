@@ -27,8 +27,11 @@ import (
 // workers running now. Harness facts only; no prompt or profile text.
 type Inventory struct {
 	MaxWorkers int
-	Profiles   []sessionsync.RCProfile
-	Crews      []sessionsync.RCCrew
+	// ReservedWorkers is agents.factory_reserved_workers as set; the daemon
+	// clamps it under MaxWorkers when it advertises it.
+	ReservedWorkers int
+	Profiles        []sessionsync.RCProfile
+	Crews           []sessionsync.RCCrew
 	// Agents are the agent profiles a web session may be started with.
 	Agents  []sessionsync.RCAgent
 	Workers []sessionsync.RCWorker
@@ -64,6 +67,7 @@ const (
 func (i Inventory) catalogueHash() string {
 	b, _ := json.Marshal(struct {
 		M int
+		R int
 		P []sessionsync.RCProfile
 		C []sessionsync.RCCrew
 		A []sessionsync.RCAgent
@@ -72,7 +76,7 @@ func (i Inventory) catalogueHash() string {
 		D *sessionsync.RCModels
 		K []sessionsync.RCKnowledge
 		F map[string]DirPrefs
-	}{i.MaxWorkers, i.Profiles, i.Crews, i.Agents, i.Items, i.Commands, i.Models, i.Knowledge, i.Prefs})
+	}{i.MaxWorkers, config.ReservedUnder(i.ReservedWorkers, i.MaxWorkers), i.Profiles, i.Crews, i.Agents, i.Items, i.Commands, i.Models, i.Knowledge, i.Prefs})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -86,6 +90,7 @@ func LocalInventory() Inventory {
 	var held map[string]libHashEntry
 	if s, err := config.LoadGlobal(); err == nil {
 		inv.MaxWorkers = s.MaxWorkers()
+		inv.ReservedWorkers = s.FactoryReservedWorkersSetting()
 		hashes = s.SyncProfilesEnabled()
 		if hashes {
 			held = readLibraryHashes()
