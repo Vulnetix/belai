@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/gittest"
 )
 
 // TestMain points the whole package at a scratch home. A test's t.Setenv is
@@ -23,6 +25,9 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	// Drop inherited git redirection so the workspace fixtures the tests
+	// build resolve to their own repositories, not the wrapper's.
+	gittest.IsolateProcess()
 	code := m.Run()
 	_ = os.RemoveAll(home)
 	os.Exit(code)

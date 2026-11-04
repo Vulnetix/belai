@@ -39,6 +39,9 @@ func createTestPrompt(t *testing.T, scope config.Scope, workdir, name, prompt st
 }
 
 func TestMain(m *testing.M) {
+	// Drop inherited git redirection so the repository fixtures the tests
+	// build resolve to their own .git, not the wrapper's.
+	gittest.IsolateProcess()
 	tmp, err := os.MkdirTemp("", "belai-tui-test")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
