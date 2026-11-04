@@ -102,7 +102,9 @@ URL, an argument or `.git/config`.
 The forge coordinator, which takes over a push that failed for the machine's
 credential, holds a GitHub App token. It is not available on any other forge,
 and a failed push there reads as the failure it is
-([fleet.md](fleet.md#the-forge-coordinator)).
+([fleet.md](fleet.md#the-forge-coordinator)). On every forge the note names the
+line git or the CLI gave as the cause (the rejected ref, the remote's error or
+the `fatal:` line), never a closing `hint:` or "Everything up-to-date".
 
 A worker's Bash may not open, merge, approve or comment on a pull request with
 `tea` or `fj` either, as with `gh` and `glab` ([fleet.md](fleet.md#publishing)).

@@ -1523,15 +1523,34 @@ machine's GitHub credential is refused or missing (401, 403, no `gh`, a git
 credential prompt), GitHub rate-limits it (429, a secondary rate limit) or
 answers with a 5xx. Under `belai rc`, with sync on, such a failure is handed to
 the forge coordinator (the Pix sandbox), which holds a GitHub App token for the
-repository. `forge.ClassifyPushError` sorts the failure from the error text into
-a fixed word; a failure that is the branch's (a rejected non-fast-forward,
-nothing to publish, a hook that declined it) or one it does not recognise is
-never handed over and reads as before. Only a GitHub `origin` and an item
-attempt branch (`belai/K-xxxxxx/a<n>`) are handed over. The coordinator is not
-available on GHES, GitLab, Gitea or Forgejo: a failed push there reads as the
-failure it is ([forges.md](forges.md#what-works-where)).
+repository. A failed git or forge CLI call is a `forge.CLIError`: its
+`Summary` is the line that says why (a rejected or remote-rejected ref, a
+`remote: error`, a `fatal:` or `error:` line, a refusal, else the last line
+that is not a `hint:` or "Everything up-to-date"), and its `Stderr` keeps the
+last 4 KiB, each line cleaned and with URL credentials, token shapes, the
+child's credential environment and vault values redacted. Card notes show the
+summary (`draft pull request not opened: git: ! [rejected] ... (fetch first)`).
+`forge.ClassifyPushError` matches the stderr tail and the error text against
+a fixed table and returns a fixed word; a failure that is the branch's (a
+rejected non-fast-forward or fetch first, nothing to publish, a hook that
+declined it) is checked first, and it or one the table does not recognise is
+never handed over and reads as before. GitHub's refusal to let a personal
+access token, OAuth App or GitHub App without the workflow scope change
+`.github/workflows`, and "Invalid username or token", are `auth`;
+"Password authentication is not supported" alone is `push_credentials`. Only
+a GitHub `origin` and an item attempt branch (`belai/K-xxxxxx/a<n>`) are
+handed over. The coordinator is not available on GHES, GitLab, Gitea or
+Forgejo: a failed push there reads as the failure it is
+([forges.md](forges.md#what-works-where)).
 
-To hand it over, the worker writes the git bundle of
+git prints "Everything up-to-date" only after every ref was accepted or was
+already current, so a push that exits non-zero after that line (the remote
+helper's exit status when the transport closes) is checked against origin:
+when `git ls-remote origin refs/heads/<branch>` names the local commit, the
+branch is published and the pull request step goes on. Any other answer keeps
+the push error.
+
+To hand a failure over, the worker writes the git bundle of
 `<base>..refs/heads/<branch>` to `~/.vulnetix/belai/forge/<requestId>.bundle`
 (the state directory, which the model's sandbox cannot read or write; at most
 16 MiB, and a bigger branch gets a note on the item instead) and spools the
