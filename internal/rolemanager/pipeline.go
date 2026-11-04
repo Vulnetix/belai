@@ -3,6 +3,7 @@ package rolemanager
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,10 @@ type Decision struct {
 	Sentinel Sentinel
 	// Content is the sanitized content (delimiter markup removed).
 	Content string
+	// Malformed reports that the classifier answered but its reply held no
+	// sentinel, so Sentinel is empty. The content is withheld (ActionWarn),
+	// yet nothing was judged unsafe: the classifier was unavailable.
+	Malformed bool
 }
 
 // Classifier sends a ClassifierPayload to a model and returns the raw reply.
@@ -92,6 +97,48 @@ type Pipeline struct {
 	textIdentity  string
 	textSystemOne bool
 	textBatched   bool
+	// RetryWait is how long ProcessRetry and Admit wait before asking the
+	// classifier again after a malformed reply. Nil means
+	// MalformedRetryWait; a test sets one that returns at once.
+	RetryWait func() time.Duration
+}
+
+// Malformed-reply retry bounds: one more attempt after a wait between
+// MalformedRetryMin and MalformedRetryMin+MalformedRetryJitter. A malformed
+// reply is most often a decision backend that was rate limited and handed
+// the payload to a fallback that answered badly, so a short pause lets the
+// burst clear.
+const (
+	MalformedRetryMin    = 2 * time.Second
+	MalformedRetryJitter = 3 * time.Second
+)
+
+// MalformedRetryWait is the default wait before the one retry after a
+// malformed classifier reply: 2 to 5 seconds, jittered so a crew of workers
+// that failed together does not retry together.
+func MalformedRetryWait() time.Duration {
+	return MalformedRetryMin + rand.N(MalformedRetryJitter)
+}
+
+// waitRetry sleeps for the pipeline's retry wait, or returns the context's
+// error when it ends first.
+func (p *Pipeline) waitRetry(ctx context.Context) error {
+	wait := MalformedRetryWait
+	if p.RetryWait != nil {
+		wait = p.RetryWait
+	}
+	d := wait()
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over
@@ -328,13 +375,29 @@ func (p *Pipeline) Process(ctx context.Context, r tools.Result) (Decision, error
 		return Decision{}, err
 	}
 	if !parsed {
-		return Decision{Kind: r.Kind, Action: ActionWarn, Content: clean}, nil
+		return Decision{Kind: r.Kind, Action: ActionWarn, Content: clean, Malformed: true}, nil
 	}
 	action := ActionWarn
 	if s.IsSafe() {
 		action = ActionProceed
 	}
 	return Decision{Kind: r.Kind, Action: action, Sentinel: s, Content: clean}, nil
+}
+
+// ProcessRetry is Process with one more attempt after a malformed reply: it
+// waits RetryWait and asks again. A reply that is still malformed is returned
+// as it is (ActionWarn, Malformed set), so the caller can tell a classifier
+// that could not answer from a verdict that withheld the content. A SAFE or
+// non-SAFE verdict is never asked twice.
+func (p *Pipeline) ProcessRetry(ctx context.Context, r tools.Result) (Decision, error) {
+	dec, err := p.Process(ctx, r)
+	if err != nil || !dec.Malformed {
+		return dec, err
+	}
+	if err := p.waitRetry(ctx); err != nil {
+		return Decision{}, err
+	}
+	return p.Process(ctx, r)
 }
 
 // AcquireAgent admits one fan-out item through the shared FIFO pool and traces
@@ -377,6 +440,17 @@ func (p *Pipeline) Admit(ctx context.Context, content, subject string, pol postu
 	clean, s, parsed, err := p.run(ctx, content, subject)
 	if err != nil {
 		return Decision{}, err
+	}
+	if !parsed && pol.Level(posture.PromptMalformed) == posture.Enforce {
+		// The prompt would be refused for a reply that judged nothing: ask
+		// once more after a short wait before refusing it.
+		if err := p.waitRetry(ctx); err != nil {
+			return Decision{}, err
+		}
+		clean, s, parsed, err = p.run(ctx, content, subject)
+		if err != nil {
+			return Decision{}, err
+		}
 	}
 	if !parsed {
 		if pol.Level(posture.PromptMalformed) == posture.Ignore {

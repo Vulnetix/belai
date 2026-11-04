@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/tools"
@@ -141,5 +142,67 @@ func TestAdmitEmptyContentSkipsClassifier(t *testing.T) {
 	}
 	if d.Action != ActionProceed {
 		t.Fatalf("Admit Action = %q, want %q", d.Action, ActionProceed)
+	}
+}
+
+func TestProcessMarksMalformedReply(t *testing.T) {
+	pipe := NewPipeline(stubClassifier{reply: ""})
+	dec, err := pipe.Process(context.Background(), tools.Result{Kind: tools.KindKanban, Content: "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.Action != ActionWarn || !dec.Malformed || dec.Sentinel != "" {
+		t.Fatalf("decision %+v, want warn, malformed, no sentinel", dec)
+	}
+	dec, _ = NewPipeline(stubClassifier{reply: "PROMPT_INJECTION"}).Process(context.Background(), tools.Result{Kind: tools.KindKanban, Content: "card"})
+	if dec.Malformed || dec.Sentinel != SentinelPromptInjection {
+		t.Fatalf("a verdict is not malformed: %+v", dec)
+	}
+}
+
+func TestProcessRetryAsksOnceMoreAfterMalformed(t *testing.T) {
+	q := &replyQueue{replies: []string{"", "SAFE"}}
+	pipe := NewPipeline(q)
+	waits := 0
+	pipe.RetryWait = func() time.Duration { waits++; return 0 }
+	dec, err := pipe.ProcessRetry(context.Background(), tools.Result{Kind: tools.KindKanban, Content: "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.Action != ActionProceed || dec.Malformed {
+		t.Fatalf("decision %+v, want proceed", dec)
+	}
+	if q.calls.Load() != 2 || waits != 1 {
+		t.Fatalf("calls %d waits %d, want 2 and 1", q.calls.Load(), waits)
+	}
+}
+
+func TestProcessRetryStillMalformedStaysMalformed(t *testing.T) {
+	q := &replyQueue{replies: []string{"", "??"}}
+	pipe := NewPipeline(q)
+	pipe.RetryWait = func() time.Duration { return 0 }
+	dec, err := pipe.ProcessRetry(context.Background(), tools.Result{Kind: tools.KindKanban, Content: "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.Action != ActionWarn || !dec.Malformed {
+		t.Fatalf("decision %+v, want warn and malformed", dec)
+	}
+	if q.calls.Load() != 2 {
+		t.Fatalf("calls %d, want 2", q.calls.Load())
+	}
+}
+
+func TestProcessRetryNeverAsksAgainAfterAVerdict(t *testing.T) {
+	for _, reply := range []string{"SAFE", "JAILBREAK"} {
+		q := &replyQueue{replies: []string{reply}}
+		pipe := NewPipeline(q)
+		pipe.RetryWait = func() time.Duration { t.Fatal("a verdict must not wait"); return 0 }
+		if _, err := pipe.ProcessRetry(context.Background(), tools.Result{Kind: tools.KindKanban, Content: "card"}); err != nil {
+			t.Fatal(err)
+		}
+		if q.calls.Load() != 1 {
+			t.Fatalf("%s: calls %d, want 1", reply, q.calls.Load())
+		}
 	}
 }
