@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 const testURL = "https://example.test/acme/app.git"
@@ -27,7 +28,7 @@ type origin struct {
 }
 
 func gitEnv(home string) []string {
-	return append(os.Environ(),
+	return append(proc.WithoutGitEnv(os.Environ()),
 		"HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test",
 		"GIT_ALLOW_PROTOCOL=file:https:ssh", "LC_ALL=C")

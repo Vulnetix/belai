@@ -224,22 +224,6 @@ func readHead(ctx context.Context, root, path string) (string, string) {
 	return string(b), ""
 }
 
-// withoutGitEnv drops ambient variables that point git at another repository,
-// so every command operates on the directory it is run in.
-func withoutGitEnv(env []string) []string {
-	var out []string
-	for _, e := range env {
-		key, _, _ := strings.Cut(e, "=")
-		switch key {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE":
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
 // git runs one hardened, read-only git command in dir.
 func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	argv := append([]string{
@@ -252,7 +236,7 @@ func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	}, args...)
 	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Dir = dir
-	cmd.Env = append(withoutGitEnv(proc.ScrubbedEnv()), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat")
+	cmd.Env = append(proc.WithoutGitEnv(proc.ScrubbedEnv()), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat")
 	proc.SetProcessGroup(cmd)
 	var stdout bytes.Buffer
 	cmd.Stdout = &limitWriter{w: &stdout, left: maxGitOutput + MaxBytes}

@@ -223,7 +223,7 @@ func newEngineAt(r config.GitRepo, dir string, o Options) (*engine, error) {
 		return nil, errors.New("git is not installed or not on PATH")
 	}
 	e := &engine{o: o, repo: r, dir: dir, git: gitPath}
-	e.env = append(proc.ScrubbedEnv(),
+	e.env = append(proc.WithoutGitEnv(proc.ScrubbedEnv()),
 		"GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=never", "GIT_ALLOW_PROTOCOL=https:ssh", "LC_ALL=C")
 	if o.Getenv("GIT_SSH_COMMAND") == "" {
 		e.env = append(e.env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
