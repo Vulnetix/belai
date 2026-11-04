@@ -308,15 +308,13 @@ func TestIsAddrInUse(t *testing.T) {
 func TestLaunchRetriesOnAddressInUse(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "server.sh")
+	// The retry target is the test binary in its fake-server mode, which
+	// binds the port and answers /health without needing python on the host.
 	serverScript := `#!/bin/sh
 PORT=$2
 if [ -f "$3/failed" ]; then
-  python3 -c "import sys, http.server, socketserver
-class H(http.server.BaseHTTPRequestHandler):
-    def do_GET(self): self.send_response(200); self.end_headers()
-    def log_message(self,*a): pass
-p=int(sys.argv[1]); s=socketserver.TCPServer(('127.0.0.1',p), H); s.serve_forever()" "$PORT" &
-  sleep 60
+  export LOCALINFER_FAKE_SERVER=serve
+  exec "` + os.Args[0] + `" --port "$PORT"
 else
   touch "$3/failed"
   echo 'error: bind failed: Address already in use' >&2
@@ -330,8 +328,8 @@ fi
 	args := []string{"--port", "12345", dir}
 	baseURL := BaseURL("127.0.0.1", 12345)
 
-	// The stub server is a cold python3 start, which takes seconds when the
-	// whole suite runs in parallel; a 2s health deadline failed under load.
+	// The suite runs its launches in parallel; a 2s health deadline flaked
+	// under that load, so the deadline stays wide.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	stop, err := Launch(ctx, bin, args, baseURL, LaunchOptions{Deadline: 15 * time.Second})

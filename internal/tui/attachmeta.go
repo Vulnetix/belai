@@ -15,6 +15,13 @@ import (
 	"github.com/vulnetix/belai/internal/transcript"
 )
 
+// The host's mime database does not always map markdown (minimal images ship
+// none), and TypeByExtension then reports a .md attachment as unknown.
+// Register the types the pane reports instead of depending on the host.
+func init() {
+	mime.AddExtensionType(".md", "text/markdown")
+}
+
 // attachMeta holds the metadata shown for a resolved @file or @directory.
 type attachMeta struct {
 	FileSize  int64
