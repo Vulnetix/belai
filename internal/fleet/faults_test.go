@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/vulnetix/belai/internal/firewall"
@@ -40,6 +41,14 @@ func TestAPolicyRefusalIsAConfigFault(t *testing.T) {
 		// Wrapped by something that kept only the text.
 		if got := classifyErr(fmt.Errorf("worker turn ended: %s", pe.Error())); got != (Fault{Code: FaultPolicy, Status: 403, Config: true}) {
 			t.Errorf("%s as text: %+v", code, got)
+		}
+		// Text after the body, or a body over several lines, does not hide it.
+		if got := classifyErr(fmt.Errorf("%s (after 2 passes)", pe.Error())); got != (Fault{Code: FaultPolicy, Status: 403, Config: true}) {
+			t.Errorf("%s with a suffix: %+v", code, got)
+		}
+		multi := &run.ProviderError{Status: 403, Body: strings.ReplaceAll(policy(code), ",", ",\n  ")}
+		if got := classifyErr(errors.New(multi.Error())); got != (Fault{Code: FaultPolicy, Status: 403, Config: true}) {
+			t.Errorf("%s over lines: %+v", code, got)
 		}
 	}
 	quota := &run.ProviderError{Status: 429, Body: `{"success":false,"errors":[{"code":429,"message":"Pix built-in model quota reached for this month. Resets on 2026-11-01."}],"messages":[],"result":null}`}

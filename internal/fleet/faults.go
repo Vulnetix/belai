@@ -2,10 +2,12 @@ package fleet
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/firewall"
@@ -161,9 +163,11 @@ func classifyErr(err error) Fault {
 	return Fault{Code: FaultError}
 }
 
-// providerBody matches a provider failure that reached the worker only as
-// text: the status and the redacted JSON body ProviderError.Error writes.
-var providerBody = regexp.MustCompile(`provider returned ([1-5][0-9][0-9]): (\{.*\})\s*$`)
+// providerBody finds a provider failure that reached the worker only as text:
+// the status ProviderError.Error writes, followed by the redacted JSON body.
+// The body is read as one JSON value from there, so a body over several lines
+// or text after it (a wrapper's suffix) does not hide it.
+var providerBody = regexp.MustCompile(`provider returned ([1-5][0-9][0-9]): \{`)
 
 // configFault reads the provider's error body with the firewall's refusal
 // parser (firewall.ParseRefusal): by the gateway's code, never by text a
@@ -174,9 +178,13 @@ func configFault(err error) (Fault, bool) {
 	var pe *run.ProviderError
 	if errors.As(err, &pe) && pe.Status != 0 {
 		status, body = pe.Status, pe.Body
-	} else if m := providerBody.FindStringSubmatch(err.Error()); m != nil {
-		status, _ = strconv.Atoi(m[1])
-		body = m[2]
+	} else if msg, m := err.Error(), providerBody.FindStringSubmatchIndex(err.Error()); m != nil {
+		status, _ = strconv.Atoi(msg[m[2]:m[3]])
+		var raw json.RawMessage
+		if json.NewDecoder(strings.NewReader(msg[m[1]-1:])).Decode(&raw) != nil {
+			return Fault{}, false
+		}
+		body = string(raw)
 	} else {
 		return Fault{}, false
 	}
