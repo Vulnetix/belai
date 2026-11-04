@@ -110,6 +110,10 @@ type Options struct {
 	CredentialExpiry func() (time.Time, bool)
 	CredentialWarn   time.Duration
 	CredentialEvery  time.Duration
+	// PolicyStops reads this host's workers that stopped recently on a config
+	// fault (policy.go; the fleet registry unless a test replaces it). The
+	// heartbeat asks the owner once per refused model.
+	PolicyStops func() []PolicyStop
 
 	// ScheduleEvery is how often stored schedules are checked and synced
 	// (30s).
@@ -221,6 +225,9 @@ type WorkerStart struct {
 	// Budget is the request's cleaned worker budget as compact JSON; "" when
 	// it carried none. It travels in the environment like Trigger.
 	Budget string
+	// MemberModels starts crew members on their own model: member profile to
+	// "provider/model", each checked (checkMemberModels).
+	MemberModels map[string]string
 }
 
 // Child is one session to start.
@@ -290,6 +297,9 @@ type Daemon struct {
 	// requests are the host requests made and not yet settled (attention.go),
 	// by the website's id, under mu.
 	requests map[string]*hostRequest
+	// policyAsked holds the subjects of the policy requests already made
+	// (policy.go), under mu.
+	policyAsked map[string]bool
 }
 
 type child struct {
@@ -371,6 +381,9 @@ func New(o Options) (*Daemon, error) {
 	}
 	if o.PauseWorker == nil {
 		o.PauseWorker = setWorkerPaused
+	}
+	if o.PolicyStops == nil {
+		o.PolicyStops = localPolicyStops
 	}
 	if o.CrewControl == nil {
 		controls := o.Controls
@@ -593,6 +606,9 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 		hb, err := d.o.Client.RCHeartbeatState(ctx, d.o.HostID, d.running(), inv.Workers, inv.Runs)
 		if err == nil && len(hb.Attention) > 0 {
 			d.settleRequests(ctx, hb.Attention)
+		}
+		if err == nil {
+			d.askPolicyStops(ctx)
 		}
 		if err == nil && hb.A2ABlackout != nil {
 			// The organisation's A2A blackout, for every relay on this host.

@@ -83,6 +83,12 @@ func (d *Daemon) startWorkersDrain(r sessionsync.Dispatch, drain bool) (string, 
 			return "", "this host has no crew " + r.Crew
 		}
 		w.Crew, w.Fill = r.Crew, r.Fill
+		i := slices.IndexFunc(inv.Crews, func(c sessionsync.RCCrew) bool { return c.Name == r.Crew })
+		mm, why := d.checkMemberModels(r.MemberModels, inv.Crews[i])
+		if why != "" {
+			return "", why
+		}
+		w.MemberModels = mm
 	}
 	report, err := d.o.StartWorkers(w)
 	if err != nil {
@@ -180,6 +186,7 @@ func agentStartArgs(w WorkerStart) []string {
 		if w.Fill {
 			args = append(args, "-fill")
 		}
+		args = append(args, memberModelArgs(w.MemberModels)...)
 	} else {
 		args = append(args, w.Profile)
 	}
@@ -258,4 +265,57 @@ func runKnowledgeIndex(ctx context.Context, exe, dir, profile string) (string, e
 		}
 	}
 	return "", nil
+}
+
+// maxMemberModels bounds the member models one crew request may carry: a crew
+// has at most agentprofile.MaxCrewMembers members.
+const maxMemberModels = 8
+
+// checkMemberModels checks a crew request's member models: each profile is a
+// member of the crew and a name that cannot read as a flag, and each target is
+// "provider/model" checked like a request's own model (checkOverride: a
+// provider this host holds credentials for). It returns the cleaned map, or
+// the reason it refused.
+func (d *Daemon) checkMemberModels(in map[string]string, crew sessionsync.RCCrew) (map[string]string, string) {
+	if len(in) == 0 {
+		return nil, ""
+	}
+	if len(in) > maxMemberModels {
+		return nil, "too many member models"
+	}
+	out := make(map[string]string, len(in))
+	for profile, target := range in {
+		if !workerName.MatchString(profile) || !slices.ContainsFunc(crew.Members, func(m sessionsync.RCMember) bool { return m.Profile == profile }) {
+			return nil, "a member model names a profile that is not a member of crew " + crew.Name
+		}
+		prov, model, ok := strings.Cut(target, "/")
+		if !ok || prov == "" || model == "" {
+			return nil, "a member model is not provider/model"
+		}
+		if why := checkOverride(prov, model, "", d.o.Models); why != "" {
+			return nil, why
+		}
+		out[profile] = prov + "/" + model
+	}
+	return out, ""
+}
+
+// memberModelArgs is the -member-model words of a crew start, in profile order
+// so the argv is the same for the same request. An entry that fails the checks
+// startWorkers made is dropped, so no word can start with a dash.
+func memberModelArgs(mm map[string]string) []string {
+	profiles := make([]string, 0, len(mm))
+	for p := range mm {
+		profiles = append(profiles, p)
+	}
+	slices.Sort(profiles)
+	var args []string
+	for _, p := range profiles {
+		prov, model, ok := strings.Cut(mm[p], "/")
+		if !workerName.MatchString(p) || !ok || prov == "" || model == "" || !overrideOK(prov) || !overrideOK(model) {
+			continue
+		}
+		args = append(args, "-member-model", p+"="+prov+"/"+model)
+	}
+	return args
 }

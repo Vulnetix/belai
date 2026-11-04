@@ -647,6 +647,12 @@ type Dispatch struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	Effort   string `json:"effort,omitempty"`
+	// MemberModels, on a "crew" request, starts named members on their own
+	// model: member profile to "provider/model" (`belai agent start -crew
+	// -member-model`). Each is checked like Provider and Model, and the
+	// profile must be a member of the crew; a daemon from before this field
+	// ignores it.
+	MemberModels map[string]string `json:"memberModels,omitempty"`
 	// GitSync, when set on a "start" request, switches the new session's git
 	// sync on or off; nil leaves it to the host's settings.
 	GitSync *bool `json:"gitSync,omitempty"`

@@ -84,6 +84,14 @@ heartbeat.
   does not take its request; the daemon logs `run vulnetix auth login on this
   host` and the host shows as offline. The same hint is logged when the website
   predates host requests.
+- **A refused model.** A fleet worker whose model the provider refuses by
+  policy, or whose quota only a person can raise, releases its card uncounted
+  and stops ([fleet](fleet.md#the-provider-pool)). The next heartbeat asks for
+  an `approve` request with the reason `action_needed` and the subject
+  `provider_policy:<provider>:<model>` (or `provider_quota:...`), in the
+  server's subject alphabet and at most 64 characters. It asks once per model
+  while the daemon runs, however many workers stopped on it, and the website
+  folds a repeat of a pending request into it.
 - **The outcome** is `attention` on the heartbeat answer: the host's requests
   approved, denied or expired in the last ten minutes. The daemon deduplicates
   by id and gives up on a login it cannot store after five heartbeats.
@@ -289,7 +297,9 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   session then works as that profile does in the TUI (its instructions and the
   tools it allows), through the same `ForceAgent` a typed `@profile` uses.
 - **What the website can offer.** The daemon advertises the model a session gets
-  by default, whether it is routed, and the providers this host holds
+  by default (the settings', else the saved choice, else `BELAI_PROVIDER`, else
+  `openai`; a Pix Sandbox build falls back to `builtin`, Pix Smart, instead),
+  whether it is routed, and the providers this host holds
   credentials for with the models each lists (the compiled-in catalogue plus
   the model last chosen here). Names only, never a key or an endpoint. The New
   session dialog shows them; a request that names a provider the host has no
@@ -734,6 +744,14 @@ predict what will happen to them:
   gets a new one first); with `fill` set, `belai agent start -crew NAME -fill`, a
   crew already running over that directory is confirmed rather than refused, since
   its supervisor keeps every member at its replicas.
+- **Member models.** A `crew` request may carry `memberModels`, a map of member
+  profile to `provider/model` (`{"belai:builder": "builtin/pix-smart"}`). Each
+  profile must be a member of the crew and each target is checked like the
+  request's own model; one bad entry refuses the request. The daemon passes them
+  in profile order as `belai agent start -crew NAME -member-model
+  PROFILE=PROVIDER/MODEL`, so each named member starts on its own model, ahead of
+  the crew's pool. A crew that already runs keeps the models it was launched
+  with. A daemon from before the field ignores it.
 - **Workers that stay.** A `worker` or `crew` request may carry `stay: true`
   and `stayIdleMax` (seconds). The daemon passes `belai agent start -stay`
   and, when `stayIdleMax` is set, `-stay-idle-max`, so the workers keep
