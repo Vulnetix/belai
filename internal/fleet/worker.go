@@ -1872,7 +1872,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	// never as steering.
 	defer w.attachCoord(sess.Fact)()
 	res, err := sess.RunInputObserved(ctx, nil, in, emit)
-	tr.finish(res, err)
+	tr.finish(ctx, res, err)
 	if syncState != nil {
 		// Merge back even when the turn failed or was cancelled: a note a
 		// worker wrote is still its teammates' to read.

@@ -157,7 +157,7 @@ func TestWorkerMirrorsItsSession(t *testing.T) {
 		tr := w.transcript(tt)
 		tr.user(workPrompt)
 		res, err := complete(ctx, tt)
-		tr.finish(res, err)
+		tr.finish(ctx, res, err)
 		return res, err
 	}
 	if err := w.Run(context.Background()); err != nil {
