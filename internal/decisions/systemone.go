@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
@@ -242,7 +243,11 @@ func (s *SystemOne) Decide(ctx context.Context, r Request) (Result, error) {
 				msg = m
 			}
 		}
-		return Result{}, &Error{Status: resp.StatusCode, Class: classForStatus(resp.StatusCode), Msg: msg}
+		e := &Error{Status: resp.StatusCode, Class: classForStatus(resp.StatusCode), Msg: msg}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			e.RetryAfter = resilience.ParseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		}
+		return Result{}, e
 	}
 	if s.Envelope {
 		inner, err := unwrapEnvelope(data)

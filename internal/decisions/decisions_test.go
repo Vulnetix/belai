@@ -374,3 +374,22 @@ func TestTypeSafeConstants(t *testing.T) {
 		t.Fatal("TypeSafe constants drifted from the documented values")
 	}
 }
+
+func TestSystemOneCarriesRetryAfterOnA429(t *testing.T) {
+	s := systemOneServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "4")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	_, err := s.Decide(context.Background(), Request{State: "s", Questions: map[string]Question{"q": Noul("p")}})
+	if StatusOf(err) != http.StatusTooManyRequests || RetryAfterOf(err) != 4*time.Second {
+		t.Fatalf("status %d retry-after %s, want 429 and 4s", StatusOf(err), RetryAfterOf(err))
+	}
+	s = systemOneServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "4")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	_, err = s.Decide(context.Background(), Request{State: "s", Questions: map[string]Question{"q": Noul("p")}})
+	if RetryAfterOf(err) != 0 {
+		t.Fatalf("a 503 carried retry-after %s", RetryAfterOf(err))
+	}
+}

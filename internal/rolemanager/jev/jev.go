@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
@@ -501,6 +502,67 @@ type Security struct {
 	fallback rolemanager.Classifier
 	// backend, when set, replaces the OpenRouter Decisions call.
 	backend decisions.Decider
+	// wait sleeps before the one retry after a 429; nil sleeps for real.
+	// A test sets one that records the delay and returns at once.
+	wait func(context.Context, time.Duration) error
+}
+
+// Rate-limit retry bounds for a decision backend (Clef on Workers AI, most
+// often): a 429 whose Retry-After is at most RateLimitRetryCap is asked once
+// more after that wait plus up to RateLimitRetryJitter; one with no
+// Retry-After waits RateLimitRetryDefault plus the jitter. A longer
+// Retry-After (a daily cap) is not waited on: the agent model answers at once.
+const (
+	RateLimitRetryCap     = 10 * time.Second
+	RateLimitRetryDefault = time.Second
+	RateLimitRetryJitter  = time.Second
+)
+
+// rateLimitDelay is the wait before the retry after a 429 that carried
+// retryAfter, and false when the retry is not worth waiting for.
+func rateLimitDelay(retryAfter time.Duration, jitter time.Duration) (time.Duration, bool) {
+	switch {
+	case retryAfter > RateLimitRetryCap:
+		return 0, false
+	case retryAfter <= 0:
+		retryAfter = RateLimitRetryDefault
+	}
+	return retryAfter + jitter, true
+}
+
+// sleepCtx waits d, or returns the context's error when it ends first.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// decideRateLimited asks the backend, and after a 429 asks once more when the
+// server's Retry-After is short enough to wait for. Nothing else in the
+// decision path retries a 429, so this is the only retry.
+func (s *Security) decideRateLimited(ctx context.Context, req decisions.Request) (map[string]decisions.Answer, error) {
+	res, err := s.backend.Decide(ctx, req)
+	if err == nil || decisions.StatusOf(err) != http.StatusTooManyRequests {
+		return res.Answers, err
+	}
+	d, ok := rateLimitDelay(decisions.RetryAfterOf(err), rand.N(RateLimitRetryJitter))
+	if !ok {
+		return nil, err
+	}
+	wait := s.wait
+	if wait == nil {
+		wait = sleepCtx
+	}
+	if werr := wait(ctx, d); werr != nil {
+		return nil, werr
+	}
+	res, err = s.backend.Decide(ctx, req)
+	return res.Answers, err
 }
 
 // NewSecurityWith builds a Jev security classifier over any decision backend,
@@ -561,9 +623,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	if batchable(s.backend) {
 		answers, err = batcherFor(s.backend).decide(ctx, p.User, p.Categories)
 	} else if s.backend != nil {
-		var res decisions.Result
-		res, err = s.backend.Decide(ctx, req)
-		answers = res.Answers
+		answers, err = s.decideRateLimited(ctx, req)
 	} else {
 		answers, err = openRouterDecide(ctx, s.decisionsSDK(), s.model, s.endpoint, req)
 	}

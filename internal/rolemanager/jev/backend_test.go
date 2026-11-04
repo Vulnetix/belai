@@ -2,8 +2,10 @@ package jev
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -132,5 +134,87 @@ func TestRouteWithBackend(t *testing.T) {
 	dec, err := c.Route(context.Background(), "mode_eval", []Candidate{{Key: "a", Provider: "p", Model: "m"}, {Key: "b", Provider: "p", Model: "n"}})
 	if err != nil || dec.Key != "a" || c.Identity() != "fake/local" {
 		t.Fatalf("dec %+v err %v", dec, err)
+	}
+}
+
+// rateLimited answers 429 with retryAfter for the first n calls, then a SAFE
+// verdict.
+func rateLimited(n int, retryAfter time.Duration, status int) *fakeDecider {
+	calls := 0
+	var mu sync.Mutex
+	return &fakeDecider{backend: decisions.BackendSystemOne, answer: func(r decisions.Request) (map[string]decisions.Answer, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls <= n {
+			return nil, &decisions.Error{Status: status, Class: decisions.ClassUnavailable, Msg: "busy", RetryAfter: retryAfter}
+		}
+		out := map[string]decisions.Answer{}
+		for id := range r.Questions {
+			out[id] = decisions.Answer{Type: decisions.TypeNoul, Noul: 0.01}
+		}
+		return out, nil
+	}}
+}
+
+func TestSecurityRateLimitHonoursRetryAfterOnce(t *testing.T) {
+	d := rateLimited(1, 3*time.Second, http.StatusTooManyRequests)
+	fb := &countingFallback{}
+	s := NewSecurityWith(d, fb)
+	var waited []time.Duration
+	s.wait = func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }
+	got, err := s.Classify(context.Background(), secPayload())
+	if err != nil || got != string(rolemanager.SentinelSafe) || fb.n != 0 {
+		t.Fatalf("got %q err %v fallback %d; the retry should have answered", got, err, fb.n)
+	}
+	if len(d.reqs) != 2 || len(waited) != 1 {
+		t.Fatalf("requests %d waits %d, want 2 and 1", len(d.reqs), len(waited))
+	}
+	if waited[0] < 3*time.Second || waited[0] >= 3*time.Second+RateLimitRetryJitter {
+		t.Fatalf("waited %s, want Retry-After plus under a second of jitter", waited[0])
+	}
+}
+
+func TestSecurityRateLimitTwiceFallsBack(t *testing.T) {
+	d := rateLimited(5, 0, http.StatusTooManyRequests)
+	fb := &countingFallback{}
+	s := NewSecurityWith(d, fb)
+	var waited []time.Duration
+	s.wait = func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }
+	if _, err := s.Classify(context.Background(), secPayload()); err != nil || fb.n != 1 {
+		t.Fatalf("err %v fallback %d; a second 429 hands off to the agent model", err, fb.n)
+	}
+	if len(d.reqs) != 2 || len(waited) != 1 || waited[0] < RateLimitRetryDefault {
+		t.Fatalf("requests %d waits %v, want one retry after the default wait", len(d.reqs), waited)
+	}
+}
+
+func TestSecurityRateLimitLongRetryAfterFallsBackAtOnce(t *testing.T) {
+	d := rateLimited(5, 6*time.Hour, http.StatusTooManyRequests)
+	fb := &countingFallback{}
+	s := NewSecurityWith(d, fb)
+	s.wait = func(context.Context, time.Duration) error { t.Fatal("a daily cap is not waited on"); return nil }
+	if _, err := s.Classify(context.Background(), secPayload()); err != nil || fb.n != 1 || len(d.reqs) != 1 {
+		t.Fatalf("err %v fallback %d requests %d", err, fb.n, len(d.reqs))
+	}
+}
+
+func TestSecurityServerErrorIsNotRetried(t *testing.T) {
+	d := rateLimited(5, 0, http.StatusServiceUnavailable)
+	fb := &countingFallback{}
+	s := NewSecurityWith(d, fb)
+	s.wait = func(context.Context, time.Duration) error { t.Fatal("only a 429 is retried"); return nil }
+	if _, err := s.Classify(context.Background(), secPayload()); err != nil || fb.n != 1 || len(d.reqs) != 1 {
+		t.Fatalf("err %v fallback %d requests %d", err, fb.n, len(d.reqs))
+	}
+}
+
+func TestSecurityRateLimitWaitStopsOnCancel(t *testing.T) {
+	d := rateLimited(5, 2*time.Second, http.StatusTooManyRequests)
+	fb := &countingFallback{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := NewSecurityWith(d, fb).Classify(ctx, secPayload()); err == nil || fb.n != 0 {
+		t.Fatalf("err %v fallback %d; a cancelled turn surfaces", err, fb.n)
 	}
 }

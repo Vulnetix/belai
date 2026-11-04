@@ -189,6 +189,8 @@ type Error struct {
 	Class  Class
 	Msg    string
 	Err    error
+	// RetryAfter is the server's Retry-After on a 429, 0 when it sent none.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {
@@ -222,6 +224,15 @@ func ClassOf(err error) Class {
 		return e.Class
 	}
 	return ""
+}
+
+// RetryAfterOf returns the Retry-After a decision error carried (0 for none).
+func RetryAfterOf(err error) time.Duration {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.RetryAfter
+	}
+	return 0
 }
 
 // StatusOf returns the HTTP status of a decision error (0 for none).
