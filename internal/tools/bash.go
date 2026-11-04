@@ -299,6 +299,6 @@ func vaultEnvNote() string {
 		return ""
 	}
 	return "These environment variables are set for commands, from the organisation's vault: " + strings.Join(names, ", ") +
-		". Use them as $NAME. Their values are hidden: they never appear in output, and are shown as [vault:NAME] if a command prints one. " +
+		". Use them as $NAME. Secret values are hidden: they never appear in output, and are shown as [vault:NAME] if a command prints one (a plain setting such as a region reads as written). " +
 		"Do not try to read, decode or transform them to see the value. "
 }
