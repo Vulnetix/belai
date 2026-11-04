@@ -1,6 +1,9 @@
 package rc
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -37,6 +40,10 @@ func agentDaemon(t *testing.T, models *sessionsync.RCModels, agents ...string) (
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A started session's wait goroutine rewrites rc.json; it must finish
+	// before t.Setenv restores BELAI_HOME, or it writes the real home's
+	// record. Cleanups run last first, so this one runs before that restore.
+	t.Cleanup(d.wg.Wait)
 	return d, proj, &children, &workers
 }
 
@@ -148,5 +155,25 @@ func TestSessionAgentsListsBuiltinsFirstAndNeverAFlagShapedName(t *testing.T) {
 	}
 	if !seen["belai:debug"] {
 		t.Errorf("belai:debug is not offered: %+v", got)
+	}
+}
+
+// A started session's record, the last rc.json write included (the one its
+// wait makes when the child exits), lands in the test's home and never in the
+// developer's.
+func TestStartedSessionRecordStaysInTheTestHome(t *testing.T) {
+	d, proj, _, _ := agentDaemon(t, nil)
+	home := os.Getenv("BELAI_HOME")
+	if _, why := d.start(sessionsync.Dispatch{ID: "d1", Kind: "start", Cwd: proj, Prompt: "hi", Mode: "code"}); why != "" {
+		t.Fatalf("refused: %s", why)
+	}
+	d.wg.Wait()
+	b, err := os.ReadFile(filepath.Join(home, "rc", "rc.json"))
+	if err != nil {
+		t.Fatalf("the record is not in the test's home: %v", err)
+	}
+	var r Record
+	if err := json.Unmarshal(b, &r); err != nil || r.HostID != testHost || len(r.Sessions) != 0 {
+		t.Fatalf("record %s (%v)", b, err)
 	}
 }
