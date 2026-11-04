@@ -3,6 +3,7 @@ package sessionsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,6 +28,31 @@ func TestInboxNamesItsSession(t *testing.T) {
 	}
 	if got != "wait=1&session="+testSess {
 		t.Fatalf("query = %q", got)
+	}
+}
+
+func TestPutHostRefusals(t *testing.T) {
+	body := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	c, _ := NewClient(BaseURL(srv.URL), func() (string, error) { return "ApiKey o:k", nil }, srv.Client())
+	ctx := context.Background()
+
+	body = `{"error":"x","code":"host_limit","requiredPlan":"pro"}`
+	if err := c.PutHost(ctx, testHost, Host{Hostname: "h"}); !errors.Is(err, ErrHostLimit) {
+		t.Fatalf("host_limit = %v, want ErrHostLimit", err)
+	}
+	body = `{"error":"x","code":"plan_locked"}`
+	var se *StatusError
+	if err := c.PutHost(ctx, testHost, Host{Hostname: "h"}); !errors.As(err, &se) || se.Status != http.StatusForbidden {
+		t.Fatalf("plan_locked = %v, want a 403 StatusError", err)
+	}
+	body = `not json`
+	if err := c.PutHost(ctx, testHost, Host{Hostname: "h"}); !errors.As(err, &se) {
+		t.Fatalf("bad body = %v, want a StatusError", err)
 	}
 }
 

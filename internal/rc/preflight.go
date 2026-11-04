@@ -180,6 +180,9 @@ func Preflight(ctx context.Context, o PreflightOptions) Checks {
 				c.Detail = "the website refused this credential"
 				c.Fix = "run `vulnetix auth login` again"
 			}
+			if errors.Is(err, sessionsync.ErrHostLimit) {
+				c.Fix = "stop `belai rc` and Belai on your other machine, or add hosts with Pro or a Pix Sandbox"
+			}
 			out = append(out, c)
 		} else {
 			out = append(out, Check{Name: CheckServer, Level: OK, Detail: "connected"})

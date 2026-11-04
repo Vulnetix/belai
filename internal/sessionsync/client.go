@@ -57,6 +57,14 @@ var ErrUnauthorized = errors.New("sessionsync: the Vulnetix credential was refus
 // expired on the website, an answer already given).
 var ErrConflict = errors.New("sessionsync: the request no longer applies")
 
+// ErrHostLimit is the website refusing to enrol this machine because the
+// organisation's plan already has its self-hosted hosts running: Community
+// includes one. Its text is what belai prints.
+var ErrHostLimit = errors.New("Community includes one self-hosted host; add more with Pro or a Pix Sandbox")
+
+// hostLimitCode is the refusal code the website answers ErrHostLimit with.
+const hostLimitCode = "host_limit"
+
 // IsConflict reports whether err is ErrConflict.
 func IsConflict(err error) bool { return errors.Is(err, ErrConflict) }
 
@@ -917,6 +925,17 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 	if err != nil {
 		return err
 	}
+	if err := statusErr(method, path, status); err != nil {
+		return err
+	}
+	if out != nil && len(data) > 0 {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
+// statusErr maps a response status onto the client's errors; nil for a 2xx.
+func statusErr(method, path string, status int) error {
 	switch {
 	case status == http.StatusNotFound:
 		return ErrNotFound
@@ -926,9 +945,6 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 		return ErrConflict
 	case status < 200 || status > 299:
 		return &StatusError{Method: method, Path: path, Status: status}
-	}
-	if out != nil && len(data) > 0 {
-		return json.Unmarshal(data, out)
 	}
 	return nil
 }
@@ -1007,9 +1023,23 @@ func (c *Client) roundTrip(ctx context.Context, method, path string, in any, tim
 	return resp.StatusCode, data, nil
 }
 
-// PutHost registers or refreshes this machine.
+// PutHost registers or refreshes this machine. A 403 with code host_limit is
+// ErrHostLimit.
 func (c *Client) PutHost(ctx context.Context, hostID string, h Host) error {
-	return c.do(ctx, http.MethodPut, "/hosts/"+url.PathEscape(hostID), h, nil, requestTimeout)
+	path := "/hosts/" + url.PathEscape(hostID)
+	status, data, err := c.roundTrip(ctx, http.MethodPut, path, h, requestTimeout, false, defaultMaxBody)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusForbidden {
+		var body struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(data, &body) == nil && body.Code == hostLimitCode {
+			return ErrHostLimit
+		}
+	}
+	return statusErr(http.MethodPut, path, status)
 }
 
 // PutSession registers the session as live and returns the server's lastSeq

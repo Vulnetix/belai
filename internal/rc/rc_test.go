@@ -69,6 +69,22 @@ func TestPreflightTokenLoginIsRefused(t *testing.T) {
 	}
 }
 
+// A second self-hosted host on Community is refused by the website; preflight
+// says why in the website's own words.
+func TestPreflightHostLimit(t *testing.T) {
+	cs := Preflight(context.Background(), PreflightOptions{
+		Dirs:       []Dir{{Path: "/x"}},
+		LookPath:   func(string) (string, error) { return "/bin/vulnetix", nil },
+		AuthHeader: func(string) (string, error) { return "ApiKey org:secret", nil },
+		Server:     func(context.Context, string) error { return sessionsync.ErrHostLimit },
+	})
+	c, _ := cs.Find(CheckServer)
+	if c.Level != Fail || c.Detail != "Community includes one self-hosted host; add more with Pro or a Pix Sandbox" ||
+		!strings.Contains(c.Fix, "other machine") {
+		t.Fatalf("host limit = %+v", c)
+	}
+}
+
 func TestAllowedIsExactAfterSymlinks(t *testing.T) {
 	root := t.TempDir()
 	proj := filepath.Join(root, "proj")
