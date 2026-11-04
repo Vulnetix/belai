@@ -92,6 +92,16 @@ line, and anything else fails closed. See [Sentinel parsing](#sentinel-parsing).
 | `MODEL_EXTRACTION` | Model extraction / model stealing | **Warn** — do not promote | Live |
 | _anything else_ | Malformed output (not one token) | **Warn** — fail closed | Live |
 
+A malformed reply judged nothing. It most often comes from a rate-limited
+decision backend whose fallback answered badly, so two callers ask once more
+after a jittered wait of 2 to 5 seconds (`rolemanager.MalformedRetryWait`)
+before they give up: a fleet worker's claimed card (`Pipeline.ProcessRetry`;
+still malformed ends the turn with `agent.ClassifierUnavailableError`, which
+the fleet treats as an outage, never as a withheld verdict) and prompt
+admission under `enforce` (`Admit`; still malformed is refused as
+"classifier reply was malformed"). A SAFE or non-SAFE verdict is never asked
+twice, and every other tool result keeps the single attempt.
+
 ### What reads a file
 
 A Read result is classified by content class: only the comments, docstrings
@@ -411,7 +421,12 @@ The per-category probabilities fold to one sentinel:
 Each Decisions call is bounded at `jev.DecisionsTimeout` (3s). An endpoint
 that does not answer in time, fails in transport, or answers 429 or 5xx is
 handed to the agent model exactly like an inconclusive answer, so the content
-is still classified; it used to be an error that withheld the tool result, and
+is still classified. A decision backend (Clef on Workers AI, a `systemone`
+server) that answers 429 is first asked once more: after its `Retry-After`
+when that is 10 s or less (1 s when it sent none), plus up to 1 s of jitter.
+A longer `Retry-After`, such as a daily cap, is not waited on. A batched
+check keeps its own item-by-item retry and gets no second one. The agent
+model answers when the retry fails too; it used to be an error that withheld the tool result, and
 a slow OpenRouter withheld every read. A refused request (any other 4xx, such
 as a bad key) is still an error, and the pipeline fails closed. The
 reply is a plain sentinel token, so `ParseSentinel`, `ParseExtractionSentinel`,
@@ -648,7 +663,7 @@ starts a background relaunch (at most one per 30 s) while the fallback
 answers.
 
 **Fallback.** A timeout, a state over the size cap, a low letter mass, a 429
-or a 5xx hands the unchanged payload to the agent model's chat sentinel, and
+(after the one short `Retry-After` retry described above) or a 5xx hands the unchanged payload to the agent model's chat sentinel, and
 the handoff is recorded as a `security_fallback` activity. Any other failure
 (a refused key, a wrong path, an invalid answer) is an error and the pipeline
 fails closed. On a CPU, Decider-4B and Plumb-4B answer a short check in about

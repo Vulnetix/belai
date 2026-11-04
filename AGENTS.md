@@ -347,7 +347,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     decider-layout markup lines are prefixed.
   - A timeout, an oversized state, a low letter mass, 429 or 5xx hands the
     unchanged payload to the agent-model classifier; any other failure is an
-    error and the pipeline fails closed.
+    error and the pipeline fails closed. A 429 with a `Retry-After` of at
+    most 10 s (or none) is asked once more, jittered, before that handoff.
+  - A malformed security reply is asked once more (2 to 5 s, jittered) for a
+    fleet worker's claimed card and for prompt admission under enforce.
+    Still malformed, the card is `classifier_unavailable` (an outage, back
+    uncharged), never a withheld verdict, and the prompt is refused.
 - **A model selection is saved only after its test passes.** A `/model` edit
   that selects a model (and the providers view's assign-as-classifier, and a
   new `systemone` provider) runs the `internal/modeltest` ladder first and writes

@@ -69,7 +69,11 @@ One pass of the worker loop:
    harness sentence; the item's title, body and recent notes ride as a
    `kanban` attachment that went through the security classifier, exactly
    like a `KanbanSearch` result. A withheld item is moved to `blocked` and is
-   never worked.
+   never worked; its note names the verdict. A malformed classifier reply
+   judged nothing, so it is asked once more after 2 to 5 seconds (jittered).
+   When the second reply is malformed too, the item goes back where it was
+   claimed from, uncharged, with the fault `classifier_unavailable`, and the
+   worker backs off as for any outage.
 4. **Lease.** While the turn runs, the harness renews the lease every third
    of a lease. Renewals stay on the host, and about one per lease (the first
    that moves the lease more than half a lease past the synced one) is pushed
@@ -651,7 +655,9 @@ off. A model a person pins (`M` in the control room, `belai agent control
 
 Failures are classified by type and status, never by the provider's text:
 `provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429) and
-`provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
+`provider_transport` (reset, refused, timeout) are outages, and so is
+`classifier_unavailable` (the security classifier could not judge the item:
+its reply was malformed, and again after one retry); `provider_auth`,
 `provider_policy`, `provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
 `token_budget`, `cost_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
 `max_passes`, `incomplete`, `error`, `worker_failed`, `pool_exhausted` and `supervisor_failed` are
