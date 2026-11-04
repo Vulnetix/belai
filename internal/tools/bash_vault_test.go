@@ -181,3 +181,26 @@ func TestBashPrintsAPlainVariableAsWritten(t *testing.T) {
 		t.Fatalf("%q", res.Content)
 	}
 }
+
+// The commit signer's refusal is followed by one harness line that tells the
+// model to leave the committer alone.
+func TestBashExplainsTheNotPixIdentityRefusal(t *testing.T) {
+	b := &Bash{Root: t.TempDir(), Timeout: 5 * time.Second}
+	res, err := b.Execute(context.Background(), map[string]any{"command": `echo "pix-git-sign: not signed (not_pix_identity)" >&2; exit 1`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(res.Content, pixIdentityHint) != 1 || !strings.HasSuffix(res.Content, "\n"+pixIdentityHint) {
+		t.Fatalf("want the hint once, last: %q", res.Content)
+	}
+	if !strings.Contains(pixIdentityHint, "Pix [bot] <security@vulnetix.com>") || !strings.Contains(pixIdentityHint, "GIT_AUTHOR_*") {
+		t.Fatalf("hint text: %q", pixIdentityHint)
+	}
+	res, err = b.Execute(context.Background(), map[string]any{"command": "echo committed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Content, pixIdentityHint) {
+		t.Fatalf("no hint without the refusal: %q", res.Content)
+	}
+}

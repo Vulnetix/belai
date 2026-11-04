@@ -248,9 +248,20 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 			content += "\n" + sandboxNote(policy)
 		}
 	}
+	if strings.Contains(content, pixIdentityRefusal) {
+		content += "\n" + pixIdentityHint
+	}
 
 	return BashResult(content), nil
 }
+
+// pixIdentityRefusal is what the Pix sandbox's commit signer prints when a
+// commit's committer is not the Pix identity (website/sandbox-worker git-sign).
+const pixIdentityRefusal = "not_pix_identity"
+
+// pixIdentityHint follows that refusal, in the harness's words, so the model
+// credits a person through the author and leaves the committer alone.
+const pixIdentityHint = "commit identity: the committer must stay Pix [bot] <security@vulnetix.com>; do not pass -c user.name/-c user.email or GIT_COMMITTER_*, set only GIT_AUTHOR_* to credit someone else."
 
 func exitCode(err error) int {
 	if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {

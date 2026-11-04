@@ -132,17 +132,25 @@ func randHex(n int) string {
 
 // identityEnv supplies a commit identity when the repository has none, so a
 // worker's commit never fails on an unconfigured machine. The user's own
-// identity, when set, is left alone.
+// identity, when set, is left alone. A committer the process environment
+// already names is never replaced: the Pix sandbox sets GIT_COMMITTER_NAME and
+// GIT_COMMITTER_EMAIL to the Pix identity, and its commit signer refuses any
+// other committer (not_pix_identity).
 func identityEnv(ctx context.Context, r forge.Runner, repo string) []string {
 	if name, _ := git(ctx, r, repo, "config", "user.name"); name != "" {
 		if email, _ := git(ctx, r, repo, "config", "user.email"); email != "" {
 			return nil
 		}
 	}
-	return []string{
-		"GIT_AUTHOR_NAME=Belai agent", "GIT_AUTHOR_EMAIL=agent@belai.invalid",
-		"GIT_COMMITTER_NAME=Belai agent", "GIT_COMMITTER_EMAIL=agent@belai.invalid",
+	out := []string{"GIT_AUTHOR_NAME=Belai agent", "GIT_AUTHOR_EMAIL=agent@belai.invalid"}
+	for _, kv := range []string{"GIT_COMMITTER_NAME=Belai agent", "GIT_COMMITTER_EMAIL=agent@belai.invalid"} {
+		name, _, _ := strings.Cut(kv, "=")
+		if os.Getenv(name) != "" {
+			continue
+		}
+		out = append(out, kv)
 	}
+	return out
 }
 
 // PrepareWorktree creates a git worktree for item outside the repository.
