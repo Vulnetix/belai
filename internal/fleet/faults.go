@@ -46,12 +46,17 @@ const (
 	// FaultSupervisor ends a crew run whose supervisor kept dying: more than
 	// MaxSupervisorRestarts in SupervisorRestartWindow.
 	FaultSupervisor = "supervisor_failed"
+	// FaultClassifierUnavailable is an item the security classifier could
+	// not judge (a malformed reply, again after one retry): an outage, so
+	// the item goes back uncharged and the worker backs off.
+	FaultClassifierUnavailable = "classifier_unavailable"
 )
 
 // FaultCodes lists every code, for the control room's filter and the docs.
 var FaultCodes = []string{FaultUnavailable, FaultRateLimit, FaultTransport, FaultAuth, FaultPolicy, FaultQuota, FaultRejected,
 	FaultOverflow, FaultWallBudget, FaultTokenBudget, FaultCostBudget, FaultLeaseLost, FaultWithheld, FaultWorkspace,
-	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted, FaultSupervisor}
+	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted, FaultSupervisor,
+	FaultClassifierUnavailable}
 
 // Fault is a classified failure.
 type Fault struct {
@@ -115,6 +120,10 @@ func classifyErr(err error) Fault {
 	var withheld *agent.ItemWithheldError
 	if errors.As(err, &withheld) {
 		return Fault{Code: FaultWithheld}
+	}
+	var unavailable *agent.ClassifierUnavailableError
+	if errors.As(err, &unavailable) {
+		return Fault{Code: FaultClassifierUnavailable, Outage: true}
 	}
 	// A gateway's configuration refusal outranks the status: a 403 that is the
 	// policy denying the model, or a 429 that is a monthly quota, is neither a

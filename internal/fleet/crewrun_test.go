@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/crewlog"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionctl"
 )
@@ -453,6 +455,8 @@ func TestClassifyFault(t *testing.T) {
 		{context.Canceled, errWallBudget, "", FaultWallBudget, false},
 		{nil, errTokenBudget, "", FaultTokenBudget, false},
 		{nil, errLeaseLost, "", FaultLeaseLost, false},
+		{fmt.Errorf("turn: %w", &agent.ClassifierUnavailableError{Item: "K-1"}), nil, "", FaultClassifierUnavailable, true},
+		{&agent.ItemWithheldError{Item: "K-1", Sentinel: rolemanager.SentinelJailbreak}, nil, "", FaultWithheld, false},
 		{nil, nil, run.StopStalled, FaultStalled, false},
 		{nil, nil, run.StopMaxPasses, FaultMaxPasses, false},
 		{nil, nil, "", FaultIncomplete, false},
@@ -481,6 +485,49 @@ func TestATransportFailureIsNotAnAttempt(t *testing.T) {
 	rec, _ := reg.Get(w.Record.ID)
 	if got.Attempts != 0 || rec.LastFault != FaultTransport || rec.Outages != 1 {
 		t.Fatalf("attempts %d, fault %q, outages %d", got.Attempts, rec.LastFault, rec.Outages)
+	}
+}
+
+// A security classifier that could not judge the card (a malformed reply,
+// again after the retry) is an outage: the card goes back where it was
+// claimed from, uncharged, with no empty verdict in its note.
+func TestAnUnavailableClassifierIsNotAnAttempt(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, tt Turn) (run.Result, error) {
+		return run.Result{}, &agent.ClassifierUnavailableError{Item: tt.Item.Short()}
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	rec, _ := reg.Get(w.Record.ID)
+	if got.Attempts != 0 || got.List != kanban.Backlog || rec.LastFault != FaultClassifierUnavailable || rec.Outages != 1 {
+		t.Fatalf("list %s, attempts %d, fault %q, outages %d", got.List, got.Attempts, rec.LastFault, rec.Outages)
+	}
+	note := got.LastNote()
+	if strings.Contains(note, "withheld") || strings.Contains(note, ": ;") || !strings.Contains(note, "not counted as an attempt") {
+		t.Fatalf("note %q", note)
+	}
+}
+
+// A real withheld verdict still blocks the card, and its note names the
+// verdict, never an empty label.
+func TestAWithheldCardNamesTheVerdict(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, roundsPatcher(1), func(_ context.Context, tt Turn) (run.Result, error) {
+		return run.Result{}, &agent.ItemWithheldError{Item: tt.Item.Short(), Sentinel: rolemanager.SentinelJailbreak}
+	})
+	w.Repo = gitRepo(t)
+	it := findingCardOn(t, store, w, kanban.Backlog, "vuln")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get(it.ID)
+	note := got.LastNote()
+	if got.List != kanban.Blocked || !strings.Contains(note, rolemanager.SentinelJailbreak.Label()) || strings.Contains(note, "classifier: ;") {
+		t.Fatalf("list %s note %q", got.List, note)
 	}
 }
 

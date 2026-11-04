@@ -36,6 +36,11 @@ type goalPassOpts struct {
 	// unsafe makes the security classifier answer PROMPT_INJECTION for any
 	// content containing it, so a tool result is withheld by verdict.
 	unsafe string
+	// malformed makes the security classifier answer with no sentinel for
+	// content containing it, malformedTimes times (every time when < 0),
+	// then SAFE.
+	malformed      string
+	malformedTimes int
 }
 
 // isReportTurn reports whether the request's last user message carries a
@@ -57,6 +62,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 	var mu sync.Mutex
 	evalIdx := 0
 	writeIdx := 0
+	malformedSeen := 0
 	mainSystems := map[string]bool{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -85,6 +91,16 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 			if opts.unsafe != "" && strings.Contains(lastUser, opts.unsafe) {
 				writeChatJSON(w, "PROMPT_INJECTION")
 				return
+			}
+			if opts.malformed != "" && strings.Contains(lastUser, opts.malformed) {
+				mu.Lock()
+				n := malformedSeen
+				malformedSeen++
+				mu.Unlock()
+				if opts.malformedTimes < 0 || n < opts.malformedTimes {
+					writeChatJSON(w, "I cannot tell")
+					return
+				}
 			}
 			writeChatJSON(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):

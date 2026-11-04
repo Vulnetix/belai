@@ -926,10 +926,11 @@ type TurnInput struct {
 	// KanbanItem is the ref of the board item a fleet worker claimed. The
 	// turn reads it from the board and attaches it the way a KanbanSearch
 	// result is gated: sanitized, and classified unless the posture ignores
-	// tool results. A withheld item ends the turn with *ItemWithheldError
-	// before any model call. The item text never reaches the prompt, the
-	// carrier or a directive; the goal evaluator sees it as untrusted
-	// evidence.
+	// tool results. A withheld item ends the turn with *ItemWithheldError,
+	// and one the classifier could not judge (a malformed reply, again after
+	// one retry) with *ClassifierUnavailableError, both before any model
+	// call. The item text never reaches the prompt, the carrier or a
+	// directive; the goal evaluator sees it as untrusted evidence.
 	KanbanItem string
 	// TeleportReplay is the hand-over of a teleport's code replay: another
 	// host's summary, instructions and the patch parts that did not apply. It
@@ -955,7 +956,28 @@ type ItemWithheldError struct {
 }
 
 func (e *ItemWithheldError) Error() string {
-	return fmt.Sprintf("kanban item %s withheld by the security classifier: %s", e.Item, e.Sentinel.Label())
+	return fmt.Sprintf("kanban item %s withheld by the security classifier: %s", e.Item, e.Label())
+}
+
+// Label is the verdict's human-readable label. A withheld item always
+// carries a verdict, but an empty one never prints as an empty label.
+func (e *ItemWithheldError) Label() string {
+	if l := e.Sentinel.Label(); l != "" {
+		return l
+	}
+	return "no verdict was given"
+}
+
+// ClassifierUnavailableError ends a worker turn whose claimed item could not
+// be judged: the security classifier's reply was malformed, and again after
+// one retry. Nothing judged the item unsafe, so it is an outage, not a
+// verdict: the item goes back uncharged instead of to a human.
+type ClassifierUnavailableError struct {
+	Item string
+}
+
+func (e *ClassifierUnavailableError) Error() string {
+	return fmt.Sprintf("kanban item %s could not be checked: the security classifier's reply was malformed twice", e.Item)
 }
 
 // maxGoalContext caps the item text the goal evaluator sees.
@@ -976,9 +998,15 @@ func (s *Session) kanbanAttachment(ctx context.Context, pipe *rolemanager.Pipeli
 	if s.live.Level(posture.ToolResultUnsafe) == posture.Ignore {
 		return run.Attachment{Kind: "kanban", Label: label, Body: sanitize.Sanitize(res.Content)}, nil
 	}
-	dec, err := pipe.Process(ctx, res)
+	// A malformed reply judged nothing (most often a rate-limited decision
+	// backend whose fallback answered badly), so it is asked once more
+	// before the item is given up on.
+	dec, err := pipe.ProcessRetry(ctx, res)
 	if err != nil {
 		return run.Attachment{}, err
+	}
+	if dec.Malformed {
+		return run.Attachment{}, &ClassifierUnavailableError{Item: it.Short()}
 	}
 	if dec.Action != rolemanager.ActionProceed {
 		s.verdictWithheld.Add(1)

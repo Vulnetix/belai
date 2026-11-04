@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -118,6 +119,70 @@ func TestWorkerTurnRefusesAWithheldItem(t *testing.T) {
 	}
 	if len(*systems) != 0 {
 		t.Fatal("the main model ran on a withheld item")
+	}
+}
+
+func TestWorkerTurnRetriesAMalformedVerdictOnce(t *testing.T) {
+	srv, mu, systems := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_PARTIAL", "GOAL_PARTIAL", "GOAL_COMPLETE"}, malformed: "FLAKY-CLASSIFIER", malformedTimes: 1})
+	defer srv.Close()
+	store, it, claim := claimForTest(t, "FLAKY-CLASSIFIER put hello in f.txt")
+	sess := newWorkerSession(t, srv, store, claim)
+	waits := 0
+	sess.pipeline(nil).RetryWait = func() time.Duration { waits++; return 0 }
+
+	_, err := sess.RunInputObserved(context.Background(), nil, TurnInput{
+		Prompt: workerPrompt, HarnessPrompt: workerPrompt, ForceMode: modes.ModeGoal,
+		KanbanItem: it.ID, NoGoalDraft: true,
+	}, nil)
+	if err != nil {
+		t.Fatalf("one malformed reply then SAFE must attach the item: %v", err)
+	}
+	if waits != 1 {
+		t.Fatalf("waits %d, want one retry", waits)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(*systems) == 0 {
+		t.Fatal("the main model never ran on the attached item")
+	}
+}
+
+func TestWorkerTurnReportsAnUnavailableClassifier(t *testing.T) {
+	srv, _, systems := goalPassServer(t, goalPassOpts{malformed: "FLAKY-CLASSIFIER", malformedTimes: -1})
+	defer srv.Close()
+	store, it, claim := claimForTest(t, "FLAKY-CLASSIFIER put hello in f.txt")
+	sess := newWorkerSession(t, srv, store, claim)
+	waits := 0
+	sess.pipeline(nil).RetryWait = func() time.Duration { waits++; return 0 }
+
+	_, err := sess.RunInputObserved(context.Background(), nil, TurnInput{
+		Prompt: workerPrompt, HarnessPrompt: workerPrompt, ForceMode: modes.ModeGoal,
+		KanbanItem: it.ID, NoGoalDraft: true,
+	}, nil)
+	var unavailable *ClassifierUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("err %v, want ClassifierUnavailableError", err)
+	}
+	var withheld *ItemWithheldError
+	if errors.As(err, &withheld) {
+		t.Fatal("a malformed reply is not a withheld verdict")
+	}
+	if waits != 1 {
+		t.Fatalf("waits %d, want exactly one retry", waits)
+	}
+	if len(*systems) != 0 {
+		t.Fatal("the main model ran on an item no classifier judged")
+	}
+}
+
+func TestItemWithheldErrorNamesTheVerdict(t *testing.T) {
+	e := &ItemWithheldError{Item: "K-1", Sentinel: rolemanager.SentinelPromptInjection}
+	if !strings.Contains(e.Error(), rolemanager.SentinelPromptInjection.Label()) {
+		t.Fatalf("error %q does not name the verdict", e.Error())
+	}
+	empty := &ItemWithheldError{Item: "K-1"}
+	if strings.HasSuffix(empty.Error(), ": ") || empty.Label() == "" {
+		t.Fatalf("an empty verdict printed an empty label: %q", empty.Error())
 	}
 }
 

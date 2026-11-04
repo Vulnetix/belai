@@ -1327,10 +1327,16 @@ type outcome struct {
 func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error, claim *tools.WorkerClaim) outcome {
 	o := outcome{stop: res.StopReason, passes: res.Passes}
 	var withheld *agent.ItemWithheldError
+	var unjudged *agent.ClassifierUnavailableError
 	rec := recordedOutcome(claim, res, runErr, cause)
 	switch {
 	case errors.As(runErr, &withheld):
-		return outcome{failed: true, blocked: true, fault: Fault{Code: FaultWithheld}, note: "item text withheld by the security classifier: " + withheld.Sentinel.Label() + "; a human must review it"}
+		return outcome{failed: true, blocked: true, fault: Fault{Code: FaultWithheld}, note: "item text withheld by the security classifier: " + withheld.Label() + "; a human must review it"}
+	case errors.As(runErr, &unjudged):
+		// Nothing judged the item: the classifier could not answer. The item
+		// goes back where it was claimed from, uncharged, and the worker
+		// backs off as for any outage.
+		return outcome{failed: true, transient: true, fault: Fault{Code: FaultClassifierUnavailable, Outage: true}, note: "the security classifier could not check the item text (its reply was malformed twice); this is not counted as an attempt"}
 	case res.StopReason == run.StopComplete && runErr == nil:
 		o.note = fmt.Sprintf("agent %s completed it (%d passes)", w.Profile.Name, res.Passes)
 		return o
