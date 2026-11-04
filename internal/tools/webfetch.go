@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/netguard"
+	"github.com/vulnetix/belai/internal/vaultenv"
 	"github.com/vulnetix/belai/internal/version"
 )
 
@@ -125,6 +127,27 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	req.Header.Set("user-agent", version.UserAgent())
 	calltrace.Apply(ctx, req.Header)
 
+	// The vault's GitHub token authenticates a call to the GitHub API, and only
+	// that: anonymous calls from a shared egress address hit the per-address
+	// rate limit. It goes to https://api.github.com and to no other host, and a
+	// redirect that leaves that host drops it for the rest of the chain.
+	token := githubAPIToken(u, time.Now())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+		inner := client.CheckRedirect
+		base := *client
+		client = &base
+		client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if !onGitHubAPI(next.URL) || !allOnGitHubAPI(via) {
+				next.Header.Del("Authorization")
+			}
+			if inner != nil {
+				return inner(next, via)
+			}
+			return nil
+		}
+	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, err
@@ -146,6 +169,12 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") {
 		text = htmlText(text)
 	}
+	// A page that echoes a vault value (the token above among them) shows the
+	// placeholder, never the value.
+	if token != "" {
+		text = redact(text, []string{token})
+	}
+	text = vaultenv.Default.Scrub(text)
 	res := WebFetchResult(text)
 	// A prompt asks the harness to answer it over the page instead of
 	// returning the page (see WebFetchPrompt); the tool only carries it.
@@ -164,6 +193,36 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 		}
 	}
 	return res, nil
+}
+
+// githubAPIHost is the one host WebFetch sends the vault's GitHub token to.
+const githubAPIHost = "api.github.com"
+
+// onGitHubAPI reports whether u is https://api.github.com on the default port.
+func onGitHubAPI(u *url.URL) bool {
+	if u == nil || u.Scheme != "https" || strings.ToLower(u.Hostname()) != githubAPIHost {
+		return false
+	}
+	port := u.Port()
+	return port == "" || port == "443"
+}
+
+func allOnGitHubAPI(via []*http.Request) bool {
+	for _, r := range via {
+		if !onGitHubAPI(r.URL) {
+			return false
+		}
+	}
+	return true
+}
+
+// githubAPIToken is the vault's GitHub token when u is on the GitHub API, else
+// empty.
+func githubAPIToken(u *url.URL, now time.Time) string {
+	if !onGitHubAPI(u) {
+		return ""
+	}
+	return forge.VaultGitHubToken(now)
 }
 
 // pageKey is the cache and index key of a checked URL: its canonical form
@@ -247,7 +306,7 @@ func validateHost(host string) error {
 		}
 		return nil
 	}
-	addrs, err := net.LookupIP(host)
+	addrs, err := lookupIP(host)
 	if err != nil {
 		return fmt.Errorf("dns lookup failed: %w", err)
 	}
@@ -258,6 +317,9 @@ func validateHost(host string) error {
 	}
 	return nil
 }
+
+// lookupIP resolves a host for validateHost; tests replace it.
+var lookupIP = net.LookupIP
 
 // forbiddenIP reports whether an address must never be fetched. The range
 // table lives in internal/netguard so every dialer shares one policy.
