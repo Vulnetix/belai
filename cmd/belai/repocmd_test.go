@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/libitem"
+	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/repos"
 )
 
@@ -26,7 +27,7 @@ func cliOrigin(t *testing.T) (bare string) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	_ = os.MkdirAll(home, 0o755)
-	env := append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+	env := append(proc.WithoutGitEnv(os.Environ()), "HOME="+home, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test")
 	git := func(dir string, args ...string) {
 		cmd := exec.Command("git", args...)
