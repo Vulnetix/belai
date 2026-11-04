@@ -48,6 +48,10 @@ func TestMain(m *testing.M) {
 	// the binary exercises its outside-the-sandbox path when `go test` runs
 	// inside a Belai sandbox.
 	os.Unsetenv(sandbox.EnvMarker)
+	// The same inherited environment points git at the wrapper's repository
+	// (GIT_DIR, GIT_WORK_TREE, the object overrides); the e2e fleet flows
+	// build real git fixtures and must see only their own.
+	gittest.IsolateProcess()
 	os.Exit(m.Run())
 }
 

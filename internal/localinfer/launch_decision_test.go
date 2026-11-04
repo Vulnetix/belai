@@ -16,12 +16,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/belai/internal/gittest"
 )
 
 // TestMain lets the test binary double as a fake llama-server: with
 // LOCALINFER_FAKE_SERVER set it serves /health on --port, or exits early the
 // way a failed model load does.
 func TestMain(m *testing.M) {
+	// Drop inherited git redirection so nothing in the environment surprises
+	// a spawned server; the harness worktree exports GIT_DIR and friends.
+	gittest.IsolateProcess()
 	switch os.Getenv("LOCALINFER_FAKE_SERVER") {
 	case "serve":
 		fakeServe()
