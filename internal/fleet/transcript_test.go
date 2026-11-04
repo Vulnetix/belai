@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
@@ -129,5 +130,73 @@ func TestWorkerEndsItsSessionWithTheTurnOutcome(t *testing.T) {
 				t.Fatalf("end body %s, want reason %q (%v)", body, c.reason, fmt.Sprint(err))
 			}
 		})
+	}
+}
+
+// The bug this guards: a worker's turn session that the next turn's session
+// replaces ended superseded. It now ends with its own turn's outcome, and the
+// next turn's outcome never lands on it.
+func TestReplacedWorkerSessionKeepsItsTurnOutcome(t *testing.T) {
+	var mu sync.Mutex
+	put, ends := map[string]bool{}, map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if _, rest, ok := strings.Cut(r.URL.Path, "/sessions/"); ok {
+			mu.Lock()
+			switch {
+			case r.Method == http.MethodPut && !strings.Contains(rest, "/"):
+				put[rest] = true
+			case r.Method == http.MethodPost && strings.HasSuffix(rest, "/end"):
+				b, _ := io.ReadAll(r.Body)
+				ends[strings.TrimSuffix(rest, "/end")] = string(b)
+			}
+			mu.Unlock()
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Write([]byte(`{"lastSeq":-1}`))
+	}))
+	defer srv.Close()
+	client, err := sessionsync.NewClient(sessionsync.BaseURL(srv.URL), func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Worker{Profile: builderProfile(), Repo: t.TempDir(), Sessions: session.NewStoreAt(t.TempDir()), Log: io.Discard}
+	w.mirror = sessionsync.New(sessionsync.Options{Client: client, HostID: "11111111-1111-4111-8111-111111111111"})
+	w.mirror.Start(context.Background())
+	seen := func(what string, ok func() bool) {
+		t.Helper()
+		for i := 0; i < 500; i++ {
+			mu.Lock()
+			done := ok()
+			mu.Unlock()
+			if done {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("%s did not happen", what)
+	}
+	item := kanban.Item{ID: "item-1", Title: "do it"}
+	first, second := session.MustID(), session.MustID()
+	ctx := context.Background()
+
+	tr := w.transcript(Turn{Item: item, Workdir: w.Repo, SessionID: first})
+	tr.user(workPrompt)
+	tr.finish(ctx, run.Result{StopReason: run.StopMaxPasses, Passes: 3}, nil)
+	seen("first session registered", func() bool { return put[first] })
+
+	tr = w.transcript(Turn{Item: item, Workdir: w.Repo, SessionID: second})
+	tr.user(workPrompt)
+	seen("first session ended", func() bool { return ends[first] != "" })
+	tr.finish(ctx, run.Result{}, &run.ProviderError{Status: http.StatusTooManyRequests})
+	seen("second session registered", func() bool { return put[second] })
+	w.mirror.Close(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for id, want := range map[string]string{first: sessionsync.EndMaxTurns, second: sessionsync.EndRateLimited} {
+		var got sessionsync.EndInfo
+		if err := json.Unmarshal([]byte(ends[id]), &got); err != nil || got.Reason != want {
+			t.Errorf("session %s end body %q, want reason %q", id, ends[id], want)
+		}
 	}
 }
