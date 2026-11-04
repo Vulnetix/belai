@@ -68,7 +68,13 @@ func execRun(ctx context.Context, dir string, env []string, argv []string) ([]by
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, env)
+		// Redact against the environment the child really had: with no extra
+		// env it inherits this process's, which can hold a forge token.
+		childEnv := cmd.Env
+		if childEnv == nil {
+			childEnv = os.Environ()
+		}
+		return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, childEnv)
 	}
 	return stdout.Bytes(), nil
 }
@@ -103,7 +109,7 @@ func HardenedGit(gitDir, workTree string, extraEnv ...string) Runner {
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
-			return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, extraEnv)
+			return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, cmd.Env)
 		}
 		return stdout.Bytes(), nil
 	}

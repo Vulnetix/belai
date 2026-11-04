@@ -117,3 +117,25 @@ func TestRunnersReturnCLIError(t *testing.T) {
 		}
 	}
 }
+
+// A credential the child inherited from this process (no extra env) is
+// redacted too, not only one the runner handed it.
+func TestExecRunnerRedactsAnInheritedCredential(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	t.Setenv("BELAI_FORGE_TOKEN_EXAMPLE_COM", "inherited-secret-0042")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := ExecRunner(ctx, t.TempDir(), "sh", "-c", `printf 'fatal: bad token %s\n' "$BELAI_FORGE_TOKEN_EXAMPLE_COM" >&2; exit 1`)
+	ce := AsCLIError(err)
+	if ce == nil {
+		t.Fatalf("%T %v, want a *CLIError", err, err)
+	}
+	if strings.Contains(ce.Stderr, "inherited-secret-0042") || strings.Contains(err.Error(), "inherited-secret-0042") {
+		t.Fatalf("an inherited credential leaked: %q / %q", ce.Stderr, err.Error())
+	}
+	if err.Error() != "sh: fatal: bad token [redacted]" {
+		t.Fatalf("Error() = %q", err.Error())
+	}
+}
