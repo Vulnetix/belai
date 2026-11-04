@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/belai/internal/gittest"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sandbox"
 )
