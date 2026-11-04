@@ -115,6 +115,17 @@ func heldMembers(run CrewRun) (CrewRun, []string) {
 	return run, held
 }
 
+// heldCode is the fault code a run whose every member is held ends on:
+// provider_quota when every stop was a spent quota, else provider_policy.
+func heldCode(run CrewRun) string {
+	for _, s := range run.PolicyStops {
+		if s.Code != FaultQuota {
+			return FaultPolicy
+		}
+	}
+	return FaultQuota
+}
+
 // MaxTargetPart bounds a provider or a model name in a target.
 const MaxTargetPart = 128
 

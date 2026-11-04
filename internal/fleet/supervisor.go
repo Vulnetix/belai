@@ -273,7 +273,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 	// left out of the allocation, and a run with every member held ends.
 	run, held := heldMembers(run)
 	if len(held) > 0 && len(run.Members) == 0 {
-		return "stopped: provider_policy: the provider refuses every member's model: " + strings.Join(held, ", ")
+		return "stopped: " + heldCode(run) + ": the provider refuses every member's model: " + strings.Join(held, ", ")
 	}
 	if heldKey := strings.Join(held, ","); heldKey != s.held {
 		s.held = heldKey

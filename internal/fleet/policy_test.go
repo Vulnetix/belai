@@ -169,6 +169,14 @@ func TestSupervisorHoldsAMemberThePolicyStopped(t *testing.T) {
 	if why := s.Reconcile(all); !strings.HasPrefix(why, "stopped: provider_policy") || len(spawned) != 0 {
 		t.Fatalf("reason %q, spawned %+v", why, spawned)
 	}
+	// Every member held on a spent quota: the run ends on provider_quota.
+	quota, _ := reg.UpdateRun(cr.ID, "worker", func(r *CrewRun) error {
+		r.PolicyStops = map[string]PolicyStop{"builder": {Target: Target{"p1", "m1"}, Code: FaultQuota}, "reviewer": {Target: Target{"p1", "m1"}, Code: FaultQuota}}
+		return nil
+	})
+	if why := s.Reconcile(quota); !strings.HasPrefix(why, "stopped: provider_quota") {
+		t.Fatalf("quota reason %q", why)
+	}
 }
 
 // A member model is the member's first pool target, ahead of the run's pool;
