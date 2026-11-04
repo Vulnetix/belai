@@ -1,6 +1,9 @@
 package fleet
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // The provider pool of a crew run. The run's pool is a ring of provider and
 // model targets, not a primary with fallbacks: a worker starts on the first,
@@ -40,7 +43,8 @@ func (w *Worker) refreshRun() string {
 	case d.Paused:
 		return "this repository is paused in the crew run"
 	}
-	if len(run.Pool) == 0 || w.pinned {
+	pool := run.PoolFor(w.Profile.Name)
+	if len(pool) == 0 || w.pinned {
 		return ""
 	}
 	switch {
@@ -54,8 +58,8 @@ func (w *Worker) refreshRun() string {
 		// Another worker got a card through since: the pool is not down, so
 		// this worker cycles on.
 		w.forgetPool()
-		w.moveTo(run, (w.Record.PoolIndex+1)%len(run.Pool), "another worker got through")
-	case !run.InPool(w.currentTarget()):
+		w.moveTo(run, (w.Record.PoolIndex+1)%len(pool), "another worker got through")
+	case !slices.Contains(pool, w.currentTarget()):
 		// The pool was edited and no longer holds this worker's target.
 		w.moveTo(run, 0, "the pool changed")
 	}
@@ -67,7 +71,7 @@ func (w *Worker) refreshRun() string {
 // not answered yet.
 func (w *Worker) poolWait(poll time.Duration) time.Duration {
 	run := w.crewRun
-	if run == nil || len(run.Pool) == 0 {
+	if run == nil || len(run.PoolFor(w.Profile.Name)) == 0 {
 		return 0
 	}
 	if run.PoolPhase == PoolSleeping {
@@ -88,7 +92,11 @@ func (w *Worker) poolWait(poll time.Duration) time.Duration {
 // reports whether it handled the streak, so the loop skips its own backoff.
 func (w *Worker) poolStep() bool {
 	run := w.crewRun
-	if run == nil || len(run.Pool) == 0 || w.pinned || w.Controls == nil || w.outages < run.SwitchAfterOr() {
+	if run == nil || w.pinned || w.Controls == nil || w.outages < run.SwitchAfterOr() {
+		return false
+	}
+	pool := run.PoolFor(w.Profile.Name)
+	if len(pool) == 0 {
 		return false
 	}
 	if w.poolFailed == nil {
@@ -97,9 +105,9 @@ func (w *Worker) poolStep() bool {
 	w.poolFailed[w.currentTarget()] = true
 	streak := w.outages
 	w.outages, w.Record.Outages, w.Record.OutageUntil = 0, 0, 0
-	for step := 1; step <= len(run.Pool); step++ {
-		i := (w.Record.PoolIndex + step) % len(run.Pool)
-		t := run.Pool[i]
+	for step := 1; step <= len(pool); step++ {
+		i := (w.Record.PoolIndex + step) % len(pool)
+		t := pool[i]
 		if w.poolFailed[t] {
 			continue
 		}
@@ -130,13 +138,14 @@ func (w *Worker) forgetPool() {
 	w.Record.PoolExhausted, w.Record.PoolExhaustedAt = false, 0
 }
 
-// moveTo puts the worker on pool target i, reporting whether this host can
-// run it.
+// moveTo puts the worker on target i of its member's pool (PoolFor),
+// reporting whether this host can run it.
 func (w *Worker) moveTo(run CrewRun, i int, why string) bool {
-	if i < 0 || i >= len(run.Pool) {
+	pool := run.PoolFor(w.Profile.Name)
+	if i < 0 || i >= len(pool) {
 		return false
 	}
-	t := run.Pool[i]
+	t := pool[i]
 	if t != w.currentTarget() {
 		if err := w.setTarget(t, ""); err != nil {
 			w.logf("pool: cannot run %s: %v", t, err)

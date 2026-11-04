@@ -156,7 +156,7 @@ func (w *Worker) applyControl() {
 			// A pool target the control picked is where the pool cycles on
 			// from.
 			if run := w.crewRun; run != nil {
-				if i := slices.Index(run.Pool, w.currentTarget()); i >= 0 {
+				if i := slices.Index(run.PoolFor(w.Profile.Name), w.currentTarget()); i >= 0 {
 					w.Record.PoolIndex = i
 				}
 			}

@@ -121,6 +121,15 @@ type CrewRun struct {
 	// before. Empty keeps each profile's own model, with no switching.
 	Pool        []Target `json:"pool,omitempty"`
 	SwitchAfter int      `json:"switch_after,omitempty"`
+	// MemberModels starts a member on its own target, by profile name
+	// (`agent start -member-model PROFILE=PROVIDER/MODEL`): it is that
+	// member's first pool target, ahead of Pool (PoolFor).
+	MemberModels map[string]Target `json:"member_models,omitempty"`
+	// PolicyStops holds members whose worker stopped on a config fault (a
+	// model the policy refuses), by profile name. The supervisor starts no
+	// worker for such a member while its start target is the one refused; a
+	// person's next edit of the run clears them (policy.go).
+	PolicyStops map[string]PolicyStop `json:"policy_stops,omitempty"`
 	// FinalRetrySecs is how long the crew sleeps once every target in the
 	// pool failed, before its final retry.
 	FinalRetrySecs int    `json:"final_retry_secs,omitempty"`
@@ -251,6 +260,17 @@ func (r *CrewRun) Normalize() {
 		}
 	}
 	r.Pool = pool
+	for k, t := range r.MemberModels {
+		if t.Zero() {
+			delete(r.MemberModels, k)
+		}
+	}
+	if len(r.MemberModels) == 0 {
+		r.MemberModels = nil
+	}
+	if len(r.PolicyStops) == 0 {
+		r.PolicyStops = nil
+	}
 }
 
 // Validate checks a normalized run.
@@ -270,6 +290,14 @@ func (r CrewRun) Validate() error {
 	for _, t := range r.Pool {
 		if t.Model == "" {
 			return errors.New("a pool target needs a model")
+		}
+	}
+	for profile, t := range r.MemberModels {
+		if !slices.ContainsFunc(r.Members, func(m agentprofile.Member) bool { return m.Profile == profile }) {
+			return fmt.Errorf("a member model names %q, which is not a member of the crew", profile)
+		}
+		if err := CheckTarget(t); err != nil {
+			return fmt.Errorf("the member model for %s: %w", profile, err)
 		}
 	}
 	return nil
@@ -449,6 +477,11 @@ func (r *Registry) UpdateRun(id, by string, fn func(*CrewRun) error) (CrewRun, e
 	run, err := r.GetRun(id)
 	if err != nil {
 		return CrewRun{}, err
+	}
+	if personEdit(by) {
+		// A person changed the run (the model, the pool, anything): the members
+		// a policy refusal held get another start (policy.go).
+		run.PolicyStops = nil
 	}
 	if err := fn(&run); err != nil {
 		return CrewRun{}, err

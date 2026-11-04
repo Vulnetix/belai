@@ -34,6 +34,7 @@ type crewLaunch struct {
 	provider, model         string
 	effort                  string
 	pool                    []string
+	memberModels            []string // -member-model PROFILE=PROVIDER/MODEL
 	switchAfter, finalRetry int
 	maxWorkers              int
 	stay, fill, webCtl      bool
@@ -60,6 +61,10 @@ func startCrewRun(l crewLaunch) (int, error) {
 	c, err := agentprofile.LoadCrew(l.crew)
 	if err != nil {
 		return 1, err
+	}
+	memberModels, err := parseMemberModels(l.memberModels, c)
+	if err != nil {
+		return 2, err
 	}
 	var scope []fleet.ScopeDir
 	if len(l.dirs) == 0 {
@@ -127,6 +132,7 @@ func startCrewRun(l crewLaunch) (int, error) {
 	for _, t := range l.pool {
 		run.Pool = append(run.Pool, parseTarget(t))
 	}
+	run.MemberModels = memberModels
 	run, err = reg.LaunchCrew(run, start)
 	if err != nil {
 		return 1, err
@@ -404,4 +410,28 @@ func stayIdleSecs(d time.Duration) int {
 		return 0
 	}
 	return int(fleet.StayIdleCap(d) / time.Second)
+}
+
+// parseMemberModels reads the -member-model flags of a crew start: each names
+// a member of the crew once, with a provider/model checked as a target.
+func parseMemberModels(flags []string, c agentprofile.Crew) (map[string]fleet.Target, error) {
+	if len(flags) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, len(c.Members))
+	for _, m := range c.Members {
+		names = append(names, m.Profile)
+	}
+	out := map[string]fleet.Target{}
+	for _, f := range flags {
+		profile, t, err := fleet.ParseMemberModel(f, names)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := out[profile]; dup {
+			return nil, fmt.Errorf("-member-model names %s twice", profile)
+		}
+		out[profile] = t
+	}
+	return out, nil
 }

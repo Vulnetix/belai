@@ -594,7 +594,7 @@ func (a *App) crewWorkersView(w int) string {
 		if r.Branch != "" {
 			b.WriteString(components.MutedStyle.Render(ansi.Truncate("  branch "+r.Branch+" · session "+r.Session, w, "…")) + "\n")
 		}
-		if n := len(cr.run.Pool); n > 0 && r.PoolIndex < n {
+		if n := len(cr.run.PoolFor(r.Profile)); n > 0 && r.PoolIndex < n {
 			b.WriteString(components.MutedStyle.Render(ansi.Truncate(fmt.Sprintf("  pool target %d of %d", r.PoolIndex+1, n), w, "…")) + "\n")
 		}
 		if ack, ok := cr.acks[r.ID]; ok {

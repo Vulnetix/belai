@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -20,6 +22,7 @@ const (
 	FaultRateLimit   = "provider_rate_limit"  // 429
 	FaultTransport   = "provider_transport"   // reset, timeout, refused
 	FaultAuth        = "provider_auth"        // 401, 403
+	FaultPolicy      = "provider_policy"      // a model or provider the policy refuses
 	FaultQuota       = "provider_quota"       // quota, billing, key
 	FaultRejected    = "provider_rejected"    // any other 4xx
 	FaultOverflow    = "context_overflow"
@@ -44,7 +47,7 @@ const (
 )
 
 // FaultCodes lists every code, for the control room's filter and the docs.
-var FaultCodes = []string{FaultUnavailable, FaultRateLimit, FaultTransport, FaultAuth, FaultQuota, FaultRejected,
+var FaultCodes = []string{FaultUnavailable, FaultRateLimit, FaultTransport, FaultAuth, FaultPolicy, FaultQuota, FaultRejected,
 	FaultOverflow, FaultWallBudget, FaultTokenBudget, FaultCostBudget, FaultLeaseLost, FaultWithheld, FaultWorkspace,
 	FaultStalled, FaultEvaluator, FaultMaxPasses, FaultIncomplete, FaultError, FaultWorker, FaultPoolExhausted, FaultSupervisor}
 
@@ -57,6 +60,11 @@ type Fault struct {
 	// the item no attempt, and enough of them in a row move the worker to a
 	// fallback.
 	Outage bool
+	// Config is a failure only a person can clear: a model or provider the
+	// organisation's policy refuses, or a quota an administrator sets that has
+	// run out. It costs the item no attempt, and the worker stops instead of
+	// claiming another card that would fail the same way.
+	Config bool
 }
 
 // Budget reports whether the failure is an item budget running out (cost,
@@ -106,6 +114,12 @@ func classifyErr(err error) Fault {
 	if errors.As(err, &withheld) {
 		return Fault{Code: FaultWithheld}
 	}
+	// A gateway's configuration refusal outranks the status: a 403 that is the
+	// policy denying the model, or a 429 that is a monthly quota, is neither a
+	// bad key nor a rate limit.
+	if f, ok := configFault(err); ok {
+		return f
+	}
 	var pe *run.ProviderError
 	v := (resilience.DefaultClassifier{}).Classify(err)
 	if errors.As(err, &pe) && pe.Status != 0 {
@@ -147,6 +161,35 @@ func classifyErr(err error) Fault {
 	return Fault{Code: FaultError}
 }
 
+// providerBody matches a provider failure that reached the worker only as
+// text: the status and the redacted JSON body ProviderError.Error writes.
+var providerBody = regexp.MustCompile(`provider returned ([1-5][0-9][0-9]): (\{.*\})\s*$`)
+
+// configFault reads the provider's error body with the firewall's refusal
+// parser (firewall.ParseRefusal): by the gateway's code, never by text a
+// provider or a model wrote.
+func configFault(err error) (Fault, bool) {
+	var status int
+	var body string
+	var pe *run.ProviderError
+	if errors.As(err, &pe) && pe.Status != 0 {
+		status, body = pe.Status, pe.Body
+	} else if m := providerBody.FindStringSubmatch(err.Error()); m != nil {
+		status, _ = strconv.Atoi(m[1])
+		body = m[2]
+	} else {
+		return Fault{}, false
+	}
+	r, ok := firewall.ParseRefusal([]byte(body))
+	switch {
+	case !ok:
+		return Fault{}, false
+	case r.Quota:
+		return Fault{Code: FaultQuota, Status: status, Config: true}, true
+	}
+	return Fault{Code: FaultPolicy, Status: status, Config: true}, true
+}
+
 // deniedReason is the resilience classifier's verdict on quota, billing and
 // key text.
 const deniedReason = "provider denied the request"
@@ -179,7 +222,7 @@ func EndReason(err error) string {
 		return "rate_limited"
 	case FaultQuota:
 		return "quota_exceeded"
-	case FaultAuth:
+	case FaultAuth, FaultPolicy:
 		return "auth_failed"
 	case FaultWallBudget:
 		return "timeout"

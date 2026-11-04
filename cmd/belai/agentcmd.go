@@ -85,6 +85,8 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
                                  takes new directories into its scope
         -pool P/M                the provider pool, cycled when a target
                                  keeps failing (repeatable; -model is first)
+        -member-model PROFILE=P/M  that member starts on its own model,
+                                 ahead of the pool (repeatable)
         -switch-after N -final-retry SECS -effort E
   runs [-all] [-json]            crew runs: scope, workers, primary model
   control [-model P/M] [-effort E] [-drain] [-auto] ID|NAME|RUN
@@ -575,14 +577,15 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	webControls := fs.Bool("web-controls", false, "the website may change the workers' model, effort, guardrails and caveman (set by `belai rc --web-controls`)")
 	allowOff := fs.Bool("web-allow-guardrails-off", false, "with -web-controls, the website may also turn guardrails off")
 	askOff := fs.Bool("ask-off", false, "the workers' calls that would ask are allowed instead of blocking the item (set by `belai rc` for a dispatch with ask: false)")
-	var dirs, pool listFlag
+	var dirs, pool, memberModels listFlag
 	fs.Var(&dirs, "dir", "with -crew, a directory in the crew's scope, PATH or PATH:WEIGHT (repeatable; default this repository)")
 	fs.Var(&pool, "pool", "with -crew, a provider/model in the crew's pool, which workers cycle when one keeps failing (repeatable)")
+	fs.Var(&memberModels, "member-model", "with -crew, PROFILE=PROVIDER/MODEL: that member starts on its own model, ahead of the pool (repeatable)")
 	effort := fs.String("effort", "", "with -crew, the workers' effort")
 	switchAfter := fs.Int("switch-after", 0, "with -crew, outages in a row before a worker moves to the next target in the pool (default 3)")
 	finalRetry := fs.Int("final-retry", 0, "with -crew, seconds the crew sleeps once the whole pool failed, before its final retry (default 900)")
 	adhoc := addAdhocFlags(fs)
-	const startUsage = "usage: belai agent start NAME [-replicas N] | -crew CREW [-dir PATH[:WEIGHT]]... [-pool P/M]... [-fill] | -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
+	const startUsage = "usage: belai agent start NAME [-replicas N] | -crew CREW [-dir PATH[:WEIGHT]]... [-pool P/M]... [-member-model PROFILE=P/M]... [-fill] | -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL]] [-to LIST] [-publish MODE] [-read-only]"
 	if err := parseInterleaved(fs, rest); err != nil {
 		return 2, errors.New(startUsage)
 	}
@@ -608,14 +611,14 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if *fill && *crewName == "" {
 		return 2, errors.New("-fill needs -crew")
 	}
-	if *crewName == "" && (len(dirs) > 0 || len(pool) > 0 || *effort != "" || *switchAfter != 0 || *finalRetry != 0) {
-		return 2, errors.New("-dir, -pool, -effort, -switch-after and -final-retry need -crew")
+	if *crewName == "" && (len(dirs) > 0 || len(pool) > 0 || len(memberModels) > 0 || *effort != "" || *switchAfter != 0 || *finalRetry != 0) {
+		return 2, errors.New("-dir, -pool, -member-model, -effort, -switch-after and -final-retry need -crew")
 	}
 	if *crewName != "" {
 		// A crew is one run over its scope, supervised: the same settings the
 		// control room edits while it runs.
 		return startCrewRun(crewLaunch{crew: *crewName, dirs: dirs, trust: *trust, provider: *providerName, model: *model,
-			effort: *effort, pool: pool, switchAfter: *switchAfter, finalRetry: *finalRetry, maxWorkers: *maxWorkers,
+			effort: *effort, pool: pool, memberModels: memberModels, switchAfter: *switchAfter, finalRetry: *finalRetry, maxWorkers: *maxWorkers,
 			stay: *stay, stayIdle: *stayIdle, fill: *fill, webCtl: *webControls, askOff: *askOff, stdout: stdout, waitForWorkers: 8 * time.Second})
 	}
 	wd, _ := os.Getwd()

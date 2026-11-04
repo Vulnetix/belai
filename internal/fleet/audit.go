@@ -180,6 +180,9 @@ func (w *Worker) recordFault(it kanban.Item, o outcome) {
 	switch {
 	case o.transient:
 		state = "transient"
+	case o.fault.Config:
+		// The card went back uncounted and the worker stops (policy.go).
+		state = "stopped"
 	case o.blocked:
 		state = "blocked"
 	}

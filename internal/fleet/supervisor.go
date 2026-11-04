@@ -145,6 +145,8 @@ type Supervisor struct {
 	PID   int
 	now   func() time.Time
 	quiet time.Time
+	// held is the members last logged as held by a policy stop.
+	held string
 }
 
 func (s *Supervisor) logf(format string, args ...any) {
@@ -266,6 +268,19 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 	if why != "" {
 		return why
 	}
+	// A member whose worker stopped on a config fault is not started again on
+	// the model that was refused (policy.go): its replicas and its cards are
+	// left out of the allocation, and a run with every member held ends.
+	run, held := heldMembers(run)
+	if len(held) > 0 && len(run.Members) == 0 {
+		return "stopped: provider_policy: the provider refuses every member's model: " + strings.Join(held, ", ")
+	}
+	if heldKey := strings.Join(held, ","); heldKey != s.held {
+		s.held = heldKey
+		if len(held) > 0 {
+			s.logf("not starting %s: the provider refused the model; change it, or edit the run, to start it again", strings.Join(held, ", "))
+		}
+	}
 	demand := s.Demand
 	if demand == nil {
 		demand = s.boardDemand(run)
@@ -347,7 +362,7 @@ func (s *Supervisor) Reconcile(run CrewRun) string {
 				spawn = s.Registry.Spawn
 			}
 			id, err := spawn(SpawnOptions{Exe: s.Exe, Repo: k.Repo, Profile: k.Profile, Crew: run.Crew, Run: run.ID,
-				Provider: run.First().Provider, Model: run.First().Model, Effort: run.Effort, Stay: true, StayIdleMax: time.Duration(run.StayIdleMaxSecs) * time.Second,
+				Provider: run.StartTarget(k.Profile).Provider, Model: run.StartTarget(k.Profile).Model, Effort: run.Effort, Stay: true, StayIdleMax: time.Duration(run.StayIdleMaxSecs) * time.Second,
 				MaxWorkers: max, WebControls: run.WebControls, AskOff: run.AskOff})
 			if err != nil {
 				s.logf("start %s in %s: %v", k.Profile, k.Repo, err)
@@ -452,7 +467,7 @@ func (s *Supervisor) boardDemand(run CrewRun) func(profile, repo string) int {
 // makes the crew healthy again, and the pool failing once more ends the run
 // with a reason.
 func (s *Supervisor) poolStep(run CrewRun) (CrewRun, string) {
-	if len(run.Pool) == 0 {
+	if len(run.Pool) == 0 && len(run.MemberModels) == 0 {
 		return run, ""
 	}
 	now := s.clock().UnixMilli()

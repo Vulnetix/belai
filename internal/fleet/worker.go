@@ -228,6 +228,7 @@ type Worker struct {
 	saveMu      sync.Mutex       // serialises save: the heartbeat and the worker both stamp and write the record
 	failures    map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 	outages     int              // consecutive items released because the model provider was unavailable
+	policyStop  string           // set by a config fault (a refused model): the loop stops with it (policy.go)
 	ctlSeq      int64            // the last control applied (control.go)
 	pinned      bool             // a human picked the model; the fallback policy leaves it
 	poolFailed  map[Target]bool  // pool targets that failed since the last success (pool.go)
@@ -601,6 +602,11 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		w.work(ctx, it)
 		n++
 		quietSince, waiting = w.clock(), false
+		if why := w.takePolicyStop(); why != "" {
+			// The card went back uncounted; every other card would fail the
+			// same way until a person changes the model or the policy.
+			return why, nil
+		}
 		if w.Once || w.Item != "" {
 			return "done", nil
 		}
@@ -1361,8 +1367,11 @@ func (w *Worker) judge(it kanban.Item, res run.Result, runErr, cause error, clai
 		why = "incomplete"
 	}
 	o.note = fmt.Sprintf("agent %s did not complete it: %s after %d passes", w.Profile.Name, why, res.Passes)
-	if o.transient {
+	switch {
+	case o.transient:
 		o.note += "; the model provider was unavailable, so this is not counted as an attempt"
+	case o.fault.Config:
+		o.note += fmt.Sprintf("; the provider refused the model%s (%s), so this is not counted as an attempt and the worker stops until a person changes the model or the policy", w.onTarget(), o.fault.Code)
 	}
 	return o
 }
@@ -1446,7 +1455,10 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	if k == nil {
 		k = &agentprofile.KanbanSpec{}
 	}
-	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient, Branch: o.branch, Releaser: p.Name}
+	// A config fault (a model the policy refuses) says nothing about the card,
+	// like an outage: it is not an attempt.
+	config := o.failed && o.fault.Config
+	out := kanban.Outcome{Note: o.note, SessionID: w.Record.Session, Failed: o.failed && !o.transient && !config, Branch: o.branch, Releaser: p.Name}
 	if o.switched {
 		// The note already names the branch the item continues on.
 	} else if o.files > 0 {
@@ -1466,7 +1478,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		out.To, out.AddLabels = kanban.Blocked, o.addLabels
 	case !o.failed:
 		route = k.OnSuccess
-	case o.transient:
+	case o.transient, config:
 		// Nothing was tried, so the item goes back exactly where it was
 		// claimed from with its labels untouched: the failure route is for
 		// work that failed, and would hand a verifier's card back to a patcher.
@@ -1511,7 +1523,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	}
 	out.Verdict, out.VEX = o.verdict, o.vex
 	switch {
-	case out.Continued:
+	case out.Continued, config:
 	case o.failed:
 		w.Record.Failed++
 	default:
@@ -1520,6 +1532,11 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	released, err := w.Store.Release(it.ID, w.Record.ID, out)
 	w.mu.Lock()
 	switch {
+	case config:
+		// The model is refused, not the card: no skip entry, so another worker
+		// (or this one on another model) takes it as it was, and the loop stops
+		// instead of failing every card on the board the same way.
+		w.policyStop = "stopped: " + o.fault.Code + w.onTarget()
 	case o.failed && o.transient:
 		// The provider failed, not the card: it stays claimable, and the loop
 		// backs off (or falls back) before the next claim.

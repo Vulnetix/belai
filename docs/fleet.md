@@ -616,7 +616,11 @@ worker off (15 seconds, doubling to five minutes).
 
 A crew run's `-pool` is a pool of providers and models, not a primary with
 fallbacks. Workers start on its first target (`-model`, when given, is the
-first). After `-switch-after` outages in a row (default 3) a worker moves to
+first). `-member-model PROFILE=PROVIDER/MODEL` (repeatable) gives one member a
+model of its own: that member's workers start on it, and it leads that member's
+pool, ahead of the run's targets. The profile must be a member of the crew. A
+member model on its own (no `-pool`) is a pool of one for that member, so its
+outages still put the crew to sleep and make the final retry. After `-switch-after` outages in a row (default 3) a worker moves to
 the next target this host can run and claims again at once; the pool is a
 ring, so it wraps round and comes back to a target that failed before, which
 by then may have recovered. A target the host has no credentials for counts as
@@ -641,10 +645,29 @@ off. A model a person pins (`M` in the control room, `belai agent control
 Failures are classified by type and status, never by the provider's text:
 `provider_unavailable` (5xx, 408, 409), `provider_rate_limit` (429) and
 `provider_transport` (reset, refused, timeout) are outages; `provider_auth`,
-`provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
+`provider_policy`, `provider_quota`, `provider_rejected`, `context_overflow`, `wall_budget`,
 `token_budget`, `cost_budget`, `lease_lost`, `withheld`, `workspace`, `stalled`, `evaluator`,
 `max_passes`, `incomplete`, `error`, `worker_failed`, `pool_exhausted` and `supervisor_failed` are
 not.
+
+A **config fault** is one only a person can clear. The provider's error body is
+read by the AI Firewall's refusal parser before the status: a `policy_violation`
+code `model_denied`, `model_not_allowed`, `provider_denied`, `provider_disabled`
+or `provider_key_missing` is `provider_policy` (a 403 that is not a bad key),
+and the firewall's `provider_quota` or the Pix Sandbox gateway's monthly
+built-in quota (429, "Pix built-in model quota reached for this month") is
+`provider_quota`. Either sends the card back to the list it was claimed from
+with no attempt counted and no skip, records one `worker.fault` with that
+`class` (outcome `stopped`), and stops the worker (`stopped: provider_policy on
+PROVIDER/MODEL`) instead of failing every other card on the board the same way.
+A crew worker also records the stop on its run: the supervisor starts no worker
+of that member while the member would start on the refused model again. A
+member model or a pool that starts it elsewhere, or a person's next edit of the
+run in the control room or on the website, lets it start. A run whose every
+member is held ends with the reason. `belai rc` asks the host's owner once per
+refused model ([remote control](remote-control.md#asking-a-person-through-the-website)).
+There is no start probe: the first call of the first card is the probe, it
+fails as fast as a probe would, and the card it was on costs nothing.
 
 ### The delivery crew
 
@@ -1227,7 +1250,7 @@ running crew (or launches it) without the refusal a second launch gets.
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME \| -prompt TEXT [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-once] [-item K-…] [-stay [-stay-idle-max DURATION] \| -drain] [-trust-dir] [-provider P] [-model M]` | run a worker in the foreground, from a stored profile or from a prompt alone ([A worker made from a prompt](#a-worker-made-from-a-prompt)). `-stay` and `-drain` contradict each other and together are refused; `-stay-idle-max` needs `-stay`. `agent start` also passes `-id`, `-crew`, `-detached`, `-max-workers`, `-web-controls` and `-web-allow-guardrails-off` to the workers it launches; they are not for typing |
 | `belai agent start NAME [-replicas N] \| -crew CREW [-fill] \| -prompt TEXT [-replicas N] [-tools T,T] [-claim LIST[:LABEL,…]] [-to LIST] [-publish MODE] [-read-only] [-max-workers N] [-stay [-stay-idle-max DURATION] \| -drain] [-trust-dir] [-provider P] [-model M]` | start detached workers. `-web-controls` and `-web-allow-guardrails-off` (set by `belai rc`) let the website change the workers' controls ([Session controls](#session-controls)). `-replicas` starts that many workers of one profile (1 to 8, default 1; any other number is refused) and is ignored with `-crew`, whose members set their own replicas; `-max-workers` replaces `agents.max_workers` for this start; `-drain` exits once nothing is left to claim even with a cron `schedule`; `-crew` launches a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) (see the row below); `-fill` (with `-crew`) confirms a running crew without refusing, since its supervisor keeps it full; exactly one of NAME, `-crew` and `-prompt` is required |
-| `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-pool P/M]… [-switch-after N] [-final-retry SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-pool` names the [provider pool](#the-provider-pool), cycled in order; `-model` is its first target. A running crew takes new directories into its scope |
+| `belai agent start -crew CREW [-dir PATH[:WEIGHT]]… [-pool P/M]… [-member-model PROFILE=P/M]… [-switch-after N] [-final-retry SECS] [-effort E] [-fill]` | launch a [crew run](#crew-runs-one-crew-over-a-scope-of-directories) over the directories given (default this repository). `-dir` weights run 1 to 10 (default 1); `-pool` names the [provider pool](#the-provider-pool), cycled in order; `-model` is its first target; `-member-model` starts one member on its own model, ahead of the pool (the profile must be a member; repeatable, once per member). A running crew takes new directories into its scope and keeps its models |
 | `belai agent runs [-all] [-json]` | crew runs: state, workers against replicas, scope with weights, the pool and its phase |
 | `belai agent control [-model P/M] [-effort E] [-drain] [-auto] ID \| NAME \| RUN` | write a [live control](#live-controls) to a worker, or to every worker of a run; `-auto` hands the model back to the provider pool |
 | `belai agent supervise -run ID` | a crew run's supervisor in the foreground; the launch starts it detached |
