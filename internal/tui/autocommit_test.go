@@ -3,9 +3,11 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -86,6 +88,10 @@ func TestAutoCommitPartialGoalMakesNoCommit(t *testing.T) {
 }
 
 func TestAutoCommitCompleteGoalCommitsAndResets(t *testing.T) {
+	// The commit message is asserted as built, so pin the test outside the
+	// sandbox attribution file: attribution.Message appends trailers when the
+	// machine running the tests carries one.
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	a := autocommitApp()
 	on := true
 	a.settings.AutoCommitPerTask = &on
@@ -127,6 +133,7 @@ func TestAutoCommitCompleteGoalCommitsAndResets(t *testing.T) {
 }
 
 func TestAutoCommitErrorIsReported(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	a := autocommitApp()
 	on := true
 	a.settings.AutoCommitPerTask = &on

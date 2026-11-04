@@ -142,6 +142,15 @@ func TestPinnedFlagsAreRefusedThroughTheTools(t *testing.T) {
 }
 
 func TestVulnetixFactsSetItsEnvironment(t *testing.T) {
+	// The machine running the tests may itself export VULNETIX_* (a Belai
+	// sandbox does); the fake binary's `env | grep VULNETIX_` would then print
+	// the ambient values and fail the no-facts phase. Scrub them first.
+	for _, e := range os.Environ() {
+		if key, _, _ := strings.Cut(e, "="); strings.HasPrefix(key, "VULNETIX_") {
+			t.Setenv(key, "")
+			os.Unsetenv(key)
+		}
+	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "vulnetix")
 	if err := os.WriteFile(bin, []byte(echoScript), 0o755); err != nil {
