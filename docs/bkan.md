@@ -77,7 +77,7 @@ kanban.Board{Cursor: 7, Items: []kanban.Item{{
 
 When the format was version 1, `kanban.Encode` turned it into 519 bytes, and
 that capture is what the dumps below show. Today `Encode` writes version 4 and
-the same board is 1033 bytes, because `Item` has gained fields and the schema is
+the same board is 1049 bytes, because `Item` has gained fields and the schema is
 sent with every file (see [Size](#size)). The version 1 file is still valid: it
 is read, and its missing fields decode as zero. Here are the 519 bytes, with the
 sections marked.
@@ -173,8 +173,8 @@ The full specification is the Go package documentation for `encoding/gob`.
 
 | Board | Bytes |
 |---|---|
-| empty | 919: 6 header, 881 payload (the schema alone), 32 checksum |
-| the one-item example above | 1033 (519 when the format was version 1) |
+| empty | 935: 6 header, 897 payload (the schema alone), 32 checksum |
+| the one-item example above | 1049 (519 when the format was version 1) |
 | a typical item after that | roughly 150–600 more, mostly its text |
 
 The schema is written once per file, not once per item. Each `Encode`
@@ -235,6 +235,8 @@ type Item struct {
 	ClaimHost  string
 	ClaimFrom  List
 	LeaseUntil int64
+	// LeaseSynced is the lease the backend last acknowledged; never pushed.
+	LeaseSynced int64
 	Attempts   int
 	Bounces    int
 	// Continuations counts budget run-outs at this stage that made progress.
@@ -312,7 +314,8 @@ type List string // backlog | review | in_progress | blocked | done
 | `ClaimedBy` | The worker instance holding the item, or empty. | the harness (`Claim`, `Release`, `Unclaim`) |
 | `ClaimHost` | The claiming worker's sync host id. | the harness |
 | `ClaimFrom` | The list the item was claimed from, and returns to. | the harness |
-| `LeaseUntil` | Unix milliseconds the claim lapses at. Renewals are host-local: they change neither `Updated` nor the history, and are never pushed on their own. | the harness |
+| `LeaseUntil` | Unix milliseconds the claim lapses at. A renewal changes neither `Updated` nor the history. Most renewals stay on the host; when the new lease is more than half a lease past `LeaseSynced`, the item is marked `Dirty` and pushed as a lease-only change, about once per lease, so other hosts sharing the board see a live claim. | the harness (`Claim`, `Renew`) |
+| `LeaseSynced` | The `LeaseUntil` the backend last acknowledged for this claim (a push, or a pull of the same claim). Renewals are measured against it. A file written before the field existed decodes it as zero, which only makes the next renewal push; no version bump. | sync |
 | `Attempts` | Claims that ended without success at the stage the item is in; it starts again at zero when the item moves on to a later list. | the harness |
 | `Bounces` | Times a failed claim sent the item back to an earlier list; it bounds a card passing between two stages. | the harness |
 | `Continuations` | Claims at this stage that ran out of budget after making progress and went back to be resumed without costing an attempt. It starts again at zero when the item moves on, and `kanban.max_continuations` bounds it. A file written before the field existed decodes it as zero. | the harness |
@@ -564,11 +567,15 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `Finding`, `SeenRef`, `Verdict`, `VEX` | `agent.finding`, `agent.seenRef`, `agent.verdict`, `agent.vex` | Sent, but only a host sets them: the website ignores them on an edit. A pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. |
 | `Gates`, `Clauses`, `Covers` | — | Local only; never sent, and a pulled copy keeps the local values. |
 | `Dirty` | — | Local only; never sent. |
+| `LeaseSynced` | (none) | Local only; never sent. A pulled copy of the same claim raises it to the lease the backend sent. |
 
 The routing and claim fields travel in one optional `agent` object
 (`sessionsync.KanbanAgent`). A pull without it keeps the host's own values.
 When a pulled copy of the same claim wins last-writer-wins, the later of the
-two leases stands, because renewals are never pushed.
+two leases stands, because most renewals stay on the host. A lease-only push
+(a renewal, `updatedAt` unchanged) is not a newer edit: the website keeps
+every stored field and only takes the later `agent.leaseUntil` when
+`agent.claimedBy` matches the stored claim.
 
 `Board.Cursor` is local only as well. It is the `since` parameter of
 `GET /v1/belai/kanban/items`.

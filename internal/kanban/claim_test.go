@@ -594,3 +594,157 @@ func TestSetBranchRecordsTheHoldersBranch(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// A renewal stays on the host until the lease has moved more than half a lease
+// past the one the backend acknowledged; then the card is marked for one
+// lease-only push, with Updated and the history unchanged.
+func TestRenewMarksDirtyOncePerLease(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(10_000_000)
+	s.now = func() time.Time { return clock }
+	addItem(t, s, ItemInput{Title: "long build"})
+	r := claimReq("w1")
+	claimed, err := s.Claim(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.MarkPushed([]Pushed{{ID: claimed.ID, Updated: claimed.Updated, Version: 1, Lease: claimed.LeaseUntil}})
+	got, _ := s.Get(claimed.ID)
+	if got.Dirty || got.LeaseSynced != claimed.LeaseUntil {
+		t.Fatalf("after the claim push: dirty=%v synced=%d, want clean at %d", got.Dirty, got.LeaseSynced, claimed.LeaseUntil)
+	}
+	nudges := 0
+	s.OnChange(func() { nudges++ })
+
+	third := r.Lease / 3
+	clock = clock.Add(third)
+	if err := s.Renew(claimed.ID, "w1", r.Lease); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Get(claimed.ID); got.Dirty || nudges != 0 {
+		t.Fatalf("a renewal a third of a lease in was marked for sync (dirty=%v nudges=%d)", got.Dirty, nudges)
+	}
+	clock = clock.Add(third)
+	if err := s.Renew(claimed.ID, "w1", r.Lease); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Get(claimed.ID)
+	if !got.Dirty || nudges != 1 {
+		t.Fatalf("a renewal two thirds of a lease in was not marked for sync (dirty=%v nudges=%d)", got.Dirty, nudges)
+	}
+	if got.Updated != claimed.Updated || len(got.History) != len(claimed.History) {
+		t.Fatalf("a renewal is not an edit: updated %d -> %d, history %d -> %d", claimed.Updated, got.Updated, len(claimed.History), len(got.History))
+	}
+	// A second renewal before the push lands does not mark or nudge again.
+	clock = clock.Add(time.Second)
+	if err := s.Renew(claimed.ID, "w1", r.Lease); err != nil {
+		t.Fatal(err)
+	}
+	if nudges != 1 {
+		t.Fatalf("nudges %d, want 1", nudges)
+	}
+	got, _ = s.Get(claimed.ID)
+	s.MarkPushed([]Pushed{{ID: got.ID, Updated: got.Updated, Version: 2, Lease: got.LeaseUntil}})
+	if got, _ = s.Get(claimed.ID); got.Dirty || got.LeaseSynced != got.LeaseUntil {
+		t.Fatalf("the lease-only push was not acknowledged: %+v", got)
+	}
+	// The next renewal is measured from the pushed lease: quiet again.
+	clock = clock.Add(third)
+	if err := s.Renew(claimed.ID, "w1", r.Lease); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Get(claimed.ID); got.Dirty || nudges != 1 {
+		t.Fatalf("renewal after the push: dirty=%v nudges=%d", got.Dirty, nudges)
+	}
+}
+
+// Another host renews its lease on its own board and this host only sees the
+// pushes, so its claim is reaped only once the lease is MinLease past due.
+func TestReapGivesAnotherHostsClaimAGrace(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(20_000_000)
+	s.now = func() time.Time { return clock }
+	addItem(t, s, ItemInput{Title: "worked elsewhere"})
+	r := claimReq("w-remote")
+	r.Host = "host-2"
+	claimed, err := s.Claim(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = time.UnixMilli(claimed.LeaseUntil).Add(MinLease - time.Second)
+	if n, err := s.Reap("host-1"); err != nil || n != 0 {
+		t.Fatalf("another host's claim inside its grace was reaped: n=%d err=%v", n, err)
+	}
+	if _, err := s.Claim(claimReq("w-local")); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("a claim inside another host's grace took the card: %v", err)
+	}
+	got, _ := s.Get(claimed.ID)
+	if got.ClaimedBy != "w-remote" || got.Attempts != 0 {
+		t.Fatalf("the claim did not survive the grace: %+v", got)
+	}
+	// The claiming host itself reaps at the lease.
+	if n, _ := s.Reap("host-2"); n != 1 {
+		t.Fatalf("the claiming host did not reap its own lapsed claim: %d", n)
+	}
+}
+
+func TestReapTakesAnotherHostsClaimAfterTheGrace(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(30_000_000)
+	s.now = func() time.Time { return clock }
+	addItem(t, s, ItemInput{Title: "abandoned elsewhere"})
+	r := claimReq("w-remote")
+	r.Host = "host-2"
+	claimed, err := s.Claim(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock = time.UnixMilli(claimed.LeaseUntil).Add(MinLease + time.Millisecond)
+	got, err := s.Claim(claimReq("w-local"))
+	if err != nil || got.ID != claimed.ID || got.ClaimedBy != "w-local" || got.Attempts != 1 {
+		t.Fatalf("after the grace the card should be reaped and reclaimed: %+v %v", got, err)
+	}
+}
+
+// This host's own claims, and claims that name no host, lapse at the lease as
+// they always have.
+func TestReapOwnClaimsAtTheLease(t *testing.T) {
+	for _, host := range []string{"host-1", ""} {
+		s := testStore(t)
+		clock := time.UnixMilli(40_000_000)
+		s.now = func() time.Time { return clock }
+		addItem(t, s, ItemInput{Title: "worked here"})
+		r := claimReq("w1")
+		r.Host = host
+		claimed, err := s.Claim(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clock = time.UnixMilli(claimed.LeaseUntil)
+		if n, err := s.Reap("host-1"); err != nil || n != 1 {
+			t.Fatalf("claim host %q: reaped %d at the lease (%v), want 1", host, n, err)
+		}
+		if got, _ := s.Get(claimed.ID); got.ClaimedBy != "" || got.Attempts != 1 || got.List != Backlog {
+			t.Fatalf("claim host %q: %+v", host, got)
+		}
+	}
+}
+
+// A pulled copy of the same claim tells this host what the backend holds, so
+// LeaseSynced takes the later of the two; it never comes from the wire itself.
+func TestKeepAgentTracksTheSyncedLease(t *testing.T) {
+	local := Item{ClaimedBy: "w1", LeaseUntil: 900, LeaseSynced: 500}
+	r := Item{ClaimedBy: "w1", LeaseUntil: 700, LeaseSynced: 99, remoteAgent: true}
+	keepAgent(&r, local)
+	if r.LeaseUntil != 900 || r.LeaseSynced != 700 {
+		t.Fatalf("same claim: lease %d synced %d, want 900 and 700", r.LeaseUntil, r.LeaseSynced)
+	}
+	other := Item{ClaimedBy: "w2", LeaseUntil: 300, remoteAgent: true}
+	keepAgent(&other, local)
+	if other.LeaseUntil != 300 || other.LeaseSynced != 300 {
+		t.Fatalf("another claim: lease %d synced %d, want 300 and 300", other.LeaseUntil, other.LeaseSynced)
+	}
+	if ToWire(local).Agent.LeaseUntil != 900 {
+		t.Fatal("the wire lease is LeaseUntil")
+	}
+}

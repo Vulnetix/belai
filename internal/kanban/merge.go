@@ -33,11 +33,16 @@ type Pushed struct {
 	ID      string
 	Updated int64 // the Updated the push carried
 	Version int64 // the version the backend stored
+	// Lease is the LeaseUntil the push carried. It becomes the item's
+	// LeaseSynced, the lease the next renewal is measured against.
+	Lease int64
 }
 
 // MarkPushed clears Dirty on items whose pushed change is still the latest
-// local one, records their server version, and drops pushed tombstones. An
-// item edited again while the push was in flight stays dirty.
+// local one, records their server version and the lease they carried, and
+// drops pushed tombstones. An item edited again while the push was in flight
+// stays dirty. A lease-only push (Renew) carries an unchanged Updated, so it
+// is acknowledged like any other.
 func (s *Store) MarkPushed(acks []Pushed) error {
 	if len(acks) == 0 {
 		return nil
@@ -51,6 +56,9 @@ func (s *Store) MarkPushed(acks []Pushed) error {
 				}
 				if a.Version > it.ServerVersion {
 					it.ServerVersion = a.Version
+				}
+				if it.ClaimedBy != "" && a.Lease > it.LeaseSynced {
+					it.LeaseSynced = a.Lease
 				}
 				if it.Updated == a.Updated {
 					it.Dirty = false
@@ -85,6 +93,7 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 					continue
 				}
 				r.Dirty = false
+				r.LeaseSynced = r.LeaseUntil // the backend holds it
 				b.Items = append(b.Items, r)
 				idx[r.ID] = len(b.Items) - 1
 				changed++
@@ -137,9 +146,11 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 
 // keepAgent settles the routing and claim fields of a pulled item that won
 // last-writer-wins. A backend that does not carry them sent none, and the
-// local values stand. Lease renewals are host-local and never pushed, so a
-// pulled copy of the same claim carries an older lease: the later one stands,
-// or the claim would lapse under a working worker.
+// local values stand. Most lease renewals stay on the host and only about one
+// per lease is pushed (Renew), so a pulled copy of the same claim may carry an
+// older lease: the later one stands, or the claim would lapse under a working
+// worker. LeaseSynced is host-local: it becomes the later of what this host
+// pushed and what the backend sent for the same claim.
 func keepAgent(r *Item, local Item) {
 	// The finding fields belong to the host that set them. A pulled copy never
 	// clears or replaces one this host holds; it only fills a field this host
@@ -165,10 +176,15 @@ func keepAgent(r *Item, local Item) {
 		if local.PR != "" {
 			r.PR = local.PR
 		}
+		r.LeaseSynced = local.LeaseSynced
 		return
 	}
-	if r.ClaimedBy != "" && r.ClaimedBy == local.ClaimedBy && local.LeaseUntil > r.LeaseUntil {
-		r.LeaseUntil = local.LeaseUntil
+	r.LeaseSynced = pulled.LeaseUntil
+	if r.ClaimedBy != "" && r.ClaimedBy == local.ClaimedBy {
+		r.LeaseSynced = max(local.LeaseSynced, pulled.LeaseUntil)
+		if local.LeaseUntil > r.LeaseUntil {
+			r.LeaseUntil = local.LeaseUntil
+		}
 	}
 }
 

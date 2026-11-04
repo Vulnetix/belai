@@ -70,9 +70,15 @@ One pass of the worker loop:
    `kanban` attachment that went through the security classifier, exactly
    like a `KanbanSearch` result. A withheld item is moved to `blocked` and is
    never worked.
-4. **Lease.** While the turn runs, the harness renews the lease. A worker
-   that crashes stops renewing; when the lease expires the item returns to the
-   list it was claimed from and another worker may take it.
+4. **Lease.** While the turn runs, the harness renews the lease every third
+   of a lease. Renewals stay on the host, and about one per lease (the first
+   that moves the lease more than half a lease past the synced one) is pushed
+   as a lease-only change, so workers on other hosts sharing the board see the
+   claim is live. A worker that crashes stops renewing; when the lease expires
+   the item returns to the list it was claimed from, counting a failed
+   attempt, and another worker may take it. A host reaps a claim made on
+   another host only one minute after its lease (the grace covers a renewal
+   still on its way through the website); its own claims lapse at the lease.
 5. **Outcome.** What the worker recorded decides, and where it recorded
    nothing the goal verdict does. Every worker has `KanbanOutcome`, which
    records `success`, `failure` or `blocked` with a one-line reason (the reason

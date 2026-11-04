@@ -183,9 +183,13 @@ func (s *Syncer) push(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		lease := make(map[string]int64, n)
+		for _, it := range out[:n] {
+			lease[it.ID] = it.LeaseUntil
+		}
 		pushed := make([]Pushed, 0, len(acks))
 		for _, a := range acks {
-			pushed = append(pushed, Pushed{ID: a.ID, Updated: a.UpdatedAt, Version: a.Version})
+			pushed = append(pushed, Pushed{ID: a.ID, Updated: a.UpdatedAt, Version: a.Version, Lease: lease[a.ID]})
 		}
 		if err := s.store.MarkPushed(pushed); err != nil {
 			return err

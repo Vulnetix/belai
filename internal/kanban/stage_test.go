@@ -80,7 +80,7 @@ func TestStageAccountingLeavesOtherMovesAlone(t *testing.T) {
 	it := addItem(t, s, ItemInput{Title: "work", List: Review})
 	claimFrom(t, s, it.ID, "w1", Review)
 	clock = clock.Add(2 * time.Minute)
-	if n, _ := s.Reap(); n != 1 {
+	if n, _ := s.Reap("host-1"); n != 1 {
 		t.Fatalf("reaped %d", n)
 	}
 	if got, _ := s.Get(it.ID); got.Attempts != 1 || got.Bounces != 0 || got.List != Review {

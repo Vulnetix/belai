@@ -75,7 +75,7 @@ func TestLapsedLeaseIsAudited(t *testing.T) {
 	}
 
 	clock = clock.Add(time.Hour) // the worker never renewed
-	n, err := s.Reap()
+	n, err := s.Reap("host-1")
 	if err != nil || n != 1 {
 		t.Fatalf("reap = %d, %v", n, err)
 	}
@@ -89,7 +89,7 @@ func TestLapsedLeaseIsAudited(t *testing.T) {
 		t.Fatalf("lapse event = %+v", e)
 	}
 	// Nothing left to reap, so nothing more is written.
-	if n, _ := s.Reap(); n != 0 || len(events()) != 1 {
+	if n, _ := s.Reap("host-1"); n != 0 || len(events()) != 1 {
 		t.Fatalf("a second reap added events: %d", len(events()))
 	}
 }

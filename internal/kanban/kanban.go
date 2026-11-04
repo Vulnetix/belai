@@ -135,6 +135,11 @@ type Item struct {
 	ClaimHost  string
 	ClaimFrom  List
 	LeaseUntil int64
+	// LeaseSynced is the LeaseUntil the backend last acknowledged for this
+	// claim. It is host-local and never on the wire: Renew compares the new
+	// lease against it to push a renewal about once per lease, so a worker on
+	// another host sharing the board sees the claim is alive.
+	LeaseSynced int64
 	// Attempts counts claims that ended without success at the stage the item is
 	// in: it starts again at zero when the item moves on to a later list, so a
 	// builder's tries are not charged to the reviewer after it, nor the reverse.

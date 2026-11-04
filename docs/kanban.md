@@ -245,8 +245,18 @@ it:
 A claim moves the item to `in_progress` under a lease the worker renews while
 it works. The harness makes the claim under the board's lock, so two workers
 never hold the same item, and a lease that lapses (a crashed worker) returns
-the item to the list it came from. The claim, the branch holding the work and
-any draft pull request show on the item.
+the item to the list it came from and counts a failed attempt. The claim, the
+branch holding the work and any draft pull request show on the item.
+
+Renewals stay on the worker's host, except about one per lease: when the new
+lease is more than half a lease past the one the website last acknowledged, the
+card syncs with only its lease changed. That push is not an edit (the card's
+updated time and history stay as they were), and the website keeps every other
+field and takes the later lease of the same claim. Another host sharing the
+board sees the claim only through these pushes, so it reaps a card claimed on a
+different host only once the lease is a further minute past due
+(`MinLease`). A claim made on the host itself, or one that names no host,
+lapses at its lease as before.
 
 A security card also carries four fields only the harness sets, never a model
 argument: the **finding** id, the **seen ref** (the commit whose scan last

@@ -238,17 +238,32 @@ func (r ClaimRequest) lists() []List {
 // reapLocked returns every lapsed claim to the list it was claimed from and
 // counts it as a failed attempt. It returns a copy of each item it reaped, taken
 // before the release so the claim is still on it, for the audit log.
-func reapLocked(b *Board, now int64) []Item {
+//
+// host is this host's sync host id. A claim made on another host (ClaimHost
+// set and not host) is reaped only once its lease is MinLease past due: this
+// host sees that worker's renewals only through the backend, so the lease it
+// holds is up to one renewal and one pull behind. A claim made here, or by a
+// host that did not say, lapses at its lease as before.
+func reapLocked(b *Board, now int64, host string) []Item {
 	var lapsed []Item
 	for i := range b.Items {
 		it := &b.Items[i]
-		if it.Deleted || it.ClaimedBy == "" || it.LeaseUntil > now {
+		if it.Deleted || it.ClaimedBy == "" || it.LeaseUntil+reapGrace(*it, host) > now {
 			continue
 		}
 		lapsed = append(lapsed, cloneItem(*it))
 		releaseLocked(it, it.claimSource(), "claim lapsed: the worker stopped renewing its lease", "", now, true)
 	}
 	return lapsed
+}
+
+// reapGrace is how long past its lease a claim is kept before it is reaped on
+// host: MinLease for another host's claim, nothing for this host's own.
+func reapGrace(it Item, host string) int64 {
+	if it.ClaimHost != "" && it.ClaimHost != host {
+		return MinLease.Milliseconds()
+	}
+	return 0
 }
 
 // claimSource is where a released item goes back to.
@@ -295,7 +310,7 @@ func releaseLockedAs(it *Item, to List, note, sid string, now int64, failed, con
 	from := it.claimSource()
 	appendHistory(it, Move{ID: session.MustID(), From: it.List, To: to, At: now, SessionID: sid, Note: CleanBody(note, MaxNoteBytes)})
 	it.List = to
-	it.ClaimedBy, it.ClaimHost, it.ClaimFrom, it.LeaseUntil = "", "", "", 0
+	it.ClaimedBy, it.ClaimHost, it.ClaimFrom, it.LeaseUntil, it.LeaseSynced = "", "", "", 0, 0
 	switch {
 	case continued && !failed:
 		it.Continuations++
@@ -378,7 +393,7 @@ func claimLocked(it *Item, r ClaimRequest, now int64) {
 		Note: CleanBody("claimed by agent "+r.Profile, MaxNoteBytes)})
 	it.List = InProgress
 	it.ClaimedBy, it.ClaimHost, it.ClaimFrom = r.Worker, r.Host, from
-	it.LeaseUntil = now + r.Lease.Milliseconds()
+	it.LeaseUntil, it.LeaseSynced = now+r.Lease.Milliseconds(), 0
 	it.Updated, it.Dirty = now, true
 }
 
@@ -394,7 +409,7 @@ func (s *Store) Claim(r ClaimRequest) (Item, error) {
 	found := false
 	err := s.mutate(true, func(b *Board) error {
 		now := s.nowMs()
-		reaped := reapLocked(b, now)
+		reaped := reapLocked(b, now, r.Host)
 		lapsed = reaped
 		hold := newHoldIndex(b, now, r.OpenPR)
 		best := -1
@@ -453,7 +468,7 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 	var lapsed []Item
 	err := s.mutate(true, func(b *Board) error {
 		now := s.nowMs()
-		lapsed = reapLocked(b, now)
+		lapsed = reapLocked(b, now, r.Host)
 		i, err := find(b, ref)
 		if err != nil {
 			return err
@@ -484,15 +499,20 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 	return out, err
 }
 
-// Renew extends the worker's lease. It is host-local bookkeeping: no
-// history entry, no sync, no Updated bump — a renewal every few minutes must
-// not churn the website. ErrLeaseLost means the item is no longer this
-// worker's (released on the web or by a human, or reaped).
+// Renew extends the worker's lease. It writes no history entry and never
+// bumps Updated, so a renewal is never a newer edit. Most renewals stay on this
+// host; when the new lease has moved more than half a lease past the one the
+// backend last acknowledged (LeaseSynced), the item is marked for sync, a
+// lease-only push, so a worker on another host sharing the board does not reap
+// a live claim. With renewals every third of a lease that is about one push per
+// lease. ErrLeaseLost means the item is no longer this worker's (released on
+// the web or by a human, or reaped).
 func (s *Store) Renew(ref, worker string, lease time.Duration) error {
 	if lease < MinLease || lease > MaxLease {
 		return fmt.Errorf("kanban: a lease runs %s to %s", MinLease, MaxLease)
 	}
-	return s.mutate(false, func(b *Board) error {
+	marked := false
+	err := s.mutate(false, func(b *Board) error {
 		i, err := find(b, ref)
 		if err != nil {
 			return ErrLeaseLost
@@ -502,8 +522,15 @@ func (s *Store) Renew(ref, worker string, lease time.Duration) error {
 			return ErrLeaseLost
 		}
 		it.LeaseUntil = s.nowMs() + lease.Milliseconds()
+		if !it.Dirty && it.LeaseUntil-it.LeaseSynced > lease.Milliseconds()/2 {
+			it.Dirty, marked = true, true
+		}
 		return nil
 	})
+	if err == nil && marked {
+		s.notify()
+	}
+	return err
 }
 
 // SetBranch records the branch the claiming worker works the item on, as soon
@@ -656,11 +683,12 @@ func (s *Store) UnclaimWorker(worker, note string) ([]string, error) {
 	return ids, err
 }
 
-// Reap returns every lapsed claim to its source list.
-func (s *Store) Reap() (int, error) {
+// Reap returns every lapsed claim to its source list. host is this host's
+// sync host id: another host's claim gets the grace reapLocked gives it.
+func (s *Store) Reap(host string) (int, error) {
 	var lapsed []Item
 	err := s.mutate(true, func(b *Board) error {
-		lapsed = reapLocked(b, s.nowMs())
+		lapsed = reapLocked(b, s.nowMs(), host)
 		if len(lapsed) == 0 {
 			return errNoWrite
 		}
