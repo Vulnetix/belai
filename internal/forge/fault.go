@@ -42,10 +42,13 @@ func (f Fault) Infra() bool { return f.Kind == FaultInfra && f.Failure != "" }
 // workFaults are the failures that belong to the branch. They are checked
 // first: a hook that declined a push can quote a permission in its message.
 var workFaults = []string{
-	"non-fast-forward",
-	"fetch first",
-	"updates were rejected",
+	// git's "! [rejected] <ref> (non-fast-forward)" and "(fetch first)" lines,
+	// and the hint that follows them.
 	"[rejected]",
+	"(non-fast-forward)",
+	"(fetch first)",
+	"non-fast-forward",
+	"updates were rejected",
 	"nothing is committed",
 	"nothing to publish",
 	"no changes beyond its base",
@@ -63,6 +66,16 @@ var infraFaults = []struct {
 }{
 	{"gh not installed", FailureNoGH},
 	{"executable file not found", FailureNoGH},
+	// GitHub refuses a push that changes .github/workflows from a credential
+	// without the workflow scope or permission: the credential's fault, so a
+	// coordinator holding one with that scope can publish it.
+	{"refusing to allow a personal access token to create or update workflow", FailureAuth},
+	{"refusing to allow an oauth app to create or update workflow", FailureAuth},
+	{"refusing to allow a github app to create or update workflow", FailureAuth},
+	// GitHub prints both sentences for a revoked or expired token; the first
+	// says the token is bad, the second alone says no token was sent.
+	{"invalid username or token", FailureAuth},
+	{"password authentication is not supported", FailurePushCredentials},
 	{"could not read username", FailurePushCredentials},
 	{"could not read password", FailurePushCredentials},
 	{"terminal prompts disabled", FailurePushCredentials},
@@ -98,13 +111,15 @@ var infraFaults = []struct {
 }
 
 // ClassifyPushError sorts a failed push or pull request by whose fault it was,
-// from the error text git and the forge CLI print. It reads the text and
-// returns only a kind and a fixed word: nothing of the text is carried.
+// from the text git and the forge CLI print: a *CLIError's stderr tail, which
+// keeps the rejected ref and the remote's lines that come before git's hints,
+// and the error's own text. It reads the text and returns only a kind and a
+// fixed word: nothing of the text is carried.
 func ClassifyPushError(err error) Fault {
 	if err == nil {
 		return Fault{}
 	}
-	msg := strings.ToLower(err.Error())
+	msg := errText(err)
 	for _, n := range workFaults {
 		if strings.Contains(msg, n) {
 			return Fault{Kind: FaultWork}

@@ -1,7 +1,9 @@
 package forge
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -44,5 +46,35 @@ func TestClassifyPushError(t *testing.T) {
 	}
 	if f := ClassifyPushError(nil); f.Kind != FaultUnknown || f.Infra() {
 		t.Fatalf("a nil error is no fault: %+v", f)
+	}
+}
+
+// cliErr builds the error the real runners return for stderr.
+func cliErr(stderr string) error {
+	return newCLIError(context.Background(), "git", []byte(stderr), errors.New("exit status 1"), nil)
+}
+
+// A push's cause is in stderr before git's hints and its closing lines, so the
+// classifier reads the whole tail, not the line a note shows.
+func TestClassifyPushErrorReadsTheStderrTail(t *testing.T) {
+	for _, c := range []struct {
+		name, stderr string
+		kind         FaultKind
+		failure      string
+	}{
+		{"rejected then hints", "To https://github.com/acme/app.git\n ! [rejected]        belai/K-abc123/a1 -> belai/K-abc123/a1 (fetch first)\nerror: failed to push some refs to 'https://github.com/acme/app.git'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details.\n", FaultWork, ""},
+		{"non-fast-forward then hints", " ! [rejected]        belai/K-abc123/a1 -> belai/K-abc123/a1 (non-fast-forward)\nerror: failed to push some refs to 'https://github.com/acme/app.git'\nhint: See the 'Note about fast-forwards' in 'git push --help' for details.\n", FaultWork, ""},
+		{"workflow scope (token)", "To https://github.com/acme/app.git\n ! [remote rejected] belai/K-abc123/a1 -> belai/K-abc123/a1 (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\nerror: failed to push some refs to 'https://github.com/acme/app.git'\n", FaultInfra, FailureAuth},
+		{"workflow scope (oauth app)", " ! [remote rejected] x -> x (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)\nerror: failed to push some refs\n", FaultInfra, FailureAuth},
+		{"workflow permission (github app)", " ! [remote rejected] x -> x (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)\nerror: failed to push some refs\n", FaultInfra, FailureAuth},
+		{"invalid token", "remote: Invalid username or token. Password authentication is not supported for Git operations.\nfatal: Authentication failed for 'https://github.com/acme/app.git/'\n", FaultInfra, FailureAuth},
+		{"password sent", "remote: Password authentication is not supported for Git operations.\nfatal: unable to access 'https://github.com/acme/app.git/'\n", FaultInfra, FailurePushCredentials},
+		{"up to date after a remote error", "remote: Internal Server Error\nEverything up-to-date\n", FaultInfra, FailureServer},
+		{"403 then nothing", "remote: Permission to acme/app.git denied to bot.\nfatal: unable to access 'https://github.com/acme/app.git/': The requested URL returned error: 403\n", FaultInfra, FailureAuth},
+	} {
+		got := ClassifyPushError(fmt.Errorf("push: %w", cliErr(c.stderr)))
+		if got.Kind != c.kind || got.Failure != c.failure {
+			t.Errorf("%s: got %+v, want kind %d failure %q", c.name, got, c.kind, c.failure)
+		}
 	}
 }

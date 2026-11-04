@@ -117,7 +117,7 @@ func (g github) PRForBranch(ctx context.Context, dir, branch string) (*PR, error
 	}
 	out, err := run(ctx, g.r, ReadTimeout, dir, "gh", "pr", "view", branch, "--json", "number,title,state,url,isDraft")
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no pull requests found") {
+		if errHas(err, "no pull requests found") {
 			return nil, nil
 		}
 		return nil, err
@@ -212,7 +212,7 @@ func (g github) Checks(ctx context.Context, dir, _ string, pr PR) ([]Check, erro
 	// gh exits non-zero when a check failed (1) or is pending (8) but still
 	// prints the list, so parse whenever there is output.
 	if out == "" {
-		if err != nil && strings.Contains(strings.ToLower(err.Error()), "no checks reported") {
+		if err != nil && errHas(err, "no checks reported") {
 			return nil, nil
 		}
 		return nil, err
@@ -255,7 +255,7 @@ func (g gitlab) PRForBranch(ctx context.Context, dir, branch string) (*PR, error
 	}
 	out, err := run(ctx, g.r, ReadTimeout, dir, "glab", "mr", "view", branch, "-F", "json")
 	if err != nil {
-		low := strings.ToLower(err.Error())
+		low := errText(err)
 		if strings.Contains(low, "no open merge request") || strings.Contains(low, "no merge request") || strings.Contains(low, "404") {
 			return nil, nil
 		}

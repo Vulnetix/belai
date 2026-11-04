@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,9 +20,10 @@ const (
 	WriteTimeout = 60 * time.Second
 )
 
-// Runner executes argv in dir and returns its stdout. A non-nil error carries
-// the stderr text; stdout is still returned alongside it because some CLIs
-// (gh pr checks) exit non-zero while printing a valid result.
+// Runner executes argv in dir and returns its stdout. A non-nil error from the
+// real runners is a *CLIError carrying the cleaned stderr tail; stdout is
+// still returned alongside it because some CLIs (gh pr checks) exit non-zero
+// while printing a valid result.
 type Runner func(ctx context.Context, dir string, argv ...string) ([]byte, error)
 
 // LookPath resolves a binary on PATH; tests substitute a fake.
@@ -67,16 +67,8 @@ func execRun(ctx context.Context, dir string, env []string, argv []string) ([]by
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		msg := lastLine(stderr.String())
-		if ctx.Err() != nil {
-			msg = "timed out"
-		}
-		if msg == "" {
-			msg = err.Error()
-		}
-		return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], msg)
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, env)
 	}
 	return stdout.Bytes(), nil
 }
@@ -111,17 +103,7 @@ func HardenedGit(gitDir, workTree string, extraEnv ...string) Runner {
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		if err := cmd.Run(); err != nil {
-			msg := strings.TrimSpace(stderr.String())
-			if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
-				msg = msg[i+1:]
-			}
-			if ctx.Err() != nil {
-				msg = "timed out"
-			}
-			if msg == "" {
-				msg = err.Error()
-			}
-			return stdout.Bytes(), fmt.Errorf("%s: %s", argv[0], Clean(msg))
+			return stdout.Bytes(), newCLIError(ctx, argv[0], stderr.Bytes(), err, extraEnv)
 		}
 		return stdout.Bytes(), nil
 	}
