@@ -76,6 +76,16 @@ credential helper for that one host, which takes it from the git process's own
 environment: `credential.https://<host>.helper` answers `username=oauth2` and
 the token. The API calls send it as `Authorization: token <token>`.
 
+On GitHub a git command the harness runs (a fleet push, the git sync's fetch)
+gets `-c credential.https://github.com.helper=!gh auth git-credential` from
+`forge.RemoteAuth`. A git command the model runs (full Bash, a background
+command, a cloud native tool) gets the same helper as `GIT_CONFIG_KEY_n` and
+`GIT_CONFIG_VALUE_n` entries from `forge.RemoteAuthEnv`, appended after any the
+environment already holds, whenever the [secrets vault](vault-env.md) grants
+`GH_TOKEN` or `GITHUB_TOKEN`. gh answers with that token from the command's own
+environment, so a private repository clones and pushes without the token in a
+URL, an argument or `.git/config`.
+
 ## What works where
 
 | | GitHub, GHES | GitLab | Gitea, Forgejo |

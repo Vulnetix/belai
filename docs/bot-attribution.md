@@ -1,6 +1,6 @@
 # Bot attribution trailers
 
-Last Updated: 2026-10-30
+Last Updated: 2026-11-04
 
 Inside a Pix sandbox, what Belai commits carries `Co-authored-by`, `Signed-off-by: Pix [bot]` and links to the
 session and any vulnerability ids. The package is `internal/attribution`; the rules and the other builders are
@@ -21,4 +21,12 @@ website's shared cases.
   merge-conflict comment) carries the link lines only (`attribution.Links`: Session, Finding,
   Vulnerability, Advisory). `Co-authored-by` and `Signed-off-by` belong to commits alone.
 - The worker contract tells the model that trailers are added for it and are not to be written, edited or removed.
+- **The committer stays Pix.** The sandbox's commit signer signs only a commit whose committer is
+  `Pix [bot] <security@vulnetix.com>` and refuses any other (`not_pix_identity`). The sandbox sets
+  `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`, which outrank `-c user.name` and `-c user.email`, and
+  `proc.ScrubEnvOf` passes them to every command. `fleet.identityEnv` never supplies a committer the
+  environment already names (it still supplies an author on a machine with no identity). When a Bash
+  command's output holds `not_pix_identity`, the harness appends one line: the committer must stay Pix
+  [bot]; do not pass `-c user.name`/`-c user.email` or `GIT_COMMITTER_*`; set only `GIT_AUTHOR_*` to
+  credit someone else.
 - Not covered: `internal/teleport/changes/push.go` commits as `teleport@vulnetix.invalid`, which is not Pix.

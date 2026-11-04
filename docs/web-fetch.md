@@ -101,6 +101,26 @@ Extra rules around the index:
   ends with the session.
 - **Subagents get none**, as above.
 
+## GitHub API authentication
+
+In a Pix sandbox whose [secrets vault](vault-env.md) grants `GH_TOKEN` or
+`GITHUB_TOKEN` (`GH_TOKEN` wins), a fetch of the GitHub API sends that token as
+`Authorization: Bearer <token>`. Anonymous API calls from a sandbox share one
+egress address and hit GitHub's per-address rate limit
+(`API rate limit exceeded for 141.101.99.131`).
+
+- **One host.** Only `https://api.github.com` on the default port gets it
+  (`tools.onGitHubAPI`): not `github.com`, not `uploads.github.com`, not plain
+  `http`, not another port, not a host that merely starts with that name.
+- **Redirects.** A redirect that leaves `api.github.com` drops the header, and it
+  stays dropped for the rest of the chain, even if a later hop returns to
+  `api.github.com`. The URL check on every hop runs as before.
+- **Never shown.** The fetched text has the token redacted and passes
+  `vaultenv.Store.Scrub`, so a page that echoes it shows a placeholder. The
+  token is never in a URL, an error or the cache key.
+- Without a vault GitHub token nothing changes: the request carries no
+  `Authorization` header.
+
 ## Settings
 
 | Key | Default | Meaning |
@@ -124,3 +144,5 @@ sizes are clamped to fixed ceilings, so no layer can ask for unbounded memory.
   pipeline; URL checks stay in `internal/netguard`.
 - Search is path-free and model-free; its results are classified at ingestion.
 - Nothing is written to disk, logged or sent to telemetry.
+- The vault's GitHub token goes to `https://api.github.com` alone and never
+  follows a redirect off it.
