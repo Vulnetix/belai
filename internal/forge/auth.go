@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,16 +38,67 @@ func RemoteAuth(rem Remote, now time.Time) (env, gitArgs []string) {
 	if rem.Kind != KindGitHub {
 		return nil, nil
 	}
+	token := VaultGitHubToken(now)
+	if token == "" {
+		return nil, nil
+	}
+
+	return []string{"GH_TOKEN=" + token, "GITHUB_TOKEN=" + token},
+		[]string{"-c", "credential.https://" + rem.Host + ".helper=", "-c", "credential.https://" + rem.Host + ".helper=" + GitHubCredentialHelper}
+}
+
+// VaultGitHubToken is the GitHub token the secrets vault grants this machine's
+// commands at now: GH_TOKEN, else GITHUB_TOKEN, else empty. The caller must
+// never put it in a result, a log or an error.
+func VaultGitHubToken(now time.Time) string {
 	token := ""
 	for _, kv := range vaultenv.Default.Environ(now) {
 		if name, val, ok := strings.Cut(kv, "="); ok && val != "" && (name == "GH_TOKEN" || (name == "GITHUB_TOKEN" && token == "")) {
 			token = val
 		}
 	}
-	if token == "" {
-		return nil, nil
-	}
+	return token
+}
 
-	return []string{"GH_TOKEN=" + token, "GITHUB_TOKEN=" + token},
-		[]string{"-c", "credential.https://" + rem.Host + ".helper=", "-c", "credential.https://" + rem.Host + ".helper=!gh auth git-credential"}
+// GitHubCredentialHelper is the git credential helper for github.com: gh
+// answers with the GH_TOKEN or GITHUB_TOKEN in the child's environment.
+const GitHubCredentialHelper = "!gh auth git-credential"
+
+// githubHelperKey is the git config key RemoteAuthEnv sets.
+const githubHelperKey = "credential.https://github.com.helper"
+
+// RemoteAuthEnv is RemoteAuth's credential helper for a command the model runs
+// (Bash, a native tool), where the harness does not build the git argv. When
+// the vault holds a GitHub token at now, it returns env with GIT_CONFIG_KEY_n
+// and GIT_CONFIG_VALUE_n entries that reset the helper for https://github.com
+// and then set it to gh, so a clone or push of a private repository
+// authenticates without the token being a git argument or in a config file.
+// The two entries go after any GIT_CONFIG_* env already holds, and
+// GIT_CONFIG_COUNT is replaced by the new total. The token itself is not
+// added: the vault's GH_TOKEN or GITHUB_TOKEN is already in the child's
+// environment. Without a token env is returned unchanged.
+func RemoteAuthEnv(env []string, now time.Time) []string {
+	if VaultGitHubToken(now) == "" {
+		return env
+	}
+	next := 0
+	out := make([]string, 0, len(env)+5)
+	for _, e := range env {
+		key, val, _ := strings.Cut(e, "=")
+		if key != "GIT_CONFIG_COUNT" {
+			out = append(out, e)
+			continue
+		}
+		// The last one wins, as it does in the child.
+		next = 0
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n > 0 {
+			next = n
+		}
+	}
+	reset, set := strconv.Itoa(next), strconv.Itoa(next+1)
+	return append(out,
+		"GIT_CONFIG_KEY_"+reset+"="+githubHelperKey, "GIT_CONFIG_VALUE_"+reset+"=",
+		"GIT_CONFIG_KEY_"+set+"="+githubHelperKey, "GIT_CONFIG_VALUE_"+set+"="+GitHubCredentialHelper,
+		"GIT_CONFIG_COUNT="+strconv.Itoa(next+2),
+	)
 }

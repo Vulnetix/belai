@@ -469,6 +469,7 @@ func cloudNative(cs cloudSpec) nativeCommand {
 			"command": stringProp("The read-only " + cs.binary + " command to run"),
 		},
 		required: []string{"command"},
+		vault:    true,
 		build: func(root string, args map[string]any) ([]string, string, error) {
 			cmd, _ := argString(args, "command")
 			cmd = strings.TrimSpace(cmd)

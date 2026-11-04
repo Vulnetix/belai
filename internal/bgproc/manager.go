@@ -321,8 +321,9 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 		ec.Env = proc.ScrubbedEnv()
 		if p.background {
 			// A background command the model started is a tool call like Bash and gets
-			// the vault's variables the same way (internal/vaultenv).
-			ec.Env = append(ec.Env, vaultenv.Default.Environ(time.Now())...)
+			// the vault's variables and the git credential helper the same way
+			// (internal/vaultenv, tools.VaultCommandEnv).
+			ec.Env = tools.VaultCommandEnv(time.Now())
 		}
 	}
 	proc.SetProcessGroup(ec)

@@ -184,13 +184,16 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		ec = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}
 	ec.Dir = baseDir(b.Root, b.Cwd)
-	ec.Env = proc.ScrubbedEnv()
-	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
-	if !b.ReadOnly {
+	if b.ReadOnly {
+		ec.Env = proc.ScrubbedEnv()
+		ec.Env = append(ec.Env, calltrace.Env(ctx)...)
+	} else {
 		// The vault's environment variables for this sandbox, set only on the
 		// process the command starts (internal/vaultenv): never in Belai's own
-		// environment, and removed from the output below.
-		ec.Env = append(ec.Env, vaultenv.Default.Environ(time.Now())...)
+		// environment, and removed from the output below. A GitHub token among
+		// them also brings the git credential helper for github.com.
+		ec.Env = VaultCommandEnv(time.Now())
+		ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 	}
 
 	if b.MaxBytes <= 0 {

@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/shellsafe"
+	"github.com/vulnetix/belai/internal/vaultenv"
 )
 
 // This file implements the native tool catalogue: first-class read-only tools
@@ -59,6 +60,10 @@ type nativeCommand struct {
 	// asks, when set, reports a call that asks the user whatever the rules and
 	// the ask gate say.
 	asks func(h *CloudHub, args map[string]any) bool
+	// vault marks a cloud CLI: it runs with the secrets vault's variables and
+	// the git credential helper (VaultCommandEnv), and its output is scrubbed of
+	// the vault's values. The local utilities never get them.
+	vault bool
 }
 
 // Native is a first-class read-only tool backed by a fixed command shape.
@@ -185,7 +190,14 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	if len(applied.Front)+len(applied.Back) > 0 {
 		argv = append(append(append([]string{}, applied.Front...), argv...), applied.Back...)
 	}
-	call := cloudCall{env: append(proc.ScrubbedEnv(), applied.Env...)}
+	// A cloud CLI gets the vault's variables after the scrubbed environment and
+	// before the facts' own, and the prepare step runs last, so an assumed role's
+	// credentials still replace any AWS keys the vault granted.
+	env := proc.ScrubbedEnv()
+	if n.cmd.vault {
+		env = VaultCommandEnv(time.Now())
+	}
+	call := cloudCall{env: append(env, applied.Env...)}
 	if n.cmd.prepare != nil {
 		if call, err = n.cmd.prepare(ctx, n, args, call.env); err != nil {
 			return Result{}, err
@@ -222,6 +234,9 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	tw.Flush()
 
 	content := redact(tw.Content(), call.redact)
+	if n.cmd.vault {
+		content = vaultenv.Default.Scrub(content)
+	}
 	if call.note != "" {
 		content = call.note + "\n" + content
 	}
