@@ -49,3 +49,4 @@ site/terraform/*.auto.tfvars
 internal/mlclassify/assets/
 internal/voice/assets/
 .plan-handoff.md!.vulnetix/workflow.yaml
+!.vulnetix/workflow.yaml
