@@ -236,7 +236,7 @@ func git(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	}, args...)
 	cmd := exec.CommandContext(ctx, "git", argv...)
 	cmd.Dir = dir
-	cmd.Env = append(proc.ScrubbedEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat")
+	cmd.Env = append(proc.WithoutGitEnv(proc.ScrubbedEnv()), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_PAGER=cat")
 	proc.SetProcessGroup(cmd)
 	var stdout bytes.Buffer
 	cmd.Stdout = &limitWriter{w: &stdout, left: maxGitOutput + MaxBytes}

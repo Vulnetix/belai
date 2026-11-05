@@ -50,3 +50,32 @@ func inList(key string, list []string) bool {
 	}
 	return false
 }
+
+// WithoutGitEnv drops ambient variables that point git at another repository
+// (a wrapper, worktree or hook the process was started from), so a git command
+// operates on the directory it is run in.
+func WithoutGitEnv(env []string) []string {
+	var out []string
+	for _, e := range env {
+		key, _, _ := strings.Cut(e, "=")
+		switch key {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE":
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// UnsetGitEnv removes the ambient git locator variables from the process
+// environment. It is for tests that spawn git: a sandbox or worktree helper
+// exports them, and a git subprocess that inherits one operates on that
+// foreign repository instead of the test's own fixture directory.
+func UnsetGitEnv() {
+	for _, e := range WithoutGitEnv(os.Environ()) {
+		if key, _, ok := strings.Cut(e, "="); ok {
+			os.Unsetenv(key)
+		}
+	}
+}
