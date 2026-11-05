@@ -198,6 +198,9 @@ type Settings struct {
 	// the user's own layers only; the project layer may turn the table off,
 	// never on and never add a rule.
 	BashRewrite *BashRewriteSettings `json:"bash_rewrite,omitempty"`
+	// Edit governs the Edit tool's matching (docs/edit.md). The user's layers
+	// set `tolerant` either way; the project layer may only turn it off.
+	Edit *EditSettings `json:"edit,omitempty"`
 	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
 	// project layer may turn it, or whole-screen capture, off; never on.
 	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
@@ -2037,6 +2040,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Code = mergeCode(out.Code, proj.Code, true)
 	// The Bash rewrite table: a project may switch it off, never add or enable.
 	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
+	// Edit matching: a project may make it stricter, never more tolerant.
+	out.Edit = mergeEdit(out.Edit, proj.Edit, true)
 	// Fleet workers run unattended: a project may only tighten them.
 	if proj.Agents != nil {
 		out.Agents = out.Agents.tighten(proj.Agents)

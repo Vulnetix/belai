@@ -4,6 +4,12 @@
 // start, after a word boundary, and in consecutive runs, and penalises the
 // runes skipped in between. It is deliberately small: the candidate lists are
 // tens of entries and are ranked on every keystroke.
+//
+// The same package holds the line matcher behind the Edit tool (lines.go):
+// Locate finds a block of lines in a file through a fixed ladder of
+// whitespace-only relaxations and reports how many places matched, Refit and
+// Apply fit a replacement to the file's line endings and indentation, and
+// Nearest names the closest lines when nothing matched. No model is asked.
 package fuzzy
 
 import (

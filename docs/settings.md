@@ -258,6 +258,13 @@ is not detected and has an install command, the exact command. Keys: `↑` `↓`
 first, `y` to run), `r` re-detect, `esc`. The edit is saved to the scope chosen
 in `/settings`. Windows shows a single line saying servers are unsupported.
 
+## Edit matching
+
+`edit.tolerant` has no row on a settings screen. It is a key in the settings file:
+`true` (the default) lets `Edit` apply a whitespace-only relaxed match when it is
+the only one, and `false` makes it match byte for byte. Your own layers set it
+either way; a project file can only turn it off. See [Tolerant Edit matching](edit.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

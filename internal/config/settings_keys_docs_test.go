@@ -65,6 +65,7 @@ var settingsPages = map[string][]string{
 	"tests":         {"docs/testing.md"},
 	"firewall":      {"docs/firewall.md"},
 	"vulnetix":      {"docs/vulnetix.md"},
+	"edit":          {"docs/edit.md", "docs/settings.md"},
 }
 
 // TestEverySettingIsDocumented keeps the documentation in step with the

@@ -598,6 +598,15 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["bash_rewrite"] = src
 		}
 	}
+	if s.Edit != nil {
+		// Relaxed matching writes bytes the model did not spell exactly: a
+		// project layer may only switch it off.
+		before := e.Settings.Edit
+		e.Settings.Edit = mergeEdit(before, s.Edit, src == SourceProject)
+		if e.Settings.Edit != before {
+			e.Origin["edit"] = src
+		}
+	}
 	if s.Screenshot != nil {
 		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
 		e.Origin["screenshot"] = src

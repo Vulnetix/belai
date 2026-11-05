@@ -664,6 +664,14 @@ func NewSession(o Options) (*Session, error) {
 	if reg == nil {
 		reg = tools.NewRegistry()
 	}
+	// edit.tolerant: the Edit tool shares its pointer with every registry
+	// derived from this one. A subagent's session writes the same value, so
+	// the write is skipped when nothing changes.
+	if t, ok := reg.Find("Edit"); ok {
+		if ed, ok := t.(*tools.Edit); ok && ed.Tolerant != o.Settings.EditTolerant() {
+			ed.Tolerant = o.Settings.EditTolerant()
+		}
+	}
 	// skills.self_authoring off removes SkillDraft from every surface.
 	if !o.Settings.Skills.SelfAuthoringEnabled() {
 		reg = reg.Without("SkillDraft")
@@ -2191,6 +2199,10 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 		// The script's nested calls fold their file effects into this call's.
 		runCtx = withCodeCall(ctx, &codeCall{emit: emit, eff: eff, parentID: call.ID})
 	}
+	runCtx = tools.WithEditWithheld(runCtx, func(abs string) bool {
+		_, hit := s.flagged.lookup(abs, "", "")
+		return hit
+	})
 	res, err := runTool(tools.WithKnowledge(sandbox.WithPolicy(runCtx, s.sandboxPolicy())), tool, call, emit)
 
 	if cwd := s.registry.Cwd(); cwd != nil {

@@ -282,6 +282,12 @@ same flags and command count, or the line is left as sent; the permission rules
 then judge the rewritten line in full, and an explicit deny on the original
 line stops the call before any rewrite.
 
+**Edit diagnostics.** When `Edit` finds no match, its error may name the closest
+lines of the file ([Tolerant Edit matching](edit.md)). The line number and the
+kind of difference are measured by the harness. The snippet goes through `Line`
+once, capped at 200 runes, and is left out for a file whose earlier `Read` the
+classifier withheld, so a diagnostic never carries text a `Read` could not.
+
 Full-mode Bash still runs through `sh -c`; the OS sandbox is its boundary.
 `shellsafe` decides permission and the read-only classification, not what the
 shell may do once it is allowed.
