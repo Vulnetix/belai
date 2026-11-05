@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    # One pull request for a batch of bumps, since each must re-run gh actions-lock.
+    groups:
+      actions:
+        patterns: ["*"]

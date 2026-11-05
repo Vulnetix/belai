@@ -1,0 +1,362 @@
+# Managed by `vulnetix gha init`. Edit .vulnetix/workflow.yaml and re-run it.
+name: Vulnetix Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secrets
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/secrets@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          extra-args: |
+            --ignore-binaries
+            --ignore-git
+          artifact-name: secrets
+          fail-on-findings: false
+          rules: |
+            Vulnetix/community-rules
+            Vulnetix/opa-fugue-regula
+            Vulnetix/opa-checkmarx-kics
+            Vulnetix/opa-cds-aws-tf
+            Vulnetix/opa-cigna-tf
+            Vulnetix/opa-aquasecurity-trivy
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  sast-go:
+    name: SAST go
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sast/go@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: sast-go
+          fail-on-findings: false
+          rules: |
+            Vulnetix/community-rules
+            Vulnetix/opa-fugue-regula
+            Vulnetix/opa-checkmarx-kics
+            Vulnetix/opa-cds-aws-tf
+            Vulnetix/opa-cigna-tf
+            Vulnetix/opa-aquasecurity-trivy
+            Vulnetix/opa-gosec
+          github-code-scanning: ${{ github.event_name == 'push' }}
+      - uses: Vulnetix/cli/sast@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          not-language: go,javascript
+          artifact-name: sast-go-rest
+          fail-on-findings: false
+          rules: |
+            Vulnetix/community-rules
+            Vulnetix/opa-fugue-regula
+            Vulnetix/opa-checkmarx-kics
+            Vulnetix/opa-cds-aws-tf
+            Vulnetix/opa-cigna-tf
+            Vulnetix/opa-aquasecurity-trivy
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  sast-javascript:
+    name: SAST javascript
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sast/javascript@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: sast-javascript
+          fail-on-findings: false
+          rules: |
+            Vulnetix/community-rules
+            Vulnetix/opa-fugue-regula
+            Vulnetix/opa-checkmarx-kics
+            Vulnetix/opa-cds-aws-tf
+            Vulnetix/opa-cigna-tf
+            Vulnetix/opa-aquasecurity-trivy
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  sca-go:
+    name: SCA go
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sca/go@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: sca-go
+          fail-on-findings: false
+          github-code-scanning: ${{ github.event_name == 'push' }}
+      - uses: Vulnetix/cli/sca@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          not-package-manager: go,yarn
+          artifact-name: sca-go-rest
+          fail-on-findings: false
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  sca-yarn:
+    name: SCA yarn
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sca/yarn@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: sca-yarn
+          fail-on-findings: false
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  iac:
+    name: IaC
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/iac@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: iac
+          fail-on-findings: false
+          rules: |
+            Vulnetix/community-rules
+            Vulnetix/opa-fugue-regula
+            Vulnetix/opa-checkmarx-kics
+            Vulnetix/opa-cds-aws-tf
+            Vulnetix/opa-cigna-tf
+            Vulnetix/opa-aquasecurity-trivy
+            Vulnetix/opa-snyk-labs-iac
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  license:
+    name: License
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/license@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: license
+          fail-on-findings: false
+          github-code-scanning: ${{ github.event_name == 'push' }}
+
+  cbom:
+    name: CBOM
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/cbom@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: cbom
+          fail-on-findings: false
+
+  aibom:
+    name: AIBOM
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/aibom@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: aibom
+          fail-on-findings: false
+          extra-args: |
+            --commit-scan-max
+            1
+
+  analyze:
+    name: Analyze
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: Vulnetix/cli/analyze@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: analyze
+          fail-on-findings: false
+
+  sbom:
+    name: SBOM
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sbom@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          artifact-name: sca
+          fail-on-findings: false
+          dependency-graph: ${{ github.event_name == 'push' }}
+          attest: ${{ github.event_name == 'push' }}
+
+  gha-actions:
+    name: gha-actions
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/gha-actions@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          fail-on-findings: false
+
+  bom-merge:
+    name: bom-merge
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/sca/yarn@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          fail-on-findings: false
+      - uses: Vulnetix/cli/sbom@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          fail-on-findings: false
+      - uses: Vulnetix/cli/bom-merge@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          files: |
+            .vulnetix/sbom.cdx.json
+            .vulnetix/sbom.yarn.cdx.json
+          fail-on-findings: false
+
+  attest:
+    name: attest
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    permissions:
+      contents: read
+      id-token: write
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/setup@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          fail-on-findings: false
+      - run: vulnetix cdx --sign --no-banner
+      - uses: Vulnetix/cli/attest@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          subject: .vulnetix/sbom.cdx.json
+          fail-on-findings: false
+
+  publish:
+    name: Publish
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    if: ${{ !cancelled() }}
+    needs: [secrets, sast-go, sast-javascript, sca-go, sca-yarn, iac, license, cbom, aibom, analyze, sbom, gha-actions, bom-merge, attest]
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Vulnetix/cli/gha-upload@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          fail-on-findings: false
+
+  tea:
+    name: TEA
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted","Linux","X64","vulnetix-local"]') }}
+    if: ${{ !cancelled() }}
+    needs: [cbom, aibom, sbom]
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          pattern: '{sca,cbom,aibom}'
+          merge-multiple: true
+          path: boms
+      - uses: Vulnetix/cli/tea-release@v4.23.1
+        with:
+          org-id: ${{ secrets.VULNETIX_ORG_ID }}
+          api-key: ${{ secrets.VULNETIX_API_KEY }}
+          tea-files: boms/*.cdx.json
+          tea-auto-version: true
+          tea-checksums-from-release: true
+          fail-on-findings: false
+          tea-visibility: public

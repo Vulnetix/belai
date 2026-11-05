@@ -48,4 +48,4 @@ site/terraform/*.auto.tfvars
 # Embedded classifier weights (populated by `just modelprep`, never committed)
 internal/mlclassify/assets/
 internal/voice/assets/
-.plan-handoff.md
+.plan-handoff.md!.vulnetix/workflow.yaml
