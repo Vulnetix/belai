@@ -1404,6 +1404,13 @@ type ResilienceSettings struct {
 	// running at once through Bash run_in_background. Zero means the default
 	// (8). A project layer can only lower it.
 	MaxBackgroundProcesses int `json:"max_background_processes,omitempty"`
+	// StuckRepeat is how many identical tool calls with identical results in
+	// a window make a pass stuck. Zero means the default (4). It cannot go
+	// below StuckRepeatFloor, and a project layer can only lower it.
+	StuckRepeat int `json:"stuck_repeat,omitempty"`
+	// StuckWindow is how many recent calls the detector remembers. Zero means
+	// the default (12); it cannot go below StuckWindowFloor.
+	StuckWindow int `json:"stuck_window,omitempty"`
 	// MaxAgents caps how many fan-out subagents (explore plus background
 	// agents) run at once across the whole session. It defaults to 15. Zero
 	// means the default (15); a higher value requires provider rate-limit
@@ -1558,6 +1565,31 @@ func (r *ResilienceSettings) MaxProcessRecoveriesOr(def int) int {
 	return r.MaxProcessRecoveries
 }
 
+// Stuck-loop detector bounds. The floors keep a configured value from
+// disabling the detector: it has no off switch, only a sensitivity.
+const (
+	DefaultStuckRepeat = 4
+	DefaultStuckWindow = 12
+	StuckRepeatFloor   = 3
+	StuckWindowFloor   = 6
+)
+
+// StuckRepeatOr returns StuckRepeat clamped to its floor, or def when unset.
+func (r *ResilienceSettings) StuckRepeatOr(def int) int {
+	if r == nil || r.StuckRepeat == 0 {
+		return max(def, StuckRepeatFloor)
+	}
+	return max(r.StuckRepeat, StuckRepeatFloor)
+}
+
+// StuckWindowOr returns StuckWindow clamped to its floor, or def when unset.
+func (r *ResilienceSettings) StuckWindowOr(def int) int {
+	if r == nil || r.StuckWindow == 0 {
+		return max(def, StuckWindowFloor)
+	}
+	return max(r.StuckWindow, StuckWindowFloor)
+}
+
 // MaxBackgroundOr returns MaxBackgroundProcesses or the provided default.
 func (r *ResilienceSettings) MaxBackgroundOr(def int) int {
 	if r == nil || r.MaxBackgroundProcesses <= 0 {
@@ -1607,6 +1639,8 @@ func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 	tighten(&r.MaxExploreIterations, &other.MaxExploreIterations)
 	tighten(&r.MaxProcessRecoveries, &other.MaxProcessRecoveries)
 	tighten(&r.MaxBackgroundProcesses, &other.MaxBackgroundProcesses)
+	tighten(&r.StuckRepeat, &other.StuckRepeat)
+	tighten(&r.StuckWindow, &other.StuckWindow)
 	// MaxAgents is intentionally overridable upward.
 	if other.MaxAgents != 0 {
 		r.MaxAgents = other.MaxAgents

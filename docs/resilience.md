@@ -218,6 +218,15 @@ Retry budgets are configurable via `config.Settings.Resilience`:
 - `max_background_processes`: how many processes the model may have running at
   once through `Bash` with `run_in_background` (default 8). A further call is
   refused rather than queued.
+- `stuck_repeat` and `stuck_window`: how the in-pass stuck-loop detector is
+  tuned (defaults 4 and 12, floors 3 and 6). The detector watches the calls of
+  one pass. The same call returning the same result `stuck_repeat` times inside
+  the last `stuck_window` calls, or two calls trading places six times, is a
+  loop. The first loop injects one fixed directive that asks for a different
+  approach. A second loop stops the pass, and the continuation tells the model
+  not to repeat the calls. A call that changed a file clears the window. Only an
+  eight-byte digest of each call is kept, never its arguments or output. There
+  is no off switch, and a project file can only lower both numbers.
 - `max_agents`: how many fan-out subagents (explore tasks and background agents)
   run at once across the whole session (default 15). A larger number needs
   provider rate-limit headroom, since each subagent is its own stream of
@@ -234,8 +243,8 @@ its own rule below, and why a budget genuinely cannot be set to zero.
 Project-level values are constrained to the *minimum* of the global and project
 values, so a cloned project file cannot raise a budget. That rule covers
 `max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`,
-`max_explore_iterations`, `max_process_recoveries` and
-`max_background_processes`. For `max_passes` an unset global (0, unbounded)
+`max_explore_iterations`, `max_process_recoveries`,
+`max_background_processes`, `stuck_repeat` and `stuck_window`. For `max_passes` an unset global (0, unbounded)
 takes the project value: there is no ceiling to lower, and adding one is a
 tightening, not a relaxation. The same "unset global takes the project value"
 step applies to the others, where it is a relaxation only against a default the

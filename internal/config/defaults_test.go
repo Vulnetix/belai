@@ -269,6 +269,8 @@ func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
 		MaxClarifyRounds:       1,
 		MaxExploreIterations:   3,
 		MaxBackgroundProcesses: 4,
+		StuckRepeat:            3,
+		StuckWindow:            8,
 	}}
 	merged := global.Override(Settings{Resilience: &ResilienceSettings{
 		MaxAttempts:            99,
@@ -277,6 +279,8 @@ func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
 		MaxClarifyRounds:       99,
 		MaxExploreIterations:   99,
 		MaxBackgroundProcesses: 99,
+		StuckRepeat:            99,
+		StuckWindow:            99,
 	}})
 
 	r := merged.Resilience
@@ -291,6 +295,8 @@ func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
 		{"max_clarify_rounds", r.MaxClarifyRoundsOr(3), 1},
 		{"max_explore_iterations", r.MaxExploreIterationsOr(8), 3},
 		{"max_background_processes", r.MaxBackgroundOr(8), 4},
+		{"stuck_repeat", r.StuckRepeatOr(DefaultStuckRepeat), 3},
+		{"stuck_window", r.StuckWindowOr(DefaultStuckWindow), 8},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s = %d, want the global (lower) value %d", tc.name, tc.got, tc.want)

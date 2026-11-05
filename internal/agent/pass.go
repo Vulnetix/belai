@@ -92,6 +92,9 @@ type passOutcome struct {
 	// exhausted pass with a non-zero count was stopped by repairCap, so the
 	// loop above answers it with a repair request, not a generic continuation.
 	repairFailures int
+	// stuck is set when the pass was stopped by the stuck-loop detector after
+	// its nudge went unheeded. The loop answers it with stuckContinuationDirective.
+	stuck bool
 	// planExit is set when the model called ExitPlanMode. The caller treats
 	// planExit is true when the pass called ExitPlanMode with a valid plan.
 	// The pass loop treats this as a clean completion signal rather than a
@@ -353,6 +356,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	// readStreak counts tool rounds in a row that changed no file;
 	// mutationsSeen is the pass's mutation count when it last reset.
 	var readStreak, mutationsSeen int
+	stuckDet := newStuckDetector(s.stuckRepeat, s.stuckWindow)
 	var text string
 	var lastText string
 	var updatePlan *todos.List
@@ -587,6 +591,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		planExited := false
 		planText := ""
 		var askUser *clarify.Questionnaire
+		stuckVerdictNow := stuckNone
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
@@ -611,6 +616,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				}
 			}
 			acc.noteMutation(effects[i])
+			stuckVerdictNow = max(stuckVerdictNow, s.observeStuck(stuckDet, u, results[i], effects[i].changed))
 			acc.callSeq++
 			if effects[i].changed {
 				acc.lastMutSeq = acc.callSeq
@@ -702,6 +708,12 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 		if nudge := s.readStreakNudge(&readStreak, &mutationsSeen, acc.mutations, productiveIter, mode); nudge != "" {
 			turns = append(turns, directiveTurns(nudge)...)
+		}
+		switch stuckVerdictNow {
+		case stuckNudge:
+			turns = append(turns, directiveTurns(stuckLoopDirective)...)
+		case stuckStop:
+			return finish(passOutcome{exhausted: true, stuck: true, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan}), turns, nil
 		}
 		if allWithheld {
 			withheld++

@@ -142,6 +142,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Rewriting a model's Bash command word before permission matching | [Bash rewrite](bash-rewrite.md) | alpha-20261002 |
 | Searching profile documents and project scanner output by meaning | [Knowledge](knowledge.md) | alpha-20261001 |
 | A row for each vulnerability identifier, with a console link and a triage launch | [Vulnerability row](vuln-row.md) | alpha-20261002 |
+| Stuck-loop detection inside a pass | [Resilience](resilience.md) | Roadmap |
 | Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
 
 ## Analysis

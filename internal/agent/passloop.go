@@ -107,7 +107,9 @@ const (
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
-	continuationDirective = "The tool budget for this turn was reached. If the work needs a file change, make the edit now rather than reading further; if more tool calls are needed to finish, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
+	// stuckContinuationDirective follows a pass the stuck-loop detector stopped.
+	stuckContinuationDirective = "The previous pass was stopped because it kept repeating the same calls with the same results. Do not repeat them. Take a different approach, or tell the user what is blocking you and stop."
+	continuationDirective      = "The tool budget for this turn was reached. If the work needs a file change, make the edit now rather than reading further; if more tool calls are needed to finish, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
 	// agentEditNudge leads the continuation directive when an agent-mode turn
 	// has spent a full tool budget without changing a file. Sessions showed
 	// agent mode reading until the context window filled; this is the agent
@@ -1228,6 +1230,8 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		switch {
 		case out.repairFailures > 0:
 			directive = repairContinuationDirective
+		case out.stuck:
+			directive = stuckContinuationDirective
 		case mode == modes.ModeAgent && s.turnIntent == rolemanager.IntentHandoff && s.turnHasTodos && !s.turnTodos.Complete():
 			p := s.turnTodos.Progress()
 			directive = fmt.Sprintf("%d of %d plan tasks remain. Continue with the next open task, then finish.", len(s.turnTodos.Items)-p.Completed(), p.Total)

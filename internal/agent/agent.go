@@ -236,7 +236,10 @@ type Session struct {
 	allowAsk      bool
 	allowPassLoop bool
 	maxIter       int
-	cache         *rolemanager.Cache
+	// stuckRepeat and stuckWindow size the in-pass stuck-loop detector
+	// (stuckloop.go), already clamped to their floors.
+	stuckRepeat, stuckWindow int
+	cache                    *rolemanager.Cache
 	// pipe is the classifier pipeline reused across turns (pipeline.go).
 	pipe sessionPipeline
 	// flagged holds the files whose Read result was withheld, so a Grep over
@@ -777,6 +780,8 @@ func NewSession(o Options) (*Session, error) {
 		allowAsk:           o.AllowAsk,
 		allowPassLoop:      o.AllowPassLoop,
 		maxIter:            maxIter,
+		stuckRepeat:        o.Settings.Resilience.StuckRepeatOr(config.DefaultStuckRepeat),
+		stuckWindow:        o.Settings.Resilience.StuckWindowOr(config.DefaultStuckWindow),
 		cache:              cache,
 		reads:              readindex.New(),
 		caps:               o.Caps,
