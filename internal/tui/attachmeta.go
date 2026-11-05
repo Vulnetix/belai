@@ -63,6 +63,9 @@ func dirAttachmentMeta(path, body string) attachMeta {
 // unknown does it peek at the file header.
 func detectMIMEType(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".md" || ext == ".markdown" {
+		return "text/markdown"
+	}
 	if ct := mime.TypeByExtension(ext); ct != "" {
 		return ct
 	}
