@@ -17,10 +17,10 @@ jobs:
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -49,10 +49,10 @@ jobs:
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Python
         # setup-python cannot install on the self-hosted Amazon Linux pool; uv
         # can, and activate-environment puts a venv's python and uv pip on PATH.
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v6.8.0
         with:
           python-version: '3.12'
           activate-environment: true
@@ -71,7 +71,7 @@ jobs:
           uv pip install --quiet safetensors
 
       - name: Cache prepared models
-        uses: actions/cache@v4
+        uses: actions/cache@v4.3.0
         with:
           path: internal/mlclassify/assets
           key: models-${{ hashFiles('tools/modelprep/**') }}-6e8dbe4a-a27152c9
@@ -98,16 +98,16 @@ jobs:
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Cache the speech model
-        uses: actions/cache@v4
+        uses: actions/cache@v4.3.0
         with:
           path: internal/voice/assets
           key: voice-model-${{ hashFiles('internal/voice/models.go') }}
