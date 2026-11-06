@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/proc"
 )
 
@@ -202,5 +203,21 @@ func TestParseStatus(t *testing.T) {
 	}
 	if !got[1].Untracked || !got[2].Unstaged {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestReadDeniedMatchesTheRelativeAndTheAbsolutePath(t *testing.T) {
+	perms := permissions.From(nil, []string{"Read(notes.txt)"}, []string{"Read(secrets/*)", "Read(/work/abs.key)"})
+	cases := map[string]bool{
+		"secrets/key.pem": true,
+		"abs.key":         true,
+		"src/main.go":     false,
+		// An ask rule shows the path: the user is the one looking.
+		"notes.txt": false,
+	}
+	for rel, want := range cases {
+		if got := ReadDenied(perms, "/work", rel); got != want {
+			t.Errorf("ReadDenied(%q) = %v, want %v", rel, got, want)
+		}
 	}
 }

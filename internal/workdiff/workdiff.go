@@ -5,7 +5,9 @@
 // The result is for the user's own display. It is never handed to a model, the
 // transcript, telemetry, audit or sync, so this package has no classifier and
 // no tool kind; it does sanitise every string it returns, because file text
-// reaches the user's terminal and must not carry escape sequences.
+// reaches the user's terminal and must not carry escape sequences. The one
+// other reader is the finish review (internal/finishreview), which matches the
+// text locally and lets only path names and counts leave it.
 //
 // Every git call is read-only and hardened like the fleet's: repository hooks
 // and fsmonitor off, no file transport, no credential prompt, no optional
@@ -29,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
@@ -120,6 +123,20 @@ func Collect(ctx context.Context, workdir string, hide func(rel string) bool) Sn
 		snap.Files = append(snap.Files, f)
 	}
 	return snap
+}
+
+// ReadDenied reports whether a Read deny rule covers rel (a path relative to
+// the repository root, slash separated). The rule is tried against the relative
+// and the absolute path, with workdir as the anchor. It is the policy behind
+// the hide function of [Collect]: an ask rule does not hide a path.
+func ReadDenied(perms permissions.Settings, workdir, rel string) bool {
+	subjects := []string{rel, filepath.Join(workdir, filepath.FromSlash(rel))}
+	for _, s := range subjects {
+		if dec, rule := perms.Explain("Read", s); rule != "" && dec == permissions.DecisionBlock {
+			return true
+		}
+	}
+	return false
 }
 
 // parseStatus reads `git status --porcelain=v1 -z --no-renames` output.

@@ -1191,6 +1191,30 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   never asks a model, and skips only the summary step: pruning and a forced
   overflow recovery run regardless. Its `compaction_state` entry is numbers,
   and is clamped on load because the session file is not trusted.
+- **The finish review reads the tree itself, and a model never decides it.**
+  `internal/finishreview` (docs/finish-review.md) runs after the verification gate
+  at both places the goal pass loop accepts `GOAL_COMPLETE`
+  (`agent.finishReviewGate`), over the read-only, hardened git calls of
+  `workdiff.Collect` and fixed tables: scratch files new since the goal began, a
+  test that lost lines or gained a skip marker while source changed, source
+  changed with no passing check after it (`passLedger.checked`, from the pass
+  outcomes, never a claim), and any part of the tree it could not read, which
+  fails closed as one `unreviewed` finding. A finding is a closed kind, a path
+  made of `[A-Za-z0-9._@+/-]` (`changes.SafePath`; any other name is only
+  counted) and a count, so the sealed directive it becomes is sanitise-only with
+  no classifier kind: file text is matched in the package and never leaves it. It
+  sends a completion back at most `finish_review.max_rounds` times (default 2, 0
+  to 5) and then accepts it with the findings in the report; an
+  `unreviewed`-only report never costs a round. The baseline of files changed
+  when the goal began lives in the state directory (`config.FinishReviewFile`,
+  0600, hidden from the sandbox) and fails towards strict: a missing or bad one
+  counts every untracked file as new. A `Read` deny rule hides a file from the
+  review as it does from `/diff`. `finish_review` is tighten-only from a
+  repository: the project layer cannot switch it off or lower the rounds, and can
+  add patterns and raise the rounds (`mergeFinishReview`); `BELAI_FINISH_REVIEW=0`
+  and `-no-finish-review` switch it off for a run and `/finish-review` for a
+  session, none from a web session. The review approves, deletes and changes
+  nothing, and nothing from it reaches telemetry, audit or sync.
 - **A run cap is measured by the harness and extended only by the user.**
   `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
   docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter

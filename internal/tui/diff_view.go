@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -80,13 +79,7 @@ func (a *App) diffHide() func(rel string) bool {
 // to the repository root, slash separated). The rule is tried against the
 // relative and the absolute path, with the workdir as both anchor candidates.
 func diffReadDenied(perms permissions.Settings, workdir, rel string) bool {
-	subjects := []string{rel, filepath.Join(workdir, filepath.FromSlash(rel))}
-	for _, s := range subjects {
-		if dec, rule := perms.Explain("Read", s); rule != "" && dec == permissions.DecisionBlock {
-			return true
-		}
-	}
-	return false
+	return workdiff.ReadDenied(perms, workdir, rel)
 }
 
 func (a *App) handleDiffMsg(msg tea.Msg) (tea.Cmd, bool) {

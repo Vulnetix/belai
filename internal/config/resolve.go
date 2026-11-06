@@ -143,6 +143,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := runCapsIgnored(eff.Settings.RunCaps, proj.RunCaps); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only add a cap or lower one)")
 	}
+	if ign := finishReviewIgnored(eff.Settings.FinishReview, proj.FinishReview); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only add scratch patterns or raise the finish review rounds)")
+	}
 	if ign := instructionsIgnored(eff.Settings.Instructions, proj.Instructions); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn instruction files off or lower a cap)")
 	}
@@ -156,6 +159,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		Guardrails:    envBool(env("BELAI_GUARDRAILS")),
 		AskPermission: envBool(env("BELAI_ASK_PERMISSION")),
 		Firewall:      &FirewallSettings{Enabled: envBool(env("BELAI_FIREWALL"))},
+		FinishReview:  finishReviewEnv(env("BELAI_FINISH_REVIEW")),
 		Classifier: &ClassifierSettings{
 			Kind:     env("BELAI_CLASSIFIER_KIND"),
 			Provider: env("BELAI_CLASSIFIER_PROVIDER"),
@@ -194,7 +198,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateHeadless, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateHeadless, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -673,6 +677,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.RunCaps = mergeRunCaps(before, s.RunCaps, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.RunCaps) {
 			e.Origin["run_caps"] = src
+		}
+	}
+	if s.FinishReview != nil {
+		// A repository may only add scratch patterns or raise the rounds
+		// (mergeFinishReview).
+		before := e.Settings.FinishReview
+		e.Settings.FinishReview = mergeFinishReview(before, s.FinishReview, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.FinishReview) {
+			e.Origin["finish_review"] = src
 		}
 	}
 	if s.Screenshot != nil {

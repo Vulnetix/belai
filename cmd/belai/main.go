@@ -165,6 +165,7 @@ func main() {
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
 	maxCost := flag.Float64("max-cost", 0, "stop a run at this many US dollars of model spend (run_caps.max_cost_usd): the model is told to finalise at 90%, then the run ends unless a person extends it; 0 is off")
 	maxTokens := flag.Int("max-tokens", 0, "stop a run at this many tokens (run_caps.max_tokens); 0 is off")
+	noFinishReview := flag.Bool("no-finish-review", false, "do not run the finish review of the working tree before a goal is accepted as complete (finish_review.enabled in settings; BELAI_FINISH_REVIEW=0; /finish-review in the TUI)")
 	maxWall := flag.Int("max-wall", 0, "stop a run after this many minutes spent running turns (run_caps.max_wall_minutes); 0 is off")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
@@ -349,6 +350,7 @@ func main() {
 		settings.SessionRetentionDays = sessionRetentionDays
 	}
 	applyRunCapFlags(&settings, *maxCost, *maxTokens, *maxWall)
+	applyFinishReviewFlag(&settings, *noFinishReview, os.Getenv)
 	if err := config.ValidateRunCaps(settings); err != nil {
 		fmt.Fprintln(os.Stderr, "belai:", err)
 		exitProcess(2)

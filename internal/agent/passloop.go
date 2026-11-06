@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/finishreview"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/modelinfo"
@@ -249,6 +250,17 @@ type passLedger struct {
 	// directive; verificationPasses counts finished verification passes.
 	verificationArmed  bool
 	verificationPasses int
+	// checked: a passing check ran after the last file change the goal made,
+	// from the pass outcomes (noteWrites), never a model's claim. The finish
+	// review reads it.
+	checked bool
+	// reviewing: the finish review is on for this goal (finishReviewStart);
+	// baseline is the set of files changed before the goal began; reviewRounds
+	// counts the completions the review sent back, bounded by
+	// finish_review.max_rounds.
+	reviewing    bool
+	baseline     finishreview.Baseline
+	reviewRounds int
 	// jevUnsure: the decision backend rated the pass but could not call it
 	// clearly complete, so the verification directive asks for a proper
 	// tool-backed check.
@@ -361,6 +373,9 @@ func (l *passLedger) hasVerifiableWork() bool {
 // noteWrites records one pass's harness-observed disk effect.
 func (l *passLedger) noteWrites(out passOutcome) {
 	l.passWrites = out.mutations
+	if out.mutations > 0 || out.checkedAfter {
+		l.checked = out.checkedAfter
+	}
 	if out.mutations > 0 {
 		l.writes += out.mutations
 		l.passesSinceWrite = 0
@@ -724,6 +739,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		basePasses = prior.Passes
 		goalStart = goalStart.Add(-time.Duration(prior.TimeUsedSeconds) * time.Second)
 	}
+	s.finishReviewStart(ctx, &l, gs.ID, s.turnPriorGoal != nil)
+	var reviewOpen finishreview.Report
 	// Research that finished while the user answered goes in first, so the
 	// first directive does not promise research that is already here.
 	turns = append(turns, s.deliverResearch(ctx, false, emit)...)
@@ -977,21 +994,32 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					turns = append(turns, l.directive(fmt.Sprintf(openTodoDirective, open, total))...)
 					continue
 				}
+				// Finish review: the harness reads the tree before it accepts the
+				// completion. A finding sends it back while rounds remain.
+				if dir, open := s.finishReviewGate(ctx, &l); dir != "" {
+					turns = append(turns, l.directive(dir)...)
+					continue
+				} else {
+					reviewOpen = open
+				}
 				l.settleTodos(emit)
 				gs.Status = string(goals.StatusComplete)
 				emitGoalState(emit, gs)
 				res := run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}
+				if !reviewOpen.Empty() {
+					emit(Event{Kind: EventWarningKind, Warning: finishReviewWarning(reviewOpen)})
+				}
 				// A one-pass goal that ended on its own closing reply has
 				// already written the report: that reply is the account of
 				// the whole goal, verified by the evaluator. Asking again cost
 				// a full-context call to restate it. Longer goals, and every
 				// stop that is not a clean completion, still get the report.
-				if l.passes == 1 && substantiveReport(out.reply) {
+				if l.passes == 1 && substantiveReport(out.reply) && !actionable(reviewOpen) {
 					emit(Event{Kind: EventReportKind, GoalSentinel: sentinel})
 					s.traceRecord("report", string(sentinel), "", "closing reply reused", res.Passes)
 					return res, nil
 				}
-				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel, res), nil
+				return s.goalReport(ctx, system, s.withReviewOpen(withReply(turns, out.reply), reviewOpen), streaming, emit, sentinel, res), nil
 			}
 			if l.notePartial() {
 				l.partialStreak = 0
@@ -1145,10 +1173,19 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				turns = append(turns, l.directive(fmt.Sprintf(openTodoDirective, open, total))...)
 				continue
 			}
+			if dir, open := s.finishReviewGate(ctx, &l); dir != "" {
+				turns = append(turns, l.directive(dir)...)
+				continue
+			} else {
+				reviewOpen = open
+			}
+			if !reviewOpen.Empty() {
+				emit(Event{Kind: EventWarningKind, Warning: finishReviewWarning(reviewOpen)})
+			}
 			l.settleTodos(emit)
 			gs.Status = string(goals.StatusComplete)
 			emitGoalState(emit, gs)
-			return s.goalReport(ctx, system, turns, streaming, emit, sentinel, run.Result{
+			return s.goalReport(ctx, system, s.withReviewOpen(turns, reviewOpen), streaming, emit, sentinel, run.Result{
 				Reply:        out.lastText,
 				Usage:        out.usage,
 				GoalSentinel: sentinel,

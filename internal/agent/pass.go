@@ -122,6 +122,11 @@ type passOutcome struct {
 	// non-inspection Bash command ran and exited 0 (tests, the script, a
 	// build): a harness observation that the pass checked its own change.
 	selfVerified bool
+	// checkedAfter is true when a passing non-inspection Bash command ran after
+	// the pass's last file mutation, or the pass mutated nothing and ran one.
+	// Unlike selfVerified it also holds for a read-only verification pass, so the
+	// finish review can tell the last change was checked.
+	checkedAfter bool
 	// callSeq, lastMutSeq and lastCheckSeq order the pass's calls for
 	// selfVerified.
 	callSeq, lastMutSeq, lastCheckSeq int
@@ -370,6 +375,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		s.turnMutations += acc.mutations
 		o.mutatedPaths = acc.mutatedPaths
 		o.selfVerified = acc.mutations > 0 && acc.lastCheckSeq > acc.lastMutSeq
+		o.checkedAfter = acc.lastCheckSeq > acc.lastMutSeq
 		if o.usage == nil {
 			o.usage = acc.usage
 		}

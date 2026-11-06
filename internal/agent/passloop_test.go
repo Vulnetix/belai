@@ -152,6 +152,10 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				// verification has work to check; an all-pending list would
 				// skip the verification pass and change pass-loop timing.
 				switch opts.main {
+				case "scratch":
+					// A pass that leaves a scratch file in the tree, which the
+					// finish review reads at completion.
+					writeToolCallWithContentJSON(w, "Write", `{"path":"scratch.tmp","content":"x\n"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
 				case "tool-nocontent":
 					writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
 				case "Todo":

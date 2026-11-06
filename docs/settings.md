@@ -302,6 +302,16 @@ Your own layers and the `-max-cost`, `-max-tokens` and `-max-wall` flags set any
 a project file can only add a cap or lower one. `/caps` shows the numbers and
 `/caps extend` raises them. See [Run caps](run-caps.md).
 
+## Finish review
+
+The `finish_review` block has no row on a settings screen. It is a block in the settings
+file: `finish_review.enabled` (on by default), `finish_review.max_rounds` (2, from 0 to 5)
+and `finish_review.scratch_patterns` (extra file-name patterns that mark an untracked
+file as scratch). Your own layers set any key; a project file can only tighten the gate,
+so it cannot switch it off or lower the rounds and can add patterns or raise the rounds.
+`/finish-review`, `-no-finish-review` and `BELAI_FINISH_REVIEW=0` switch it for a session or
+a run. See [Finish review](finish-review.md).
+
 ## Instruction files
 
 The `instructions` block has no row on a settings screen. It is a block in the settings

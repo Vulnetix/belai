@@ -218,6 +218,11 @@ type Settings struct {
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
 	RunCaps *RunCapsSettings `json:"run_caps,omitempty"`
+	// FinishReview configures the harness check of the working tree that runs
+	// before a goal is accepted as complete (docs/finish-review.md). On by
+	// default. The user's layers and the flags set any key; the project layer
+	// may only tighten it.
+	FinishReview *FinishReviewSettings `json:"finish_review,omitempty"`
 	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
 	// on. The user's layers set it either way; the project layer can only turn
 	// it off.
@@ -2073,6 +2078,9 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Instructions = mergeInstructions(out.Instructions, proj.Instructions, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
+	// Finish review: a project may add scratch patterns and raise the rounds,
+	// never switch the gate off or lower them.
+	out.FinishReview = mergeFinishReview(out.FinishReview, proj.FinishReview, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.
 	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
 	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)
