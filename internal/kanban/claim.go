@@ -129,6 +129,15 @@ func CleanAssignee(s string) (string, error) {
 	return s, nil
 }
 
+func hasAnyLabel(it Item, labels []string) bool {
+	for _, l := range it.Labels {
+		if slices.Contains(labels, l) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasLabelPrefix(it Item, prefix string) bool {
 	for _, l := range it.Labels {
 		if strings.HasPrefix(l, prefix) && len(l) > len(prefix) {
@@ -195,6 +204,10 @@ type ClaimRequest struct {
 	// carry at least one label. It is how a cli-job worker takes any
 	// "cli-job:<id>" card; the worker then checks the id against its own list.
 	LabelPrefix string
+	// AnyLabels, when set, are labels of which the item must carry at least
+	// one. A cli-job worker lists "cli-job:<id>" for each id its profile runs,
+	// so two runner profiles never take each other's cards.
+	AnyLabels []string
 	// Profile is the claiming agent's profile name. An item with an Assignee
 	// is claimable only by that profile; AssignedOnly also skips unassigned
 	// items.
@@ -363,6 +376,8 @@ func (r ClaimRequest) matches(b *Board, hold holdIndex, it Item, now int64) bool
 		return false
 	case r.LabelPrefix != "" && !hasLabelPrefix(it, r.LabelPrefix):
 		return false
+	case len(r.AnyLabels) > 0 && !hasAnyLabel(it, r.AnyLabels):
+		return false
 	case !assigneeTakes(it.Assignee, r.Profile, r.Crew):
 		return false
 	case it.Assignee == "" && r.AssignedOnly:
@@ -494,7 +509,7 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 		}
 		req := r
 		req.Lists = ClaimableLists
-		req.Labels, req.LabelPrefix, req.Skip, req.AssignedOnly, req.Project = nil, "", nil, false, ""
+		req.Labels, req.LabelPrefix, req.AnyLabels, req.Skip, req.AssignedOnly, req.Project = nil, "", nil, nil, false, ""
 		hold := newHoldIndex(b, now, r.OpenPR)
 		if it.List == Backlog {
 			if h, held := hold.of(it); held {

@@ -82,6 +82,19 @@ func TestReleaseRecordsOnlyAValidCliResult(t *testing.T) {
 	}
 }
 
+func TestClaimAnyLabelsTakesOnlyListedJobs(t *testing.T) {
+	s := testStore(t)
+	addItem(t, s, ItemInput{Title: "other", Labels: []string{"cli-job:fix"}})
+	want := addItem(t, s, ItemInput{Title: "mine", Labels: []string{"cli-job:sca"}})
+	got, err := s.Claim(ClaimRequest{Worker: "w1", Lease: time.Minute, AnyLabels: []string{"cli-job:sca", "cli-job:scan"}})
+	if err != nil || got.ID != want.ID {
+		t.Fatalf("claimed %+v %v", got, err)
+	}
+	if _, err := s.Claim(ClaimRequest{Worker: "w2", Lease: time.Minute, AnyLabels: []string{"cli-job:sca"}}); err == nil {
+		t.Fatal("a card for another profile's job was claimed")
+	}
+}
+
 func TestClaimLabelPrefixMatchesOnlyCliJobCards(t *testing.T) {
 	s := testStore(t)
 	addItem(t, s, ItemInput{Title: "plain", Labels: []string{"cli-job"}})

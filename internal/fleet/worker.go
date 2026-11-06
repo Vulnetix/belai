@@ -769,7 +769,11 @@ func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	if k != nil {
 		r.Lists, r.Labels, r.AssignedOnly = k.ClaimLists(), k.Labels, k.AssignedOnly
 		if k.CLI != nil {
-			r.LabelPrefix = clijobs.Label
+			// Only the cards for jobs this profile runs: a read-only and a
+			// mutating runner live side by side and must not trade cards.
+			for _, id := range k.CLI.Jobs {
+				r.AnyLabels = append(r.AnyLabels, clijobs.Label+id)
+			}
 		}
 	}
 	w.mu.Lock()
@@ -800,8 +804,8 @@ func (w *Worker) wants(project string) string {
 	if len(r.Labels) > 0 {
 		s += " labelled " + strings.Join(r.Labels, "+")
 	}
-	if r.LabelPrefix != "" {
-		s += " labelled " + r.LabelPrefix + "<job>"
+	if len(r.AnyLabels) > 0 {
+		s += " labelled " + clijobs.Label + "<job>"
 	}
 	if r.AssignedOnly {
 		s += " assigned to " + r.Profile

@@ -49,7 +49,7 @@ file in the repository, the forge or a Vulnetix organisation.
 | `analyze` | read-only | `vulnetix analyze --no-upload --output-file .vulnetix/analyze.report.json` | `analyze.report.json` |
 | `api-discover` | read-only | `vulnetix api discover --no-upload` | none |
 | `api-upload` | mutating | `vulnetix api upload` | none |
-| `attest-verify` | read-only | `vulnetix attest verify --envelope .vulnetix/attestation.json` | none |
+| `attest-verify` | read-only | `vulnetix attest verify .vulnetix/inventory.cdx.json --envelope .vulnetix/attestation.json` | none |
 | `bom-diff` | read-only | `vulnetix bom diff .vulnetix/baseline.cdx.json .vulnetix/inventory.cdx.json` | none |
 | `bom-enrich` | mutating | `vulnetix bom enrich .vulnetix/inventory.cdx.json` | none |
 | `bom-merge` | mutating | `vulnetix bom merge --out .vulnetix/merged.cdx.json .vulnetix/sbom.cdx.json .vulnetix/inventory.cdx.json` | `merged.cdx.json` |
@@ -109,14 +109,21 @@ harness-composed note; an error or timeout counts as a failed attempt.
 
 ## How a card is run
 
-1. The harness claims a backlog card that carries a `cli-job:<id>` label (a
-   prefix match, so one profile serves every id).
-2. The id must be in the profile's `kanban.cli.jobs`, else the card is blocked
-   with a note naming the rule.
+1. The harness claims a backlog card that carries a `cli-job:<id>` label for an
+   id in the profile's `kanban.cli.jobs`. A card for any other id is left
+   unclaimed for the profile that lists it, so the read-only and the writing
+   runner never take each other's cards.
+2. The id is checked again against the list; a card that reaches a worker by
+   another route and fails the check is blocked with a note naming the rule.
 3. A mutating job also needs `kanban.cli.write` and a card whose acceptance gates
    are all met (at least one gate). Otherwise the card is blocked. It then
-   runs in the item's worktree, the scan output is removed, and the harness
-   commits what changed on the item's branch.
+   runs in the item's worktree. The untracked scan output under `.vulnetix` is
+   removed, except the files the job lists as its own change (`ignore-sync`'s
+   `memory.yaml`, `vex-apply`'s and `bom-merge`'s output), and tracked files are
+   never touched. The harness commits what changed on the item's branch. A
+   mutating job whose effect is on the forge or a Vulnetix organisation (the
+   `gha-*` publishers, `config-apply`, `tea-release`) changes no file, so it has
+   no branch and the card goes to review without one.
    With `kanban.gates.verify: enforce` (the built-in write profile sets it) the
    harness then runs the card's runnable gates on that branch, as it does for any
    other worker (`verifyBranch`), and decides each by exit code. The gates were
@@ -137,6 +144,11 @@ harness-composed note; an error or timeout counts as a failed attempt.
    (a deny or ask rule blocks the card), the OS sandbox, the scrubbed environment
    and the `tests.timeout_seconds` bound. A read-only job runs in the trusted
    repository root.
+   Before the steps run, the job's declared artifacts are removed (a link is
+   removed, never followed; `memory.yaml` stays because the review reader counts
+   it only when it records the run's commit), so a file the repository carries is
+   never read as this run's output. An exit code outside 0, 1 and 3 (a usage
+   error, a missing binary) is a failed attempt and records no result.
 5. The harness reads the job's artifacts through `internal/scanartifacts`, builds
    the result and records it at release.
 
@@ -251,3 +263,14 @@ defines.
   a card's text may not reach an argument, so the table's `defend --quiet` has no
   id to give. The `belai:defend-writer` worker runs `vulnetix defend <id>` itself
   for the advisory its card names, under the permission rules and the sandbox.
+
+## Limits
+
+- `config-apply` applies the file as it is when the job runs, with
+  `--auto-approve`. It is not bound to the plan a person reviewed through
+  `config-plan`: the card's met acceptance gate is the only agreement, so a gate
+  for it should name the file's hash, and a person should review the file at the
+  commit the job runs on.
+- A read-only job runs in the host's checkout at whatever commit it holds, not at
+  the commit a pull request names. The result describes that checkout.
+- `defend` needs an advisory id the fixed argv cannot carry yet.
