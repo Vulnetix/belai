@@ -35,6 +35,15 @@ type ProjectPrefs struct {
 	Tests *PrefsTests `json:"tests,omitempty"`
 	LSP   *PrefsLSP   `json:"lsp,omitempty"`
 	Jev   *PrefsJev   `json:"jev,omitempty"`
+	// LintLoop holds the per-edit lint loop switch only: the numbers stay in
+	// the user's settings.
+	LintLoop *PrefsLintLoop `json:"lint_loop,omitempty"`
+}
+
+// PrefsLintLoop is the part of the per-edit lint loop a project preference
+// sets. The preference file is the user's, so it may turn the loop on.
+type PrefsLintLoop struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // PrefsTests is the part of the post-end test pass a project preference sets.
@@ -77,6 +86,9 @@ func (p ProjectPrefs) toSettings() Settings {
 	}
 	if p.LSP != nil && (p.LSP.Enabled != nil || len(p.LSP.Languages) > 0) {
 		s.LSP = &LSPSettings{Enabled: p.LSP.Enabled, Languages: p.LSP.Languages}
+	}
+	if p.LintLoop != nil && p.LintLoop.Enabled != nil {
+		s.LintLoop = &LintLoopSettings{Enabled: p.LintLoop.Enabled}
 	}
 	if p.Jev != nil && (len(p.Jev.Jobs) > 0 || p.Jev.Thresholds != nil) {
 		s.Jev = &JevSettings{Jobs: p.Jev.Jobs, Thresholds: p.Jev.Thresholds}

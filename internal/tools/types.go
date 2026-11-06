@@ -49,6 +49,12 @@ const (
 	// so the text is arbitrary and always classifies. No tool has this kind;
 	// the agent tags hook text with it before promotion.
 	KindHook Kind = "hook"
+	// KindLint is the finding text the per-edit lint loop read from a linter
+	// run on a file the model just edited (internal/lintloop, docs/lint.md).
+	// The linter prints messages a hostile file can shape, so the rows always
+	// classify. No tool carries this kind; the agent tags the rendered rows with
+	// it before promotion, as it does for KindHook.
+	KindLint Kind = "lint"
 	// KindSkill is the body of an installed skill, loaded by the Skill tool.
 	// A skill may come from a plugin, so it is read-only but classifies.
 	KindSkill Kind = "skill"
@@ -139,7 +145,7 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindTodo,
-	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
+	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindLint, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport, KindDecision,
 	KindPeer, KindA2A, KindRepoMemory, KindRepoMemoryWrite,

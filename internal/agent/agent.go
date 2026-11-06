@@ -27,6 +27,7 @@ import (
 	"github.com/vulnetix/belai/internal/imageguard"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/knowledge"
+	"github.com/vulnetix/belai/internal/lintloop"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/offload"
@@ -378,6 +379,9 @@ type Session struct {
 	skillCands []tools.Candidate
 	// diagHist tracks each edited file's language server errors across passes.
 	diagHist diagTracker
+	// lint counts, per file, the passes in a row the per-edit lint loop
+	// reported the same findings (docs/lint.md).
+	lint lintloop.Tracker
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn,
 	// or the current pass of a goal (each goal turn gets the budget afresh).
 	taskCallsThisTurn int
@@ -2340,6 +2344,9 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 
 	out := s.promoteResult(ctx, call, res, emit)
 	out += admitImages(res, out, eff)
+	// The per-edit lint loop appends after promotion: its rows classify on
+	// their own and are sealed here, so the seal survives to the request.
+	out += s.lintEdit(ctx, call, res, emit)
 	// Hook notes classify on their own, so a noisy hook cannot get a clean
 	// tool result withheld, and a clean result cannot vouch for a hook.
 	notes := append(pre.Context, s.postToolHooks(ctx, call, res, emit).Context...)

@@ -37,7 +37,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
@@ -196,7 +196,7 @@ movement, edit and back always stay.
 
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
-  the scope chip shows: `auto-commit per task`, `plan limits`, `clone repositories`, every `test …`,
+  the scope chip shows: `auto-commit per task`, `lint after edits`, `plan limits`, `clone repositories`, every `test …`,
   `voice …`, `read aloud …` and `knowledge …` row, `permission offers`,
   `auto-apply permissions`, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session
@@ -302,6 +302,15 @@ file: `run_caps.max_cost_usd`, `run_caps.max_tokens`, `run_caps.max_wall_minutes
 Your own layers and the `-max-cost`, `-max-tokens` and `-max-wall` flags set any key;
 a project file can only add a cap or lower one. `/caps` shows the numbers and
 `/caps extend` raises them. See [Run caps](run-caps.md).
+
+## Lint loop
+
+The `lint_loop` block has one row on the settings screen, "lint after edits"
+(`lint_loop.enabled`, off by default). The numbers are in the settings file:
+`lint_loop.timeout_ms` (10000, from 1000 to 60000), `lint_loop.max_attempts` (3, from
+1 to 6) and `lint_loop.max_rows` (10, from 1 to 20). Your own layers set any key; a
+project file can only turn the loop off or lower a number. `/lint-loop`, `-lint-loop`
+and `BELAI_LINT_LOOP` switch it for a session or a run. See [Lint](lint.md#per-edit-loop).
 
 ## Finish review
 

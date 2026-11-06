@@ -10,7 +10,7 @@ import (
 // bytes the harness did not write, and a remote CLI result carrying
 // third-party repository text.
 func TestArbitraryContentKindsClassify(t *testing.T) {
-	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote, KindProcess, KindAgentStore, KindSubagent, KindHook, KindSkill, KindMCP} {
+	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote, KindProcess, KindAgentStore, KindSubagent, KindHook, KindLint, KindSkill, KindMCP} {
 		if !k.NeedsClassifier() {
 			t.Errorf("%q result skipped the classifier", k)
 		}
@@ -63,8 +63,10 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindAgentStore: true,
 		KindSubagent:   true,
 		KindHook:       true,
-		KindSkill:      true,
-		KindMCP:        true,
+		// Linter findings quote the edited file and classify.
+		KindLint:  true,
+		KindSkill: true,
+		KindMCP:   true,
 		// Kanban items are other sessions' and web users' text; the
 		// writers' confirmations are harness-composed.
 		KindKanban:      true,

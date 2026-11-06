@@ -44,7 +44,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
-  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), an A2A direct message or reply (`KindPeer`, another agent's model text, from this host or another, classified on receipt), `RepoMemoryRead` notes (`KindRepoMemory`, text other agents and the Software Factory console wrote), the `Vulnetix` tool (`KindRemote`,
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), an A2A direct message or reply (`KindPeer`, another agent's model text, from this host or another, classified on receipt), the per-edit lint loop's rows (`KindLint`, linter messages that quote the edited file), `RepoMemoryRead` notes (`KindRepoMemory`, text other agents and the Software Factory console wrote), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
@@ -906,6 +906,23 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `lint-*` suite name may be a runnable gate (`lint-golangci`, `lint-ruff`, ...)
   and is never narrowed by `dir` or `test`. No profile key takes a lint
   command. See [docs/lint.md](docs/lint.md).
+  **The per-edit loop is the one carve-out from "counts only".** With the
+  user's `lint_loop.enabled` (off by default; a project layer may only turn it
+  off or lower a number, `mergeLintLoop`), `internal/lintloop` runs the
+  detected linter's fixed one-file argv (`lintdetect.FileArgv`, a plain-alphabet
+  path validated under the root after symlinks, never a model's or a profile's)
+  through `testrun` after a successful `Write`, `Edit` or `apply_patch`: no
+  shell, the Bash permission rules (a deny or an ask skips it, it never
+  prompts), the call's sandbox policy and the scrubbed environment. Only
+  `path:line:col: message` rows for the edited file are kept, capped, rendered by
+  `lsp.Render`, sanitised, classified as `tools.KindLint` (in
+  `tools.classifierKinds` unconditionally; guardrails off skips the round trip
+  only) and then sealed with `rolemanager.SealDiagnostics`. A withheld row or a
+  classifier error leaves a harness-composed count and no linter text; a timeout,
+  a missing tool, an exit that is not the tool's findings code, a clean run and
+  anything unsupported leave an empty block, and the loop never claims a file is
+  clean. The only thing persisted (`.vulnetix/belai/lint_loop.json`) is counts,
+  a tool name, an exit code and a duration.
 - **Acceptance gates are references, and the harness decides them.**
   A gate on a card (`kanban.Gate`) names a test suite the harness detected
   (`internal/testdetect`) and, for a Go suite, a package directory and a test

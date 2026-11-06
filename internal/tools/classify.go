@@ -30,6 +30,9 @@ package tools
 //   - KindSubagent is the result of the Task tool, a report written by a
 //     read-only subagent. Because the report is model-written arbitrary text,
 //     it classifies before promotion.
+//   - KindLint is the finding text a linter printed for a file the model just
+//     edited. The linter is a fixed argv, but its messages quote the file, so
+//     they are arbitrary text and classify before any model reads them.
 //   - KindOffload is a ReadResult slice of a result the harness offloaded.
 //     The whole result was admitted before it was stored, but a slice is the
 //     same arbitrary bytes read back, so it classifies again rather than
@@ -66,6 +69,7 @@ var classifierKinds = map[Kind]bool{
 	KindAgentStore: true,
 	KindSubagent:   true,
 	KindHook:       true,
+	KindLint:       true,
 	KindSkill:      true,
 	KindMCP:        true,
 	KindKanban:     true,

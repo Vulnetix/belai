@@ -86,6 +86,13 @@ func ProjectBelaiDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "belai")
 }
 
+// ProjectLintLoopPath returns the file where the per-edit lint loop keeps its
+// counts for a working directory (docs/lint.md): run, finding and exit-code
+// numbers and a linter name, never a path, a rule name or a message.
+func ProjectLintLoopPath(workdir string) string {
+	return filepath.Join(ProjectBelaiDir(workdir), "lint_loop.json")
+}
+
 // GlobalPromptsDir returns <GlobalDir>/prompts, the directory of named
 // prompt files that make up the global prompt library.
 func GlobalPromptsDir() (string, error) {

@@ -186,7 +186,7 @@ func settingsGroupOf(key string) string {
 // settings whatever scope the screen shows: the project layer cannot set it.
 func settingsWritesGlobalOnly(key string) bool {
 	switch {
-	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone",
+	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone", key == "lint_loop.enabled",
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
@@ -363,6 +363,7 @@ func (a *App) settingsRows() []settingsRow {
 	testsOnFailVal := s.TestsOnFail()
 	testsReportVal := boolLabel(s.TestsReportEnabled())
 	testsEachTurnVal := boolLabel(s.TestsEachTurn())
+	lintLoopVal := boolLabel(s.LintLoopEnabled())
 	testsMaxFixVal := strconv.Itoa(s.TestsMaxFixPasses())
 	testsTimeoutVal := fmt.Sprintf("%ds", s.TestsTimeoutSeconds())
 	testsCommandVal := "detected"
@@ -408,6 +409,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "mac_key_hints", label: "macOS keyboard hints", kind: "toggle", value: macHintsVal, src: sourceLabel(origin["ui"]), help: "adds the Mac form after an F key, such as f9 (Fn+⏭). Unset, it follows the platform: shown on macOS, hidden elsewhere. Turn it on in a virtual machine running on Mac hardware"},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
+		{key: "lint_loop.enabled", label: "lint after edits", kind: "toggle", value: lintLoopVal, src: sourceLabel(origin["lint_loop"]), help: "runs the repository's detected linter on each file after an edit and returns its findings on the tool result — off by default; a project layer can only turn this off"},
 		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
 		{key: "tests.post_end", label: "test pass", kind: "choose", opts: []string{"off", "goal", "goal_plan", "session"}, value: testsPostEndVal, src: sourceLabel(origin["tests"]), help: "runs detected tests at the end of a goal, plan, or session — off by default; a project layer can only turn this off"},
 		{key: "tests.each_turn", label: "test pass each turn", kind: "toggle", value: testsEachTurnVal, src: sourceLabel(origin["tests"]), help: "also runs detected tests after a plain agent turn that edited files, in the TUI only — off by default; a project layer can only turn this off"},
@@ -949,6 +951,17 @@ func (a *App) cycleToggle(key string) error {
 			}
 		})
 	}
+	if key == "lint_loop.enabled" {
+		// The loop runs a linter after every edit, so it is the user's opt-in
+		// and global only: off (unset) -> on -> off.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.LintLoop == nil {
+				s.LintLoop = &config.LintLoopSettings{}
+			}
+			v := !s.LintLoopEnabled()
+			s.LintLoop.Enabled = &v
+		})
+	}
 	if key == "tests.each_turn" {
 		// The pass runs commands after every edit turn, so it is the user's
 		// opt-in and global only: off (unset) -> on -> off.
@@ -1168,6 +1181,13 @@ func (a *App) unsetSetting(key string) error {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			if s.Agents != nil {
 				s.Agents.Clone = nil
+			}
+		})
+	}
+	if key == "lint_loop.enabled" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.LintLoop != nil {
+				s.LintLoop.Enabled = nil
 			}
 		})
 	}

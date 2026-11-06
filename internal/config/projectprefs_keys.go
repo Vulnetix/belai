@@ -45,6 +45,7 @@ var prefFixedKeys = map[string]prefKey{
 	"tests.on_fail":        {kind: prefWord, words: []string{"off", "diagnose", "fix"}, origin: "tests"},
 	"tests.each_turn":      {kind: prefBool, origin: "tests"},
 	"lsp.enabled":          {kind: prefBool, origin: "lsp"},
+	"lint_loop.enabled":    {kind: prefBool, origin: "lint_loop"},
 }
 
 // PrefKeys lists every flat preference key in a stable order.
@@ -127,6 +128,9 @@ func (p ProjectPrefs) Flat() map[string]any {
 		for id, on := range p.LSP.Languages {
 			out["lsp.languages."+id] = on
 		}
+	}
+	if p.LintLoop != nil {
+		putB("lint_loop.enabled", p.LintLoop.Enabled)
 	}
 	if p.Jev != nil {
 		for j, on := range p.Jev.Jobs {
@@ -213,6 +217,8 @@ func (p *ProjectPrefs) SetFlat(key string, v any) error {
 			p.LSP = &PrefsLSP{}
 		}
 		p.LSP.Enabled = &b
+	case "lint_loop.enabled":
+		p.LintLoop = &PrefsLintLoop{Enabled: &b}
 	default:
 		switch {
 		case strings.HasPrefix(key, "lsp.languages."):
@@ -291,6 +297,8 @@ func (p *ProjectPrefs) UnsetFlat(key string) error {
 		if p.LSP != nil {
 			p.LSP.Enabled = nil
 		}
+	case "lint_loop.enabled":
+		p.LintLoop = nil
 	default:
 		switch {
 		case strings.HasPrefix(key, "lsp.languages."):
@@ -367,6 +375,8 @@ func EffectivePrefs(eff Effective, mode string) map[string]EffectivePref {
 			v = s.TestsEachTurn()
 		case "lsp.enabled":
 			v = s.LSPEnabled()
+		case "lint_loop.enabled":
+			v = s.LintLoopEnabled()
 		default:
 			switch {
 			case strings.HasPrefix(key, "lsp.languages."):

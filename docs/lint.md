@@ -1,5 +1,7 @@
 # Lint
 
+**Status:** the detection and the sweep ship; the per-edit loop is new.
+
 Belai detects the linters a repository has set up, tells the model how to run
 them, and can sweep the repository for drift against the rule files that are
 checked in. Nothing here decides what a rule should be: the repository's own
@@ -78,6 +80,103 @@ count, never doubles the board, and a card a person deleted does not come back.
 A different count is a different finding. A card is closed, with
 `no longer reported`, when a later run of its linter is clean. A card is left
 alone when its linter did not run, timed out or is no longer detected.
+
+## Per-edit loop
+
+With `lint_loop.enabled` on, the harness lints each file the model has just
+written, edited or patched, and returns the findings on the same tool result, so
+the model fixes them in the turn that caused them. Language-server diagnostics
+(see [language servers](lsp.md)) stay the fast path beside it; the loop adds the
+repository's own rule file, which a language server often does not read.
+
+It is off by default, because it runs a program after every edit. Turn it on
+with `lint_loop.enabled` in your own settings (the `/settings` row "lint after
+edits"), `BELAI_LINT_LOOP=1`, `-lint-loop`, or `/lint-loop on` for one session.
+A project file can only turn it off and lower a number.
+
+What runs, and when:
+
+1. The loop starts only after a successful `Write`, `Edit` or `apply_patch`,
+   for at most four files of one call, in a trusted directory, and not in plan
+   mode. A nested call from code mode does not start it.
+2. It needs a detected linter (see [Detection](#detection)) whose tool has a
+   one-file form and owns the file's extension. The forms are fixed:
+
+   | Linter | Argv | Files |
+   | ------ | ---- | ----- |
+   | `lint-ruff` | `ruff check --output-format=concise -- <file>` | `.py`, `.pyi` |
+   | `lint-rubocop` | `rubocop --format emacs -- <file>` | `.rb`, `.rake`, `.gemspec` |
+   | `lint-golangci` | `golangci-lint run ./<directory>` | `.go` |
+
+   `golangci-lint` analyses packages, so it runs on the file's directory and
+   only the rows for the edited file are kept. The other detected linters
+   (`cargo fmt`, `cargo clippy`, the `lint` script of ESLint) are
+   package-wide and never run on one file. Formatters are out of scope.
+3. The operand is a path the harness checked: relative to the repository root
+   after symlinks are resolved on both sides, no `..` or empty part, no leading
+   `-`, and only letters, digits and `. _ - / @ +`. A file outside the root, or
+   with any other character in its name, is not linted.
+4. The run uses the same runner as the test suites (see [testing](testing.md)): no
+   shell, the scrubbed environment, a process group, the call's OS sandbox policy
+   and an output cap. A `Bash` deny rule that matches the argv skips the run. An
+   ask rule skips it too, because an edit never stops to prompt: the model gets
+   one harness line, once a session, saying the linter was skipped for that
+   reason. The bound is `lint_loop.timeout_ms`.
+5. The exit code decides what the output means. Only the tool's findings code
+   (1 for all three) is read as findings. A timeout, a missing tool, a
+   configuration error, a crash or a clean run gives an empty block. The loop never
+   tells the model a file is clean.
+
+What the model sees:
+
+- The rows in the linter's output of the form `path:line:col: message` for the
+  edited file become diagnostics rows. Everything else a linter prints is
+  dropped. A message is flattened to one line, cleaned of control and bidi
+  runes and capped at 200 characters; the source is the tool's name from the
+  table, never text from the message. At most `lint_loop.max_rows` rows show.
+- A linter's messages quote the file, so they are arbitrary text. The rows are
+  classified as `tools.KindLint` through the security classifier, always, not
+  only when `lsp.classify_diagnostics` is on (guardrails off skips the
+  classifier, never the sanitising). Admitted rows are sealed in the same
+  `<diagnostics>` block language servers use, with a nonce and a SHA-256, headed
+  `lint (ruff)`, and appended to the edit result after it is promoted.
+- If the classifier withholds the rows or fails, the model gets one harness
+  line with the tool name and a count, and no linter text.
+- If the same findings come back for a file `lint_loop.max_attempts` passes in a
+  row, the next pass carries a harness note that they are still open and the model
+  should move on; later passes are quiet until the findings change or clear. This
+  counter is the loop's own and is separate from the language-server triage.
+
+The loop writes `.vulnetix/belai/lint_loop.json`: for each tool, run, finding and
+skip counts, the last exit code and the last duration. No path, rule name or
+message is kept. The file is written whole through a `.part` name and a symlinked
+`.vulnetix` is refused. Each run also leaves a `lint_loop` trace row with the
+status, a reason word and the counts.
+
+Reason words are a closed set: `no_linter`, `unsupported_file`, `outside_root`,
+`denied`, `needs_approval`, `timeout`, `tool_missing`, `start_failed` and
+`tool_error`.
+
+### Settings
+
+| Key | Default | Range | Meaning |
+| --- | ------- | ----- | ------- |
+| `lint_loop.enabled` | off | | Run the loop. Only an explicit true enables it. |
+| `lint_loop.timeout_ms` | 10000 | 1000 to 60000 | Bound on one linter run. |
+| `lint_loop.max_attempts` | 3 | 1 to 6 | Passes in a row that may show the same findings before the note. |
+| `lint_loop.max_rows` | 10 | 1 to 20 | Rows in one block. |
+
+Your own layers, `BELAI_LINT_LOOP` and the `-lint-loop` flag set any key in
+range. The per-project preference file (`belai rc --web-project-settings` key
+`lint_loop.enabled`) is yours too and can turn the loop on for one project. A
+project settings file can set `lint_loop.enabled` to false and lower a number,
+never turn the loop on or raise a number; anything else is ignored with a note.
+A value out of range fails the load of a user file and is dropped from a project
+file. No profile key and no settings key takes a command: the argv is the table's.
+
+`/lint-loop` shows the state and the numbers, and `/lint-loop on` or
+`/lint-loop off` switches it for the session. The choice is held in memory and
+is never written to a settings file.
 
 ## Lint gates
 

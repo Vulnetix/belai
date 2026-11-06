@@ -68,13 +68,23 @@ func (g DiagnosticsGate) RenderReport(ctx context.Context, abs string, content [
 	if body == "" {
 		return "", report
 	}
-	body = sanitize.Sanitize(body)
+	return SealDiagnostics(sanitize.Sanitize(body), pool), report
+}
 
+// SealDiagnostics wraps a diagnostics body in the sealed block every
+// diagnostics source shares: a nonce from the pool and the SHA-256 of the
+// body. It returns "" when the body is empty or the pool has no nonce, so a
+// block is never sent unsealed. The caller has already sanitised the body,
+// and classified it where it is arbitrary text (the per-edit lint loop).
+func SealDiagnostics(body string, pool *nonce.Pool) string {
+	if body == "" || pool == nil {
+		return ""
+	}
 	non, err := pool.Reserve()
 	if err != nil {
-		return "", report
+		return ""
 	}
-	return delimiters.Wrap(delimiters.KindDiagnostics, non, body), report
+	return delimiters.Wrap(delimiters.KindDiagnostics, non, body)
 }
 
 func recordLSPDiagnose(r lsp.Report) {

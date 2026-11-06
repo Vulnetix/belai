@@ -387,7 +387,9 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindBash: false, KindWrite: false, KindEdit: false, KindProcessCtl: false,
 		// No tool carries KindHook; it stays off the read-only list so it
 		// could never admit a tool into the concurrent fan-out.
-		KindHook:  false,
+		KindHook: false,
+		// No tool carries KindLint either.
+		KindLint:  false,
 		KindSkill: true, KindSkillWrite: false, KindMCP: false,
 		// The kanban board is outside every workspace root: its tools
 		// never mutate the workspace, and the store serialises its writes.

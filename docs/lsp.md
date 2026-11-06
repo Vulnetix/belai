@@ -156,6 +156,14 @@ Three new role-manager events appear in the internal-work feed:
   `timeout`, or `unavailable`.
 - `lsp_server_down` — the live server stopped responding and fell back.
 
+## Relationship to the per-edit lint loop
+
+The repository's own linter can also run on each edited file. That is the
+[per-edit lint loop](lint.md#per-edit-loop): off by default, a fixed argv, and its
+rows are classified before they are sealed in the same `<diagnostics>` block. It
+keeps its own repeat counter and files nothing on the board; language-server triage
+is unchanged.
+
 ## Relationship to hooks
 
 [Hooks](hooks.md) include `pre_edit`/`post_edit` events, but language-server

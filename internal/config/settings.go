@@ -227,6 +227,11 @@ type Settings struct {
 	// default. The user's layers and the flags set any key; the project layer
 	// may only tighten it.
 	FinishReview *FinishReviewSettings `json:"finish_review,omitempty"`
+	// LintLoop configures the per-edit lint loop (docs/lint.md): the detected
+	// linter runs on each edited file and its findings ride back on the tool
+	// result. Off by default. The user's layers and the flags turn it on; the
+	// project layer may only turn it off or lower a number.
+	LintLoop *LintLoopSettings `json:"lint_loop,omitempty"`
 	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
 	// on. The user's layers set it either way; the project layer can only turn
 	// it off.
@@ -2107,6 +2112,9 @@ func (s Settings) Override(proj Settings) Settings {
 	// Finish review: a project may add scratch patterns and raise the rounds,
 	// never switch the gate off or lower them.
 	out.FinishReview = mergeFinishReview(out.FinishReview, proj.FinishReview, true)
+	// Lint loop: a project may switch it off and lower its numbers, never
+	// switch it on or raise one.
+	out.LintLoop = mergeLintLoop(out.LintLoop, proj.LintLoop, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.
 	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
 	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)

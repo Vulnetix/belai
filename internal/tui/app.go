@@ -425,7 +425,10 @@ type App struct {
 	// finishReviewOverride is the /finish-review choice for this session; nil
 	// means the resolved setting.
 	finishReviewOverride *bool
-	lastPlanText         string
+	// lintLoopOverride is the /lint-loop choice for this session; nil means
+	// the resolved setting.
+	lintLoopOverride *bool
+	lastPlanText     string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
 	// the agent to load the plan as the execution carrier.
@@ -5642,6 +5645,7 @@ func (a *App) reloadSettings() error {
 		a.settings.PatchTolerance = a.patchToleranceOverride
 	}
 	a.applyFinishReviewOverride()
+	a.applyLintLoopOverride()
 	if a.resolver != nil {
 		a.resolver.SetSettings(a.settings)
 		a.resolver.SetFirewallEnabled(a.firewallOverride)

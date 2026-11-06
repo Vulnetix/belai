@@ -132,6 +132,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("finish-review", "show or set the finish review of the working tree before a goal is accepted as complete: status, on or off for this session", func() []string { return []string{"status", "on", "off"} }, func(a *App, arg string) tea.Cmd {
 		return a.finishReviewCmd(arg)
 	})
+	r.Register("lint-loop", "show or set the per-edit lint loop, which runs the detected linter on each edited file: status, on or off for this session", func() []string { return []string{"status", "on", "off"} }, func(a *App, arg string) tea.Cmd {
+		return a.lintLoopCmd(arg)
+	})
 	r.Register("init", "draft a root AGENTS.md for this repository from its detected facts; nothing is written until you approve the Write", nil, func(a *App, arg string) tea.Cmd {
 		return a.initCommand()
 	})

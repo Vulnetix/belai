@@ -71,6 +71,7 @@ var settingsPages = map[string][]string{
 	"handoff":       {"docs/handoff.md", "docs/settings.md"},
 	"run_caps":      {"docs/run-caps.md", "docs/settings.md"},
 	"finish_review": {"docs/finish-review.md", "docs/settings.md"},
+	"lint_loop":     {"docs/lint.md", "docs/settings.md"},
 	"headless":      {"docs/headless.md", "docs/settings.md"},
 }
 
