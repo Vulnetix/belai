@@ -311,3 +311,56 @@ func TestImageNeedsItsArchive(t *testing.T) {
 		t.Fatalf("needs: %v", j.Needs)
 	}
 }
+
+// Every positional a command's Use string requires must be in the step's argv.
+func TestArgvCarriesRequiredPositionals(t *testing.T) {
+	files, _ := filepath.Glob("../../../cli/cmd/*.go")
+	if len(files) == 0 {
+		t.Skip("no ../cli checkout")
+	}
+	re := regexp.MustCompile(`Use:\s+"([a-z-]+)((?: <[a-z-]+>)*)"`)
+	need := map[string]int{}
+	seen := map[string]bool{}
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			n := strings.Count(m[2], "<")
+			if prev, ok := need[m[1]]; ok && prev != n {
+				seen[m[1]] = true // ambiguous leaf name
+			}
+			need[m[1]] = n
+		}
+	}
+	for _, id := range IDs() {
+		if id == "defend" {
+			// TODO(cli-jobs): defend takes an advisory id, which no fixed argv can
+			// carry; the job needs an id source the harness validates.
+			continue
+		}
+		j, _ := Lookup(id)
+		for _, s := range j.Steps {
+			var words []string
+			for _, a := range s.Args {
+				if strings.HasPrefix(a, "-") {
+					break
+				}
+				words = append(words, a)
+			}
+			if len(words) == 0 {
+				continue
+			}
+			// The leaf is the first word whose Use declares positionals, matched
+			// against the words after it.
+			for i, w := range words {
+				n, ok := need[w]
+				if !ok || seen[w] {
+					continue
+				}
+				if got := len(words) - i - 1; got < n {
+					t.Errorf("%s: %s needs %d positional(s), argv has %d", id, w, n, got)
+				}
+				break
+			}
+		}
+	}
+}

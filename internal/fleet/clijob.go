@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/vulnetix/belai/internal/clijobs"
 	"github.com/vulnetix/belai/internal/kanban"
@@ -162,6 +163,7 @@ func (w *Worker) runCLIJob(ctx context.Context, it kanban.Item) (outcome, *Works
 		}
 	}
 
+	job.ClearArtifacts(dir)
 	plan := testrun.Plan{}
 	for i, argv := range job.Argvs(bin) {
 		plan.Names = append(plan.Names, fmt.Sprintf("%s#%d", id, i+1))
@@ -187,7 +189,37 @@ func (w *Worker) runCLIJob(ctx context.Context, it kanban.Item) (outcome, *Works
 		outs = append(outs, []byte(r.Output))
 		w.logf("%s: cli job %s step %s exit %d in %s", it.Short(), id, r.Suite, r.ExitCode, r.Duration.Round(1e6))
 	}
-	return w.cliSuccess(ctx, job, dir, head, clijobs.ExitCode(codes), outs, ws, it), ws
+	exit := clijobs.ExitCode(codes)
+	if exit != clijobs.ExitOK && exit != clijobs.ExitGateBreach && exit != clijobs.ExitNotEvaluable {
+		// A usage error or a missing binary says nothing about the repository,
+		// and whatever the job left may predate the run.
+		return outcome{failed: true, fault: Fault{Code: FaultError}, note: fmt.Sprintf("CLI job %s failed with exit %d; no result was recorded", id, exit)}, ws
+	}
+	return w.cliSuccess(ctx, job, dir, head, exit, outs, ws, it), ws
+}
+
+// removeUntrackedScanOutput deletes the untracked, unignored files the job left
+// under .vulnetix, except the ones it lists in Commits. Tracked files are never
+// touched, so a repository's own .vulnetix configuration is not shown as deleted.
+func (w *Worker) removeUntrackedScanOutput(ctx context.Context, ws *Workspace, job clijobs.Job) {
+	root := filepath.Join(ws.Dir, ".vulnetix")
+	if fi, err := os.Lstat(root); err != nil || !fi.IsDir() {
+		return
+	}
+	out, err := ws.run(ctx, ws.Dir, "git", "ls-files", "--others", "--exclude-standard", "-z", "--", ".vulnetix")
+	if err != nil {
+		return
+	}
+	keep := map[string]bool{}
+	for _, k := range job.Commits {
+		keep[".vulnetix/"+k] = true
+	}
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p == "" || keep[p] || !strings.HasPrefix(p, ".vulnetix/") {
+			continue
+		}
+		_ = os.Remove(filepath.Join(ws.Dir, filepath.FromSlash(p)))
+	}
 }
 
 // cliSuccess builds the result and the outcome for a job that ran (or was not
@@ -201,8 +233,8 @@ func (w *Worker) cliSuccess(ctx context.Context, job clijobs.Job, dir, head stri
 	}
 	o := outcome{cliResult: doc, note: fmt.Sprintf("CLI job %s: exit %d, %d findings, %d signals", job.ID, res.ExitCode, len(res.Findings), len(res.Signals))}
 	if ws != nil && ws.Worktree {
-		// The scan output is not part of the branch.
-		removeScanArtefacts(filepath.Join(dir, ".vulnetix"))
+		// The scan output is not part of the branch; the job's own change is.
+		w.removeUntrackedScanOutput(context.WithoutCancel(ctx), ws, job)
 		bg := context.WithoutCancel(ctx)
 		msg := fmt.Sprintf("belai: cli job %s for %s\n\nAgent %s, kanban item %s.", job.ID, it.Short(), w.Profile.Name, it.Short())
 		if _, err := ws.Commit(bg, msg); err != nil {

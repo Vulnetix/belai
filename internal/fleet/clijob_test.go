@@ -120,7 +120,7 @@ func TestCLIScoutEmitsSignalsFromTheFixedDetector(t *testing.T) {
 	}
 }
 
-func TestCLIJobOutsideTheProfileListIsBlocked(t *testing.T) {
+func TestCLIJobOutsideTheProfileListIsNotClaimed(t *testing.T) {
 	w, store := cliWorker(t, cliProfile("sca"))
 	it := addCLICard(t, store, "cli-job:sast")
 	w.RunTests = func(context.Context, testrun.Plan) []testrun.Result {
@@ -131,12 +131,12 @@ func TestCLIJobOutsideTheProfileListIsBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := store.Get(it.ID)
-	if after.List != kanban.Blocked || after.CliResult != "" || !strings.Contains(after.LastNote(), "not in this profile's kanban.cli.jobs") {
-		t.Fatalf("released %+v note %q", after, after.LastNote())
+	if after.List != kanban.Backlog || after.ClaimedBy != "" || after.Attempts != 0 || after.CliResult != "" {
+		t.Fatalf("a card for a job outside the list was touched: %+v", after)
 	}
 }
 
-func TestCLIUnknownAndMissingLabelsAreBlocked(t *testing.T) {
+func TestCLIUnknownLabelsAreNotClaimed(t *testing.T) {
 	for _, label := range []string{"cli-job:rm", "cli-job:sca;rm"} {
 		w, store := cliWorker(t, cliProfile("sca"))
 		it := addCLICard(t, store, label)
@@ -147,7 +147,7 @@ func TestCLIUnknownAndMissingLabelsAreBlocked(t *testing.T) {
 		if err := w.Run(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if after, _ := store.Get(it.ID); after.List != kanban.Blocked {
+		if after, _ := store.Get(it.ID); after.List != kanban.Backlog || after.ClaimedBy != "" {
 			t.Fatalf("%s: %+v", label, after)
 		}
 	}
@@ -388,5 +388,99 @@ func TestCLIMutatingJobWithVerificationOffIsNotVerified(t *testing.T) {
 		if slices.Contains(p.Names, "gate:G1") {
 			t.Fatal("a gate ran with verification off")
 		}
+	}
+}
+
+// A runner takes only the cards for jobs its own list names, so a read-only
+// and a mutating runner never trade cards.
+func TestCLIClaimLeavesAnotherProfilesJobAlone(t *testing.T) {
+	w, store := cliWorker(t, cliProfile("sca"))
+	other := addCLICard(t, store, "cli-job:fix")
+	w.RunTests = func(context.Context, testrun.Plan) []testrun.Result {
+		t.Error("nothing to run")
+		return nil
+	}
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := store.Get(other.ID); after.List != kanban.Backlog || after.ClaimedBy != "" || after.Attempts != 0 {
+		t.Fatalf("a card for another profile's job was taken: %+v", after)
+	}
+}
+
+// A file the repository carries is not this run's output, and an exit that is
+// not a result (a usage error) records nothing.
+func TestCLIStaleArtifactIsNotRead(t *testing.T) {
+	sarif := `{"runs":[{"tool":{"driver":{"rules":[{"id":"R1"}]}},"results":[{"ruleId":"R1","level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"a.go"}}}]}]}]}`
+	for _, exit := range []int{0, 2} {
+		w, store := cliWorker(t, cliProfile("containers"))
+		it := addCLICard(t, store, "cli-job:containers")
+		dir := filepath.Join(w.Repo, ".vulnetix")
+		_ = os.MkdirAll(dir, 0o755)
+		planted := filepath.Join(dir, "containers.sarif")
+		_ = os.WriteFile(planted, []byte(sarif), 0o600)
+		w.RunTests = func(_ context.Context, p testrun.Plan) []testrun.Result {
+			st := testrun.Passed
+			if exit != 0 {
+				st = testrun.Failed
+			}
+			return []testrun.Result{{Suite: p.Names[0], Status: st, ExitCode: exit}}
+		}
+		if err := w.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Lstat(planted); err == nil {
+			t.Fatalf("exit %d: the planted artifact was not cleared", exit)
+		}
+		after, _ := store.Get(it.ID)
+		if strings.Contains(after.CliResult, "R1") || strings.Contains(after.CliResult, "a.go") {
+			t.Fatalf("exit %d: stale findings recorded: %s", exit, after.CliResult)
+		}
+		if exit == 2 && after.CliResult != "" {
+			t.Fatalf("a usage error recorded a result: %s", after.CliResult)
+		}
+	}
+}
+
+// ignore-sync's only output is .vulnetix/memory.yaml: it is committed, and the
+// scan output beside it is not.
+func TestCLIIgnoreSyncCommitsItsMemoryFile(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	w, store := cliWritePlan(t)
+	w.Repo = gitRepo(t)
+	it, _, err := store.Add(kanban.ItemInput{Title: "t", Labels: []string{"cli-job:ignore-sync"}, Gates: []kanban.Gate{{Title: "a person agrees", Kind: kanban.GateManual}}}, kanban.Provenance{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimID(it.ID, kanban.ClaimRequest{Worker: "someone", Lease: time.Minute, Lists: kanban.ClaimableLists}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetGate(it.ID, "someone", "G1", kanban.GateMet, "", "agreed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Unclaim(it.ID, "reset", "", false); err != nil {
+		t.Fatal(err)
+	}
+	w.RunTests = func(_ context.Context, p testrun.Plan) []testrun.Result {
+		if wt := worktreeOf(t, w.Repo); wt != "" {
+			d := filepath.Join(wt, ".vulnetix")
+			_ = os.MkdirAll(d, 0o755)
+			_ = os.WriteFile(filepath.Join(d, "memory.yaml"), []byte("ignored: []\n"), 0o644)
+			_ = os.WriteFile(filepath.Join(d, "sast.sarif"), []byte("{}"), 0o644)
+		}
+		return []testrun.Result{{Suite: p.Names[0], Status: testrun.Passed}}
+	}
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", w.Repo, "log", "--all", "--name-only", "--format=").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), ".vulnetix/memory.yaml") || strings.Contains(string(out), "sast.sarif") {
+		t.Fatalf("committed paths:\n%s", out)
 	}
 }

@@ -16,6 +16,8 @@
 package clijobs
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -78,7 +80,11 @@ type Job struct {
 	Needs []string
 	// Artifacts are the files, relative to .vulnetix, the job leaves.
 	Artifacts []string
-	Reader    Reader
+	// Commits are the files, relative to .vulnetix, that are the job's intended
+	// change: a mutating job's branch keeps them. Any other untracked file the
+	// job leaves under .vulnetix is scan output and is removed before the commit.
+	Commits []string
+	Reader  Reader
 	// Kinds are the review kinds ReadReview keeps; Kind names the finding kind
 	// of ReadSARIF; File is the artifact ReadSARIF, ReadCBOM, ReadAIBOM and
 	// ReadBOMVulns read.
@@ -124,7 +130,7 @@ var table = []Job{
 	{ID: "gha-audit", Steps: one("gha", "audit", "--offline", "--format", "sarif", "--output", ".vulnetix/gha-audit.sarif"), Artifacts: []string{"gha-audit.sarif"}, Reader: ReadSARIF, Kind: "gha", File: "gha-audit.sarif"},
 	{ID: "config-plan", Steps: one("config", "plan", "--file", ".vulnetix/config.yaml"), Needs: []string{".vulnetix/config.yaml"}, Reader: ReadNone},
 	{ID: "ai-firewall-status", Steps: one("ai-firewall", "status"), Reader: ReadNone},
-	{ID: "attest-verify", Steps: one("attest", "verify", "--envelope", ".vulnetix/attestation.json"), Needs: []string{".vulnetix/attestation.json"}, Reader: ReadNone},
+	{ID: "attest-verify", Steps: one("attest", "verify", ".vulnetix/inventory.cdx.json", "--envelope", ".vulnetix/attestation.json"), Needs: []string{".vulnetix/inventory.cdx.json", ".vulnetix/attestation.json"}, Reader: ReadNone},
 	{ID: "api-discover", Steps: one("api", "discover", "--no-upload"), Reader: ReadNone},
 	{ID: "surface-liveness", Steps: one("surface", "liveness"), Reader: ReadNone},
 	{ID: "analyze", Steps: one("analyze", "--no-upload", "--output-file", ".vulnetix/analyze.report.json"), Artifacts: []string{"analyze.report.json"}, Reader: ReadNone},
@@ -136,9 +142,9 @@ var table = []Job{
 	}, Artifacts: []string{"capabilities.yaml", "analyze.report.json"}, Reader: ReadScout},
 
 	{ID: "fix", Mutates: true, Steps: one("fix", "--yes"), Reader: ReadNone},
-	{ID: "vex-apply", Mutates: true, Steps: one("vex", "apply", "--bom", ".vulnetix/sbom.cdx.json", "--vex", ".vulnetix/vex", "--out", ".vulnetix/sbom.effective.cdx.json"), Needs: []string{".vulnetix/sbom.cdx.json"}, Artifacts: []string{"sbom.effective.cdx.json"}, Reader: ReadNone},
-	{ID: "ignore-sync", Mutates: true, Steps: one("ignore", "sync"), Reader: ReadNone},
-	{ID: "bom-merge", Mutates: true, Steps: one("bom", "merge", "--out", ".vulnetix/merged.cdx.json", ".vulnetix/sbom.cdx.json", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/sbom.cdx.json", ".vulnetix/inventory.cdx.json"}, Artifacts: []string{"merged.cdx.json"}, Reader: ReadNone},
+	{ID: "vex-apply", Mutates: true, Steps: one("vex", "apply", "--bom", ".vulnetix/sbom.cdx.json", "--vex", ".vulnetix/vex", "--out", ".vulnetix/sbom.effective.cdx.json"), Needs: []string{".vulnetix/sbom.cdx.json"}, Artifacts: []string{"sbom.effective.cdx.json"}, Commits: []string{"sbom.effective.cdx.json"}, Reader: ReadNone},
+	{ID: "ignore-sync", Mutates: true, Steps: one("ignore", "sync"), Artifacts: []string{"memory.yaml"}, Commits: []string{"memory.yaml"}, Reader: ReadNone},
+	{ID: "bom-merge", Mutates: true, Steps: one("bom", "merge", "--out", ".vulnetix/merged.cdx.json", ".vulnetix/sbom.cdx.json", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/sbom.cdx.json", ".vulnetix/inventory.cdx.json"}, Artifacts: []string{"merged.cdx.json"}, Commits: []string{"merged.cdx.json"}, Reader: ReadNone},
 	{ID: "bom-enrich", Mutates: true, Steps: one("bom", "enrich", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/inventory.cdx.json"}, Reader: ReadNone},
 	{ID: "gha-init", Mutates: true, Steps: one("gha", "init"), Reader: ReadNone},
 	{ID: "gha-setup", Mutates: true, Steps: one("gha", "setup", "--all"), Reader: ReadNone},
@@ -153,6 +159,27 @@ var table = []Job{
 
 // ScoutID is the composite job whose result carries profile signals.
 const ScoutID = "scout"
+
+// ClearArtifacts removes the job's declared artifacts under repo/.vulnetix
+// before its steps run, so a file a repository carries (or an earlier run left)
+// is never read as this run's output. memory.yaml is kept: the review reader
+// counts it only when it records the run's commit. A link is removed, never
+// followed, and a .vulnetix that is itself a link is left alone.
+func (j Job) ClearArtifacts(repo string) {
+	dir := filepath.Join(repo, ".vulnetix")
+	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		return
+	}
+	for _, a := range j.Artifacts {
+		if a == "memory.yaml" {
+			continue
+		}
+		p := filepath.Join(dir, a)
+		if fi, err := os.Lstat(p); err == nil && !fi.IsDir() {
+			_ = os.Remove(p)
+		}
+	}
+}
 
 // Lookup returns the job with the given id.
 func Lookup(id string) (Job, bool) {
