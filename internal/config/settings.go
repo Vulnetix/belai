@@ -2519,12 +2519,27 @@ func saveSettings(path string, s Settings) error {
 // agents.max_workers is unset.
 const DefaultMaxWorkers = 4
 
+// Candidate attempt bounds (agents.max_candidates). The ceiling is read against
+// a profile's kanban.candidates, so a profile can never spend more than the
+// user's settings allow.
+const (
+	// DefaultMaxCandidates is the ceiling when agents.max_candidates is unset.
+	DefaultMaxCandidates = 4
+	// MaxCandidatesLimit is the largest value agents.max_candidates may take, the
+	// same bound as agentprofile.MaxCandidates.
+	MaxCandidatesLimit = 4
+)
+
 // AgentsSettings governs fleet workers.
 type AgentsSettings struct {
 	// Enabled turns workers on or off. Default on.
 	Enabled *bool `json:"enabled,omitempty"`
 	// MaxWorkers caps the workers running on this machine.
 	MaxWorkers *int `json:"max_workers,omitempty"`
+	// MaxCandidates is the ceiling on a profile's kanban.candidates (best-of-N
+	// attempts per card), 1 to MaxCandidatesLimit; 1 turns the feature off. A
+	// project layer may only lower it.
+	MaxCandidates *int `json:"max_candidates,omitempty"`
 	// Publish allows a worker profile's workspace.publish (push a branch and
 	// open a draft pull request). Default on.
 	Publish *bool `json:"publish,omitempty"`
@@ -2564,6 +2579,15 @@ func (a *AgentsSettings) tighten(proj *AgentsSettings) *AgentsSettings {
 	if proj.Clone != nil && !*proj.Clone {
 		out.Clone = &f
 	}
+	if proj.MaxCandidates != nil {
+		cur := DefaultMaxCandidates
+		if out.MaxCandidates != nil {
+			cur = *out.MaxCandidates
+		}
+		if n := *proj.MaxCandidates; n >= 1 && n < cur {
+			out.MaxCandidates = &n
+		}
+	}
 	if proj.MaxWorkers != nil {
 		cur := DefaultMaxWorkers
 		if out.MaxWorkers != nil {
@@ -2583,6 +2607,9 @@ func (a *AgentsSettings) merge(o *AgentsSettings) {
 	}
 	if o.MaxWorkers != nil {
 		a.MaxWorkers = o.MaxWorkers
+	}
+	if o.MaxCandidates != nil {
+		a.MaxCandidates = o.MaxCandidates
 	}
 	if o.Publish != nil {
 		a.Publish = o.Publish
@@ -2649,6 +2676,19 @@ func ReservedUnder(reserved, limit int) int {
 		return 0
 	}
 	return min(reserved, limit-1)
+}
+
+// MaxCandidates is the ceiling on best-of-N candidate attempts per card. An
+// unset or out-of-range value is the default; the worker takes the smaller of
+// this and the profile's kanban.candidates.
+func (s Settings) MaxCandidates() int {
+	if s.Agents == nil || s.Agents.MaxCandidates == nil {
+		return DefaultMaxCandidates
+	}
+	if v := *s.Agents.MaxCandidates; v >= 1 && v <= MaxCandidatesLimit {
+		return v
+	}
+	return DefaultMaxCandidates
 }
 
 // KanbanEnabled reports whether the global kanban board is on. Default on.

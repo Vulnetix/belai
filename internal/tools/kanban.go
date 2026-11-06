@@ -119,6 +119,13 @@ type WorkerClaim struct {
 	// GateReview is true for a reviewer that may record manual gates with
 	// KanbanGate.
 	GateReview bool
+	// Candidate is true for one of several best-of-N candidate attempts at the
+	// item (internal/fleet/candidates.go). The harness picks the winner from the
+	// gates it runs on each branch, and no candidate may see another's words, so
+	// a tool that would write this attempt's text to the card (a note, a handoff,
+	// a verdict, an outcome) is refused. The harness sets it; it is not an
+	// argument.
+	Candidate bool
 	// Coverage is true for a worker that plans a request card: it records the
 	// request's clauses with KanbanContract and every handoff covers some.
 	Coverage bool
@@ -136,6 +143,15 @@ type WorkerClaim struct {
 	verdict *VerdictRecord
 	outcome *OutcomeRecord
 	notes   int // notes added to the claimed item this claim
+}
+
+// refuseCandidate is the error a board-writing tool returns to a candidate
+// attempt, and nil for any other claim. The text is the harness's.
+func (c *WorkerClaim) refuseCandidate(tool string) error {
+	if c == nil || !c.Candidate {
+		return nil
+	}
+	return fmt.Errorf("%s is not available in a candidate attempt: this is one of several independent attempts at the item, the harness runs its gates on each branch and picks the winner, and nothing an attempt writes to the board is shown to the others. Put what you did in your commits and finish", tool)
 }
 
 // noteAdded counts a note added to the claimed item.
@@ -405,6 +421,9 @@ func (t KanbanUpdate) Execute(ctx context.Context, args map[string]any) (Result,
 	if p.Title == nil && p.Body == nil && strings.TrimSpace(p.Note) == "" {
 		return Result{}, errors.New("KanbanUpdate needs a title, body or note to change")
 	}
+	if err := t.Claim.refuseCandidate(KanbanUpdateName); err != nil {
+		return Result{}, err
+	}
 	notesOnly, err := t.noteOnlyTarget(id)
 	if err != nil {
 		return Result{}, err
@@ -567,6 +586,9 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 	c := t.Claim
 	if c == nil {
 		return Result{}, errors.New("KanbanHandoff is only available to a fleet worker holding a claim")
+	}
+	if err := c.refuseCandidate(KanbanHandoffName); err != nil {
+		return Result{}, err
 	}
 	if len(c.HandoffTo) == 0 && len(c.HandoffLabels) == 0 {
 		return Result{}, errors.New("this agent's profile allows no handoffs")

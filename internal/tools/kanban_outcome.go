@@ -100,6 +100,9 @@ func (t KanbanOutcome) Execute(ctx context.Context, args map[string]any) (Result
 	if c == nil {
 		return Result{}, errors.New("KanbanOutcome is only available to a worker that holds a claim")
 	}
+	if err := c.refuseCandidate(KanbanOutcomeName); err != nil {
+		return Result{}, err
+	}
 	raw, _ := argString(args, "outcome")
 	o := Outcome(strings.TrimSpace(raw))
 	if !slices.Contains(Outcomes(), o) {

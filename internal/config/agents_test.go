@@ -128,3 +128,48 @@ func TestResolveAgentsFactoryReservedWorkers(t *testing.T) {
 		}
 	}
 }
+
+// agents.max_candidates is the user's ceiling on best-of-N attempts: a project
+// file may lower it and never raise it, and a value out of range is the default.
+func TestResolveAgentsMaxCandidatesTightenOnly(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	resolve := func(global, project *AgentsSettings) Settings {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Agents: global}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Agents: project}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings
+	}
+	if got := resolve(nil, nil).MaxCandidates(); got != DefaultMaxCandidates {
+		t.Fatalf("default %d", got)
+	}
+	if got := resolve(&AgentsSettings{MaxCandidates: intPtr(2)}, nil).MaxCandidates(); got != 2 {
+		t.Fatalf("user ceiling lost: %d", got)
+	}
+	if got := resolve(nil, &AgentsSettings{MaxCandidates: intPtr(1)}).MaxCandidates(); got != 1 {
+		t.Fatalf("project lowering lost: %d", got)
+	}
+	if got := resolve(&AgentsSettings{MaxCandidates: intPtr(2)}, &AgentsSettings{MaxCandidates: intPtr(4)}).MaxCandidates(); got != 2 {
+		t.Fatalf("project raised the ceiling: %d", got)
+	}
+	if got := resolve(&AgentsSettings{MaxCandidates: intPtr(3)}, &AgentsSettings{MaxCandidates: intPtr(0)}).MaxCandidates(); got != 3 {
+		t.Fatalf("project value 0 changed the ceiling: %d", got)
+	}
+	loose := Settings{Agents: &AgentsSettings{MaxCandidates: intPtr(4)}}
+	if m := (Settings{Agents: &AgentsSettings{MaxCandidates: intPtr(2)}}).Override(loose); m.MaxCandidates() != 2 {
+		t.Fatalf("Override raised the ceiling: %+v", m.Agents)
+	}
+	for _, bad := range []int{-1, 0, MaxCandidatesLimit + 1} {
+		if got := (Settings{Agents: &AgentsSettings{MaxCandidates: intPtr(bad)}}).MaxCandidates(); got != DefaultMaxCandidates {
+			t.Fatalf("out-of-range %d gave %d", bad, got)
+		}
+	}
+}

@@ -65,6 +65,37 @@ func WorktreeStateDir(projectKey string) (string, error) {
 	return filepath.Join(dir, "worktrees", projectKey), nil
 }
 
+// CandidatesPath returns the file that records one worker's best-of-N
+// candidate attempts for the card it holds: <AgentsDir>/candidates/<id>.json
+// (internal/fleet/candidates.go). It holds item and branch identifiers and
+// integers the harness measured, never text a model wrote. Like the rest of the
+// state directory the OS sandbox hides it from every command. workerID must
+// have a worker id's shape (lowercase letters, digits and hyphens, at most 64,
+// the check fleet.ValidID makes; config cannot import fleet), so the path
+// cannot leave the directory.
+func CandidatesPath(workerID string) (string, error) {
+	if !validWorkerID(workerID) {
+		return "", fmt.Errorf("%q is not a worker id", workerID)
+	}
+	dir, err := AgentsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "candidates", workerID+".json"), nil
+}
+
+func validWorkerID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 // within reports whether path is dir or below it.
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)

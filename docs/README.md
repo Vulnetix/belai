@@ -181,6 +181,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Commit workflow: the harness separates the session's files from yours, commits them in `ask` or `auto` mode or on `/commit`, and a model may draft only the words | [Commit workflow](commit-workflow.md) | alpha-20261106 |
 | Code review: `/review` and `belai review` judge a change against a closed rubric with structured findings the harness checks against the diff, and post a comment only after a yes | [Code review](review.md) | alpha-20261106 |
 | Symbol index with `Outline` and `Symbol` tools: declarations parsed by the harness, served as classified, bounded results | [Symbol map](symbol-map.md) | Roadmap |
+| Best-of-N attempts: a worker runs 2 to 4 independent candidates of a card in separate worktrees, the harness runs the gates on each and picks the winner by a fixed rule, and a model never chooses | [Agent fleet](fleet.md#best-of-n-attempts) | alpha-20261106 |
 | Worktree sessions: `worktrees.setup` and `worktrees.teardown` argv, `worktrees.update_mode`, `/worktree` and `belai worktree` | [Worktree sessions](worktrees.md) | alpha-20261106 |
 
 ## Analysis

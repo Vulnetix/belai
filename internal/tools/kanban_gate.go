@@ -48,6 +48,9 @@ func (t KanbanGate) Execute(ctx context.Context, args map[string]any) (Result, e
 	if c == nil || !c.GateReview {
 		return Result{}, errors.New("KanbanGate is only available to a worker that holds a claim and decides manual gates")
 	}
+	if err := c.refuseCandidate(KanbanGateName); err != nil {
+		return Result{}, err
+	}
 	id, _ := argString(args, "gate")
 	id = strings.ToUpper(strings.TrimSpace(id))
 	rawState, _ := argString(args, "state")

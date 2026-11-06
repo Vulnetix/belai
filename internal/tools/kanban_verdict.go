@@ -94,6 +94,9 @@ func (t KanbanVerdict) Execute(ctx context.Context, args map[string]any) (Result
 	if c == nil || len(c.Verdicts) == 0 {
 		return Result{}, errors.New("KanbanVerdict is only available to a worker that holds a claim and lists kanban.security.verdicts")
 	}
+	if err := c.refuseCandidate(KanbanVerdictName); err != nil {
+		return Result{}, err
+	}
 	raw, _ := argString(args, "verdict")
 	v := kanban.Verdict(strings.TrimSpace(raw))
 	if !slices.Contains(c.Verdicts, string(v)) {

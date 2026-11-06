@@ -55,6 +55,12 @@ func serverFixture(t *testing.T) *Recorder {
 	emit(Fact{Kind: CardReleased, ActorKind: ActorAgent, Actor: "belai:security", ItemID: card, SessionID: session, Repo: "belai",
 		Branch: "belai/K-3f9a2c/a1", VulnID: "CVE-2026-12345", Verdict: "false_positive", Outcome: "completed",
 		Data: map[string]string{"worker": "security-1a2b", "list": "review", "attempt": "0"}})
+	emit(Fact{Kind: CardCandidate, ActorKind: ActorAgent, Actor: "belai:patcher", ItemID: card, SessionID: session, Repo: "belai",
+		Branch: "belai/K-3f9a2c/a1", Commit: commit, BaseCommit: base, Outcome: "eligible",
+		Data: map[string]string{"worker": "patcher-1a2b", "candidate": "1", "met": "2", "total": "2", "files": "3", "tokens": "41200"}})
+	emit(Fact{Kind: CardCandidateSelected, ActorKind: ActorHarness, ItemID: card, SessionID: session, Repo: "belai",
+		Branch: "belai/K-3f9a2c/a1", Commit: commit, BaseCommit: base, Outcome: "selected",
+		Data: map[string]string{"worker": "patcher-1a2b", "candidates": "3", "candidate": "1", "reason": "gates_met"}})
 	emit(Fact{Kind: CardLeaseLapse, ActorKind: ActorHarness, ItemID: card, Repo: "belai", VulnID: "CVE-2026-12345", Outcome: "lapsed",
 		Data: map[string]string{"worker": "security-9z9z", "list": "backlog", "attempt": "1"}})
 	emit(Fact{Kind: FindingCarded, ActorKind: ActorHarness, ItemID: card, Repo: "belai", VulnID: "CVE-2026-12345", SeenRef: scan,

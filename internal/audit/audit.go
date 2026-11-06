@@ -61,6 +61,12 @@ const (
 	CardReleased   Kind = "card.released"
 	CardLeaseLapse Kind = "card.lease_lapsed"
 
+	// CardCandidate and CardCandidateSelected record best-of-N attempts at a card
+	// (docs/fleet.md, "Best-of-N attempts"): each candidate's measured facts and
+	// the harness's choice. They carry ids and integers, never a note or a diff.
+	CardCandidate         Kind = "card.candidate"
+	CardCandidateSelected Kind = "card.candidate_selected"
+
 	RepoCommit  Kind = "repo.commit"
 	RepoPublish Kind = "repo.publish"
 
@@ -107,6 +113,7 @@ var kindScope = map[Kind]string{
 	WorkerStarted: ScopeAgent, WorkerState: ScopeAgent, WorkerStopped: ScopeAgent,
 	WorkerFault: ScopeAgent, WorkerFallback: ScopeAgent, CrewControl: ScopeAgent,
 	CardClaimed: ScopeAgent, CardReleased: ScopeAgent, CardLeaseLapse: ScopeAgent,
+	CardCandidate: ScopeAgent, CardCandidateSelected: ScopeAgent,
 	RepoCommit: ScopeAgent, RepoPublish: ScopeAgent,
 	GateVerified: ScopeAgent, VEXWritten: ScopeAgent,
 	FindingCarded: ScopeAgent, FindingReconciled: ScopeAgent,
@@ -170,6 +177,7 @@ var dataKeys = map[string]bool{
 	"retries": true, "class": true, "target": true, // worker.fault and worker.fallback
 	"message_id": true, "kind": true, "peer": true, "decision": true, // a2a
 	"id": true, "tool": true, // hazard.*: closed hazard identifiers joined by +, and the tool name
+	"candidate": true, "candidates": true, "met": true, "total": true, "tokens": true, // card.candidate and card.candidate_selected: the candidate's number, the count, the gates met of total, the tokens spent
 	"count": true, // egress.denied: how many connections the proxy has refused for the reason
 }
 

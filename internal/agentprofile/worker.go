@@ -46,6 +46,14 @@ type KanbanSpec struct {
 	// names it, and it is the reason a person's decision is asked for.
 	HandoffCheckpoint string `json:"handoff_checkpoint,omitempty"`
 	MaxAttempts       int    `json:"max_attempts,omitempty"`
+	// Candidates is how many independent candidate attempts one claim of a
+	// fresh card works, each in its own worktree, 0 to MaxCandidates. The
+	// harness runs the card's gates on each and picks the winner by a fixed rule
+	// (docs/fleet.md, "Best-of-N attempts"); a model never ranks or chooses. 0
+	// or 1: one attempt, as before. It needs workspace.isolation: worktree and
+	// kanban.gates.verify record or enforce, and the settings key
+	// agents.max_candidates is the ceiling it is read against.
+	Candidates int `json:"candidates,omitempty"`
 	// MaxContinuations bounds the claims at one stage that may run out of
 	// budget after making progress and go back to be resumed without costing
 	// an attempt. Beyond it the item goes to blocked for a person. 0 is
@@ -191,6 +199,20 @@ type LintSpec struct {
 
 // MaxRounds bounds kanban.security.rounds.
 const MaxRounds = 5
+
+// MaxCandidates bounds kanban.candidates.
+const MaxCandidates = 4
+
+// CandidateCount is how many candidate attempts a claim works: 1 unless the
+// profile asks for more. The worker also reads agents.max_candidates against it
+// (internal/fleet/candidates.go), so this is what the profile asks for, not what
+// it gets.
+func (k *KanbanSpec) CandidateCount() int {
+	if k == nil || k.Candidates <= 1 {
+		return 1
+	}
+	return min(k.Candidates, MaxCandidates)
+}
 
 // SecuritySpec is a security worker's harness-run duties. None of them is a
 // model's decision: the harness runs the review, reads the artefacts and
@@ -652,6 +674,11 @@ func (p AgentProfile) validateWorker() error {
 			return err
 		}
 	}
+	if k.Candidates != 0 {
+		if err := k.validateCandidates(p); err != nil {
+			return err
+		}
+	}
 	if k.MaxAttempts < 0 || k.MaxItems < 0 || k.MaxContinuations < 0 {
 		return errors.New("kanban.max_attempts, kanban.max_continuations and kanban.max_items must not be negative")
 	}
@@ -722,6 +749,37 @@ func (p AgentProfile) PublishMode() string {
 		return PublishNone
 	}
 	return p.Workspace.Publish
+}
+
+// validateCandidates checks kanban.candidates. Each candidate is worked in its
+// own worktree and judged by the harness's gates alone, so everything that
+// would make one candidate's result a shared fact (a verdict, a handoff, a
+// survey, a conflict series, a reviewer's manual gates) is refused here rather
+// than half-applied N times.
+func (k *KanbanSpec) validateCandidates(p AgentProfile) error {
+	if k.Candidates < 0 || k.Candidates > MaxCandidates {
+		return fmt.Errorf("kanban.candidates runs 0 to %d", MaxCandidates)
+	}
+	if k.Candidates <= 1 {
+		return nil
+	}
+	if p.IsolationMode() != IsolationWorktree || p.ReadOnlyWorkspace() {
+		return errors.New("kanban.candidates needs workspace.isolation: worktree, not read-only (a worktree for each candidate)")
+	}
+	if m := k.Gates.VerifyMode(); m != VerifyRecord && m != VerifyEnforce {
+		return errors.New("kanban.candidates needs kanban.gates.verify record or enforce: the harness picks the winner from the gates it runs on each candidate")
+	}
+	switch {
+	case len(k.HandoffTo) > 0 || len(k.HandoffLabels) > 0 || k.HandoffRepos || k.HandoffCheckpoint != "":
+		return errors.New("kanban.candidates cannot be combined with handoffs: a handoff made by each candidate would be filed N times")
+	case k.Survey != nil || k.Conflicts != nil:
+		return errors.New("kanban.candidates cannot be combined with kanban.survey or kanban.conflicts")
+	case k.Security != nil && (len(k.Security.Verdicts) > 0 || k.Security.VEX):
+		return errors.New("kanban.candidates cannot be combined with kanban.security.verdicts: a verdict is one worker's judgement of the card")
+	case k.Gates != nil && (k.Gates.Review || k.Gates.Coverage):
+		return errors.New("kanban.candidates cannot be combined with kanban.gates.review or coverage")
+	}
+	return nil
 }
 
 // validate checks the security block against the profile's tool list.

@@ -53,6 +53,8 @@ the harness read itself, and nothing else can be recorded.
 | agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model, pool or scope change, a bulk card action, or the harness moving the crew through its pool (`pool_sleep`, `final_retry`, `pool_recovered`, `pool_exhausted`), or restarting a crew's supervisor that died (`supervisor_restarted`, `supervisor_failed`) |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
+| agent | `card.candidate` | a best-of-N candidate attempt was run and its branch checked ([Best-of-N attempts](fleet.md#best-of-n-attempts)); `candidate` is its number, `met` and `total` the gates met of those run, `files` and `tokens` counts, and the outcome the enum `eligible`, `failed`, `blocked`, `regressed` or `scanner_present` |
+| agent | `card.candidate_selected` | the harness chose among the candidates, outcome `selected` or `none`; `candidates` is how many ran, `candidate` the winner and `reason` the first rule that separated it from the runner-up (`only`, `gates_met`, `scanner`, `changes`, `files`, `tokens`, `order`) |
 | agent | `repo.commit` | the tip of an item's work, or a commit the TUI's commit workflow made or refused (outcome `commit_ask`, `auto_commit` or `refused`, with the commit id and never the message; see [Commit workflow](commit-workflow.md#records-and-audit)) |
 | agent | `repo.publish` | a draft pull request is opened for the item's branch |
 | agent | `gate.verified` | a gate, or a regression check, is decided by its exit code |
@@ -65,11 +67,11 @@ the harness read itself, and nothing else can be recorded.
 | agent | `hazard.asked`, `hazard.denied` | the always-ask floor put a call to a person, and a call it withheld or the person refused ([hazard rails](hazard-rails.md)); `id` holds the hazard identifiers joined by `+` and `tool` the tool name, never a command or a path |
 | agent | `egress.denied` | the sandbox egress proxy refused connections ([egress proxy](sandbox.md#egress-proxy)); recorded for the first refusal of each `reason` (`not_allowed`, `port`, `invalid`, `address`, `resolve`, `limit`) and again at the 10th, 100th and every 1000th, with `count` the running total for that reason; never a host name |
 
-`data` keys: `attempt`, `change`, `class`, `commit`, `count`, `decision`, `dispatch`, `ecosystem`, `exit`,
-`files`, `forge`, `from`, `gate`, `hops`, `id`, `justification`, `kind`, `list`, `message_id`, `os`,
+`data` keys: `attempt`, `candidate`, `candidates`, `change`, `class`, `commit`, `count`, `decision`, `dispatch`, `ecosystem`, `exit`,
+`files`, `forge`, `from`, `gate`, `hops`, `id`, `justification`, `kind`, `list`, `message_id`, `met`, `os`,
 `package`, `passes`, `path`, `peer`, `pr`, `previous`, `profile`, `reason`,
 `regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,
-`suite`, `target`, `to`, `tool`, `version`, `worker`. `schedule` is a schedule's UUID.
+`suite`, `target`, `to`, `tokens`, `tool`, `total`, `version`, `worker`. `schedule` is a schedule's UUID.
 `class` is a fault code (`provider_auth`, `provider_rate_limit`, …; see [fleet.md](fleet.md#the-provider-pool)), `retries` a count and
 `target` a `provider/model` pair; `message_id` an A2A `a2a-<ulid>`, `kind` an envelope kind, `peer` an Agent Card id
 (`<hostId>:<sessionId>`) and `decision` an acknowledgement's enum, never a text part; all reduced by `audit.Clean`. Adding one is adding something that can leave the machine, so it

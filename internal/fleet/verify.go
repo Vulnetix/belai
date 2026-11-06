@@ -37,6 +37,25 @@ type gateVerdict struct {
 	ok bool
 	// note is the one-line, harness-composed account.
 	note string
+	// gatesMet and gatesTotal count the runnable gates the harness decided met
+	// out of all it ran, and regressed the suites that got worse against the base
+	// record. They are the facts a candidate is chosen by (candidates.go).
+	gatesMet, gatesTotal, regressed int
+	// states are the gate states the harness decided, held back instead of
+	// written to the card when verification was quiet.
+	states []gateState
+}
+
+// gateState is one decided gate: the harness's id for it, the state, the commit
+// it was decided at and its harness-composed note.
+type gateState struct {
+	id     string
+	state  kanban.GateState
+	head   string
+	note   string
+	exit   int
+	hasRun bool
+	suite  string
 }
 
 // suitesAt returns the suites detected at dir: the harness's own marker-file
@@ -69,6 +88,14 @@ func (w *Worker) gatesMode() string {
 // held, after the work is committed. A card with no runnable gate and no base
 // record to compare against has nothing to verify and passes.
 func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace) gateVerdict {
+	return w.verifyBranchAs(ctx, it, ws, true)
+}
+
+// verifyBranchAs is verifyBranch. With record false it is quiet: the gate states
+// are returned in the verdict and not written to the card, so a candidate
+// attempt that is still in the running leaves nothing on the board for another
+// candidate to read; recordGates writes the winner's afterwards.
+func (w *Worker) verifyBranchAs(ctx context.Context, it kanban.Item, ws *Workspace, record bool) gateVerdict {
 	head, err := ws.Head(ctx)
 	if err != nil {
 		return gateVerdict{blocked: true, note: "the branch head could not be read, so its gates were not run"}
@@ -150,6 +177,8 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 	v := quality.NewVerification(it.Short(), head, ws.Base, w.clock())
 	v.Compared = compared
 	var failed []string
+	var states []gateState
+	metCount := 0
 	allMet, blocked, ran := true, false, false
 	for _, r := range runs {
 		var (
@@ -167,17 +196,23 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 				ran = true
 			}
 		}
-		if _, err := w.Store.SetGate(it.ID, w.Record.ID, r.gate.ID, state, head, note); err != nil {
+		st := gateState{id: r.gate.ID, state: state, head: head, note: note, suite: r.gate.Suite}
+		if r.at >= 0 {
+			st.exit, st.hasRun = resultAt(r.at).ExitCode, true
+		}
+		states = append(states, st)
+		if met := state == kanban.GateMet; met {
+			metCount++
+		}
+		// The audit records the decision as facts only: the gate's id, suite and
+		// state and the exit code the harness read, never the run's output or the
+		// gate's note. A quiet verification writes the card for the winner alone.
+		if !record {
+			w.auditGate(it, ws, head, st)
+		} else if _, err := w.Store.SetGate(it.ID, w.Record.ID, r.gate.ID, state, head, note); err != nil {
 			w.logf("%s: gate %s: %v", it.Short(), r.gate.ID, err)
 		} else {
-			// Facts only: the gate's id, suite and state, the exit code the
-			// harness read, never the run's output or the gate's note.
-			data := map[string]string{"gate": r.gate.ID, "suite": r.gate.Suite, "status": string(state)}
-			if r.at >= 0 {
-				data["exit"] = strconv.Itoa(resultAt(r.at).ExitCode)
-			}
-			w.auditItem(audit.GateVerified, it, audit.Fact{SessionID: w.Record.Session, Commit: head, BaseCommit: ws.Base,
-				Branch: ws.Branch, Outcome: string(state), Data: data})
+			w.auditGate(it, ws, head, st)
 		}
 		v.Gates = append(v.Gates, quality.GateResult{ID: r.gate.ID, Kind: string(r.gate.Kind), Suite: r.gate.Suite, State: string(state), Note: note})
 		if state != kanban.GateMet {
@@ -215,7 +250,8 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 		}
 	}
 
-	out := gateVerdict{ran: ran, blocked: blocked, ok: allMet && len(regressed) == 0}
+	out := gateVerdict{ran: ran, blocked: blocked, ok: allMet && len(regressed) == 0,
+		gatesMet: metCount, gatesTotal: len(runs), regressed: len(regressed), states: states}
 	if len(regressed) > 0 {
 		failed = append(failed, "regressed: "+strings.Join(regressed, ", "))
 	}
@@ -231,6 +267,25 @@ func (w *Worker) verifyBranch(ctx context.Context, it kanban.Item, ws *Workspace
 		}
 	}
 	return out
+}
+
+// auditGate records a decided gate as the recorded path does: facts only.
+func (w *Worker) auditGate(it kanban.Item, ws *Workspace, head string, st gateState) {
+	data := map[string]string{"gate": st.id, "suite": st.suite, "status": string(st.state)}
+	if st.hasRun {
+		data["exit"] = strconv.Itoa(st.exit)
+	}
+	w.auditItem(audit.GateVerified, it, audit.Fact{SessionID: w.Record.Session, Commit: head, BaseCommit: ws.Base,
+		Branch: ws.Branch, Outcome: string(st.state), Data: data})
+}
+
+// recordGates writes the gate states a quiet verification decided onto the card.
+func (w *Worker) recordGates(it kanban.Item, states []gateState) {
+	for _, st := range states {
+		if _, err := w.Store.SetGate(it.ID, w.Record.ID, st.id, st.state, st.head, st.note); err != nil {
+			w.logf("%s: gate %s: %v", it.Short(), st.id, err)
+		}
+	}
 }
 
 // applyVerification folds a verification into the turn's outcome. In record

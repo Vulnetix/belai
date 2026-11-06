@@ -85,6 +85,12 @@ type Turn struct {
 	// strategy to try. It rides as an attachment, and the conflict directive
 	// replaces the workspace directive.
 	Conflicts string
+	// Candidate marks one of several independent attempts at the item
+	// (candidates.go): Attempt of Attempts. Such a turn is given no publishing
+	// tool and no A2A link, and its claim refuses the tools that write to the
+	// card, so nothing it produces reaches another candidate.
+	Candidate         bool
+	Attempt, Attempts int
 }
 
 // TurnRunner works one item and returns the goal loop's result.
@@ -885,35 +891,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	stopRenew := sync.OnceFunc(func() { close(renewDone); renewWG.Wait() })
 	defer stopRenew()
 
-	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
-	claim.Tickets = p.Metadata["tickets"] == "standard"
-	if k := p.Kanban; k != nil {
-		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
-		claim.HandoffRepos = k.HandoffRepos
-		claim.HandoffCheckpoint = k.HandoffCheckpoint
-		if s := k.Security; s != nil {
-			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
-		}
-		if k.Security != nil && k.Security.Sweep {
-			claim.Notable = w.enrichmentTargets(it)
-		}
-		if q := k.Quality; q != nil && slices.Contains(it.Labels, agentprofile.QualityLabel) {
-			claim.HandoffList = q.HandoffList()
-			claim.HandoffAuto = q.Auto()
-		}
-		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
-			list := kanban.Review
-			if k.Survey != nil {
-				list = k.Survey.HandoffList()
-			}
-			claim.HandoffAuto = k.Survey != nil && k.Survey.Auto()
-			claim.HandoffList = list
-		}
-	}
-	w.applyGates(itemCtx, claim, it)
-	if jobs := w.jevJobs(); jobs != nil {
-		claim.Relevance = jevRelevance{jobs}
-	}
+	claim := w.newClaim(itemCtx, it)
 	w.resetManualGates(it)
 	w.draftGates(itemCtx, it)
 	var tokens, tokBase int
@@ -965,21 +943,19 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		return
 	}
 
+	if n := w.maxCandidates(it); n > 1 {
+		// The harness works the item as n independent candidates and picks the
+		// winner by the gates it runs on each (candidates.go).
+		w.workCandidates(ctx, itemCtx, it, n, candidateEnv{
+			emit: emit, nextRound: nextRound, addTokens: addTokens, stopRenew: stopRenew,
+			tokens: func() int { tokMu.Lock(); defer tokMu.Unlock(); return tokens },
+		})
+		return
+	}
+
 	ws, err := w.workspace(ctx, it)
 	if err != nil {
-		failure := sanitize.Sanitize(err.Error())
-		note := "the workspace could not be prepared: " + failure
-		// A setup argv that failed has output the board must not carry: the
-		// note stays harness text, and the output reaches the model only through
-		// the investigation's classified attachment.
-		detail := failure
-		if he, ok := AsHookError(err); ok && he.Detail() != "" {
-			detail += "\n" + he.Detail()
-		}
-		// Let the model find out why before the item goes back.
-		if found, ok := w.investigate(itemCtx, it, claim, detail, emit); ok {
-			note += "; " + found
-		}
+		note := w.setupFailureNote(itemCtx, it, claim, err, emit)
 		stopRenew()
 		addTokens()
 		if w.stopped(ctx, itemCtx, it, nil) {
@@ -1166,6 +1142,62 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		w.publish(ctx, ws, released, o.files)
 	}
 	w.reflect(ctx, it, res, runErr)
+}
+
+// newClaim builds the claim a turn on it holds: the board writes the profile
+// allows, bound to the item, and the harness's own facts for the gates. Each
+// candidate attempt (candidates.go) builds its own, so what one records never
+// stands for another.
+func (w *Worker) newClaim(itemCtx context.Context, it kanban.Item) *tools.WorkerClaim {
+	p := w.Profile
+	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
+	claim.Tickets = p.Metadata["tickets"] == "standard"
+	if k := p.Kanban; k != nil {
+		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
+		claim.HandoffRepos = k.HandoffRepos
+		claim.HandoffCheckpoint = k.HandoffCheckpoint
+		if s := k.Security; s != nil {
+			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
+		}
+		if k.Security != nil && k.Security.Sweep {
+			claim.Notable = w.enrichmentTargets(it)
+		}
+		if q := k.Quality; q != nil && slices.Contains(it.Labels, agentprofile.QualityLabel) {
+			claim.HandoffList = q.HandoffList()
+			claim.HandoffAuto = q.Auto()
+		}
+		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
+			list := kanban.Review
+			if k.Survey != nil {
+				list = k.Survey.HandoffList()
+			}
+			claim.HandoffAuto = k.Survey != nil && k.Survey.Auto()
+			claim.HandoffList = list
+		}
+	}
+	w.applyGates(itemCtx, claim, it)
+	if jobs := w.jevJobs(); jobs != nil {
+		claim.Relevance = jevRelevance{jobs}
+	}
+	return claim
+}
+
+// setupFailureNote is the release note for a workspace that could not be
+// prepared, after one setup-debug turn that lets the model find out why.
+func (w *Worker) setupFailureNote(itemCtx context.Context, it kanban.Item, claim *tools.WorkerClaim, err error, emit func(agent.Event)) string {
+	failure := sanitize.Sanitize(err.Error())
+	note := "the workspace could not be prepared: " + failure
+	// A setup argv that failed has output the board must not carry: the
+	// note stays harness text, and the output reaches the model only through
+	// the investigation's classified attachment.
+	detail := failure
+	if he, ok := AsHookError(err); ok && he.Detail() != "" {
+		detail += "\n" + he.Detail()
+	}
+	if found, ok := w.investigate(itemCtx, it, claim, detail, emit); ok {
+		note += "; " + found
+	}
+	return note
 }
 
 // stopped handles an item whose work ended because the worker is stopping or
@@ -1827,7 +1859,9 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	openPRs := ""
 	if ws := t.Workspace; ws != nil && ws.Worktree {
 		params.SandboxMounts, params.SandboxEnv = ws.Sandbox()
-		if w.publishes() && ws.ForgeOrigin(ctx) {
+		// A candidate attempt never publishes: the harness pushes the chosen
+		// candidate's branch once, after it picks (candidates.go).
+		if w.publishes() && !t.Candidate && ws.ForgeOrigin(ctx) {
 			publish = true
 			pub := &itemPublisher{ws: ws, store: w.Store, item: t.Item.ID, session: t.SessionID}
 			params.Extra = append(params.Extra, tools.PublishBranch{P: pub, Branch: ws.Branch})
@@ -1866,7 +1900,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	// A2A: the worker broadcasts the card it works (its ticket) and the files
 	// it changes, hears matching broadcasts and answers messages in a
 	// side-turn while the item runs (docs/a2a.md).
-	link := headless.OpenA2A(ctx, params, p.Name, t.Item.Short(), nil)
+	link := w.openA2A(ctx, params, t)
 	defer link.Close()
 	params.A2A = link
 	sess, err := headless.NewSession(ctx, params)
@@ -1880,7 +1914,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	in := agent.TurnInput{
 		Prompt: prompt, HarnessPrompt: prompt, ForceMode: modes.ModeGoal,
 		KanbanItem: t.Item.ID, NoGoalDraft: true, Decision: p.Decides(),
-		Directive:  w.directive(t.Workspace, publish, openPRs != ""),
+		Directive:  w.turnDirective(t, publish, openPRs != ""),
 		Provenance: w.Provenance,
 	}
 	if t.Memory != "" {

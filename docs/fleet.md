@@ -276,6 +276,122 @@ in the environment, cleaned and clamped), layered over the profile:
 worker for a changed definition. The registry records each worker's estimated
 spend (`cost_micro_usd`, and `cost_live` for the item in hand).
 
+### Best-of-N attempts
+
+Status: alpha-20261106.
+
+A worker can try a card more than once within one claim and keep only
+the best try. With `kanban.candidates` set to 2, 3 or 4, a claim of a fresh card
+runs that many independent candidates, one after another, each in a worktree and
+on a branch of its own. The harness then runs the card's gates on every
+candidate branch and picks the winner by a fixed rule over numbers it measured.
+A model never ranks, scores or picks, and no candidate's text reaches another.
+
+```json
+{ "kanban": { "candidates": 3, "gates": { "verify": "enforce" } },
+  "workspace": { "isolation": "worktree", "publish": "agent" } }
+```
+
+#### When it applies
+
+A claim runs candidates only when all of these hold; otherwise it is the
+ordinary single attempt, with no change:
+
+- the profile sets `kanban.candidates` above 1, and it needs
+  `workspace.isolation: worktree` (not read-only) and `kanban.gates.verify`
+  `record` or `enforce`, because the gates are what the harness chooses by.
+  The profile is refused when it also has handoffs (`handoff_to`,
+  `handoff_labels`, `handoff_repos`, `handoff_checkpoint`), `kanban.survey`,
+  `kanban.conflicts`, `kanban.security.verdicts` or `kanban.gates.review`, since
+  each would be done once per candidate;
+- `agents.max_candidates` (default 4, at most 4) is the user's ceiling, and the
+  count is the smaller of the two. A project may lower the ceiling to 1 (which
+  turns the feature off) and never raise it, and a profile cannot raise it;
+- the card has no branch yet. A card that already has one (a review, a later
+  claim, a pull request head) continues on it as before, and so does a card
+  filed by `/worktree new` or a merge-conflict card.
+
+#### Choosing the winner
+
+After each candidate the harness commits its work, runs the card's gates on the
+branch (the same run as [Verification](#verification)), and records what it
+measured. The facts are integers and flags: gates met out of gates run, whether
+a suite regressed against the base record, whether the feedback scan still
+reports the finding or confirmed it gone, files changed and tokens spent. When
+the candidates are done, a candidate is **never chosen** if its gates could not
+be run (`blocked`), a suite regressed, the scanner still reports its finding, or
+the harness judged the attempt failed (under `enforce`, an unmet gate is a failed
+attempt). The rest are ordered by the first rule that separates them:
+
+| Rule | Reported as | The better candidate |
+| --- | --- | --- |
+| most gates met | `gates_met` | meets more of the card's runnable gates |
+| scanner | `scanner` | the feedback scan confirmed the finding gone, over no scan answer |
+| a change | `changes` | changed some file, over changing none |
+| fewest files | `files` | changed fewer files |
+| fewest tokens | `tokens` | spent fewer tokens |
+| lowest number | `order` | ran first |
+
+The same facts always give the same winner (`selectCandidate` is a pure
+function). The winner's branch is made again at its recorded commit, checked out
+in a new worktree, and released and published exactly as a single attempt's is:
+its gate states are written to the card, the profile's `on_success` route
+applies, and the draft pull request is opened once, from that branch, by the
+harness. The note names the choice: `candidate 2 of 3 chosen by the harness (3
+ran, rule files, gates 1/1, 2 files)`.
+
+If no candidate can be chosen, nothing is published. When any candidate was
+`blocked` the card goes to `blocked` for a person with a note naming the
+branches, which are kept; otherwise the claim is one failed attempt against
+`kanban.max_attempts` (a provider outage or a spent budget keeps the fault it
+had), and every candidate branch is deleted.
+
+#### Isolation between candidates
+
+- Each candidate has a worktree of its own, a branch `belai/K-xxxxxx/a<n>` with
+  its own attempt number, a session and a claim. As soon as a candidate is
+  verified its worktree is removed (the user's teardown argv runs) and its branch
+  ref is deleted, keeping only the commit id, so a later candidate finds no files
+  and no branch to read. If the worktree or the ref cannot be removed, no further
+  candidate runs.
+- A candidate's claim refuses `KanbanUpdate`, `KanbanHandoff`, `KanbanVerdict`,
+  `KanbanOutcome`, `KanbanContract` and `KanbanGate`, so nothing it writes reaches
+  the card. Its gate states are held back and written for the winner alone.
+- A candidate's turn has no `PublishBranch` tool and no A2A link, and its
+  directive says it is attempt k of n and that the harness chooses.
+- The profile's lessons are read once before the first candidate and written
+  after the winner only.
+- Repository memory (`RepoMemoryWrite`) is a store every session shares by
+  design and is not withheld from a candidate. Git objects a candidate committed
+  stay in the repository's object store, unreferenced, until git collects them.
+
+The candidates share the item's budgets (`budget.*`): the tokens, cost and wall
+time of all of them are counted together, and no further candidate starts once
+the worker has been told to finalise or the budget ended. A candidate cut short
+by the budget is a failed candidate; the others are still chosen among.
+
+#### What is recorded
+
+- The candidates file, `~/.vulnetix/belai/agents/candidates/<worker id>.json`
+  (mode 0600, in the state directory the sandbox hides), holds the item id, the
+  base commit, the attempt count and for each finished candidate its branch name,
+  commit id and the integers above. It is read back only by the same worker, only
+  for the same item, base commit and attempt, and only if every entry validates
+  and its commit still exists; then a claim that follows a lost lease or a
+  provider outage (neither costs an attempt) runs only the remaining candidates.
+  It is deleted when the item is released.
+- The audit log gets one `card.candidate` event per candidate and one
+  `card.candidate_selected` event ([the audit log](audit.md)): ids, the status
+  enum, gates met out of total, files, tokens and the rule. Never a note, a diff
+  or a gate's output.
+- The card's notes and the status text are composed from integers, enums, branch
+  names and gate ids. No classifier kind is involved, because no arbitrary text
+  crosses between candidates.
+
+A stop request or a lost lease during a candidate hands the item back as
+elsewhere in this page: it is not an attempt, the candidate's work in progress is
+committed to its branch, and no winner is chosen.
+
 ### Facts
 
 A worker profile may carry `facts`: structured key/value pairs about the
@@ -1663,7 +1779,7 @@ and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
 ## Settings
 
 ```json
-{ "agents": { "enabled": true, "max_workers": 4, "factory_reserved_workers": 0, "publish": true } }
+{ "agents": { "enabled": true, "max_workers": 4, "factory_reserved_workers": 0, "max_candidates": 4, "publish": true } }
 ```
 
 - `enabled` turns workers on or off. A project may turn it off, never on.
@@ -1687,6 +1803,9 @@ and Belai → Hosts show it ([remote control](remote-control.md#fleet-workers)).
   own settings only: a project cannot change it. `belai rc
   --factory-reserved-workers N` replaces it for that daemon and the starts it
   makes. The TUI's `/fleet` start does not apply it.
+- `max_candidates` is the ceiling on a profile's `kanban.candidates` (default 4,
+  1 to 4; 1 turns best-of-N attempts off). A project may lower it, never raise
+  it. See [Best-of-N attempts](#best-of-n-attempts).
 - `publish` allows `workspace.publish: draft_pr`. A project may turn it off,
   never on.
 

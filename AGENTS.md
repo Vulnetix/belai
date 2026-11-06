@@ -1219,6 +1219,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     through `KanbanUpdate`, and the release note stays harness facts. A
     missing branch starts fresh only when it is one of the item's own
     `belai/K-xxxxxx/a<n>` names.
+  - **Best-of-N candidates are the harness's choice.** With `kanban.candidates`
+    above 1 a claim of a fresh card runs that many attempts one after another
+    (`internal/fleet/candidates.go`, docs/fleet.md). The harness runs the card's
+    gates on each branch and `selectCandidate` picks by integers and flags it
+    measured: no model ranks, scores or picks, and no candidate's text reaches
+    another. A candidate's worktree is removed and its branch ref parked before
+    the next starts, its claim refuses the tools that write to the card
+    (`WorkerClaim.Candidate`), its gate states reach the card only for the
+    winner (`verifyBranchAs`), and it has no publishing tool and no A2A link.
+    A candidate that is blocked, regressed, still reported by the scanner or
+    failed is never chosen; a card with no choosable candidate publishes nothing.
+    The candidates file and the `card.candidate` audit events hold identifiers
+    and integers only, so no classifier kind is added. `agents.max_candidates` is
+    the user's ceiling: a project may lower it and a profile cannot raise it.
   - **Project layer.** It may turn `agents.enabled` and `agents.publish` off
     and lower `agents.max_workers`, never the reverse, and it can define no
     profile or crew.

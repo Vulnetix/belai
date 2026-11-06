@@ -41,6 +41,9 @@ func (t KanbanContract) Execute(ctx context.Context, args map[string]any) (Resul
 	if c == nil || !c.Coverage {
 		return Result{}, errors.New("KanbanContract is only available to a worker that plans a request and holds a claim")
 	}
+	if err := c.refuseCandidate(KanbanContractName); err != nil {
+		return Result{}, err
+	}
 	if len(c.HandedOff()) > 0 {
 		return Result{}, errors.New("the clauses are recorded before the first handoff; a handoff already exists")
 	}
