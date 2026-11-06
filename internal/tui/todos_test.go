@@ -158,7 +158,7 @@ func TestCompactionCarriesTodosIntoTheNewSession(t *testing.T) {
 	a.setTodos(&l)
 	old := a.sessionID
 
-	a.applyCompaction("summary of the work so far")
+	a.applyCompaction("summary of the work so far", "manual", 0)
 
 	if a.sessionID == old {
 		t.Fatal("compaction did not fork into a new session")

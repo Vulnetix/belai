@@ -384,8 +384,8 @@ func NewRegistry(workdir string) *Registry {
 		return tea.Quit
 	})
 	r.RegisterAlias("quit", "exit")
-	r.Register("compact", "summarise the session into a new one", nil, func(a *App, arg string) tea.Cmd {
-		return a.compactCmd()
+	r.Register("compact", "summarise the session into a new one; /compact <focus> steers the summary, /compact status shows thresholds and the breaker", nil, func(a *App, arg string) tea.Cmd {
+		return a.compactCommand(arg)
 	})
 	r.Register("resume", "resume a session by id or browse sessions on disk", nil, func(a *App, arg string) tea.Cmd {
 		if strings.TrimSpace(arg) != "" {

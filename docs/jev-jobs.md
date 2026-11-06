@@ -263,7 +263,8 @@ the options.
 
 ## Compaction prune
 
-When the context passes 70 percent of the model window at a pass boundary,
+When the context passes 70 percent of the model window at a pass boundary
+(`compaction.threshold_pct`, see [Compaction settings](compaction.md)),
 Belai used to write a summary. With a decision backend it first tries to prune:
 remove the tool calls and results the work ahead no longer needs and keep
 everything else word for word. A pruned conversation contains no new text, so
@@ -272,7 +273,8 @@ there is nothing new to admit and no long model call to wait for.
 - **Pairing.** Each call is paired with its result by call id, in order, with a
   short id (`t1`, `t2`, ...). A call with no result, or a result with no call, is
   left alone, so the provider never sees a mismatch that was not already there.
-- **Pinned, never judged.** The first request; the newest 6 turns; a call whose
+- **Pinned, never judged.** The first request; the newest 6 turns
+  (`compaction.keep_recent_turns`); a call whose
   turn carries signed thinking; anything that changed something (a mutating
   tool); a failed or withheld result or a command that exited non-zero;
   `update_plan`, `Todo`, `ExitPlanMode`, `AskUserQuestion`, `Skill`, `SkillDraft`,
@@ -291,7 +293,7 @@ there is nothing new to admit and no long model call to wait for.
   each scored against the conversation and the goal.
 - **Decision per call.** A result at or above 0.50 stays whole, with its call.
   Otherwise a call at or above 0.50 stays and its result is cut to its first 300
-  characters plus a note (only if it is more than 120 characters longer than
+  characters (`compaction.keep_result_chars`) plus a note (only if it is more than 120 characters longer than
   that, and never a preview that points at `ReadResult`). Otherwise the call and
   its result both go. A question the backend did not answer keeps.
 - **Cleanup.** An assistant message left with no text and no calls is removed.

@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/transcript"
 )
@@ -128,6 +129,11 @@ const (
 	// Decided: harness facts only. The TUI records it as an ask answered by
 	// the decision model and shows a line saying so.
 	EventAskDecidedKind
+	// EventCompactionStateKind reports the compaction circuit breaker's state
+	// after it changed. It carries Compaction: counts only. The TUI persists it
+	// as a compaction_state session entry so a resumed or forked session keeps
+	// a paused summary step paused.
+	EventCompactionStateKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -266,6 +272,9 @@ type Event struct {
 
 	// GoalState carries an updated run-time goal state on EventGoalStateKind.
 	GoalState *goals.GoalState
+
+	// Compaction carries the breaker's state on EventCompactionStateKind.
+	Compaction *session.CompactionState
 
 	// PlanPath and PlanName carry the recorded plan file for
 	// EventPlanFileKind.

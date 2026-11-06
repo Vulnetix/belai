@@ -360,6 +360,9 @@ type Session struct {
 	// lastCompactionPruned says the latest compaction kept the conversation
 	// (a prune) rather than replacing it with a summary.
 	lastCompactionPruned bool
+	// breaker pauses the summary step after repeated failures
+	// (compactbreaker.go). It lives for the session, across turns.
+	breaker compactBreaker
 	// skillCands are the installed skills a model may invoke, refreshed each
 	// turn; ToolSearch searches them.
 	skillCands []tools.Candidate

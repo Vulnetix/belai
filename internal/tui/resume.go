@@ -112,6 +112,11 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	a.nameRequested = r.Name != "" // stops shouldAutoName renaming a named session
 	a.summary = r.Summary
 	a.parentSession = r.Parent
+	// The agent session was dropped above, so the next one starts with this.
+	a.compactState = session.CompactionState{}
+	if r.Compaction != nil {
+		a.compactState = r.Compaction.Clamp()
+	}
 	a.rehydrateTodos(entries)
 	a.rebuildSubagentsFromMessages()
 	a.persistedUpTo = len(a.messages)

@@ -1175,6 +1175,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   turn once, so the cached prefix stays byte-identical. `offload` changes how
   much admitted content rides on a request, never what is admitted, so any
   settings layer may set it.
+- **Compaction numbers only narrow from a repository, a summary is always
+  admitted, and the breaker is the harness's.** `compaction.*`
+  (`internal/config/compaction.go`, docs/compaction.md) is a set of bounded
+  integers. The user's layers set any key in range; the project layer applies a
+  value only when it compacts sooner or keeps more, and an out-of-range project
+  value is dropped with a note, never a startup failure. The summary a manual
+  `/compact` produces is admitted through the Role Manager before it is stored,
+  exactly as the automatic one is, and a refusal leaves the session untouched. A
+  `/compact` focus is `sanitize.Line` text appended to the user side of the
+  payload only, capped at 500 characters, and only its length is recorded. The
+  circuit breaker (`internal/agent/compactbreaker.go`) counts failed summaries,
+  never asks a model, and skips only the summary step: pruning and a forced
+  overflow recovery run regardless. Its `compaction_state` entry is numbers,
+  and is clamped on load because the session file is not trusted.
 - **A WebFetch answer is drawn by a tool-less role and still classifies.** A
   `WebFetch` call with a `prompt` sends the sanitised page (capped) and the
   prompt to the fast-tier `web_fetch` role, which carries no tools, skills or

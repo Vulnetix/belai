@@ -30,13 +30,35 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 // already-serialized conversation. Tools, Skills, and Agent are always empty.
 // caveman voices the summary; the heading contract ValidateSummary enforces is
 // preserved either way.
-func BuildCompactionPayload(conversation string, caveman bool) ClassifierPayload {
+//
+// focus is the user's one-line steer for a manual /compact. It is cleaned with
+// sanitize.Line, capped at MaxCompactionFocusRunes and appended after the
+// conversation as a labelled user-intent line. It never reaches the system
+// text, carries no harness authority, and does not change the section contract.
+func BuildCompactionPayload(conversation string, caveman bool, focus string) ClassifierPayload {
+	user := conversation
+	if line := CompactionFocusLine(focus); line != "" {
+		user += "\n\n" + line
+	}
 	return ClassifierPayload{
 		System:    withCavemanVoice(compactionSystemPrompt, caveman),
-		User:      conversation,
+		User:      user,
 		MaxTokens: ClassifierStructuredMaxTokens,
 		UseCase:   UseCaseCompaction,
 	}
+}
+
+// MaxCompactionFocusRunes caps the focus text of a manual /compact.
+const MaxCompactionFocusRunes = 500
+
+// CompactionFocusLine is the labelled line a focus becomes, or "" when the
+// focus is empty after cleaning.
+func CompactionFocusLine(focus string) string {
+	clean := sanitize.Line(focus, MaxCompactionFocusRunes)
+	if clean == "" {
+		return ""
+	}
+	return "User focus for this summary (give it extra weight, keep every required section): " + clean
 }
 
 // ErrIncompleteSummary reports a summary lacking the required structure —

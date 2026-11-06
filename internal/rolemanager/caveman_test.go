@@ -11,7 +11,7 @@ import (
 // system prompt when asked and leave it untouched when not.
 func TestProseBuildersCarryCavemanVoice(t *testing.T) {
 	builders := map[string]func(bool) ClassifierPayload{
-		"compaction":   func(on bool) ClassifierPayload { return BuildCompactionPayload("<conversation>", on) },
+		"compaction":   func(on bool) ClassifierPayload { return BuildCompactionPayload("<conversation>", on, "") },
 		"session name": func(on bool) ClassifierPayload { return BuildSessionNamePayload("first message", on) },
 	}
 	for name, build := range builders {
@@ -78,7 +78,7 @@ func TestSentinelBuildersNeverCarryCavemanVoice(t *testing.T) {
 // prompt still specifies every heading ValidateSummary requires, and still
 // tells the model to keep them verbatim. Losing them fails compaction closed.
 func TestCavemanCompactionKeepsHeadingContract(t *testing.T) {
-	p := BuildCompactionPayload("<conversation>", true)
+	p := BuildCompactionPayload("<conversation>", true, "")
 	for _, heading := range []string{"## Goal", "## Next Steps", "## Critical Context"} {
 		if !strings.Contains(p.System, heading) {
 			t.Fatalf("voiced compaction prompt lost %q: %q", heading, p.System)

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -136,6 +137,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.LSP.Servers = nil
 		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
 	}
+	if ign := compactionIgnored(eff.Settings.Compaction, proj.Compaction); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only compact sooner or keep more)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -184,7 +188,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -622,6 +626,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.PatchTolerance = mergePatchTolerance(before, s.PatchTolerance, src == SourceProject)
 		if e.Settings.PatchTolerance != before {
 			e.Origin["patch_tolerance"] = src
+		}
+	}
+	if s.Compaction != nil {
+		// A repository may only compact sooner or keep more (mergeCompaction).
+		before := e.Settings.Compaction
+		e.Settings.Compaction = mergeCompaction(before, s.Compaction, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Compaction) {
+			e.Origin["compaction"] = src
 		}
 	}
 	if s.Screenshot != nil {

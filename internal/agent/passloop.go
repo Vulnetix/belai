@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/modelinfo"
@@ -86,8 +87,9 @@ const (
 	// every readStreakNudgeAfter rounds while the streak lasts.
 	readStreakNudgeAfter = 8
 	// compactThresholdPct: compact at the pass boundary when the estimated
-	// context exceeds this share of the model window.
-	compactThresholdPct = 70
+	// context exceeds this share of the model window. It is the default of
+	// compaction.threshold_pct; the session reads the setting.
+	compactThresholdPct = config.DefaultCompactThresholdPct
 	// defaultCompactWindow is the window compaction assumes when nothing
 	// knows the model's real one. It is deliberately conservative: compacting
 	// early costs one classifier call, never compacting costs the run.
@@ -1568,70 +1570,83 @@ func isOverflow(err error) bool {
 // safe here because the only consequence is compacting sooner; the TUI still
 // reports an unknown window rather than a guessed denominator.
 func (s *Session) compactWindow() int {
-	if w, ok := modelinfo.ResolveWith(s.cfg.Model, s.settings.ContextWindows, s.settings.CatalogWindow(s.cfg.Provider, s.cfg.Model)); ok && w > 0 {
+	return CompactWindow(s.cfg.Provider, s.cfg.Model, s.settings)
+}
+
+// CompactWindow is the window compaction measures a model against. The TUI's
+// /compact status calls it so what it shows is what the loop uses.
+func CompactWindow(provider, model string, st config.Settings) int {
+	if w, ok := modelinfo.ResolveWith(model, st.ContextWindows, st.CatalogWindow(provider, model)); ok && w > 0 {
 		return w
 	}
 	return defaultCompactWindow
 }
 
 // compactBoundary rebuilds turns as a validated compaction summary when the
-// estimated context exceeds compactThresholdPct of the model window. It runs
+// estimated context exceeds compaction.threshold_pct of the model window. It runs
 // only at pass boundaries: mid-pass, turns may hold assistant tool_calls
 // whose matching tool turns are not yet appended, and truncating there would
 // orphan tool_call_ids (providers reject the payload).
 //
 // The summary is model output derived from tool results, so it is admitted
 // through the Role Manager before re-injection — the same fail-closed rule as
-// steering, and a deliberate fix over the TUI /compact path, which does not
-// admit. Any failure skips compaction for this boundary; the next boundary
-// retries. Returns ok=false when compaction was not attempted or did not
+// steering, and the same rule the TUI /compact path follows. Any failure skips compaction for this boundary; the next boundary
+// retries, until compaction.breaker_failures failures in a row pause the
+// summary step for compaction.breaker_cooldown_passes boundaries (pruning is
+// not paused). Returns ok=false when compaction was not attempted or did not
 // produce a usable summary.
 func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn) ([]run.Turn, bool) {
-	return s.compactTurns(ctx, pipe, turns, false)
+	return s.compactTurns(ctx, pipe, turns, false, s.compactionBoundary())
 }
 
-// overflowKeepToolResults is how many of the newest tool results survive the
-// clearing fallback of recoverOverflow.
-const overflowKeepToolResults = 2
+// overflowKeepToolResults is the default of compaction.keep_tool_results: how
+// many of the newest tool results survive the clearing fallback of
+// recoverOverflow.
+const overflowKeepToolResults = config.DefaultCompactKeepToolResults
 
 // recoverOverflow is what a pass loop does once when the provider rejects a
 // request as over its context window. The estimate that gates proactive
 // compaction evidently undercounted, so compaction is forced whatever the
-// estimate says. When that fails too, every tool result but the newest
-// overflowKeepToolResults is cleared in place, which always shrinks a context
-// that tool output filled. It returns ok=false when neither made a change.
+// estimate says, and whatever the circuit breaker says: the provider has
+// already refused the request. When that fails too, every tool result but the
+// newest compaction.keep_tool_results is cleared in place, which always shrinks
+// a context that tool output filled. It returns ok=false when neither made a
+// change.
 func (s *Session) recoverOverflow(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn) ([]run.Turn, bool) {
-	if compacted, ok := s.compactTurns(ctx, pipe, turns, true); ok {
+	if compacted, ok := s.compactTurns(ctx, pipe, turns, true, false); ok {
 		s.traceRecord("overflow_recovery", "compacted", "", "", 0)
 		return compacted, true
 	}
+	keep := s.settings.CompactKeepToolResults()
 	cleared, seen := 0, 0
 	for i := len(turns) - 1; i >= 0; i-- {
 		if turns[i].Role != "tool" {
 			continue
 		}
 		seen++
-		if seen > overflowKeepToolResults && turns[i].ClearToolResult() {
+		if seen > keep && turns[i].ClearToolResult() {
 			cleared++
 		}
 	}
 	if cleared == 0 {
 		return turns, false
 	}
-	s.traceRecord("overflow_recovery", "cleared", "", fmt.Sprintf("cleared=%d kept=%d", cleared, overflowKeepToolResults), 0)
+	s.traceRecord("overflow_recovery", "cleared", "", fmt.Sprintf("cleared=%d kept=%d", cleared, keep), 0)
 	return turns, true
 }
 
 // compactTurns is compactBoundary with the threshold optional: force skips
 // the estimate, for a provider that has already said the context is too big.
-func (s *Session) compactTurns(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn, force bool) ([]run.Turn, bool) {
+// summaryPaused skips only the summary step (the circuit breaker is open);
+// force ignores it.
+func (s *Session) compactTurns(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn, force, summaryPaused bool) ([]run.Turn, bool) {
 	window := s.compactWindow()
 	msgs := make([]transcript.Message, 0, len(turns))
 	for _, t := range turns {
 		msgs = append(msgs, transcript.Message{Role: t.Role, Content: t.Content, ToolName: t.ToolName})
 	}
 	est := transcript.EstimateContext(msgs)
-	if !force && est.Tokens*100 < window*compactThresholdPct {
+	if !force && est.Tokens*100 < window*s.settings.CompactThresholdPct() {
 		return nil, false
 	}
 	// pre_compact cannot stop compaction; its output is not read.
@@ -1646,20 +1661,28 @@ func (s *Session) compactTurns(ctx context.Context, pipe *rolemanager.Pipeline, 
 	} else if st.candidates > 0 && st.requests > 0 {
 		rolemanager.RecordPruneCompaction("fallback", st.kept, st.truncated, st.dropped, st.unknown, 0, st.identity, 0)
 	}
+	if summaryPaused && !force {
+		s.traceRecord("compaction_breaker", "skipped", "", "", 0)
+		return nil, false
+	}
 	conv := transcript.Serialize(msgs, transcript.SerializeOptions{})
 	cctx, served := rolemanager.TrackServedModel(ctx)
-	raw, err := pipe.Classifier.Classify(cctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))
+	raw, err := pipe.Classifier.Classify(cctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled(), ""))
 	if err != nil {
+		s.summaryFailed(ctx, window, est.Tokens)
 		return nil, false
 	}
 	summary, err := rolemanager.ValidateServedSummary(raw, served())
 	if err != nil {
+		s.summaryFailed(ctx, window, est.Tokens)
 		return nil, false
 	}
 	dec, err := pipe.Admit(ctx, summary, "summary", s.live.Policy())
 	if err != nil || dec.Action != rolemanager.ActionProceed {
+		s.summaryFailed(ctx, window, est.Tokens)
 		return nil, false
 	}
+	s.noteSummaryOutcome(true, window, est.Tokens)
 	return []run.Turn{
 		{Role: "user", Content: rolemanager.SummaryPrefix + dec.Content + rolemanager.SummarySuffix},
 		{Role: "assistant", Content: rolemanager.SummaryAck},

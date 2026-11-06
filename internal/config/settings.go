@@ -201,6 +201,10 @@ type Settings struct {
 	// Edit governs the Edit tool's matching (docs/edit.md). The user's layers
 	// set `tolerant` either way; the project layer may only turn it off.
 	Edit *EditSettings `json:"edit,omitempty"`
+	// Compaction tunes when the context compacts and how much a prune keeps
+	// (docs/compaction.md). The user's layers set any key; the project layer
+	// may only compact sooner or keep more.
+	Compaction *CompactionSettings `json:"compaction,omitempty"`
 	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
 	// on. The user's layers set it either way; the project layer can only turn
 	// it off.
@@ -2050,6 +2054,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
 	// Edit matching: a project may make it stricter, never more tolerant.
 	out.Edit = mergeEdit(out.Edit, proj.Edit, true)
+	// Compaction: a project may compact sooner or keep more, never the reverse.
+	out.Compaction = mergeCompaction(out.Compaction, proj.Compaction, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.
 	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
 	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)

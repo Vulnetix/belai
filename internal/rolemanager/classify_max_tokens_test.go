@@ -11,8 +11,8 @@ func TestStructuredPayloadsOverrideClassifierBudget(t *testing.T) {
 		name    string
 		payload ClassifierPayload
 	}{
-		{"compaction", BuildCompactionPayload("<conversation>", false)},
-		{"compaction caveman", BuildCompactionPayload("<conversation>", true)},
+		{"compaction", BuildCompactionPayload("<conversation>", false, "")},
+		{"compaction caveman", BuildCompactionPayload("<conversation>", true, "")},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
 	}
 	for _, tc := range cases {

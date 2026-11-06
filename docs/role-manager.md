@@ -983,11 +983,16 @@ explore mode rather than pursuing immediately.
 
 ### Compaction payload
 
-`/compact` serializes the live conversation into one plain-text block wrapped in
+`/compact [focus]` serializes the live conversation into one plain-text block wrapped in
 `<conversation id="…">` tags and hands it to the compaction classifier. The
 conversation-as-document design is what makes the turn safe: a serialized
 document cannot be "continued", and tool-lessness is structural — the payload
 carries no tools, no skills, and no agent block.
+
+A focus given to `/compact` is cleaned with `sanitize.Line`, capped at 500
+characters and appended after the conversation as a labelled line in the user
+message. The system text does not change and the focus carries no harness
+authority.
 
 The summary section contract is `## Goal`, `## Constraints & Preferences`,
 `## Progress` (with `### Done` / `### In Progress` / `### Blocked`),
@@ -2412,9 +2417,10 @@ acknowledgement.
 
 The summary is model output derived from tool results, so it is admitted
 through the Role Manager before re-injection — the same fail-closed rule as
-steering, and deliberately stricter than the TUI `/compact` path, which does
-not admit. Any failure skips compaction for that boundary; the next boundary
-retries.
+steering, and the same rule the TUI `/compact` path follows. Any failure skips
+compaction for that boundary; the next boundary retries, until
+`compaction.breaker_failures` failures in a row pause the summary step (see
+[compaction.md](compaction.md#the-summary-circuit-breaker)).
 
 ### Sealed-once invariant
 

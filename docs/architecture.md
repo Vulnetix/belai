@@ -2017,7 +2017,8 @@ session name or short id. Entry types:
 | `completion` | `completion` | the harness-composed agent-mode completion panel body (never sent to a model) |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
 | `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `teleportedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
-| `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
+| `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session; `meta.trigger` (`manual` or `resume`) and `meta.focus_len` say how it was asked for |
+| `compaction_state` | *(empty)* | the summary circuit breaker as numbers in `meta` (`fails`, `cooldown_left`, `tokens`, `window`); append-only, latest wins, clamped on load (see [compaction](compaction.md#what-a-session-keeps)) |
 | `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
 | `branch` | *(empty)* | `/tree` moved the session to an earlier entry: `meta.from_entry` is the leaf left, `meta.to_entry` the entry the next one hangs from; the marker's own `parentId` is `to_entry` |
 
@@ -3730,7 +3731,7 @@ Business rules:
 | `/permissions` | Edit tool permissions |
 | `/help` | Open a scrollable screen of the commands and every keyboard shortcut |
 | `/clear` | Start a new session |
-| `/compact` | Summarise the session into a new one |
+| `/compact` | Summarise the session into a new one; `/compact <focus>` steers the summary and `/compact status` shows the thresholds and the circuit breaker |
 | `/resume` | Resume a session by id, or browse every session on disk |
 | `/tree` | Browse this session as a tree; continue from an earlier reply or prompt (`/tree <id>`) or fork a branch into a new session (`/tree fork <id>`) |
 | `/rename` | Rename this session |

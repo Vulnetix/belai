@@ -74,6 +74,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/scanartifacts"
 	"github.com/vulnetix/belai/internal/selfupdate"
 	"github.com/vulnetix/belai/internal/session"
@@ -156,8 +157,13 @@ type copiedMsg struct{ text string }
 
 // compactDoneMsg carries the result of an async compaction call.
 type compactDoneMsg struct {
+	// summary is the admitted, sanitised summary; empty when err is set.
 	summary string
 	err     error
+	// focusLen is the length of the cleaned focus text, never the text.
+	focusLen int
+	// trigger is "manual" for /compact, "resume" for the resume offer.
+	trigger string
 }
 
 // agentBuilderDoneMsg carries the result of an async /agent create run.
@@ -433,6 +439,14 @@ type App struct {
 	// rehydrated). It rides on the next turn as TurnInput.PriorGoal so a
 	// continuation prompt resumes the goal in flight.
 	lastGoal *goals.GoalState
+	// compactState is the compaction circuit breaker as the agent session last
+	// reported it (live or rehydrated). The next session built from this App
+	// starts with it, and it is written to the session as compaction_state.
+	compactState session.CompactionState
+	// admitSummary replaces the Role Manager admission of a manual /compact
+	// summary. Nil admits through run.NewPipeline; a test sets it to stay
+	// offline.
+	admitSummary func(ctx context.Context, summary string, pol posture.Policy) (rolemanager.Decision, error)
 	// readOnlyNoticed records that this process already showed the read_only
 	// notice for an agent-mode send.
 	readOnlyNoticed bool
@@ -2182,6 +2196,8 @@ type sessionBuildParams struct {
 	a2aHub tools.A2AHub
 	// memStamp stamps repo memory notes with this host's and session's facts.
 	memStamp func() repomemory.Stamp
+	// compaction is the circuit breaker the session starts with.
+	compaction session.CompactionState
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2225,6 +2241,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		fwPerm:        a.fwPerm.hook(),
 		a2aHub:        a.a2aToolHub(),
 		memStamp:      a.repoMemoryStamp(),
+		compaction:    a.compactState,
 	}
 }
 
@@ -2358,6 +2375,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		return nil, err
 	}
 	p.noncePools.keep(cfg, sess.NoncePool())
+	sess.RestoreCompactionState(p.compaction)
 	return sess, nil
 }
 
@@ -4264,6 +4282,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventTodosKind:
 		if m.Todos != nil {
 			a.setTodos(m.Todos)
+		}
+		return a.nextAgent()
+	case agent.EventCompactionStateKind:
+		if m.Compaction != nil {
+			// Not setCompactState: the session that reported it already holds it.
+			a.compactState = m.Compaction.Clamp()
+			a.appendEntry(a.compactState.ToEntry(a.lastEntryID))
 		}
 		return a.nextAgent()
 	case agent.EventGoalStateKind:
@@ -6620,6 +6645,7 @@ func (a *App) startNewSession() {
 	a.sessionID = session.MustID()
 	a.planExecuting = false
 	a.lastGoal = nil
+	a.setCompactState(session.CompactionState{})
 	a.resetTaskPaths()
 	a.resetTestPass()
 	a.publishSessionID()
@@ -6890,7 +6916,26 @@ func (a *App) watchAgentEvents(name string) tea.Cmd {
 // Compaction
 // ---------------------------------------------------------------------------
 
-func (a *App) compactCmd() tea.Cmd {
+// compactCommand handles /compact: no argument summarises the session, `status`
+// shows the thresholds and the circuit breaker, and any other text is a focus
+// for this one summary.
+func (a *App) compactCommand(arg string) tea.Cmd {
+	arg = strings.TrimSpace(arg)
+	if strings.EqualFold(arg, "status") {
+		a.addSystem(a.compactStatus())
+		return nil
+	}
+	return a.compactWithFocus(arg, "manual")
+}
+
+// compactCmd summarises the session with no focus, as the resume offer does.
+func (a *App) compactCmd() tea.Cmd { return a.compactWithFocus("", "resume") }
+
+// compactWithFocus summarises the session into a new one. The summary is model
+// output derived from tool results, so it is admitted through the Role Manager
+// before it is stored, the same rule the automatic path follows; a refusal or
+// an error leaves the session as it was.
+func (a *App) compactWithFocus(focus, trigger string) tea.Cmd {
 	if a.classifier == nil {
 		return func() tea.Msg { return compactDoneMsg{err: errors.New("no classifier configured")} }
 	}
@@ -6902,18 +6947,84 @@ func (a *App) compactCmd() tea.Cmd {
 	c := a.classifier
 	caveman := a.settings.ClassifierCavemanEnabled()
 	hookSet, sid, wd := a.sessionHooks(), a.sessionID, a.workdir
+	focusLen := len([]rune(sanitize.Line(focus, rolemanager.MaxCompactionFocusRunes)))
+	admit := a.summaryAdmitter()
 	return func() tea.Msg {
 		// pre_compact runs off the UI goroutine; it cannot stop compaction.
 		if hookSet.Has(hooks.EventPreCompact) {
 			hookSet.Dispatch(a.ctx, hooks.Input{Event: hooks.EventPreCompact, SessionID: sid, Cwd: wd})
 		}
+		done := compactDoneMsg{focusLen: focusLen, trigger: trigger}
 		ctx, served := rolemanager.TrackServedModel(a.ctx)
-		raw, err := c.Classify(ctx, rolemanager.BuildCompactionPayload(doc, caveman))
+		raw, err := c.Classify(ctx, rolemanager.BuildCompactionPayload(doc, caveman, focus))
 		if err != nil {
-			return compactDoneMsg{err: err}
+			done.err = err
+			return done
 		}
 		s, err := rolemanager.ValidateServedSummary(raw, served())
-		return compactDoneMsg{summary: s, err: err}
+		if err != nil {
+			done.err = err
+			return done
+		}
+		dec, err := admit(a.ctx, s)
+		var refusal *rolemanager.RefusalError
+		switch {
+		case errors.As(err, &refusal):
+			done.err = fmt.Errorf("the summary was refused by the security classifier (%s)", refusal.Sentinel.Label())
+		case err != nil:
+			done.err = fmt.Errorf("the summary could not be checked: %w", err)
+		case dec.Action != rolemanager.ActionProceed:
+			done.err = fmt.Errorf("the summary was not admitted (%s)", dec.Sentinel.Label())
+		default:
+			done.summary = dec.Content
+		}
+		return done
+	}
+}
+
+// summaryAdmitter returns the admission step for a manual summary. The
+// posture and pipeline are read on the UI loop; the returned function only
+// uses those copies.
+func (a *App) summaryAdmitter() func(context.Context, string) (rolemanager.Decision, error) {
+	pol := a.effectivePosture()
+	if a.admitSummary != nil {
+		h := a.admitSummary
+		return func(ctx context.Context, s string) (rolemanager.Decision, error) { return h(ctx, s, pol) }
+	}
+	pipe := run.NewPipeline(a.cfg, a.client, a.cache)
+	return func(ctx context.Context, s string) (rolemanager.Decision, error) {
+		return pipe.Admit(ctx, s, "summary", pol)
+	}
+}
+
+// compactStatus is the read-only /compact status text: the thresholds in
+// force and the circuit breaker. It asks no model.
+func (a *App) compactStatus() string {
+	st := a.settings
+	window := agent.CompactWindow(a.cfg.Provider, a.cfg.Model, st)
+	trigger := window * st.CompactThresholdPct() / 100
+	est := transcript.EstimateContext(a.transcriptMessages()).Tokens
+	brk := a.compactState
+	if a.agent != nil {
+		brk = a.agent.CompactionState()
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "compaction: runs above %d%% of the %d token window (%d tokens); this session is about %d tokens\n", st.CompactThresholdPct(), window, trigger, est)
+	fmt.Fprintf(&b, "prune keeps the newest %d turns whole and %d characters of a pruned result; an overflow keeps the newest %d tool results\n", st.CompactKeepRecentTurns(), st.CompactKeepResultChars(), st.CompactKeepToolResults())
+	if brk.CooldownLeft > 0 {
+		fmt.Fprintf(&b, "summary step: paused for %d more passes after %d failed summaries (opens at %d, rests %d passes); pruning continues", brk.CooldownLeft, brk.Fails, st.CompactBreakerFailures(), st.CompactBreakerCooldownPasses())
+	} else {
+		fmt.Fprintf(&b, "summary step: running (%d of %d failures in a row)", brk.Fails, st.CompactBreakerFailures())
+	}
+	return b.String()
+}
+
+// setCompactState records the breaker state for the next session this App
+// builds and for the one it already holds.
+func (a *App) setCompactState(c session.CompactionState) {
+	a.compactState = c.Clamp()
+	if a.agent != nil {
+		a.agent.RestoreCompactionState(a.compactState)
 	}
 }
 
@@ -6922,10 +7033,10 @@ func (a *App) handleCompactDone(m compactDoneMsg) tea.Cmd {
 		a.addSystem("compact failed: " + m.err.Error())
 		return nil
 	}
-	return a.applyCompaction(m.summary)
+	return a.applyCompaction(m.summary, m.trigger, m.focusLen)
 }
 
-func (a *App) applyCompaction(summary string) tea.Cmd {
+func (a *App) applyCompaction(summary, trigger string, focusLen int) tea.Cmd {
 	msgs := a.transcriptMessages()
 	est := transcript.EstimateContext(msgs)
 	old := a.sessionID
@@ -6949,8 +7060,20 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 			"model":           a.cfg.Model,
 			"source_messages": len(msgs),
 			"source_tokens":   est.Tokens,
+			"trigger":         trigger,
+			"focus_len":       focusLen,
 		},
 	})
+	// The fork is a new file, so the breaker's state is written into it. A
+	// summary that was just admitted shows the summary step works, which
+	// closes the breaker.
+	cs := a.compactState
+	if a.agent != nil {
+		cs = a.agent.CompactionState()
+	}
+	cs.Fails, cs.CooldownLeft = 0, 0
+	a.setCompactState(cs)
+	a.appendEntry(a.compactState.ToEntry(a.lastEntryID))
 	if oldName != "" {
 		a.appendEntry(session.Entry{Type: session.EntryTypeSessionName, Role: "", Content: oldName, Meta: map[string]any{"source": "inherited"}})
 	}

@@ -25,10 +25,12 @@ import (
 // tries it first and falls back to the summary when the job is off, the
 // backend cannot answer, or the pruned context is still over the trigger.
 const (
-	// pruneKeepRecent: the newest turns are never touched.
-	pruneKeepRecent = 6
-	// pruneHeadChars: how much of a result survives when only its call is kept.
-	pruneHeadChars = 300
+	// pruneKeepRecent: the newest turns are never touched. The default of
+	// compaction.keep_recent_turns.
+	pruneKeepRecent = config.DefaultCompactKeepRecentTurns
+	// pruneHeadChars: how much of a result survives when only its call is
+	// kept. The default of compaction.keep_result_chars.
+	pruneHeadChars = config.DefaultCompactKeepResultChars
 	// pruneTruncateSlack: a result is truncated only if longer than the head by
 	// this much, so the note never makes it longer.
 	pruneTruncateSlack = 120
@@ -80,7 +82,7 @@ var alwaysKeepTools = map[string]bool{
 // is nothing to judge, or the pruned context would still be over the trigger.
 func (s *Session) pruneTurns(ctx context.Context, turns []run.Turn) ([]run.Turn, pruneStats, bool) {
 	var st pruneStats
-	if s.jev == nil || !s.jev.Enabled(config.JevPruneCompaction) || len(turns) <= pruneKeepRecent+1 {
+	if s.jev == nil || !s.jev.Enabled(config.JevPruneCompaction) || len(turns) <= s.settings.CompactKeepRecentTurns()+1 {
 		return nil, st, false
 	}
 	pairs := s.collectPairs(turns)
@@ -101,7 +103,7 @@ func (s *Session) pruneTurns(ctx context.Context, turns []run.Turn) ([]run.Turn,
 	}
 	st.tokensBefore = estimateTokens(turns)
 
-	state, goal, ok := pruneState(turns, pairs, s.pruneBudget())
+	state, goal, ok := pruneState(turns, pairs, s.pruneBudget(), s.settings.CompactKeepRecentTurns())
 	if !ok {
 		return nil, st, false
 	}
@@ -112,7 +114,7 @@ func (s *Session) pruneTurns(ctx context.Context, turns []run.Turn) ([]run.Turn,
 	}
 	st.unknown = len(res.Unknown)
 
-	out, dropped, truncated := applyPrune(turns, pairs, scores)
+	out, dropped, truncated := applyPrune(turns, pairs, scores, s.settings.CompactKeepResultChars())
 	st.dropped, st.truncated = dropped, truncated
 	st.kept = st.candidates - dropped - truncated
 	if dropped+truncated == 0 {
@@ -121,7 +123,7 @@ func (s *Session) pruneTurns(ctx context.Context, turns []run.Turn) ([]run.Turn,
 	st.tokensAfter = estimateTokens(out)
 	// The prune must bring the context under the trigger, or the summary runs
 	// on the original turns instead.
-	if st.tokensAfter*100 >= s.compactWindow()*compactThresholdPct {
+	if st.tokensAfter*100 >= s.compactWindow()*s.settings.CompactThresholdPct() {
 		return nil, st, false
 	}
 	return out, st, true
@@ -171,7 +173,7 @@ func (s *Session) collectPairs(turns []run.Turn) []prunePair {
 			break
 		}
 	}
-	recentFrom := len(turns) - pruneKeepRecent
+	recentFrom := len(turns) - s.settings.CompactKeepRecentTurns()
 	var pairs []prunePair
 	seen := map[string]bool{}
 	n := 0
@@ -265,7 +267,7 @@ type stateCall struct {
 // touching the first request or the newest turns: the inputs shorten, long
 // messages are abridged, then collapsed, then calls become one line each, then
 // old messages without calls are left out. ok is false if it cannot fit.
-func pruneState(turns []run.Turn, pairs []prunePair, budget int) (state, goal sanitize.DecisionText, ok bool) {
+func pruneState(turns []run.Turn, pairs []prunePair, budget, keepRecent int) (state, goal sanitize.DecisionText, ok bool) {
 	byCall := map[int][]prunePair{}
 	for _, p := range pairs {
 		byCall[p.callTurn] = append(byCall[p.callTurn], p)
@@ -277,7 +279,7 @@ func pruneState(turns []run.Turn, pairs []prunePair, budget int) (state, goal sa
 			break
 		}
 	}
-	recentFrom := len(turns) - pruneKeepRecent
+	recentFrom := len(turns) - keepRecent
 	var entries []stateEntry
 	for i, t := range turns {
 		switch t.Role {
@@ -414,7 +416,7 @@ func abridge(s string) string {
 // both go. An unanswered question keeps. A message left with no text and no
 // calls is removed. Returns the new turns and how many pairs were dropped and
 // truncated.
-func applyPrune(turns []run.Turn, pairs []prunePair, scores map[string]float64) (out []run.Turn, dropped, truncated int) {
+func applyPrune(turns []run.Turn, pairs []prunePair, scores map[string]float64, headChars int) (out []run.Turn, dropped, truncated int) {
 	keepAt := config.ActiveJevThresholds().KeepAt
 	dropCall := map[string]bool{}  // call id -> drop the call
 	dropTool := map[int]bool{}     // tool turn -> drop
@@ -435,8 +437,8 @@ func applyPrune(turns []run.Turn, pairs []prunePair, scores map[string]float64) 
 		case keepResult >= keepAt:
 		case keepCall >= keepAt:
 			content := turns[p.resTurn].Content
-			if len(content) > pruneHeadChars+pruneTruncateSlack && !strings.Contains(content, "ReadResult") {
-				cut := pruneHeadChars
+			if len(content) > headChars+pruneTruncateSlack && !strings.Contains(content, "ReadResult") {
+				cut := headChars
 				for cut > 0 && !utf8.RuneStart(content[cut]) {
 					cut--
 				}

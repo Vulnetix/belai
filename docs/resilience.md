@@ -274,7 +274,7 @@ Compaction runs only at a pass boundary. Mid-pass, `turns` may hold an
 assistant turn carrying `tool_calls` whose matching tool turns are not yet
 appended; truncating there orphans `tool_call_id`s and providers reject the
 payload. The trigger is an estimated context above 70 % of the resolved model
-window. The window resolves as user override → provider catalogue
+window (`compaction.threshold_pct`; see [compaction.md](compaction.md)). The window resolves as user override → provider catalogue
 (`Settings.CatalogWindow`) → built-in `modelinfo` registry →
 `defaultCompactWindow` (128k). That last step is load-bearing: the registry
 alone answers "unknown" for any model that exists only in a custom provider
@@ -286,7 +286,9 @@ window rather than a guessed denominator.
 The summary re-enters through Role Manager admission (see
 [role-manager.md](role-manager.md), "Compaction at the boundary"), and any
 failure — no window, no summary, refused admission — simply skips compaction
-for that boundary.
+for that boundary. After `compaction.breaker_failures` summary failures in a row
+the summary step pauses for `compaction.breaker_cooldown_passes` boundaries, and
+pruning goes on.
 
 A **broken goal evaluator** is recovered rather than fatal. A reply that is
 not a bare sentinel is re-asked once, quoting the rejected text and the three

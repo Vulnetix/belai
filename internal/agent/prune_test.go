@@ -109,7 +109,7 @@ func TestTheFirstRequestAndTheNewestTurnsAreNeverCandidates(t *testing.T) {
 func TestStateShowsSizesNeverResults(t *testing.T) {
 	turns := convo(6)
 	s := &Session{}
-	state, goal, ok := pruneState(turns, s.collectPairs(turns), 24_000)
+	state, goal, ok := pruneState(turns, s.collectPairs(turns), 24_000, pruneKeepRecent)
 	if !ok {
 		t.Fatal("state did not fit")
 	}
@@ -138,7 +138,7 @@ func TestStateFitsTheBudgetByShrinkingOldestFirst(t *testing.T) {
 	s := &Session{}
 	pairs := s.collectPairs(turns)
 	for _, budget := range []int{60_000, 20_000, 8_000} {
-		state, _, ok := pruneState(turns, pairs, budget)
+		state, _, ok := pruneState(turns, pairs, budget, pruneKeepRecent)
 		if !ok {
 			t.Fatalf("budget %d: did not fit", budget)
 		}
@@ -150,7 +150,7 @@ func TestStateFitsTheBudgetByShrinkingOldestFirst(t *testing.T) {
 			t.Fatalf("budget %d: a pinned message was shrunk", budget)
 		}
 	}
-	if _, _, ok := pruneState(turns, pairs, 200); ok {
+	if _, _, ok := pruneState(turns, pairs, 200, pruneKeepRecent); ok {
 		t.Fatal("a state that cannot fit was reported as fitting")
 	}
 }
@@ -165,7 +165,7 @@ func TestApplyPruneDecisions(t *testing.T) {
 		"c:t2": 0.8, "r:t2": 0.2,
 		"c:t3": 0.1, "r:t3": 0.05,
 	}
-	out, dropped, truncated := applyPrune(turns, pairs, scores)
+	out, dropped, truncated := applyPrune(turns, pairs, scores, pruneHeadChars)
 	if dropped != 1 || truncated != 1 {
 		t.Fatalf("dropped %d truncated %d", dropped, truncated)
 	}
@@ -218,7 +218,7 @@ func TestApplyPruneKeepsThingsThatMustNotChange(t *testing.T) {
 	for _, p := range pairs {
 		low["r:"+p.id], low["c:"+p.id] = 0.1, 0.9 // keep the call, drop the result
 	}
-	out, dropped, truncated := applyPrune(turns, pairs, low)
+	out, dropped, truncated := applyPrune(turns, pairs, low, pruneHeadChars)
 	if dropped != 0 || truncated != 0 {
 		t.Fatalf("dropped %d truncated %d: a short, offloaded or cleared result was cut", dropped, truncated)
 	}
@@ -242,7 +242,7 @@ func TestAnAssistantMessageWithNothingLeftIsRemovedButTextIsKept(t *testing.T) {
 	for _, p := range pairs {
 		drop["r:"+p.id], drop["c:"+p.id] = 0, 0
 	}
-	out, dropped, _ := applyPrune(turns, pairs, drop)
+	out, dropped, _ := applyPrune(turns, pairs, drop, pruneHeadChars)
 	if dropped != 2 {
 		t.Fatalf("dropped = %d", dropped)
 	}
@@ -364,13 +364,13 @@ func TestCompactTurnsPrunesThenFallsBackToTheSummary(t *testing.T) {
 
 	s := pruneSession(&promptDecider{keep: map[string]bool{"t1": true}}, 6000)
 	turns := convo(20)
-	out, ok := s.compactTurns(context.Background(), pipe, turns, false)
+	out, ok := s.compactTurns(context.Background(), pipe, turns, false, false)
 	if !ok || !s.lastCompactionPruned || len(out) <= 2 || out[0].Content != "fix the login bug" {
 		t.Fatalf("expected a prune that keeps the conversation: ok %v pruned %v len %d", ok, s.lastCompactionPruned, len(out))
 	}
 
 	broken := pruneSession(&promptDecider{err: &decisions.Error{Class: decisions.ClassUnavailable, Status: 503}}, 6000)
-	out, ok = broken.compactTurns(context.Background(), pipe, convo(20), false)
+	out, ok = broken.compactTurns(context.Background(), pipe, convo(20), false, false)
 	if !ok || broken.lastCompactionPruned || len(out) != 2 {
 		t.Fatalf("expected the summary fallback: ok %v pruned %v len %d", ok, broken.lastCompactionPruned, len(out))
 	}
@@ -387,7 +387,7 @@ func TestPruneRecordsCountsOnly(t *testing.T) {
 	pipe := rolemanager.NewPipeline(rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) { return "SAFE", nil }))
 	s := pruneSession(&promptDecider{keep: map[string]bool{"t1": true}}, 6000)
 	turns := convo(20)
-	if _, ok := s.compactTurns(context.Background(), pipe, turns, false); !ok {
+	if _, ok := s.compactTurns(context.Background(), pipe, turns, false, false); !ok {
 		t.Fatal("no prune")
 	}
 	if len(got) != 1 || got[0].Verdict != "pruned" {

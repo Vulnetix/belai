@@ -22,7 +22,9 @@ type rehydrated struct {
 	Todos    *todos.List
 	Plan     *modes.PlanState
 	Goal     *goals.GoalState
-	Meta     session.Meta
+	// Compaction is the circuit breaker the session last saved, clamped.
+	Compaction *session.CompactionState
+	Meta       session.Meta
 
 	Model    string
 	Provider string
@@ -38,7 +40,7 @@ type rehydrated struct {
 
 // rehydrateSession decodes a session file into in-memory state. The state
 // entries (summary, session_name, todo_list, plan_state, goal_state,
-// session_meta) are consumed by their decoders and never become messages.
+// compaction_state, session_meta) are consumed by their decoders and never become messages.
 func rehydrateSession(entries []session.Entry) rehydrated {
 	var r rehydrated
 	r.Name = session.Name(entries)
@@ -66,6 +68,9 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 	}
 	if gs, ok := goals.LatestGoalState(entries); ok {
 		r.Goal = &gs
+	}
+	if cs, ok := session.LatestCompactionState(entries); ok {
+		r.Compaction = &cs
 	}
 	if meta, ok := session.LatestMeta(entries); ok {
 		r.Meta = meta

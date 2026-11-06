@@ -274,6 +274,15 @@ rung a hunk may anchor at. Your own layers set either freely; a project file can
 only turn the tool off or move toward `strict`. `/patch-tolerance` changes the level
 for one session. See [Patch tool](patch-tool.md).
 
+## Compaction
+
+The `compaction` block has no row on a settings screen. It is a block in the settings
+file: `compaction.threshold_pct`, `compaction.keep_recent_turns`,
+`compaction.keep_result_chars`, `compaction.keep_tool_results`,
+`compaction.breaker_failures` and `compaction.breaker_cooldown_passes`. Your own layers set
+any key in its range; a project file can only compact sooner or keep more. See
+[Compaction settings](compaction.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is
