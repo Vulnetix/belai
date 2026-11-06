@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -358,7 +359,26 @@ func transportError(err error) error {
 	if errors.As(err, &ne) && ne.Timeout() {
 		return &Error{Class: ClassUnavailable, Msg: "no answer in time", Err: err}
 	}
-	return &Error{Class: ClassUnavailable, Msg: "could not reach the server", Err: err}
+	return &Error{Class: ClassUnavailable, Msg: "could not reach the server", Err: briefCause(err)}
+}
+
+// briefCause drops the request line net/http puts in front of a transport
+// failure (`Post "https://host/long/path": `), keeping the host and the cause.
+// The classifier's placeholder clips error text to a short line, and the URL
+// used to fill it, so the reason the connection failed never reached the user.
+func briefCause(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		host := ""
+		if u, perr := url.Parse(ue.URL); perr == nil {
+			host = u.Host
+		}
+		if host != "" {
+			return fmt.Errorf("%s: %w", host, ue.Err)
+		}
+		return ue.Err
+	}
+	return err
 }
 
 // IsConnRefused reports whether a decision error is a refused connection
