@@ -31,9 +31,9 @@ jobs:
     # machine is down.
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
-      - uses: actions/checkout@v5.1.0
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v5.0.0
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version-file: site/.nvmrc
 
@@ -76,7 +76,7 @@ jobs:
         working-directory: site
         run: node scripts/check-links.mjs dist
 
-      - uses: actions/upload-pages-artifact@v3.0.1
+      - uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: site/dist
           retention-days: 1
