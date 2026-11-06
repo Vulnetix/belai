@@ -73,6 +73,11 @@ func Build(ctx context.Context, j Job, repo, head string, exit int, outs Outputs
 			}
 			r.Add(Finding{ID: "ai:" + row.Name, Kind: "ai", Severity: "info", Ref: row.Category})
 		}
+	case ReadTriage:
+		rows, _ := scanartifacts.ReadTriageRows(filepath.Join(dir, j.File), MaxFindings*2)
+		for _, row := range rows {
+			r.Add(Finding{ID: row.ID, Kind: "triage", Severity: row.Severity, Ref: row.Status})
+		}
 	case ReadBOMVulns:
 		if f, err := scanartifacts.CycloneDXFacts(ctx, filepath.Join(dir, j.File), 0); err == nil {
 			r.Counts = Counts{Critical: f.Vulns.Critical, High: f.Vulns.High, Medium: f.Vulns.Medium, Low: f.Vulns.Low}

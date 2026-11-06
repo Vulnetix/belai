@@ -61,18 +61,18 @@ file in the repository, the forge or a Vulnetix organisation.
 | `containers` | read-only | `vulnetix containers --disable-memory -o .vulnetix/containers.cdx.json` | `containers.sarif`, `containers.cdx.json` |
 | `defend` | read-only | `vulnetix defend --quiet` | none |
 | `fix` | mutating | `vulnetix fix --yes` | none |
-| `gha-audit` | read-only | `vulnetix gha audit --offline` | none |
-| `gha-init` | mutating | `vulnetix gha init` | none |
+| `gha-audit` | read-only | `vulnetix gha audit --offline --format sarif --output .vulnetix/gha-audit.sarif` | `gha-audit.sarif` |
 | `gha-advisories` | mutating | `vulnetix gha publish advisories` | none |
 | `gha-code-scanning` | mutating | `vulnetix gha publish code-scanning` | none |
 | `gha-dep-graph` | mutating | `vulnetix gha publish dependency-graph` | none |
+| `gha-init` | mutating | `vulnetix gha init` | none |
 | `gha-setup` | mutating | `vulnetix gha setup --all` | none |
 | `iac` | read-only | `vulnetix iac --disable-memory` | `iac.sarif` |
 | `ignore-sync` | mutating | `vulnetix ignore sync` | none |
-| `image` | read-only | `vulnetix image --disable-memory --no-upload` | none |
-| `jail` | read-only | `vulnetix jail` | none |
+| `image` | read-only | `vulnetix image .vulnetix/image.tar --disable-memory --no-upload --output .vulnetix/image.cdx.json` | `image.cdx.json` |
+| `jail` | read-only | `vulnetix jail` | `jail.sarif`, `jail.vex.json` |
 | `jail-explain` | read-only | `vulnetix jail explain` | none |
-| `license` | read-only | `vulnetix license` | none |
+| `license` | read-only | `vulnetix license` | `license.sarif` |
 | `malscan` | read-only | `vulnetix malscan --disable-memory --no-upload` | `malscan.sarif` |
 | `report` | read-only | `vulnetix report` | none |
 | `sast` | read-only | `vulnetix sast --disable-memory` | `sast.sarif` |
@@ -83,7 +83,7 @@ file in the repository, the forge or a Vulnetix organisation.
 | `secrets` | read-only | `vulnetix secrets --disable-memory --ignore-git` | `secrets.sarif` |
 | `surface-liveness` | read-only | `vulnetix surface liveness` | none |
 | `tea-release` | mutating | `vulnetix tea release --auto-version` | none |
-| `triage` | read-only | `vulnetix triage status --format json` | none |
+| `triage` | read-only | `vulnetix triage --format json --vex-format json --vex-output .vulnetix/triage.json` | `triage.json` |
 | `vex-apply` | mutating | `vulnetix vex apply --bom .vulnetix/sbom.cdx.json --vex .vulnetix/vex --out .vulnetix/sbom.effective.cdx.json` | `sbom.effective.cdx.json` |
 
 `scout` is a composite: it runs the three steps in order and emits `signals`
@@ -157,6 +157,23 @@ object `agent.cliResult`):
   fills an empty field only after the same validation (`clijobs.Clean`), never
   replaces or clears a local value, and the website cannot set it.
 
+## What a job reports
+
+| Jobs | Reader | Finding kind and fields |
+| --- | --- | --- |
+| `sca`, `sast`, `secrets`, `iac`, `malscan`, `scan` | review artefacts that record HEAD | `sca`, `sast`, `secrets`, `iac`, `malscan`: advisory id or rule id, path, severity |
+| `containers` | SARIF | `container`: rule id, path, severity |
+| `license` | SARIF | `license`: rule id, manifest path, severity |
+| `jail` | SARIF | `jail`: rule id, path, severity |
+| `gha-audit` | SARIF | `gha`: rule id, workflow path, severity |
+| `triage` | triage JSON summary | `triage`: advisory id, severity, VEX status |
+| `cbom` | CycloneDX | `crypto`: algorithm name, post-quantum status; quantum-vulnerable is `high`, deprecated is `medium` |
+| `aibom` | CycloneDX | `ai`: component name, category |
+| `sbom`, `image` | CycloneDX | vulnerability counts only |
+| `scout` | fixed detector | `signals` |
+
+Every other job records the exit code and the artifacts present.
+
 ## Signals
 
 `scout` emits `signals` for the deep signals only: `crypto`, `ai-sdk`,
@@ -174,5 +191,14 @@ defines.
   behind its own autonomy level. Gates live on the host that decided them and
   are never carried by a pulled card, so a mutating card is run on the host
   that gated it.
-- `image`, `license` and the other jobs without a reader record the exit code and
-  the artifacts present, with no findings.
+- A job without a reader (the `none` rows above) records the exit code and the
+  artifacts present, with no findings.
+- `image` needs an image archive (`docker save` or `podman save`) at
+  `.vulnetix/image.tar`, put there by an earlier stage. The CLI takes an image
+  reference or archive as an argument and the table cannot carry one from a card,
+  so an archive at a fixed path is the only input; with none the result is exit 3.
+- `triage` runs the CLI's own triage over the open findings in `.vulnetix`
+  memory and writes the JSON summary with `--vex-format json`, which is not
+  uploaded. The reader keeps the advisory id, the severity word and the VEX status
+  of each finding that is not `not_affected` or `fixed`; the package, version,
+  justification and action text are not copied.

@@ -53,6 +53,9 @@ const (
 	ReadAIBOM Reader = "aibom"
 	// ReadBOMVulns reads the vulnerability counts of a CycloneDX document.
 	ReadBOMVulns Reader = "bom-vulns"
+	// ReadTriage reads the JSON summary of "triage" and reports the findings
+	// whose VEX status is still open.
+	ReadTriage Reader = "triage"
 	// ReadScout derives profile signals from the scout's three outputs.
 	ReadScout Reader = "scout"
 )
@@ -105,20 +108,20 @@ var table = []Job{
 	{ID: "secrets", Steps: one("secrets", "--disable-memory", "--ignore-git"), Artifacts: []string{"secrets.sarif"}, Reader: ReadReview, Kinds: []string{"secrets"}},
 	{ID: "iac", Steps: one("iac", "--disable-memory"), Artifacts: []string{"iac.sarif"}, Reader: ReadReview, Kinds: []string{"iac"}},
 	{ID: "containers", Steps: one("containers", "--disable-memory", "-o", ".vulnetix/containers.cdx.json"), Artifacts: []string{"containers.sarif", "containers.cdx.json"}, Reader: ReadSARIF, Kind: "container", File: "containers.sarif"},
-	{ID: "image", Steps: one("image", "--disable-memory", "--no-upload"), Reader: ReadNone},
+	{ID: "image", Steps: one("image", ".vulnetix/image.tar", "--disable-memory", "--no-upload", "--output", ".vulnetix/image.cdx.json"), Needs: []string{".vulnetix/image.tar"}, Artifacts: []string{"image.cdx.json"}, Reader: ReadBOMVulns, File: "image.cdx.json"},
 	{ID: "cbom", Steps: one("cbom", "--disable-memory", "--no-upload"), Artifacts: []string{"cbom.cdx.json"}, Reader: ReadCBOM, File: "cbom.cdx.json"},
 	{ID: "aibom", Steps: one("aibom", "--disable-memory", "--no-upload"), Artifacts: []string{"ai-bom.cdx.json"}, Reader: ReadAIBOM, File: "ai-bom.cdx.json"},
-	{ID: "license", Steps: one("license"), Reader: ReadNone},
+	{ID: "license", Steps: one("license"), Artifacts: []string{"license.sarif"}, Reader: ReadSARIF, Kind: "license", File: "license.sarif"},
 	{ID: "malscan", Steps: one("malscan", "--disable-memory", "--no-upload"), Artifacts: []string{"malscan.sarif"}, Reader: ReadReview, Kinds: []string{"malscan"}},
 	{ID: "sbom", Steps: one("sbom", "--output-file", ".vulnetix/inventory.cdx.json"), Artifacts: []string{"inventory.cdx.json"}, Reader: ReadBOMVulns, File: "inventory.cdx.json"},
 	{ID: "bom-diff", Steps: one("bom", "diff", ".vulnetix/baseline.cdx.json", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/baseline.cdx.json", ".vulnetix/inventory.cdx.json"}, Reader: ReadNone},
 	{ID: "bom-validate", Steps: one("bom", "validate", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/inventory.cdx.json"}, Reader: ReadNone},
 	{ID: "bom-skew", Steps: one("bom", "skew", "--from", ".vulnetix"), Reader: ReadNone},
-	{ID: "triage", Steps: one("triage", "status", "--format", "json"), Reader: ReadNone},
+	{ID: "triage", Steps: one("triage", "--format", "json", "--vex-format", "json", "--vex-output", ".vulnetix/triage.json"), Artifacts: []string{"triage.json"}, Reader: ReadTriage, File: "triage.json"},
 	{ID: "defend", Steps: one("defend", "--quiet"), Reader: ReadNone},
-	{ID: "jail", Steps: one("jail"), Reader: ReadNone},
+	{ID: "jail", Steps: one("jail"), Artifacts: []string{"jail.sarif", "jail.vex.json"}, Reader: ReadSARIF, Kind: "jail", File: "jail.sarif"},
 	{ID: "jail-explain", Steps: one("jail", "explain"), Reader: ReadNone},
-	{ID: "gha-audit", Steps: one("gha", "audit", "--offline"), Reader: ReadNone},
+	{ID: "gha-audit", Steps: one("gha", "audit", "--offline", "--format", "sarif", "--output", ".vulnetix/gha-audit.sarif"), Artifacts: []string{"gha-audit.sarif"}, Reader: ReadSARIF, Kind: "gha", File: "gha-audit.sarif"},
 	{ID: "config-plan", Steps: one("config", "plan", "--file", ".vulnetix/config.yaml"), Needs: []string{".vulnetix/config.yaml"}, Reader: ReadNone},
 	{ID: "ai-firewall-status", Steps: one("ai-firewall", "status"), Reader: ReadNone},
 	{ID: "attest-verify", Steps: one("attest", "verify", "--envelope", ".vulnetix/attestation.json"), Needs: []string{".vulnetix/attestation.json"}, Reader: ReadNone},
