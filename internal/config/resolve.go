@@ -182,6 +182,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := reviewIgnored(eff.Settings.Review, proj.Review); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn the review off, lower its diff cap or deny posting)")
 	}
+	if ign := worktreesIgnored(eff.Settings.Worktrees, proj.Worktrees); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (worktree setup, teardown and limits are the user's; a project may only turn update_mode off)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -232,7 +235,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateReview, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateReview, ValidateWorktrees, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -760,6 +763,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Review = mergeReview(before, s.Review, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.Review) {
 			e.Origin["review"] = src
+		}
+	}
+	if s.Worktrees != nil {
+		// Argv is code the harness runs: a repository may only turn update_mode
+		// off (mergeWorktrees).
+		before := e.Settings.Worktrees
+		e.Settings.Worktrees = mergeWorktrees(before, s.Worktrees, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Worktrees) {
+			e.Origin["worktrees"] = src
 		}
 	}
 	if s.RunCaps != nil {

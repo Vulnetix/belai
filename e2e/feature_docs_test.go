@@ -254,6 +254,15 @@ func TestReviewDocParity(t *testing.T) {
 	mustName(t, "docs/review.md", body, "/review", "/review post", "belai review", "ReviewPost", "pre_tool")
 }
 
+func TestWorktreesDocParity(t *testing.T) {
+	body := docBody(t, "docs/worktrees.md")
+	for _, k := range jsonKeys(config.WorktreeSettings{}) {
+		mustName(t, "docs/worktrees.md", body, "worktrees."+k)
+	}
+	mustName(t, "docs/worktrees.md", body, "/worktree new", "/worktree list", "/worktree update", "/worktree drop",
+		"belai worktree", "-yes", "-trust-dir", "-agent")
+}
+
 func TestHandoffDocParity(t *testing.T) {
 	body := docBody(t, "docs/handoff.md")
 	for _, k := range jsonKeys(config.HandoffSettings{}) {

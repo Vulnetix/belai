@@ -56,7 +56,19 @@ type Workspace struct {
 	// Base is the commit the item's work is measured from: the base a new
 	// branch started at, or where an existing branch forked from HEAD.
 	Base string
-	repo string
+	// BaseRef is the branch or ref Base was taken from, when it was one (the
+	// repository's checked-out branch, or the profile's workspace.base): what
+	// UpdateFromBase brings the branch up to date with. Empty for a commit id
+	// or a pull request head, which has nothing to follow.
+	BaseRef string
+	// Resumed is true when the worktree checked out a branch that already
+	// existed (a review or a later claim) rather than starting a new one.
+	Resumed bool
+	// Updated is the base commit UpdateFromBase last brought the branch up to
+	// date with, and UpdatedBy the mode (merge or rebase); both empty until it
+	// has. The workspace note names them.
+	Updated, UpdatedBy string
+	repo               string
 	// synced are the repository-relative paths a profile's workspace.sync
 	// copied in. The harness's commit never includes them (see changedPaths).
 	synced []string
@@ -93,6 +105,13 @@ type Workspace struct {
 	// branch (Commit and the conflict resolver's merge), read back from git,
 	// so the session can record it (measure.go).
 	OnCommit func(sessionmeasure.Commit)
+	// hooks are the setup and teardown argv the user configured
+	// (worktree_hooks.go); ready is true once setup completed, which is what
+	// makes teardown run.
+	hooks *WorktreeHooks
+	ready bool
+	// id names the harness record of this worktree (worktree_state.go).
+	id string
 }
 
 // fetchPRHead fetches a pull request's head from origin and returns its
@@ -262,24 +281,55 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 	}
 	// Read the worktree's .git pointer now, before any model has run in it,
 	// and pin every later git call to the directory it names.
-	dotgit, err := os.ReadFile(filepath.Join(dir, ".git"))
+	dotgit, gitDir, err := readDotGit(dir)
 	if err != nil {
-		return nil, fmt.Errorf("worktree: %w", err)
-	}
-	gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(dotgit)), "gitdir: ")
-	if !ok {
-		return nil, errors.New("worktree: unexpected .git file")
-	}
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(dir, gitDir)
+		return nil, err
 	}
 	return &Workspace{
 		Dir: dir, Branch: branch, Worktree: true, Base: baseSHA, repo: repo, PRHead: prHead,
+		BaseRef: baseRefFor(ctx, repoRun, repo, base, prHead), Resumed: !newBranch, id: filepath.Base(dir),
 		gitDir: filepath.Clean(gitDir), commonDir: commonDir, dotgit: dotgit,
 		run:     hardenedGit(gitDir, dir, ident...),
 		repoRun: repoRun,
 		ident:   ident,
 	}, nil
+}
+
+// readDotGit reads a worktree's .git pointer and the admin directory it names.
+func readDotGit(dir string) (dotgit []byte, gitDir string, err error) {
+	dotgit, err = os.ReadFile(filepath.Join(dir, ".git"))
+	if err != nil {
+		return nil, "", fmt.Errorf("worktree: %w", err)
+	}
+	gitDir, ok := strings.CutPrefix(strings.TrimSpace(string(dotgit)), "gitdir: ")
+	if !ok {
+		return nil, "", errors.New("worktree: unexpected .git file")
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	return dotgit, gitDir, nil
+}
+
+// baseRefFor names the branch a worktree's base came from, so an update can
+// follow it later: the repository's checked-out branch for "HEAD", or the
+// profile's own base when it is a name. A commit id, a detached HEAD and a pull
+// request head follow nothing and give "".
+func baseRefFor(ctx context.Context, r forge.Runner, repo, base, prHead string) string {
+	if prHead != "" {
+		return ""
+	}
+	if base == "HEAD" {
+		ref, err := git(ctx, r, repo, "symbolic-ref", "--quiet", "--short", "HEAD")
+		if err != nil {
+			return ""
+		}
+		return ref
+	}
+	if len(base) >= 7 && strings.Trim(base, "0123456789abcdef") == "" {
+		return ""
+	}
+	return base
 }
 
 // ownAttemptBranch reports whether branch is one of the names PrepareWorktree
@@ -1019,12 +1069,18 @@ func (w *Workspace) Discard(ctx context.Context) error {
 }
 
 // Remove deletes the worktree directory. The branch, and the work on it,
-// stay in the repository.
+// stay in the repository. The user's teardown argv run first; one that fails
+// keeps the worktree and returns its *HookError, because a cleanup that did
+// not finish is not a reason to delete the directory.
 func (w *Workspace) Remove(ctx context.Context) error {
 	if !w.Worktree {
 		return nil
 	}
+	if err := w.RunTeardown(ctx); err != nil {
+		return err
+	}
 	_ = os.RemoveAll(w.privateGit())
+	defer w.dropRecord()
 	if _, err := git(ctx, w.repoRun, w.repo, "worktree", "remove", "--force", w.Dir); err != nil {
 		// A worktree whose .git was tampered with may not remove cleanly:
 		// drop the directory and let git prune its record.

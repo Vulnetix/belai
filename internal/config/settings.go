@@ -242,6 +242,10 @@ type Settings struct {
 	// (docs/review.md). The user layers set any key; the project layer may
 	// only turn it off, lower max_diff_kb or set post to deny.
 	Review *ReviewSettings `json:"review,omitempty"`
+	// Worktrees governs worktree sessions: setup and teardown argv, update from
+	// base, keep on exit (docs/worktrees.md). Every key is the user's; the
+	// project layer may only set update_mode to off.
+	Worktrees *WorktreeSettings `json:"worktrees,omitempty"`
 	// RunCaps caps what one session may spend in dollars, tokens and wall time
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
@@ -2150,6 +2154,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Side = mergeSide(out.Side, proj.Side, true)
 	// Review: a project may switch it off, lower the diff cap or deny posting.
 	out.Review = mergeReview(out.Review, proj.Review, true)
+	// Worktrees: a project may only turn update_mode off.
+	out.Worktrees = mergeWorktrees(out.Worktrees, proj.Worktrees, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// Finish review: a project may add scratch patterns and raise the rounds,

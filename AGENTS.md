@@ -1312,6 +1312,34 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `KindSubagent` needs no new entry. A project layer may turn `review.enabled` off,
   lower `review.max_diff_kb` or set `review.post` to `deny`, never the reverse, and
   `review.rubric_file` is the user's only (`mergeReview`).
+- **Worktree setup and teardown are the user's argv, run by the harness, and their output classifies.**
+  `internal/fleet` (`worktree_hooks.go`, `worktree_update.go`, `worktree_state.go`,
+  `worktree_session.go`, docs/worktrees.md) extends the worker's worktree rather than forking it.
+  `worktrees.setup` and `worktrees.teardown` are lists of argv arrays from the user's own settings
+  layers (`config.ValidWorktreeArgv`: a bare program name, a relative path that does not climb, or an
+  absolute path; no control character; bounded counts and lengths). `resolve.go` drops the project
+  layer's block with a note, and the one thing a project may do is set `worktrees.update_mode` to
+  `off` (`mergeWorktrees`). Each argv runs through `testrun.Run`: no shell, the scrubbed
+  environment, its own process group, the user's permission rules (a deny refuses it, an ask stops it
+  because nobody can answer), a timeout, and the OS sandbox with the worktree as the writable root,
+  Belai's state directory hidden and the network cut unless `worktrees.network` is `allow`; where
+  the cut cannot be enforced the sandbox is made `required`, never skipped. No model names an argv, a
+  path or a ref. Output is arbitrary text: a `*fleet.HookError` words only the phase, position, program
+  name and how it ended, the output is a sanitised tail on `Detail()`, and it reaches a model only as the
+  setup-debug turn's `KindProcess` attachment, classified like any other process text (no new kind).
+  A failed setup removes the worktree and runs no teardown; a failed teardown keeps it; the `.git`
+  pointer is checked before and after setup and before teardown; untracked files setup leaves are
+  marked placed and never committed. `Workspace.UpdateFromBase` runs only between turns, only on the
+  harness-made `belai/` branch of a worktree with a clean tracked tree, against the base ref recorded
+  at creation (checked by `forge.ValidBranchName`, used as a commit id), through hardened git with no
+  editor; a conflict aborts, restores and checks HEAD, and reports cleaned file names only. `Base`
+  moves only after success. The harness-made worktrees are recorded as 0600 files under
+  `config.WorktreeStateDir` (state, hidden from the sandbox, a protected path): ids, branch, commits, no
+  path. `/worktree` and `belai worktree` name a worktree by that id only, rebuild its directory,
+  require a record, a repository listing on the recorded branch and a `.git` file pointing into this
+  repository, refuse in an untrusted directory and while a live claim holds the card, and ask before
+  they run any argv (the CLI refuses with no terminal and no `-yes`). There is no model-facing tool
+  that updates or removes a worktree.
 - **A run cap is measured by the harness and extended only by the user.**
   `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
   docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter

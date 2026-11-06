@@ -50,7 +50,7 @@ One pass of the worker loop:
    claimable only from `backlog` or `review`, only when every item it
    `depends_on` is `done`, and only when its `assignee` is empty, names this worker's
    profile or crew. The item moves to `in_progress` with a lease.
-2. **Workspace.** A `worktree` worker gets a fresh git worktree on the branch
+2. **Workspace.** (The `worktrees` settings add setup and teardown commands and an update from the base; see [Worktree sessions](worktrees.md).) A `worktree` worker gets a fresh git worktree on the branch
    `belai/K-xxxxxx/a<attempt>`, outside the repository
    (`~/.vulnetix/worktrees/<project>/…`, or `$BELAI_WORKTREES_DIR`). A worker
    that reviews an existing branch checks that branch out instead. When that

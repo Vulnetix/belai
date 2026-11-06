@@ -39,6 +39,8 @@ const (
 	forgeConfirmRemoveForce
 	forgeConfirmPush
 	forgeConfirmCreatePR
+	forgeConfirmWorktreeUpdate
+	forgeConfirmWorktreeDrop
 )
 
 // forgeConfirmState is an open y/N question. Anything but y cancels.
@@ -48,6 +50,8 @@ type forgeConfirmState struct {
 	wt     forge.Worktree
 	isMain bool
 	pr     forge.CreatePRArgs
+	// wtID is the harness-made worktree a /worktree update or drop acts on.
+	wtID string
 }
 
 // forgeActionMsg reports a finished forge mutation. next, when set, opens the
@@ -56,6 +60,8 @@ type forgeActionMsg struct {
 	text string
 	err  error
 	next *forgeConfirmState
+	// prefix names the failing subsystem in the transcript; empty is git.
+	prefix string
 }
 
 // forgeFlowActive reports whether a forge prompt or confirmation owns the
@@ -229,6 +235,8 @@ func (a *App) handleForgeConfirmKey(m tea.KeyMsg) tea.Cmd {
 			err := forge.RemoveWorktree(context.Background(), r, s.Root, c.wt, c.isMain, force)
 			return forgeActionMsg{text: "removed worktree " + displayPath(c.wt.Path), err: err}
 		}
+	case forgeConfirmWorktreeUpdate, forgeConfirmWorktreeDrop:
+		return a.worktreeActionCmd(c)
 	case forgeConfirmPush:
 		next := a.createPRConfirm(c.pr)
 		return func() tea.Msg {
@@ -251,7 +259,11 @@ func (a *App) handleForgeConfirmKey(m tea.KeyMsg) tea.Cmd {
 // handleForgeAction reports a finished mutation and refreshes the snapshot.
 func (a *App) handleForgeAction(m forgeActionMsg) tea.Cmd {
 	if m.err != nil {
-		a.addSystem("git: " + forge.CleanErr(m.err))
+		prefix := "git"
+		if m.prefix != "" {
+			prefix = m.prefix
+		}
+		a.addSystem(prefix + ": " + forge.CleanErr(m.err))
 		return a.refreshForge(true)
 	}
 	a.addSystem(m.text)

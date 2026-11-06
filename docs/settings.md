@@ -365,6 +365,16 @@ settings file keys: `review.max_diff_kb` (default 400, clamped to 16 through 204
 layers set any key; a project file can only turn the review off, lower
 `review.max_diff_kb` or set `review.post` to `deny`. See [Code review](review.md).
 
+## Worktrees
+
+The `worktrees` block has no row on a settings screen. It is a block in the settings file:
+`worktrees.setup` and `worktrees.teardown` (lists of argv arrays, none by default),
+`worktrees.timeout_seconds` (120, from 1 to 600), `worktrees.update_mode` (`off` by default,
+`merge` or `rebase`), `worktrees.keep_on_exit` (on) and `worktrees.network` (`deny` by default,
+or `allow`). The commands run code, so every key is yours: a project file can only set
+`worktrees.update_mode` to `off`, and the rest of what it names is dropped with a note. See
+[Worktree sessions](worktrees.md).
+
 ## Headless output
 
 The `headless` block has no row on a settings screen. It is a block in the settings

@@ -129,6 +129,9 @@ func workspaceDirective(ws *Workspace, publish bool, mode string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Workspace: your working directory is a git worktree on branch %s, made for this item from commit %s. ", ws.Branch, base)
 	fmt.Fprintf(&b, "git works here: status, diff, log, show, add and commit. Commit your work on this branch as you go, with clear messages; `git diff %s..HEAD` is everything this item has changed so far. ", base)
+	if ws.Updated != "" {
+		fmt.Fprintf(&b, "Before this turn the harness brought the branch up to date with commit %s of its base by %s, so the base above is that commit now. ", ws.Updated[:min(12, len(ws.Updated))], ws.UpdatedBy)
+	}
 	b.WriteString("Stay on this branch: do not switch or create branches, rebase onto other branches, add worktrees, or change git config or remotes. Anything you leave uncommitted, the harness commits when the goal ends. Commit trailers (Co-authored-by, Signed-off-by, Session, Vulnerability) are added for you: never write, edit or remove them. ")
 	switch {
 	case publish:

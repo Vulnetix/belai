@@ -206,6 +206,15 @@ so HTML and autolinks do not render. The text still reads the same to a person.
 The code review's comment (docs/review.md) builds every field it posts through
 it, after the field has passed its own checks.
 
+## Worktree setup and teardown output
+
+A setup or teardown command's output is arbitrary text. It goes through `Text`, is cut to its last
+2000 runes, and is held on the error as a detail that the error's own words never include. It is
+shown to no model unless it is classified as process output first: the setup-debug turn that
+follows a failed setup receives it only as a classified attachment, and the release note on
+the board is harness text. Git's conflict output is never kept; a conflict reports file names only,
+through `mergefix.NoteFile`. See docs/worktrees.md.
+
 ## Headers: `Header`
 
 A header value is refused when it contains anything but printable ASCII, space

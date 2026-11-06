@@ -32,6 +32,10 @@ func TestProtectedClasses(t *testing.T) {
 		{"/repo/internal/credentials.go", nil, nil},
 		{"/repo/.belai/settings.json", nil, []string{HazardPathState}},
 		{"/repo/.vulnetix/belai/kanban/x", nil, []string{HazardPathState}},
+		// The user settings that name worktree setup and teardown argv, and the
+		// records of the worktrees the harness made, are Belai state.
+		{"/home/u/.vulnetix/belai/settings.json", nil, []string{HazardPathState}},
+		{"/home/u/.vulnetix/belai/agents/worktrees/0123abcd/K-3f9a2c-aaaaaa.json", nil, []string{HazardPathState}},
 		{"/repo/.vulnetix/memory.yaml", nil, nil},
 		{"/home/u/.ssh/authorized_keys", nil, []string{HazardPathCredential}},
 		{"/home/u/.aws/credentials", nil, []string{HazardPathCredential}},

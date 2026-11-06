@@ -325,6 +325,11 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("commit", "commit the files this session changed from a clean state, with an optional conventional message (/commit feat: add x); needs commit_mode ask or auto, never pushes", nil, func(a *App, arg string) tea.Cmd {
 		return a.commitCommand(arg)
 	})
+	r.Register("worktree", "worktree sessions: /worktree new TITLE files a card a board agent works in its own git worktree, list shows the worktrees the harness made, update brings one up to date with its base and drop removes one, each after you confirm", func() []string {
+		return worktreeVerbs
+	}, func(a *App, arg string) tea.Cmd {
+		return a.worktreeCommand(arg)
+	})
 	r.Register("diff", "read-only pane of the working tree's changes: staged, unstaged and untracked, per-file hunks", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewDiff)
 	})

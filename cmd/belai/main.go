@@ -102,6 +102,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "review" {
 		exitProcess(runReviewCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// `belai worktree` lists, updates and removes the worktrees the harness made
+	// (docs/worktrees.md).
+	if len(os.Args) > 1 && os.Args[1] == "worktree" {
+		exitProcess(runWorktreeCLI(ctx, os.Args[2:], os.Stdin, isCharDevice(os.Stdin), os.Stdout, os.Stderr))
+	}
 	// `belai crew log` reads a crew run's local fault and audit log.
 	if len(os.Args) > 1 && os.Args[1] == "crew" {
 		exitProcess(runCrewCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))

@@ -969,8 +969,15 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	if err != nil {
 		failure := sanitize.Sanitize(err.Error())
 		note := "the workspace could not be prepared: " + failure
+		// A setup argv that failed has output the board must not carry: the
+		// note stays harness text, and the output reaches the model only through
+		// the investigation's classified attachment.
+		detail := failure
+		if he, ok := AsHookError(err); ok && he.Detail() != "" {
+			detail += "\n" + he.Detail()
+		}
 		// Let the model find out why before the item goes back.
-		if found, ok := w.investigate(itemCtx, it, claim, failure, emit); ok {
+		if found, ok := w.investigate(itemCtx, it, claim, detail, emit); ok {
 			note += "; " + found
 		}
 		stopRenew()
@@ -1005,10 +1012,13 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 	}
 	keep := p.Workspace != nil && p.Workspace.Keep
+	if ws.Worktree && w.worktreeSession(it) && w.Settings.WorktreeKeepOnExit() {
+		keep = true
+	}
 	discarded := false
 	defer func() {
 		if !keep && !discarded {
-			_ = ws.Discard(context.WithoutCancel(ctx))
+			w.discard(ctx, it, ws)
 		}
 	}()
 
@@ -1145,7 +1155,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	// Review another worker (a verifier) claims it within seconds and adds its own
 	// worktree on this branch, so ours goes first unless we still publish from it.
 	if !keep && !(!o.failed && o.files > 0 && w.publishes() && ws.Worktree && w.routesToDone(o)) {
-		_ = ws.Discard(context.WithoutCancel(ctx))
+		w.discard(ctx, it, ws)
 		discarded = true
 	}
 	released := w.release(ctx, it, o)
@@ -1270,20 +1280,63 @@ func (w *Worker) investigate(ctx context.Context, it kanban.Item, claim *tools.W
 	return fmt.Sprintf("agent %s investigated it (%s after %d passes; its findings are in the notes)", w.Profile.Name, why, res.Passes), true
 }
 
-// workspace prepares the item's workspace per the profile.
+// worktreeSession reports whether the card was filed by /worktree new: it
+// carries the worktree label, which asks for a worktree whatever the profile's
+// isolation says (isolation only narrows what a worker can touch).
+func (w *Worker) worktreeSession(it kanban.Item) bool {
+	return slices.Contains(it.Labels, config.WorktreeLabel)
+}
+
+// discard removes the item's worktree. A teardown argv that fails keeps it, and
+// the reason is logged as a harness sentence.
+func (w *Worker) discard(ctx context.Context, it kanban.Item, ws *Workspace) {
+	if err := ws.Discard(context.WithoutCancel(ctx)); err != nil {
+		if he, ok := AsHookError(err); ok {
+			w.logf("%s: %v; the worktree %s was kept", it.Short(), he, ws.ID())
+		}
+	}
+}
+
+// workspace prepares the item's workspace per the profile. A worktree gets the
+// user's setup argv (a failure removes it again), and a resumed branch is
+// brought up to date with its base first when worktrees.update_mode asks for
+// it, before the model's private git directory is built so that the update
+// never moves the branch under a running turn.
 func (w *Worker) workspace(ctx context.Context, it kanban.Item) (*Workspace, error) {
-	switch w.Profile.IsolationMode() {
+	isolation := w.Profile.IsolationMode()
+	if w.worktreeSession(it) {
+		isolation = agentprofile.IsolationWorktree
+	}
+	switch isolation {
 	case agentprofile.IsolationWorktree:
 		base := ""
 		if w.Profile.Workspace != nil {
 			base = w.Profile.Workspace.Base
 		}
 		ws, err := PrepareWorktree(ctx, w.Repo, it, base)
-		if ws != nil {
-			ws.Session = w.Record.Session
-			ws.OnCommit = w.recordCommit
+		if err != nil {
+			return ws, err
 		}
-		return ws, err
+		ws.Session = w.Record.Session
+		ws.OnCommit = w.recordCommit
+		ws.UseHooks(WorktreeHooks{Settings: w.Settings, Posture: w.Posture})
+		if err := ws.RunSetup(ctx); err != nil {
+			// Fail closed: a worktree whose setup did not finish is not handed
+			// to a model. Teardown does not run for it.
+			_ = ws.Discard(context.WithoutCancel(ctx))
+			return nil, err
+		}
+		if mode := w.Settings.WorktreeUpdate(); mode != config.WorktreeUpdateOff && ws.Resumed {
+			if res, err := ws.UpdateFromBase(ctx, mode); err != nil {
+				w.logf("%s: update from the base: %v", it.Short(), err)
+			} else {
+				w.logf("%s: update from the base: %s", it.Short(), res)
+			}
+		}
+		if err := ws.SaveRecord(w.worktreeSession(it)); err != nil {
+			w.logf("%s: record the worktree: %v", it.Short(), err)
+		}
+		return ws, nil
 	default:
 		return SharedWorkspace(w.Repo), nil
 	}

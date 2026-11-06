@@ -48,6 +48,23 @@ func WorktreesDir() (string, error) {
 	return abs, nil
 }
 
+// WorktreeStateDir returns where the records of the worktrees the harness made
+// for one project are kept: <AgentsDir>/worktrees/<projectKey>. projectKey is
+// kanban.ProjectFor's key, a hex digest; anything else is refused so the
+// path cannot leave the directory. The records are facts the harness wrote (ids,
+// branch, base commit, times), never worktree contents. Like the rest of the
+// state directory the OS sandbox hides it from every command.
+func WorktreeStateDir(projectKey string) (string, error) {
+	if !plainStateName(projectKey) {
+		return "", fmt.Errorf("%q is not a project key", projectKey)
+	}
+	dir, err := AgentsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "worktrees", projectKey), nil
+}
+
 // within reports whether path is dir or below it.
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
