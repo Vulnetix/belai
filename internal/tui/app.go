@@ -345,7 +345,10 @@ type App struct {
 	// agent whose documents it holds.
 	knowStore   *knowledge.Store
 	knowProfile string
-	events      <-chan agent.Event
+	// knowSource is whether the source index was on at the last sync, so turning
+	// it on starts a refresh at once instead of waiting out the interval.
+	knowSource bool
+	events     <-chan agent.Event
 	// rmEvents carries role-manager activity from the observer into the
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents *rmQueue

@@ -76,6 +76,10 @@ func (a *App) syncKnowledge() {
 	} else {
 		a.knowProfile = prof.ID
 	}
+	if srcOn != a.knowSource {
+		a.knowSource = srcOn
+		changed = true
+	}
 	interval := knowledgeRefreshEvery
 	if changed {
 		interval = 0
