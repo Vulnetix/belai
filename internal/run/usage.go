@@ -62,6 +62,10 @@ const (
 	// RoleSecurity is a content classification (the security payload carries
 	// no use case).
 	RoleSecurity = "security"
+	// RoleSide is a /btw side question (docs/side-question.md): a model call
+	// the user pays for that reaches the budget ledger under its own role and is
+	// kept out of the agent-only figures and the keep-alive request.
+	RoleSide = "side"
 )
 
 // UsageObserver receives one UsageEvent per completed model call. It is called
@@ -80,6 +84,11 @@ type usageRoleKey struct{}
 // withUsageRole marks every model call made under ctx as made for role.
 func withUsageRole(ctx context.Context, role string) context.Context {
 	return context.WithValue(ctx, usageRoleKey{}, role)
+}
+
+// WithSideRole marks every model call made under ctx as a side question.
+func WithSideRole(ctx context.Context) context.Context {
+	return withUsageRole(ctx, RoleSide)
 }
 
 // usageRole returns the role ctx was marked with, or RoleAgent.

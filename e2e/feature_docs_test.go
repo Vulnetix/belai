@@ -238,6 +238,14 @@ func TestBkanDocParity(t *testing.T) {
 	}
 }
 
+func TestSideQuestionDocParity(t *testing.T) {
+	body := docBody(t, "docs/side-question.md")
+	for _, k := range jsonKeys(config.SideSettings{}) {
+		mustName(t, "docs/side-question.md", body, "side."+k)
+	}
+	mustName(t, "docs/side-question.md", body, "/btw", "/btw clear", "user_prompt_submit")
+}
+
 func TestHandoffDocParity(t *testing.T) {
 	body := docBody(t, "docs/handoff.md")
 	for _, k := range jsonKeys(config.HandoffSettings{}) {

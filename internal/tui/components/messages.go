@@ -170,6 +170,14 @@ type Message struct {
 	// transcript but never produces a session entry of its own.
 	Ephemeral bool
 
+	// Side marks a /btw answer row. It is Ephemeral too: it shows in the
+	// thread, never reaches the session record or a model turn, and /btw clear
+	// hides it.
+	Side bool
+	// Dismissed hides a Side row from the thread; the row stays in memory and
+	// is still never recorded or sent to a model.
+	Dismissed bool
+
 	// SubagentID keys a subagent activity row to its subagent ("" for the main
 	// thread). Subagent rows are render-only: they carry tool activity forwarded
 	// from a subagent, never enter buildTurns, and render with a dim gutter

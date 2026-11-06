@@ -425,7 +425,11 @@ func (a *App) handleA2ASide(m a2aSideMsg) tea.Cmd {
 // a2aContextSummary is the harness's summary of this session for a
 // side-turn: the repository, the last prompt and reply, the todos and the
 // files changed.
-func (a *App) a2aContextSummary() string {
+func (a *App) a2aContextSummary() string { return a.sessionContextSummary(true) }
+
+// sessionContextSummary is a2aContextSummary, with the latest task and reply
+// left out when the caller adds the conversation itself (/btw).
+func (a *App) sessionContextSummary(includeLatest bool) string {
 	var b strings.Builder
 	if a.a2a != nil {
 		w := a.a2a.node.Broadcaster().Work()
@@ -437,7 +441,7 @@ func (a *App) a2aContextSummary() string {
 		}
 	}
 	var lastUser, lastReply string
-	for i := len(a.messages) - 1; i >= 0 && (lastUser == "" || lastReply == ""); i-- {
+	for i := len(a.messages) - 1; includeLatest && i >= 0 && (lastUser == "" || lastReply == ""); i-- {
 		m := a.messages[i]
 		switch m.Role {
 		case "user":

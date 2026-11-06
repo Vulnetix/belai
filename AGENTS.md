@@ -1267,6 +1267,22 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   is stored before accept, no model starts the command or accepts the note, and any
   error leaves the old session untouched. `handoff.*` may be turned off, narrowed or
   lowered by a project layer, never enabled or raised (`mergeHandoff`).
+- **`/btw` is the user's, tool-less, and kept nowhere.** A side question
+  (`internal/tui/side.go`, `agent.Session.AskSide`, docs/side-question.md) is a
+  separate one-round call on the session's model whose registry is empty: no tool
+  definition rides on it, the repo memory tools included, and offload, deferred
+  tools and code mode are off for it. The prompt is a fixed harness lead, the
+  user's question and a summary built from the session's own state and its last
+  `side.history_turns` user and assistant messages (never a tool result, a
+  subagent row or a failed attempt's text), admitted like a typed prompt. The
+  answer is sanitised, capped at `side.max_reply_bytes` and shown in an
+  `Ephemeral` system row only: it never enters the history, the session record,
+  a compaction or `/relay`, and no text of it reaches sync, audit or telemetry; nothing reads it
+  again, which is the only reason it carries no classifier kind. If it were ever
+  fed to a model it must classify first. Its tokens reach the ledger under the
+  role `run.RoleSide`, so it never replaces the keep-alive's request. No model
+  starts it. A project layer may turn `side.enabled` off or lower a limit, never
+  enable or raise one (`mergeSide`).
 - **A run cap is measured by the harness and extended only by the user.**
   `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
   docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter

@@ -222,6 +222,10 @@ type Settings struct {
 	// (docs/handoff.md). The user layers set any key; the project layer may
 	// only turn it off, turn include_goal off or lower max_bytes.
 	Handoff *HandoffSettings `json:"handoff,omitempty"`
+	// Side governs /btw, a side question answered off the main history
+	// (docs/side-question.md). The user layers set any key; the project layer
+	// may only turn it off or lower a limit.
+	Side *SideSettings `json:"side,omitempty"`
 	// RunCaps caps what one session may spend in dollars, tokens and wall time
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
@@ -2122,6 +2126,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Instructions = mergeInstructions(out.Instructions, proj.Instructions, true)
 	// /relay: a project may switch it off, drop the goal facts or lower the cap.
 	out.Handoff = mergeHandoff(out.Handoff, proj.Handoff, true)
+	// /btw: a project may switch it off or lower its limits.
+	out.Side = mergeSide(out.Side, proj.Side, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// Finish review: a project may add scratch patterns and raise the rounds,

@@ -25,6 +25,10 @@ because both are parsed by one table (`internal/sessionctl`).
 
 `/model` and `/lsp` with no argument still open their screens.
 
+`/btw <question>` is not a control: it changes nothing about the session. It asks
+the model a side question that stays out of the history and the session record
+and is available in the TUI only (see [Side questions](side-question.md)).
+
 A web session also takes a **branch switch**, which is not a row of the table
 because it is no setting: the website sends `{checkout: "<branch>"}` and the
 host checks the branch out through the session's git hygiene, refusing a dirty

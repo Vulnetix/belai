@@ -352,6 +352,7 @@ func (a *App) settingsRows() []settingsRow {
 	a2aEnabledVal := boolLabel(s.A2AEnabled())
 	handoffEnabledVal := boolLabel(s.HandoffEnabled())
 	handoffGoalVal := boolLabel(s.HandoffIncludeGoal())
+	sideEnabledVal := boolLabel(s.SideEnabled())
 	macHintsVal := showLabel(s.MacKeyHints())
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := showLabel(s.SessionNamesVisible())
@@ -405,6 +406,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "a2a.enabled", label: "A2A messaging", kind: "toggle", value: a2aEnabledVal, src: sourceLabel(origin["a2a"]), help: "agents broadcast what they work on and can message each other (docs/a2a.md); takes effect on the next start"},
 		{key: "handoff.enabled", label: "relay handoff", kind: "toggle", value: handoffEnabledVal, src: sourceLabel(origin["handoff"]), help: "/relay drafts a note, lets you review and edit it, then continues in a fresh session (docs/handoff.md); a project layer can only turn this off"},
 		{key: "handoff.include_goal", label: "relay shares goal", kind: "toggle", value: handoffGoalVal, src: sourceLabel(origin["handoff"]), help: "gives the relay drafter the goal objective and todo list as facts; a project layer can only turn this off; the size cap handoff.max_bytes is a settings file key"},
+		{key: "side.enabled", label: "side questions", kind: "toggle", value: sideEnabledVal, src: sourceLabel(origin["side"]), help: "/btw asks the model one tool-less question that never joins the conversation or the session record (docs/side-question.md); a project layer can only turn this off; side.history_turns and side.max_reply_bytes are settings file keys"},
 		{key: "a2a.filter", label: "A2A broadcasts received", kind: "choose", opts: config.A2AFilterNames, value: s.A2AFilter(), src: sourceLabel(origin["a2a"]), help: "repo hears broadcasts about this repository, all hears every one, off hears none and still broadcasts"},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "mac_key_hints", label: "macOS keyboard hints", kind: "toggle", value: macHintsVal, src: sourceLabel(origin["ui"]), help: "adds the Mac form after an F key, such as f9 (Fn+⏭). Unset, it follows the platform: shown on macOS, hidden elsewhere. Turn it on in a virtual machine running on Mac hardware"},
@@ -1070,6 +1072,11 @@ func (a *App) cycleToggle(key string) error {
 				s.Handoff = &config.HandoffSettings{}
 			}
 			s.Handoff.IncludeGoal = nextBool(s.Handoff.IncludeGoal)
+		case "side.enabled":
+			if s.Side == nil {
+				s.Side = &config.SideSettings{}
+			}
+			s.Side.Enabled = nextBool(s.Side.Enabled)
 		case "mouse":
 			if s.UI == nil {
 				s.UI = &config.UISettings{}
@@ -1302,6 +1309,10 @@ func (a *App) unsetSetting(key string) error {
 		case "handoff.include_goal":
 			if s.Handoff != nil {
 				s.Handoff.IncludeGoal = nil
+			}
+		case "side.enabled":
+			if s.Side != nil {
+				s.Side.Enabled = nil
 			}
 		case "a2a.filter":
 			if s.A2A != nil {

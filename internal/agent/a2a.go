@@ -185,19 +185,18 @@ func (s *Session) SideReply(ctx context.Context, in SideReplyInput) (SideReplyRe
 		hub = tools.NewRepoMemoryHub(s.workdir).WithStamp(repomemory.Stamp{SessionID: s.sessionID, MessageID: in.MessageID, ContextID: in.ContextID})
 		hub.SetAdmit(s.admitRepoMemory)
 	}
-	sub, err := s.sideSession(hub)
+	sub, err := s.sideSession(tools.NewRegistry(tools.RepoMemoryTools(hub)...), sideReplyRounds)
 	if err != nil {
 		return SideReplyResult{}, err
 	}
 	return runSide(ctx, sub, hub, s.admitRepoMemory, in)
 }
 
-// sideSession builds the side-turn's session: this session's model and
-// posture, and a registry of exactly RepoMemoryRead and RepoMemoryWrite. The
-// settings that would add a tool (offload's ReadResult, deferred tools' tool
-// search, code mode, self-authored skills) are off for it.
-func (s *Session) sideSession(hub *tools.RepoMemoryHub) (*Session, error) {
-	reg := tools.NewRegistry(tools.RepoMemoryTools(hub)...)
+// sideSession builds a side-turn's session: this session's model and
+// posture, and exactly the tools in reg (A2A passes the two repo memory tools,
+// a side question passes none). The settings that would add a tool (offload's
+// ReadResult, deferred tools' tool search, code mode) are off for it.
+func (s *Session) sideSession(reg *tools.Registry, rounds int) (*Session, error) {
 	st := s.settings
 	off := false
 	st.Offload = &config.OffloadSettings{Enabled: &off}
@@ -210,7 +209,7 @@ func (s *Session) sideSession(hub *tools.RepoMemoryHub) (*Session, error) {
 		Live:          s.live,
 		PlanMode:      true,
 		AllowExplore:  false,
-		MaxIterations: sideReplyRounds,
+		MaxIterations: rounds,
 		Workdir:       s.workdir,
 		Settings:      st,
 		PromptOptions: s.opts,
@@ -260,17 +259,28 @@ func runSide(ctx context.Context, sub *Session, hub *tools.RepoMemoryHub, admit 
 	if err != nil {
 		return res, err
 	}
-	reply := strings.TrimSpace(sanitize.Text(out.Reply))
-	if reply == "" {
-		return res, errors.New("the side-turn wrote no reply")
-	}
-	if len(reply) > maxSideReply {
-		cut := maxSideReply
-		for cut > 0 && (reply[cut]&0xC0) == 0x80 {
-			cut--
-		}
-		reply = reply[:cut]
+	reply, err := finishSideReply(out.Reply, maxSideReply)
+	if err != nil {
+		return res, err
 	}
 	res.Reply = reply
 	return res, nil
+}
+
+// finishSideReply cleans a side-turn's model text for display: sanitised,
+// trimmed, refused when empty, and cut at max bytes on a rune boundary. Both
+// kinds of side-turn end here, so the rules are one copy.
+func finishSideReply(text string, max int) (string, error) {
+	reply := strings.TrimSpace(sanitize.Text(text))
+	if reply == "" {
+		return "", errors.New("the side-turn wrote no reply")
+	}
+	if len(reply) > max {
+		cut := max
+		for cut > 0 && (reply[cut]&0xC0) == 0x80 {
+			cut--
+		}
+		reply = strings.TrimSpace(reply[:cut])
+	}
+	return reply, nil
 }

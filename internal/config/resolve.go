@@ -155,6 +155,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := handoffIgnored(eff.Settings.Handoff, proj.Handoff); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn /relay off, drop the goal facts or lower the size cap)")
 	}
+	if ign := sideIgnored(eff.Settings.Side, proj.Side); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn /btw off or lower a limit)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -699,6 +702,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Handoff = mergeHandoff(before, s.Handoff, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.Handoff) {
 			e.Origin["handoff"] = src
+		}
+	}
+	if s.Side != nil {
+		// A repository may only turn /btw off or lower a limit (mergeSide).
+		before := e.Settings.Side
+		e.Settings.Side = mergeSide(before, s.Side, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Side) {
+			e.Origin["side"] = src
 		}
 	}
 	if s.RunCaps != nil {

@@ -93,7 +93,7 @@ func TestSideReplyHasOnlyRepoMemoryTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := s.sideSession(reg.RepoMemory())
+	sub, err := s.sideSession(tools.NewRegistry(tools.RepoMemoryTools(reg.RepoMemory())...), sideReplyRounds)
 	if err != nil {
 		t.Fatal(err)
 	}

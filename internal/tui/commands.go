@@ -310,6 +310,9 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.openIntel()
 	})
+	r.Register("btw", "ask a side question that stays out of the session history: one tool-less model call, the answer is shown and never recorded", nil, func(a *App, arg string) tea.Cmd {
+		return a.btwCommand(arg)
+	})
 	r.Register("context", "break down where the last request's tokens went: system, tool definitions, history and the largest tool results, against the model's window", nil, func(a *App, arg string) tea.Cmd {
 		return a.contextCommand(arg)
 	})

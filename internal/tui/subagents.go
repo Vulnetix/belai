@@ -153,11 +153,14 @@ func (a *App) filteredMessages() []components.Message {
 // that drew it. A nil index means the rows are a.messages itself.
 func (a *App) filteredMessagesIdx() ([]components.Message, []int) {
 	hidePerm := !a.settings.FirewallPermissionOffersShown()
-	if a.threadFilter == "" && !a.hasBackgroundRows() && (!hidePerm || !a.hasPermRows()) {
+	if a.threadFilter == "" && !a.hasBackgroundRows() && (!hidePerm || !a.hasPermRows()) && a.side.dismissed == 0 {
 		return a.messages, nil
 	}
 	keep := func(m components.Message) bool {
 		if hidePerm && m.Role == components.PermRole {
+			return false
+		}
+		if m.Dismissed {
 			return false
 		}
 		if a.threadFilter == "" {

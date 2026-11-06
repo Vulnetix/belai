@@ -37,7 +37,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal`, `side questions` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
@@ -58,7 +58,7 @@ effect on the next start. `A2A broadcasts received` is `a2a.filter`: `repo`
 (the default) hears broadcasts about this session's repository, `all` hears
 every one, `off` hears none and still broadcasts. A project layer may turn
 A2A off and narrow the filter, never the reverse. `relay handoff` is `handoff.enabled`
-and `relay shares goal` is `handoff.include_goal` (both default on; see [Handoff](handoff.md)). `A2A messages` in Display is
+and `relay shares goal` is `handoff.include_goal` (both default on; see [Handoff](handoff.md)). `side questions` is `side.enabled` (default on; see [Side questions](side-question.md)). `A2A messages` in Display is
 `ui.show_a2a` (default on): it hides or shows the A2A rows in the thread and
 changes nothing else.
 
@@ -337,6 +337,14 @@ The `handoff` block has two rows on the settings screen, `relay handoff`
 `handoff.max_bytes` (default 16384, clamped to 2048 through 65536) is a settings file
 key. Your own layers set any key; a project file can only turn `/relay` off, turn
 `include_goal` off or lower `max_bytes`. See [Handoff](handoff.md).
+
+## Side questions
+
+The `side` block has one row, `side questions` (`side.enabled`). The limits
+`side.history_turns` (default 6, clamped to 0 through 20) and `side.max_reply_bytes`
+(default 4096, clamped to 512 through 8192) are settings file keys. Your own layers
+set any key; a project file can only turn `/btw` off or lower a limit. See
+[Side questions](side-question.md).
 
 ## Headless output
 
