@@ -243,6 +243,9 @@ func TestPendingTextIsFlushedBeforeAToolAndAtTheResult(t *testing.T) {
 
 func TestVaultValuesAreScrubbed(t *testing.T) {
 	vaultenv.Default.Replace([]vaultenv.Var{{Name: "HEADLESS_TEST_TOKEN", Value: "s3cr3t-vault-value-0123"}}, time.Now().Add(time.Hour))
+	// The store is process-wide; a leaked lease makes later sandboxed commands
+	// in this package refuse under Landlock.
+	t.Cleanup(func() { vaultenv.Default.Replace(nil, time.Time{}) })
 	em, buf := stream(t, EmitterOptions{})
 	em.Observe(agent.Event{Kind: agent.EventToolResultKind, ToolName: "Bash", ToolResult: "token=s3cr3t-vault-value-0123"})
 	_ = em.Result(Final{Subtype: SubtypeSuccess, Reply: "it is s3cr3t-vault-value-0123"})
