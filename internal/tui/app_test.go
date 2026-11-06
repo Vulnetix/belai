@@ -736,6 +736,7 @@ func TestCompactHappyPath(t *testing.T) {
 	a := New(Options{Workdir: workdir})
 	fc := &fakeClassifier{raw: validSummary}
 	a.SetClassifier(fc)
+	a.admitSummary = admitEcho(new(int32))
 	a.sessionID = session.MustID()
 	old := a.sessionID
 	a.sessionName = "old name"
