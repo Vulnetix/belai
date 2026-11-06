@@ -22,6 +22,16 @@
       "sha256": "e079c56260d6386f38c07019b9cdfb236995c6ba7fe44006864a1a91f8ccb5db"
     },
     {
+      "name": "belai:cli-runner",
+      "path": "internal/agentprofile/builtin/cli-runner.json",
+      "sha256": "591ab7b5238a5aaf5d69266b056c7670bbc5147fc158d9a65c7cd452ccd11b03"
+    },
+    {
+      "name": "belai:cli-runner-write",
+      "path": "internal/agentprofile/builtin/cli-runner-write.json",
+      "sha256": "b56b97e7a49d0a3a024adbdb66a089b45e30268fe0dcebd9854a804910d835c2"
+    },
+    {
       "name": "belai:conflict-resolver",
       "path": "internal/agentprofile/builtin/conflict-resolver.json",
       "sha256": "230ce00559f6ca25805cacd3662f60639f76162e713594c6fb452410fdd8ec30"

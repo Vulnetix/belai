@@ -66,6 +66,7 @@ func TestProfilesPageDocumentsEveryWorkerField(t *testing.T) {
 		"kanban.quality.":   reflect.TypeOf(QualitySpec{}),
 		"kanban.gates.":     reflect.TypeOf(GatesSpec{}),
 		"kanban.conflicts.": reflect.TypeOf(ConflictsSpec{}),
+		"kanban.cli.":       reflect.TypeOf(CLISpec{}),
 	} {
 		for _, k := range jsonKeys(typ) {
 			if !strings.Contains(doc, prefix+k) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/clijobs"
 	"github.com/vulnetix/belai/internal/cron"
 	"github.com/vulnetix/belai/internal/kanban"
 )
@@ -82,6 +83,61 @@ type KanbanSpec struct {
 	// Conflicts turns on the harness's merge-conflict loop for a card labelled
 	// merge-conflict (docs/merge-conflicts.md). Nil: none.
 	Conflicts *ConflictsSpec `json:"conflicts,omitempty"`
+	// CLI lets the worker claim a card labelled cli-job:<id> and have the
+	// harness run that Vulnetix CLI job (docs/cli-jobs.md). Nil: none.
+	CLI *CLISpec `json:"cli,omitempty"`
+}
+
+// CLISpec is a worker's harness-run Vulnetix CLI jobs. The worker claims a card
+// labelled cli-job:<id> for an id in Jobs; the harness runs that job's fixed argv
+// (internal/clijobs), reads the artifacts it leaves and records the result on
+// the card. No model runs the CLI, and the card's text reaches no argument.
+type CLISpec struct {
+	// Jobs are the job ids the worker may run, each in the closed table of
+	// internal/clijobs. A card naming any other id is blocked.
+	Jobs []string `json:"jobs"`
+	// Write allows mutating jobs in Jobs. Without it a profile may list
+	// read-only jobs only. A mutating job also needs a card whose acceptance
+	// gates are all met.
+	Write bool `json:"write,omitempty"`
+}
+
+// MaxCLIJobs bounds kanban.cli.jobs.
+const MaxCLIJobs = 64
+
+func (c CLISpec) validate(p AgentProfile) error {
+	if len(c.Jobs) == 0 || len(c.Jobs) > MaxCLIJobs {
+		return fmt.Errorf("kanban.cli.jobs lists 1 to %d job ids", MaxCLIJobs)
+	}
+	seen := map[string]bool{}
+	mutating := false
+	for _, id := range c.Jobs {
+		j, ok := clijobs.Lookup(id)
+		if !ok {
+			return fmt.Errorf("kanban.cli.jobs: %q is not a CLI job (see docs/cli-jobs.md)", id)
+		}
+		if seen[id] {
+			return fmt.Errorf("kanban.cli.jobs: %q is listed twice", id)
+		}
+		seen[id] = true
+		if j.Mutates {
+			mutating = true
+			if !c.Write {
+				return fmt.Errorf("kanban.cli.jobs: %q changes things outside .vulnetix and needs kanban.cli.write: true", id)
+			}
+		}
+	}
+	if c.Write && !mutating {
+		return errors.New("kanban.cli.write needs at least one mutating job in kanban.cli.jobs")
+	}
+	if c.Write && (p.IsolationMode() != IsolationWorktree || p.ReadOnlyWorkspace()) {
+		return errors.New("kanban.cli.write needs workspace.isolation: worktree, not read-only (a mutating job runs in the item's worktree)")
+	}
+	k := p.Kanban
+	if k.Conflicts != nil || k.Survey != nil || k.Security != nil || k.Candidates > 1 {
+		return errors.New("kanban.cli cannot be combined with kanban.conflicts, survey, security or candidates: a CLI worker only runs jobs")
+	}
+	return nil
 }
 
 // MergeConflictLabel marks a card that asks for a pull request's merge
@@ -670,6 +726,11 @@ func (p AgentProfile) validateWorker() error {
 		}
 	}
 	if c := k.Conflicts; c != nil {
+		if err := c.validate(p); err != nil {
+			return err
+		}
+	}
+	if c := k.CLI; c != nil {
 		if err := c.validate(p); err != nil {
 			return err
 		}
