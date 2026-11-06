@@ -13,7 +13,7 @@ import (
 
 func TestJobIDsAreClosed(t *testing.T) {
 	readOnly := []string{"ai-firewall-status", "aibom", "analyze", "api-discover", "attest-verify", "bom-diff", "bom-skew", "bom-validate", "cbom", "config-plan", "containers", "defend", "gha-audit", "iac", "image", "jail", "jail-explain", "license", "malscan", "report", "sast", "sbom", "sca", "scan", "scout", "secrets", "surface-liveness", "triage"}
-	mutating := []string{"ai-firewall-apply", "api-upload", "bom-enrich", "bom-merge", "config-apply", "fix", "gha-init", "gha-publish-advisories", "gha-publish-code-scanning", "gha-publish-dependency-graph", "gha-setup", "ignore-sync", "tea-release", "vex-apply"}
+	mutating := []string{"ai-firewall-apply", "api-upload", "bom-enrich", "bom-merge", "config-apply", "fix", "gha-advisories", "gha-code-scanning", "gha-dep-graph", "gha-init", "gha-setup", "ignore-sync", "tea-release", "vex-apply"}
 	if got := ReadOnlyIDs(); !slices.Equal(got, readOnly) {
 		t.Fatalf("read-only ids changed: %v", got)
 	}

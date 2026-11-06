@@ -29,7 +29,7 @@
     {
       "name": "belai:cli-runner-write",
       "path": "internal/agentprofile/builtin/cli-runner-write.json",
-      "sha256": "b56b97e7a49d0a3a024adbdb66a089b45e30268fe0dcebd9854a804910d835c2"
+      "sha256": "8c6fa8e8fc15c05c4f4e7de7a2c1461792bd4104fee47c4dbd12f3b4ba4eed5c"
     },
     {
       "name": "belai:conflict-resolver",

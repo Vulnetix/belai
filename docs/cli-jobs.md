@@ -63,9 +63,9 @@ file in the repository, the forge or a Vulnetix organisation.
 | `fix` | mutating | `vulnetix fix --yes` | none |
 | `gha-audit` | read-only | `vulnetix gha audit --offline` | none |
 | `gha-init` | mutating | `vulnetix gha init` | none |
-| `gha-publish-advisories` | mutating | `vulnetix gha publish advisories` | none |
-| `gha-publish-code-scanning` | mutating | `vulnetix gha publish code-scanning` | none |
-| `gha-publish-dependency-graph` | mutating | `vulnetix gha publish dependency-graph` | none |
+| `gha-advisories` | mutating | `vulnetix gha publish advisories` | none |
+| `gha-code-scanning` | mutating | `vulnetix gha publish code-scanning` | none |
+| `gha-dep-graph` | mutating | `vulnetix gha publish dependency-graph` | none |
 | `gha-setup` | mutating | `vulnetix gha setup --all` | none |
 | `iac` | read-only | `vulnetix iac --disable-memory` | `iac.sarif` |
 | `ignore-sync` | mutating | `vulnetix ignore sync` | none |
