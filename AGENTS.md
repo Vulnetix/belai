@@ -1189,6 +1189,25 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   never asks a model, and skips only the summary step: pruning and a forced
   overflow recovery run regardless. Its `compaction_state` entry is numbers,
   and is clamped on load because the session file is not trusted.
+- **Hazard rails are a floor no rule waives, and only a person answers them.**
+  `shellsafe.Hazards` (a closed id set read from the commands `Analyze` found,
+  failing closed to `hazard.opaque`) and `tools.HazardCall` (the fixed
+  `ProtectedRules` table plus `permissions.protected_paths`, matched against the
+  absolute, symlink-resolved file a write tool names through its own resolver)
+  make a call ask whatever allow rule, mode, hook allow or ask-off setting matched
+  (docs/hazard-rails.md). A deny rule and a hook deny still win earlier, and the
+  sandbox and confinement apply after an approval. The decision model is never
+  consulted (`gateMutation` skips it for a hazard), no surface may remember an
+  "always allow" for one (the TUI downgrades it to once, the ACP and web grants
+  ignore it, the rc ask-off path denies), a session that cannot ask withholds it
+  whatever `permission_ask_no_tty` says, and ask off never answers an open one.
+  `permissions.hazard_ask` and `hazard_yolo_waive` are read from the user's
+  layers only (`PermissionRules.mergeLayer`; a project value is ignored with a
+  note), `protected_paths` only adds, and a malformed value fails the load, so an
+  absent key is the floor on. The ids are harness text: they reach the ask, the
+  `hazard_ask` activity row and the `hazard.asked`/`hazard.denied` audit events
+  (`id`, `tool`), and a command or a path reaches none of the last two. No
+  classifier kind: nothing arbitrary is read back.
 - **A WebFetch answer is drawn by a tool-less role and still classifies.** A
   `WebFetch` call with a `prompt` sends the sanitised page (capped) and the
   prompt to the fast-tier `web_fetch` role, which carries no tools, skills or

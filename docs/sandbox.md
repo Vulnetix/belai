@@ -97,7 +97,9 @@ Otherwise Belai falls back to Landlock on its own, and `/sandbox` says so.
   only the roots and the private `/tmp` are writable, and nothing leaves the
   machine.
 - Turning guardrails off (`f3`, `/yolo`, `-guardrails=false`) turns the
-  sandbox off with them.
+  sandbox off with them. The [hazard rails](hazard-rails.md) still ask: they
+  are a floor above the rules and the sandbox, and an approved command runs
+  inside the sandbox.
 
 ## When a command is blocked
 

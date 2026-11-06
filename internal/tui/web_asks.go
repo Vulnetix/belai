@@ -339,6 +339,11 @@ func (a *App) settlePermissionAsk(decision, source, remoteID string) string {
 	if st.reply == nil {
 		return ""
 	}
+	if decision == askAllowAlways && st.hazard() {
+		// A hazard ask is asked every time, so no rule is written, whichever
+		// surface (a key, the web, a spoken keyword) sent the answer.
+		decision = askAllowOnce
+	}
 	if decision == askAllowAlways && st.ask != nil {
 		a.allowAlwaysRule(st.ask.Name, st.ask.Subject)
 	}

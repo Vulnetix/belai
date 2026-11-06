@@ -8,6 +8,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -26,12 +27,34 @@ const (
 	permAskDeny
 )
 
+// hazard reports an ask raised by a hazard rail. Such an ask offers no allow
+// always: the floor asks every time, so a remembered answer would be a lie.
+func (s permissionAskViewState) hazard() bool { return s.ask != nil && len(s.ask.Hazard) > 0 }
+
 func newPermissionAskState(ask *agent.AskRequest, reply chan agent.PermissionAskReply) permissionAskViewState {
 	return permissionAskViewState{ask: ask, reply: reply, selected: permAskAllow}
 }
 
 func (s permissionAskViewState) options() []string {
+	if s.hazard() {
+		return []string{"allow once", "deny"}
+	}
 	return []string{"allow once", "allow always", "deny"}
+}
+
+// decisionAt maps the highlighted row to the decision it answers.
+func (s permissionAskViewState) decisionAt(i int) string {
+	opts := s.options()
+	if i < 0 || i >= len(opts) {
+		return askDeny
+	}
+	switch opts[i] {
+	case "allow once":
+		return askAllowOnce
+	case "allow always":
+		return askAllowAlways
+	}
+	return askDeny
 }
 
 // permissionAskView renders the tool name, normalised subject, and the diff
@@ -50,9 +73,13 @@ func (a *App) permissionAskView() string {
 
 	b.WriteString("\n" + components.EmphStyle.Render("⌁ "+st.ask.Name))
 	if st.ask.Subject != "" {
-		b.WriteString("  " + components.MutedStyle.Render(st.ask.Subject))
+		b.WriteString("  " + components.MutedStyle.Render(sanitize.Line(st.ask.Subject, 200)))
 	}
 	b.WriteString("\n")
+	if st.hazard() {
+		b.WriteString(components.EmphStyle.Render("△ hazard rail: "+strings.Join(st.ask.Hazard, ", ")) +
+			components.MutedStyle.Render("  asks every time; no rule or setting skips it") + "\n")
+	}
 
 	if st.ask.Preview != nil {
 		if diff := components.DiffView(st.ask.Preview, w); diff != "" {
@@ -88,19 +115,12 @@ func (a *App) handlePermissionAskKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "down", "j":
-		if a.permAskState.selected < permAskDeny {
+		if a.permAskState.selected < len(a.permAskState.options())-1 {
 			a.permAskState.selected++
 		}
 		return a, nil
 	case "enter":
-		decision := askAllowOnce
-		switch a.permAskState.selected {
-		case permAskAllowAlways:
-			decision = askAllowAlways
-		case permAskDeny:
-			decision = askDeny
-		}
-		a.settlePermissionAsk(decision, answerFromHost, "")
+		a.settlePermissionAsk(a.permAskState.decisionAt(a.permAskState.selected), answerFromHost, "")
 		return a, a.nextAgent()
 	}
 	return a, nil
@@ -122,6 +142,11 @@ func (a *App) answerPermissionAsk(allow bool) {
 // the view's own keys do: send once on the reply channel the agent loop is
 // blocked on, then pop back to the parent view.
 func (a *App) resolvePendingAsk(allow bool) {
+	// Turning ask off allows an ordinary ask. A hazard ask stays open for the
+	// user: the floor is not part of the gate that was switched off.
+	if allow && a.permAskState.hazard() {
+		return
+	}
 	decision := askDeny
 	if allow {
 		decision = askAllowOnce

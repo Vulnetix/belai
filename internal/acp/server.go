@@ -644,10 +644,13 @@ func (s *Server) forward(ctx context.Context, ss *acpSession, ev agent.Event) {
 // session only; any failure or cancellation denies.
 func (s *Server) askPermission(ctx context.Context, ss *acpSession, ev agent.Event) bool {
 	name := ev.Ask.Name
+	hazard := len(ev.Ask.Hazard) > 0
 	ss.mu.Lock()
 	always := ss.always[name]
 	ss.mu.Unlock()
-	if always {
+	// A hazard ask is put to the editor every time: a grant for the tool does
+	// not cover it and an "allow always" answer does not make one.
+	if always && !hazard {
 		return true
 	}
 	title := name
@@ -662,11 +665,7 @@ func (s *Server) askPermission(ctx context.Context, ss *acpSession, ev agent.Eve
 			"kind":       toolKind(name),
 			"rawInput":   ev.Ask.Args,
 		},
-		"options": []any{
-			map[string]any{"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"},
-			map[string]any{"optionId": "allow_always", "name": "Allow " + name + " for this session", "kind": "allow_always"},
-			map[string]any{"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
-		},
+		"options": permissionOptions(name, hazard),
 	}
 	var res struct {
 		Outcome struct {
@@ -684,12 +683,26 @@ func (s *Server) askPermission(ctx context.Context, ss *acpSession, ev agent.Eve
 	case "allow_once":
 		return true
 	case "allow_always":
+		if hazard {
+			// Not offered, so a client that sends it anyway gets one approval.
+			return true
+		}
 		ss.mu.Lock()
 		ss.always[name] = true
 		ss.mu.Unlock()
 		return true
 	}
 	return false
+}
+
+// permissionOptions lists the answers an editor may give. A hazard ask has no
+// "allow always".
+func permissionOptions(name string, hazard bool) []any {
+	opts := []any{map[string]any{"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"}}
+	if !hazard {
+		opts = append(opts, map[string]any{"optionId": "allow_always", "name": "Allow " + name + " for this session", "kind": "allow_always"})
+	}
+	return append(opts, map[string]any{"optionId": "reject_once", "name": "Reject", "kind": "reject_once"})
 }
 
 // toolKind maps a Belai tool onto ACP's ToolKind.

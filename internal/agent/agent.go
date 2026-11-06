@@ -2184,14 +2184,33 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	// mutating-default ask resolve to allow with no prompt.
 	mutates := tools.Mutates(tool)
 	hookAsk := pre.Decision == hooks.DecisionAsk
+	// A hazard (internal/shellsafe.Hazards, tools.HazardCall) is the floor
+	// under every rule: an allow rule, a mode and a hook allow do not skip it,
+	// and ask off skips it only when the user set permissions.hazard_yolo_waive.
+	// The decision model is never asked, so only a person approves. A deny rule
+	// or a hook deny has already returned above.
+	//
 	// An always-ask tool (SkillDraft) asks whatever the rules and the ask
 	// gate say, and without a TTY it is withheld: nobody can approve it.
-	if tools.AlwaysAsksCall(tool, call.Args) {
+	hazards := s.hazardsFor(tool, call.Args)
+	if len(hazards) > 0 && !(s.live.AskDisabled() && s.settings.HazardYoloWaived()) {
+		if !s.allowAsk {
+			s.noteAskWithheld(call.Name)
+			s.noteHazard("withheld", call.Name, hazards)
+			return fmt.Sprintf("tool result withheld: %q matched a hazard rail (%s) and needs the user's approval, and no one can be asked in this session", call.Name, strings.Join(hazards, ", "))
+		}
+		s.noteHazard("asked", call.Name, hazards)
+		if ok, by := s.gateMutation(ctx, call, tool, hazards, emit); !ok {
+			s.noteHazard("denied", call.Name, hazards)
+			return fmt.Sprintf("tool result withheld: permission denied by %s for %q", by, call.Name)
+		}
+		s.noteHazard("approved", call.Name, hazards)
+	} else if tools.AlwaysAsksCall(tool, call.Args) {
 		if !s.allowAsk {
 			s.noteAskWithheld(call.Name)
 			return fmt.Sprintf("tool result withheld: %q needs the user's approval, and no one can be asked in this session", call.Name)
 		}
-		if ok, by := s.gateMutation(ctx, call, tool, emit); !ok {
+		if ok, by := s.gateMutation(ctx, call, tool, nil, emit); !ok {
 			return fmt.Sprintf("tool result withheld: permission denied by %s for %q", by, call.Name)
 		}
 	} else if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched) || hookAsk) {
@@ -2203,7 +2222,7 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 				s.noteAskWithheld(call.Name)
 				return fmt.Sprintf("tool result withheld: permission ask required for %q (pass -allow-ask-without-tty to allow without a TTY)", call.Name)
 			}
-		} else if ok, by := s.gateMutation(ctx, call, tool, emit); !ok {
+		} else if ok, by := s.gateMutation(ctx, call, tool, nil, emit); !ok {
 			return fmt.Sprintf("tool result withheld: permission denied by %s for %q", by, call.Name)
 		}
 	}
@@ -2472,13 +2491,18 @@ func (s *Session) offloadAdmitted(ctx context.Context, call rolemanager.ToolCall
 
 // gateMutation asks the user before a mutating tool touches disk. It blocks on
 // the reply channel; a denied answer or a cancelled context returns false.
-func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, tool tools.Tool, emit func(Event)) (allow bool, by string) {
+//
+// A call with hazards (hazard rails) is put to the user alone: the decision
+// model is skipped, so a confident model can neither allow nor refuse it.
+func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, tool tools.Tool, hazards []string, emit func(Event)) (allow bool, by string) {
 	// The decision model answers first when it is on and confident: a confident
 	// yes lets the call run and a confident no withholds it, neither asking the
 	// user and neither writing a rule. Otherwise the user is asked below.
 	subject := askSubject(tool, call.Args)
-	if allow, decided := s.decidePermissionAsk(ctx, call.Name, subject, emit); decided {
-		return allow, "the decision model"
+	if len(hazards) == 0 {
+		if allow, decided := s.decidePermissionAsk(ctx, call.Name, subject, emit); decided {
+			return allow, "the decision model"
+		}
 	}
 	var preview *filediff.Change
 	if p, ok := tool.(interface {
@@ -2506,6 +2530,7 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 		Subject: tool.Subject(call.Args),
 		Args:    call.Args,
 		Preview: preview,
+		Hazard:  hazards,
 	}, AskReply: reply})
 
 	select {

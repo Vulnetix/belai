@@ -162,10 +162,12 @@ func (b *askBridge) permission(ctx context.Context, ask *agent.AskRequest) bool 
 		return false
 	}
 	rule := webask.Rule(ask)
+	hazard := len(ask.Hazard) > 0
 	b.mu.Lock()
 	always := b.always[rule]
 	b.mu.Unlock()
-	if always {
+	// A hazard ask is asked every time: a remembered answer does not cover it.
+	if always && !hazard {
 		return true
 	}
 	content, meta := webask.PermissionAsk(ask)
@@ -181,7 +183,7 @@ func (b *askBridge) permission(ctx context.Context, ask *agent.AskRequest) bool 
 			return "", err.Error()
 		}
 		allow = decision != webask.Deny
-		if decision == webask.AllowAlways {
+		if decision == webask.AllowAlways && !hazard {
 			b.mu.Lock()
 			b.always[rule] = true
 			b.mu.Unlock()
@@ -190,6 +192,12 @@ func (b *askBridge) permission(ctx context.Context, ask *agent.AskRequest) bool 
 		return b.settle(askID, webask.KindPermission, webask.FromWeb, ans.ID, text, map[string]any{"decision": decision}), ""
 	})
 	if got == awaitedReleased {
+		if hazard {
+			// Ask off allows every ordinary ask; the hazard floor is not one of
+			// them, and nobody is left to answer it.
+			b.settle(askID, webask.KindPermission, webask.FromHost, "", "permission for "+ask.Name+": denied (a hazard rail still asks, and ask was turned off)", map[string]any{"decision": webask.Deny, "ask_off": true})
+			return false
+		}
 		b.settle(askID, webask.KindPermission, webask.FromHost, "", "permission for "+ask.Name+": allow once (ask was turned off)", map[string]any{"decision": webask.AllowOnce, "ask_off": true})
 		return true
 	}

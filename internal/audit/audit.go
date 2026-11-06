@@ -77,6 +77,12 @@ const (
 	A2AReceived Kind = "a2a.received"
 	A2AWithheld Kind = "a2a.withheld"
 	A2ABlackout Kind = "a2a.blackout"
+
+	// Hazard rails (docs/hazard-rails.md): a call the always-ask floor put to a
+	// person, and one it withheld or the person refused. They carry the
+	// hazard identifiers and the tool name, never the command or the path.
+	HazardAsked  Kind = "hazard.asked"
+	HazardDenied Kind = "hazard.denied"
 )
 
 // Scope is where an event shows on the website: a host's audit or an agent's.
@@ -95,6 +101,7 @@ var kindScope = map[Kind]string{
 	GateVerified: ScopeAgent, VEXWritten: ScopeAgent,
 	FindingCarded: ScopeAgent, FindingReconciled: ScopeAgent,
 	A2ASent: ScopeAgent, A2AReceived: ScopeAgent, A2AWithheld: ScopeAgent, A2ABlackout: ScopeAgent,
+	HazardAsked: ScopeAgent, HazardDenied: ScopeAgent,
 }
 
 // Kinds lists every kind, sorted, for tests and docs.
@@ -150,6 +157,7 @@ var dataKeys = map[string]bool{
 	"passes":  true,
 	"retries": true, "class": true, "target": true, // worker.fault and worker.fallback
 	"message_id": true, "kind": true, "peer": true, "decision": true, // a2a
+	"id": true, "tool": true, // hazard.*: closed hazard identifiers joined by +, and the tool name
 }
 
 // DataKeys lists the allowed Data keys, sorted.

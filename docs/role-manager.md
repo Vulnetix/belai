@@ -1165,7 +1165,7 @@ work` selects how much shows, in four additive levels:
 | Level | Shows |
 | ----- | ----- |
 | `hidden` (default) | nothing — the feed is render-only and never changes a verdict |
-| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit, language-server diagnostics (`lsp_diagnose`, `lsp_server_down`) |
+| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit, language-server diagnostics (`lsp_diagnose`, `lsp_server_down`), hazard rail asks (`hazard_ask`) |
 | `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 

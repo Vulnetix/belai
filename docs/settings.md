@@ -283,6 +283,16 @@ file: `compaction.threshold_pct`, `compaction.keep_recent_turns`,
 any key in its range; a project file can only compact sooner or keep more. See
 [Compaction settings](compaction.md).
 
+## Hazard rails
+
+`permissions.hazard_ask`, `permissions.hazard_yolo_waive` and `permissions.protected_paths`
+have no row on a settings screen. They are keys in the `permissions` block of the
+settings file. `hazard_ask` (`true` by default) keeps the always-ask floor and
+`hazard_yolo_waive` (`false` by default) lets ask off skip it; your own layers set
+either, and a project file cannot. `protected_paths` adds paths to the fixed file
+table from any layer and removes none. `/hazards` shows the result. See
+[Hazard rails](hazard-rails.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

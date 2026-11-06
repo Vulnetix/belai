@@ -188,7 +188,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateBashRewrite, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -474,8 +474,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Origin["read_only"] = src
 	}
 	if !s.Permissions.IsZero() {
-		e.Settings.Permissions = e.Settings.Permissions.Merge(s.Permissions)
+		// Rules union. The hazard floor's switches come from a user layer only:
+		// a repository's own settings can add protected paths and nothing else.
+		before := e.Settings.Permissions
+		e.Settings.Permissions = before.mergeLayer(s.Permissions, src == SourceProject)
 		e.Origin["permissions"] = src
+		if h := s.Permissions; src == SourceProject && (h.HazardAsk != nil && !*h.HazardAsk || h.HazardYoloWaive != nil && *h.HazardYoloWaive) {
+			e.Notes = append(e.Notes, "project permissions.hazard_ask and hazard_yolo_waive ignored (they are user settings)")
+		}
 	}
 	if s.SessionRetentionDays != nil {
 		e.Settings.SessionRetentionDays = s.SessionRetentionDays

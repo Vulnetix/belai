@@ -73,6 +73,12 @@ func PermissionAsk(ask *agent.AskRequest) (string, map[string]any) {
 		"rule":    Rule(ask),
 		"options": []string{AllowOnce, AllowAlways, Deny},
 	}
+	if len(ask.Hazard) > 0 {
+		// A hazard ask asks every time: the answer is once or no, and the
+		// identifiers are the harness's closed set.
+		meta["options"] = []string{AllowOnce, Deny}
+		meta["hazard"] = ask.Hazard
+	}
 	if ask.Preview != nil && !ask.Preview.Empty() {
 		meta["diff"] = ask.Preview.Wire(maxDiffWireBytes)
 	}

@@ -723,6 +723,10 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 			if e.AskReply != nil {
 				allow := false
 				switch {
+				case e.Ask != nil && len(e.Ask.Hazard) > 0 && o.Controls != nil && !o.Controls.Asks():
+					// A hazard rail asks even with ask off, and with web answers
+					// off nobody can answer it: denied, never allowed.
+					allow = false
 				case o.Controls != nil && !o.Controls.Asks():
 					// Ask was turned off while this turn ran, after the agent
 					// session was built with asks on. Ask off resolves every ask

@@ -328,6 +328,11 @@ type AskRequest struct {
 	// Preview is the diff the call would make, for render only. It is nil
 	// when no preview could be produced.
 	Preview *filediff.Change
+	// Hazard holds the hazard identifiers (docs/hazard-rails.md) that made this
+	// ask unskippable, or nil for an ordinary ask. A surface that shows them
+	// must also refuse to remember the answer: an "always allow" for a hazard
+	// call writes no rule and sets no session grant.
+	Hazard []string
 }
 
 // RunStream runs the full pipeline on the supplied input (continuing history)

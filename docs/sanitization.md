@@ -224,7 +224,15 @@ redirection that can write a file), here-documents, parameter, arithmetic and
 ANSI-C expansion, leading assignments, compound constructs, raw line breaks
 (including NEL, U+2028 and U+2029), dynamic words and unquoted globs. A line
 that is not valid bash, is over 64 KiB, or contains a NUL or other control byte
-is `Parseable == false`.
+is `Parseable == false`. A pipe also sets `FlagPipe`.
+
+**Hazards.** `Hazards` reads the commands of an analysis (written and unwrapped,
+never a second split of the text) and returns identifiers from the closed set
+`HazardIDs` (`exec.delete.catastrophic`, `exec.disk.raw`, `exec.fetch_exec`,
+`exec.privilege`, `exec.git.destructive`, `hazard.opaque`). A line that does not
+parse, is oversized or nests a payload it cannot see into is `hazard.opaque`, so
+the answer fails closed. The agent asks a person for any call that has one,
+whatever rule matched; see [Hazard rails](hazard-rails.md).
 
 **Permission rules.** For the `Bash` tool the permission layer no longer matches
 the raw string alone.

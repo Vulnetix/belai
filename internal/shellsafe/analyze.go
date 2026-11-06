@@ -67,6 +67,8 @@ const (
 	FlagOpaque
 	// FlagGlob is an unquoted glob character (informational).
 	FlagGlob
+	// FlagPipe is a | or |& connector: one command's output feeds another.
+	FlagPipe
 )
 
 // lineBreaks are the characters that end a line: LF, CR, NEL, and the Unicode
@@ -222,6 +224,9 @@ func (w *walker) visit(n syntax.Node) bool {
 		}
 	case *syntax.BinaryCmd:
 		a.Flags |= FlagChain
+		if n.Op == syntax.Pipe || n.Op == syntax.PipeAll {
+			a.Flags |= FlagPipe
+		}
 	case *syntax.Subshell:
 		a.Flags |= FlagSubshell
 	case *syntax.Block:

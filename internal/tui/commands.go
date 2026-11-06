@@ -306,6 +306,9 @@ func NewRegistry(workdir string) *Registry {
 	}, func(a *App, arg string) tea.Cmd {
 		return a.locateCommand(arg)
 	})
+	r.Register("hazards", "list the hazard rails: the commands and files that always ask, whatever a rule or ask off says", nil, func(a *App, arg string) tea.Cmd {
+		return a.hazardsCommand(arg)
+	})
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})

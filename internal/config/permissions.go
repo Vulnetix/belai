@@ -15,24 +15,30 @@ type PermissionRules struct {
 	Allow []string `json:"allow,omitempty"`
 	Ask   []string `json:"ask,omitempty"`
 	Deny  []string `json:"deny,omitempty"`
+
+	// HazardAsk, HazardYoloWaive and ProtectedPaths configure the hazard floor
+	// (docs/hazard-rails.md). They are not rules: see hazard.go for what each
+	// layer may set.
+	HazardAsk       *bool    `json:"hazard_ask,omitempty"`
+	HazardYoloWaive *bool    `json:"hazard_yolo_waive,omitempty"`
+	ProtectedPaths  []string `json:"protected_paths,omitempty"`
 }
 
-// IsZero reports whether no rules are present.
+// IsZero reports whether no rules or hazard settings are present.
 func (p PermissionRules) IsZero() bool {
-	return len(p.Allow) == 0 && len(p.Ask) == 0 && len(p.Deny) == 0
+	return len(p.Allow) == 0 && len(p.Ask) == 0 && len(p.Deny) == 0 &&
+		p.HazardAsk == nil && p.HazardYoloWaive == nil && len(p.ProtectedPaths) == 0
 }
 
 // Merge unions other into p, preserving order and dropping duplicates. The
 // merge is union — never replacement — so a project file can add rules but can
 // never remove a rule the user set globally. Evaluation checks deny first, so
 // a deny from either side still wins.
+//
+// Merge treats other as a project layer for the hazard settings: it adds
+// protected paths and changes nothing else (see [PermissionRules.mergeLayer]).
 func (p PermissionRules) Merge(other PermissionRules) PermissionRules {
-	out := PermissionRules{
-		Allow: unionStrings(p.Allow, other.Allow),
-		Ask:   unionStrings(p.Ask, other.Ask),
-		Deny:  unionStrings(p.Deny, other.Deny),
-	}
-	return out
+	return p.mergeLayer(other, true)
 }
 
 func unionStrings(a, b []string) []string {
@@ -61,6 +67,9 @@ func (p *PermissionRules) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*p = PermissionRules{}
+	if err := p.unmarshalHazard(raw); err != nil {
+		return err
+	}
 
 	arraySeen := false
 	stringSeen := false
@@ -143,6 +152,7 @@ func (p PermissionRules) MarshalJSON() ([]byte, error) {
 	a.Allow = sortedDedupe(a.Allow)
 	a.Ask = sortedDedupe(a.Ask)
 	a.Deny = sortedDedupe(a.Deny)
+	a.ProtectedPaths = dedupeStrings(a.ProtectedPaths)
 	return json.Marshal(a)
 }
 

@@ -82,6 +82,10 @@ func serverFixture(t *testing.T) *Recorder {
 	emit(Fact{Kind: A2ABlackout, ActorKind: ActorHarness, SessionID: session, Outcome: "on"})
 	emit(Fact{Kind: A2AWithheld, ActorKind: ActorHarness, SessionID: session, Repo: "vulnetix/belai", Outcome: "withheld",
 		Data: map[string]string{"message_id": "a2a-01k8z3m5x6y7z8a9b0c1d2e3f7", "kind": "broadcast"}})
+	emit(Fact{Kind: HazardAsked, ActorKind: ActorHarness, SessionID: session, Outcome: "asked",
+		Data: map[string]string{"id": "exec.delete.catastrophic+exec.privilege", "tool": "Bash"}})
+	emit(Fact{Kind: HazardDenied, ActorKind: ActorHarness, SessionID: session, Outcome: "withheld",
+		Data: map[string]string{"id": "path.vcs", "tool": "Write"}})
 	return r
 }
 

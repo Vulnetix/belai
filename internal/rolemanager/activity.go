@@ -70,6 +70,7 @@ const (
 	EventTeleportVerify            Event = "teleport_verify"
 	EventFirewallPermission        Event = "firewall_permission"
 	EventDocsWarmed                Event = "docs_warmed"
+	EventHazardAsk                 Event = "hazard_ask"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -395,6 +396,8 @@ func Describe(a Activity) (Description, bool) {
 		return firewallPermissionDescription(a), true
 	case EventDocsWarmed:
 		return docsWarmedDescription(a), true
+	case EventHazardAsk:
+		return hazardAskDescription(a), true
 	case EventGateDraft:
 		return gateDraftDescription(a), true
 	case EventDeliveryReport:
