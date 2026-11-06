@@ -186,7 +186,7 @@ func settingsGroupOf(key string) string {
 // settings whatever scope the screen shows: the project layer cannot set it.
 func settingsWritesGlobalOnly(key string) bool {
 	switch {
-	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone", key == "lint_loop.enabled", key == "reply_cost",
+	case key == "auto_commit_per_task", key == "commit_mode", key == "commit_draft", key == "plan_limits", key == "agents.clone", key == "lint_loop.enabled", key == "reply_cost",
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
@@ -358,6 +358,8 @@ func (a *App) settingsRows() []settingsRow {
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	autoCommitVal := boolLabel(s.AutoCommitPerTaskEnabled())
+	commitModeVal := s.CommitModeEffective()
+	commitDraftVal := boolLabel(s.CommitDraftEnabled())
 	cloneVal := boolLabel(s.AgentsCloneEnabled())
 	testsPostEndVal := s.TestsPostEnd()
 	testsScopeVal := s.TestsScope()
@@ -413,7 +415,9 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "lint_loop.enabled", label: "lint after edits", kind: "toggle", value: lintLoopVal, src: sourceLabel(origin["lint_loop"]), help: "runs the repository's detected linter on each file after an edit and returns its findings on the tool result — off by default; a project layer can only turn this off"},
-		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
+		{key: "commit_mode", label: "commit mode", kind: "choose", opts: config.CommitModeNames, value: commitModeVal, src: sourceLabel(origin["commit_mode"]), help: "off never commits; ask shows the files and the message after a completed goal and commits on a yes; auto commits them. Only files the session changed from a clean state are staged, and /commit commits the rest on request (docs/commit-workflow.md); global only"},
+		{key: "commit_draft", label: "model-drafted commit message", kind: "toggle", value: commitDraftVal, src: sourceLabel(origin["commit_draft"]), help: "a model writes the words of the commit message from the file names and line counts, never the diff; the harness checks and falls back to its own message; off by default, global only"},
+		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit; the legacy switch for commit mode auto, which the commit mode row overrides; global only"},
 		{key: "tests.post_end", label: "test pass", kind: "choose", opts: []string{"off", "goal", "goal_plan", "session"}, value: testsPostEndVal, src: sourceLabel(origin["tests"]), help: "runs detected tests at the end of a goal, plan, or session — off by default; a project layer can only turn this off"},
 		{key: "tests.each_turn", label: "test pass each turn", kind: "toggle", value: testsEachTurnVal, src: sourceLabel(origin["tests"]), help: "also runs detected tests after a plain agent turn that edited files, in the TUI only — off by default; a project layer can only turn this off"},
 		{key: "tests.scope", label: "test scope", kind: "choose", opts: []string{"affected", "full"}, value: testsScopeVal, src: sourceLabel(origin["tests"]), help: "affected runs only the suites owning changed paths, falling back to the full suite"},
@@ -925,6 +929,12 @@ func (a *App) cycleToggle(key string) error {
 			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
 		})
 	}
+	if key == "commit_draft" {
+		// A model sees the changed file names: the user decides, so global only.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			s.CommitDraft = nextBool(s.CommitDraft)
+		})
+	}
 	if key == "agents.clone" {
 		// Global only, like the daemon that reads it: on (unset) -> off -> on.
 		return a.mutateGlobalSetting(func(s *config.Settings) {
@@ -1125,7 +1135,7 @@ func (a *App) cycleChoice(key string, opts []string) error {
 	// The tests block runs commands, so its rows always write the global
 	// scope; every other choice follows the scope the user selected.
 	mutate := a.mutateSetting
-	if strings.HasPrefix(key, "tests.") {
+	if strings.HasPrefix(key, "tests.") || key == "commit_mode" {
 		mutate = a.mutateGlobalSetting
 	}
 	return mutate(func(s *config.Settings) {
@@ -1142,6 +1152,9 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.ShowInternalWork = &next
+		case "commit_mode":
+			// Cycles from the effective value, so a legacy true starts at auto.
+			s.CommitMode = opts[(indexOfString(opts, s.CommitModeEffective())+1)%len(opts)]
 		case "a2a.filter":
 			idx := indexOfString(opts, s.A2AFilter())
 			if s.A2A == nil {
@@ -1194,6 +1207,16 @@ func (a *App) unsetSetting(key string) error {
 	if key == "auto_commit_per_task" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
+		})
+	}
+	if key == "commit_mode" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			s.CommitMode = ""
+		})
+	}
+	if key == "commit_draft" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			s.CommitDraft = nil
 		})
 	}
 	if key == "agents.clone" {

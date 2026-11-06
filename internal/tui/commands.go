@@ -319,6 +319,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("cache", "show the prompt cache: lifetime, read share and keep-alive pings; /cache ttl 5m|1h and /cache keepalive N|off change the user settings", nil, func(a *App, arg string) tea.Cmd {
 		return a.cacheCommand(arg)
 	})
+	r.Register("commit", "commit the files this session changed from a clean state, with an optional conventional message (/commit feat: add x); needs commit_mode ask or auto, never pushes", nil, func(a *App, arg string) tea.Cmd {
+		return a.commitCommand(arg)
+	})
 	r.Register("diff", "read-only pane of the working tree's changes: staged, unstaged and untracked, per-file hunks", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewDiff)
 	})

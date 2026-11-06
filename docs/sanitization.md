@@ -35,6 +35,7 @@ the sanitiser sits in the tool-result pipeline.
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
 | Tool argument | `internal/tools` | `CheckArgs`, `CheckFormat` | Refuses |
 | Profile fact, and the flag a cloud tool may carry | `internal/factspec` | `Validate`, `Bind` | Refuses |
+| A commit message a person typed or a model drafted, and the facts a drafter is shown | `internal/forge`, `internal/rolemanager` | `CleanDraft`, `ValidateConventional`, `StripTrailers`, `CommitFactsBlock` (with `sanitize.Text`, `Line`, `PathText`) | Repairs, then refuses what is not a conventional commit |
 | A skill or prompt document from the library, before it is written | `internal/libstore` | `untrustedGate` (with `sanitize.Sanitize`) | Refuses |
 | A library item document: shape, names, limits | `internal/libitem` | `Validate` | Refuses |
 | A file another harness wrote, before a scan or an import accepts it | `internal/agentimport` | `ImportItem` (with `libstore.UntrustedText`) | Refuses |

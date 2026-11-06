@@ -221,6 +221,7 @@ func (a *App) clearForResume() {
 	a.planExecuting = false
 	a.lastGoal = nil
 	a.resetTaskPaths()
+	a.resetCommitLedger()
 	a.resetRelayPaths()
 	a.endRelay()
 	a.resetTestPass()

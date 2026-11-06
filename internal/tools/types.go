@@ -55,6 +55,13 @@ const (
 	// classify. No tool carries this kind; the agent tags the rendered rows with
 	// it before promotion, as it does for KindHook.
 	KindLint Kind = "lint"
+	// KindCommitDraft is the text a commit-message drafter was shown or wrote:
+	// the changed paths and line counts going out, and the reply coming back
+	// (internal/forge CleanDraft, docs/commit-workflow.md). The paths are
+	// repository text and the reply is model text, so both classify. No tool
+	// carries this kind; the commit workflow tags the text with it before it
+	// is admitted, as the lint loop does for KindLint.
+	KindCommitDraft Kind = "commit_draft"
 	// KindSkill is the body of an installed skill, loaded by the Skill tool.
 	// A skill may come from a plugin, so it is read-only but classifies.
 	KindSkill Kind = "skill"
@@ -145,7 +152,7 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindTodo,
-	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindLint, KindSkill,
+	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindLint, KindCommitDraft, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport, KindDecision,
 	KindPeer, KindA2A, KindRepoMemory, KindRepoMemoryWrite,

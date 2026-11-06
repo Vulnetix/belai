@@ -64,9 +64,11 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindSubagent:   true,
 		KindHook:       true,
 		// Linter findings quote the edited file and classify.
-		KindLint:  true,
-		KindSkill: true,
-		KindMCP:   true,
+		KindLint: true,
+		// Commit draft facts are repository paths and its reply is model text.
+		KindCommitDraft: true,
+		KindSkill:       true,
+		KindMCP:         true,
 		// Kanban items are other sessions' and web users' text; the
 		// writers' confirmations are harness-composed.
 		KindKanban:      true,

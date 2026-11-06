@@ -33,6 +33,9 @@ package tools
 //   - KindLint is the finding text a linter printed for a file the model just
 //     edited. The linter is a fixed argv, but its messages quote the file, so
 //     they are arbitrary text and classify before any model reads them.
+//   - KindCommitDraft is the changed-path facts a commit-message drafter is
+//     shown and the message it writes back. Paths come from the repository
+//     and the reply is model text, so both classify before they are used.
 //   - KindOffload is a ReadResult slice of a result the harness offloaded.
 //     The whole result was admitted before it was stored, but a slice is the
 //     same arbitrary bytes read back, so it classifies again rather than
@@ -60,23 +63,24 @@ package tools
 // so adding a tool whose content is arbitrary means adding its kind here
 // deliberately.
 var classifierKinds = map[Kind]bool{
-	KindBash:       true,
-	KindWebFetch:   true,
-	KindWebSearch:  true,
-	KindRead:       true,
-	KindRemote:     true,
-	KindProcess:    true,
-	KindAgentStore: true,
-	KindSubagent:   true,
-	KindHook:       true,
-	KindLint:       true,
-	KindSkill:      true,
-	KindMCP:        true,
-	KindKanban:     true,
-	KindOffload:    true,
-	KindTeleport:   true,
-	KindPeer:       true,
-	KindRepoMemory: true,
+	KindBash:        true,
+	KindWebFetch:    true,
+	KindWebSearch:   true,
+	KindRead:        true,
+	KindRemote:      true,
+	KindProcess:     true,
+	KindAgentStore:  true,
+	KindSubagent:    true,
+	KindHook:        true,
+	KindLint:        true,
+	KindCommitDraft: true,
+	KindSkill:       true,
+	KindMCP:         true,
+	KindKanban:      true,
+	KindOffload:     true,
+	KindTeleport:    true,
+	KindPeer:        true,
+	KindRepoMemory:  true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

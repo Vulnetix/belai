@@ -798,6 +798,8 @@ func useCasePhrase(useCase string) string {
 		return "compaction"
 	case UseCaseHandoffDraft:
 		return "handoff drafting"
+	case UseCaseCommitDraft:
+		return "commit message drafting"
 	case UseCaseSessionName:
 		return "session naming"
 	case UseCaseAgentEval:

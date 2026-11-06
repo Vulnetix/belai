@@ -15,7 +15,7 @@ because both are parsed by one table (`internal/sessionctl`).
 | Guardrails | `/guardrails on\|off` | `f3` | on, off |
 | Ask | `/ask on\|off` | `f4` | on, off |
 | Caveman | `/caveman on\|off` | `f2` | on, off |
-| Auto-commit | `/autocommit on\|off` | | commits each completed goal |
+| Auto-commit | `/autocommit on\|off` | | sets `commit_mode` to `auto` (commits each completed goal) or clears it; see [Commit workflow](commit-workflow.md) |
 | Reasoning display | `/reasoning auto\|shown\|hidden` | `ctrl+r` | auto follows `ui.show_reasoning` |
 | Tool calls and edits | `/tools auto\|all\|edits\|none` | `ctrl+t` | auto follows `ui.show_tool_calls` and `ui.show_edits` |
 | Decisions display | `/decisions hidden\|decisions\|security\|all` | | the `ui.show_internal_work` levels |

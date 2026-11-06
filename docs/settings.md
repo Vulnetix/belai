@@ -37,7 +37,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal`, `side questions` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `commit mode`, `model-drafted commit message`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal`, `side questions` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
@@ -196,7 +196,7 @@ movement, edit and back always stay.
 
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
-  the scope chip shows: `auto-commit per task`, `lint after edits`, `reply cost line`, `plan limits`, `clone repositories`, every `test …`,
+  the scope chip shows: `auto-commit per task`, `commit mode`, `model-drafted commit message`, `lint after edits`, `reply cost line`, `plan limits`, `clone repositories`, every `test …`,
   `voice …`, `read aloud …` and `knowledge …` row, `permission offers`,
   `auto-apply permissions`, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session
@@ -318,6 +318,10 @@ The `checkpoints` block has no row on the settings screen. `checkpoints.enabled`
 `checkpoints.retain_days` (7, from 1 to 365) are in the settings file. Your own
 layers and `-no-checkpoints` set them; a project file can only turn checkpoints
 off, never change a limit or the retention. See [File checkpoints](checkpoints.md#settings).
+
+## Commit workflow
+
+Three top-level keys set how the harness commits. `commit_mode` (`off`, `ask` or `auto`, default `off`) has a row on the settings screen, "commit mode"; `commit_draft` (default `false`) has the row "model-drafted commit message"; `commit_exclude` is a list of relative path globs in the settings file (at most 64, each at most 200 characters). The legacy `auto_commit_per_task: true` still means `auto` while `commit_mode` is unset, and an explicit `commit_mode` wins. `commit_mode` and `commit_draft` are read from your own layers only: a project file cannot set either, and the project value is dropped with a note. A project file may add `commit_exclude` patterns, never remove one of yours. See [Commit workflow](commit-workflow.md#settings).
 
 ## Finish review
 

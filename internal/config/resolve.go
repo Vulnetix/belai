@@ -122,6 +122,24 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.AutoCommitPerTask = nil
 		eff.Notes = append(eff.Notes, "project auto_commit_per_task ignored (auto-commit is global)")
 	}
+	// Commit mode and the model-drafted message are the user's: a repo-visible
+	// file must never make the harness commit or send paths to a model. Only
+	// extra exclusions may come from a project, because they narrow.
+	if proj.CommitMode != "" {
+		proj.CommitMode = ""
+		eff.Notes = append(eff.Notes, "project commit_mode ignored (committing is the user's choice)")
+	}
+	if proj.CommitDraft != nil {
+		proj.CommitDraft = nil
+		eff.Notes = append(eff.Notes, "project commit_draft ignored (a model-drafted message is the user's choice)")
+	}
+	if len(proj.CommitExclude) > 0 {
+		keep, dropped := projectCommitExclude(eff.Settings.CommitExclude, proj.CommitExclude)
+		proj.CommitExclude = keep
+		if dropped > 0 {
+			eff.Notes = append(eff.Notes, fmt.Sprintf("project commit_exclude: %d pattern(s) ignored (not a relative glob, or past the limit of %d)", dropped, MaxCommitExclude))
+		}
+	}
 	// The test pass runs commands, so a repo-visible file may only turn it off
 	// and lower its budgets; tightenTests drops the rest when it is applied.
 	if projectTestsWidens(proj.Tests) {
@@ -211,7 +229,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -597,6 +615,23 @@ func (e *Effective) apply(s Settings, src Source) {
 	if s.AutoCommitPerTask != nil {
 		e.Settings.AutoCommitPerTask = s.AutoCommitPerTask
 		e.Origin["auto_commit_per_task"] = src
+	}
+	if s.CommitMode != "" {
+		e.Settings.CommitMode = s.CommitMode
+		e.Origin["commit_mode"] = src
+	}
+	if s.CommitDraft != nil {
+		e.Settings.CommitDraft = s.CommitDraft
+		e.Origin["commit_draft"] = src
+	}
+	if len(s.CommitExclude) > 0 {
+		if src == SourceProject {
+			// A project only adds: it can never remove a user pattern.
+			e.Settings.CommitExclude = append(append([]string(nil), e.Settings.CommitExclude...), s.CommitExclude...)
+		} else {
+			e.Settings.CommitExclude = append([]string(nil), s.CommitExclude...)
+		}
+		e.Origin["commit_exclude"] = src
 	}
 	if s.Tests != nil {
 		// The post-end test pass runs commands: a repo-visible project layer

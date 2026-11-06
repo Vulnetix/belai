@@ -1,20 +1,10 @@
 package tui
 
 import (
-	"context"
-	"fmt"
 	"path/filepath"
-	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/vulnetix/belai/internal/attribution"
-	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/forge"
-	"github.com/vulnetix/belai/internal/kanban"
-	"github.com/vulnetix/belai/internal/rolemanager"
-	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sessionmeasure"
 )
 
@@ -22,7 +12,8 @@ import (
 // auto-commit, so a pathological turn cannot build an unbounded argv.
 const maxTaskPaths = 1000
 
-// autoCommitMsg carries the result of an auto-commit back to the UI loop.
+// autoCommitMsg carries the result of a commit decision back to the UI loop:
+// a commit, a refusal, a note or a question for the person (commit_flow.go).
 type autoCommitMsg struct {
 	sha string
 	// full is the whole commit id, read off the UI loop for the audit log.
@@ -32,6 +23,24 @@ type autoCommitMsg struct {
 	// commit is the commit as the session records it (docs/session-measures.md);
 	// nil when git could not read it back.
 	commit *sessionmeasure.Commit
+
+	// mode is "auto", "ask" or "manual".
+	mode string
+	// split is what the harness decided about every dirty path.
+	split forge.Split
+	// refused is a harness-worded reason nothing was committed.
+	refused string
+	// note is a harness-worded outcome that is neither a commit nor a refusal.
+	note string
+	// draftNote says why a requested model draft was not used.
+	draftNote string
+	// ask is set when a person must answer before the commit is made.
+	ask  *commitPlan
+	plan *commitPlan
+	head string
+	// now is the dirty set the decision read, valid when nowKnown.
+	now      []string
+	nowKnown bool
 }
 
 // observeTaskDiff feeds one tool's observed file changes to the auto-commit
@@ -59,69 +68,9 @@ func (a *App) observeTaskDiff(ch *filediff.Change) {
 }
 
 // resetTaskPaths drops the collected path set. It runs at the end of every
-// turn — committed, partial, stopped, errored or plain agent — so the next
+// turn (committed, partial, stopped, errored or plain agent) so the next
 // commit covers exactly the files written by the goal that just completed.
 func (a *App) resetTaskPaths() {
 	a.taskPaths = nil
 	a.taskPathSet = nil
-}
-
-// flushAutoCommit starts one auto-commit when the finished turn completed a
-// goal with at least one changed file. It snapshots every input on the UI loop
-// and runs the commit off the UI loop as a tea.Cmd. The path set is reset
-// before the commit is returned, so a commit failure still cannot leak one
-// goal's files into the next.
-func (a *App) flushAutoCommit(res run.Result) tea.Cmd {
-	paths := append([]string(nil), a.taskPaths...)
-	a.resetTaskPaths()
-
-	if !a.settings.AutoCommitPerTaskEnabled() {
-		return nil
-	}
-	if res.GoalSentinel != rolemanager.GoalComplete || len(paths) == 0 {
-		return nil
-	}
-	if a.lastGoal == nil || strings.TrimSpace(a.lastGoal.Objective) == "" {
-		return nil
-	}
-
-	workdir := a.workdir
-	objective := a.lastGoal.Objective
-	runner := a.forgeRun()
-	msg := attribution.Message(forge.TaskCommitMessage(objective, paths), a.sessionID)
-
-	return func() tea.Msg {
-		sha, err := forge.CommitPaths(context.Background(), runner, workdir, paths, msg)
-		full := ""
-		if err == nil && sha != "" && audit.Enabled() {
-			full = forge.HeadCommit(context.Background(), runner, workdir)
-		}
-		var rec *sessionmeasure.Commit
-		if err == nil && sha != "" {
-			if c, cerr := sessionmeasure.ReadHead(context.Background(), runner, workdir); cerr == nil {
-				rec = &c
-			}
-		}
-		return autoCommitMsg{sha: sha, full: full, msg: msg, err: err, commit: rec}
-	}
-}
-
-// handleAutoCommit reports the commit (or the failure) and refreshes the git
-// tab so its HEAD subject reflects the new commit.
-func (a *App) handleAutoCommit(m autoCommitMsg) tea.Cmd {
-	switch {
-	case m.err != nil:
-		a.addSystem("auto-commit: " + forge.CleanErr(m.err))
-	case m.sha != "":
-		a.addSystem(fmt.Sprintf("auto-commit %s %s", m.sha, m.msg))
-		if m.commit != nil {
-			a.appendEntry(m.commit.Entry())
-		}
-		// The audit log names the commit and the session that made it, not the
-		// message, which is text from the goal's objective.
-		project, _ := kanban.ProjectFor(a.workdir)
-		audit.Emit(audit.Fact{Kind: audit.RepoCommit, ActorKind: audit.ActorAgent, Actor: "belai",
-			SessionID: a.sessionID, Repo: project, Commit: m.full, Outcome: "auto_commit"})
-	}
-	return a.refreshForge(true)
 }

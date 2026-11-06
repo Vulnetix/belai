@@ -87,6 +87,10 @@ const (
 	// stays on the main model, as compaction does: the note is the next
 	// session's whole memory of this one.
 	UseCaseHandoffDraft = "handoff_draft"
+	// UseCaseCommitDraft drafts the words of a commit message from the changed
+	// paths and their line counts (docs/commit-workflow.md). It stays on the
+	// main model.
+	UseCaseCommitDraft = "commit_draft"
 	// UseCaseAgentAvatar draws a customised Pix for an agent (internal/avatar). It
 	// stays on the main model: the drawing is long and its quality is the point.
 	UseCaseAgentAvatar = "agent_avatar"

@@ -148,7 +148,7 @@ func TestApplyOverlaysSessionValues(t *testing.T) {
 	}
 	s := st.Apply(config.Settings{})
 	switch {
-	case !s.CavemanEnabled(), !s.AutoCommitPerTaskEnabled(), s.ReasoningVisible():
+	case !s.CavemanEnabled(), s.CommitModeEffective() != config.CommitModeAuto, s.ReasoningVisible():
 		t.Fatal("toggles")
 	case s.ToolCallsVisible(), !s.EditsVisible(), s.InternalWorkLevel() != "all":
 		t.Fatal("display")
@@ -200,5 +200,35 @@ func TestModelCodeControl(t *testing.T) {
 	s := ch.State.Apply(config.Settings{})
 	if s.Code == nil || s.Code.Model == nil || s.Code.Model.Provider != "openai" {
 		t.Fatalf("Apply must overlay code.model: %+v", s.Code)
+	}
+}
+
+// /autocommit switches commit mode auto for the session. It must not turn
+// ask mode off when the state never touched it, and must not widen off mode
+// by itself.
+func TestAutoCommitControlMapsToCommitMode(t *testing.T) {
+	ask := config.Settings{CommitMode: "ask"}
+	st := FromSettings(ask, "agent", "", "", "")
+	if st.AutoCommit {
+		t.Fatal("ask mode is not auto")
+	}
+	if got := st.Apply(ask).CommitModeEffective(); got != "ask" {
+		t.Fatalf("an untouched state changed ask to %q", got)
+	}
+	st.AutoCommit = true
+	if got := st.Apply(ask).CommitModeEffective(); got != "auto" {
+		t.Fatalf("/autocommit on = %q, want auto", got)
+	}
+	auto := config.Settings{CommitMode: "auto"}
+	st = FromSettings(auto, "agent", "", "", "")
+	st.AutoCommit = false
+	if got := st.Apply(auto).CommitModeEffective(); got != "off" {
+		t.Fatalf("/autocommit off = %q, want off", got)
+	}
+	// The legacy switch round trips.
+	on := true
+	legacy := config.Settings{AutoCommitPerTask: &on}
+	if st := FromSettings(legacy, "agent", "", "", ""); !st.AutoCommit || st.Apply(legacy).CommitModeEffective() != "auto" {
+		t.Fatal("legacy auto_commit_per_task no longer means auto")
 	}
 }

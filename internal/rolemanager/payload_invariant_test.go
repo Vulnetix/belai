@@ -88,6 +88,7 @@ func TestClassifierPayloadsCarryUseCase(t *testing.T) {
 		{"compaction caveman", BuildCompactionPayload("<conversation>", true, ""), UseCaseCompaction},
 		{"handoff draft", BuildHandoffDraftPayload("<conversation>", RelayFacts{}, "", false), UseCaseHandoffDraft},
 		{"handoff draft caveman", BuildHandoffDraftPayload("<conversation>", RelayFacts{}, "focus", true), UseCaseHandoffDraft},
+		{"commit draft", BuildCommitDraftPayload(CommitFacts{Paths: []string{"a.go"}}, false), UseCaseCommitDraft},
 		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"}), UseCaseGoalEval},
 		{"goal evaluator repair", BuildGoalEvalRepairPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"}, "raw"), UseCaseGoalEval},
 		{"goal contract", BuildGoalDraftPayload(GoalDraftInput{Prompt: "ship it", VerificationSurface: []string{"go test ./..."}}), UseCaseGoalContract},

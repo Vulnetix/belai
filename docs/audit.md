@@ -53,7 +53,7 @@ the harness read itself, and nothing else can be recorded.
 | agent | `crew.control` | an operator or the harness changes a running crew: a pause, a drain, a model, pool or scope change, a bulk card action, or the harness moving the crew through its pool (`pool_sleep`, `final_retry`, `pool_recovered`, `pool_exhausted`), or restarting a crew's supervisor that died (`supervisor_restarted`, `supervisor_failed`) |
 | agent | `card.claimed`, `card.released` | a worker claims a card and hands it back |
 | agent | `card.lease_lapsed` | the harness reaps a claim whose lease ran out |
-| agent | `repo.commit` | the tip of an item's work, or an auto-commit in the TUI |
+| agent | `repo.commit` | the tip of an item's work, or a commit the TUI's commit workflow made or refused (outcome `commit_ask`, `auto_commit` or `refused`, with the commit id and never the message; see [Commit workflow](commit-workflow.md#records-and-audit)) |
 | agent | `repo.publish` | a draft pull request is opened for the item's branch |
 | agent | `gate.verified` | a gate, or a regression check, is decided by its exit code |
 | agent | `vex.written` | the harness writes the VEX for a verdict |

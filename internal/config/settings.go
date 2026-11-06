@@ -181,6 +181,18 @@ type Settings struct {
 	// repo-visible project settings file must never be able to make the harness
 	// commit, so the project layer is dropped in Resolve.
 	AutoCommitPerTask *bool `json:"auto_commit_per_task,omitempty"`
+	// CommitMode is how a completed goal's changed files are committed:
+	// off (default), ask or auto (docs/commit-workflow.md). Unset, the legacy
+	// auto_commit_per_task=true means auto. Global only: Resolve drops the
+	// project layer's value.
+	CommitMode string `json:"commit_mode,omitempty"`
+	// CommitDraft, when true, lets the main model draft the words of a commit
+	// message from the changed paths and the diffstat. Default false. Global
+	// only.
+	CommitDraft *bool `json:"commit_draft,omitempty"`
+	// CommitExclude lists extra relative path globs the harness never commits.
+	// A project layer may add patterns, never remove one.
+	CommitExclude []string `json:"commit_exclude,omitempty"`
 	// Tests configures the post-end test pass (docs/architecture.md): which
 	// moments trigger it, the command, scoping, and the fail branch. All keys
 	// live in the user layers only; the project layer may turn tests.enabled

@@ -86,6 +86,13 @@ func ProjectBelaiDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "belai")
 }
 
+// ProjectCommitsDir returns the directory of per-session commit records the
+// commit workflow writes (docs/commit-workflow.md): one JSON file per session
+// holding commit ids, counts and cleaned paths, never a message.
+func ProjectCommitsDir(workdir string) string {
+	return filepath.Join(ProjectBelaiDir(workdir), "commits")
+}
+
 // ProjectLintLoopPath returns the file where the per-edit lint loop keeps its
 // counts for a working directory (docs/lint.md): run, finding and exit-code
 // numbers and a linter name, never a path, a rule name or a message.

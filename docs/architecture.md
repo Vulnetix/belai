@@ -252,7 +252,7 @@ Business rules and edge cases:
   available on the classifier picker only.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
-  `compaction`, `handoff_draft`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill`, `teleport_verify`, `fwperm_detect` and `fwperm_write`. Unknown keys may be stored
+  `compaction`, `handoff_draft`, `commit_draft`, `session_name`, `agent_eval`, `voice_cleanup`, `gate_draft`, `delivery_report`, `teleport_distill`, `teleport_verify`, `fwperm_detect` and `fwperm_write`. Unknown keys may be stored
   but are not consulted.
 - **Candidates are validated.** A use-case target must set at least one of
   `provider` or `model`. Provider names are validated against the built-in and
@@ -1884,7 +1884,7 @@ Business rules and edge cases:
 #### Per-goal auto-commit
 
 The TUI can commit each completed goal's changed files as one conventional
-commit. It is off by default (`auto_commit_per_task`), interactive-TUI only,
+commit. It is off by default (`commit_mode`; `auto_commit_per_task` still means `auto`), interactive-TUI only,
 and global-only: `config.Resolve` drops the key from the repo-visible project
 layer unconditionally, so a cloned `.vulnetix/settings.json` can never make the
 harness commit. The `/settings` toggle always writes the global scope.
@@ -1911,7 +1911,7 @@ all Markdown/docs, tests/e2e, or `.github/`; `fix`/`refactor` when the
 objective's first word is one of those; otherwise `feat` when any path is a new
 (untracked) file and `chore` when not. The header fits 72 characters and the
 body lists at most 50 paths. A file the user edited before the goal touched it
-is committed whole, including the user's edits — the toggle's help text says so.
+is no longer committed whole: since the commit workflow, a path that was already dirty when the turn began is left alone. The setting is now `commit_mode`; `auto_commit_per_task` maps to `auto`. See [Commit workflow](commit-workflow.md).
 
 #### Post-end test pass
 
@@ -3802,8 +3802,10 @@ which defaults off unless explicitly true; `ui.show_internal_work` defaults to
 overridden off by `BELAI_NO_KITTY=1`),
 `show_session_names` (default on),
 `update_check` (default on; overridden off by `BELAI_NO_UPDATE_CHECK=1`),
-`auto_commit_per_task` (default off; global-only — see the per-goal
-auto-commit section in Goal mode),
+`auto_commit_per_task` (default off; global-only, the legacy form of
+`commit_mode` `auto`; see the per-goal auto-commit section in Goal mode),
+`commit_mode`, `commit_draft` and `commit_exclude` (the commit workflow, see
+[commit-workflow.md](commit-workflow.md); the first two are global-only),
 `tests` (`post_end`, `command`, `scope`, `on_fail`, `max_fix_passes`,
 `timeout_seconds`, `report`, `each_turn`; the pass is off by default and a project layer can
 only turn it off or lower budgets — see [testing.md](testing.md)),

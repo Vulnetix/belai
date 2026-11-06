@@ -1782,8 +1782,34 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   an operation underway, never a stash, reset or discard; an interrupting one
   is checked first so a refusal never stops the turn, and the retried prompt is
   the interrupted turn's own text, admitted again. Auto-commit commits only the paths a
-  completed goal's tools changed through `forge.CommitPaths`, and the post-end
+  completed goal's tools changed from a clean state through `forge.CommitPaths` (see the
+  commit workflow entry), and the post-end
   test pass is `headless.RunPostEnd` under the session's gates.
+- **The commit workflow is the harness's, and a model supplies words at most.**
+  `commit_mode` (`off`, `ask`, `auto`; the legacy `auto_commit_per_task: true` means
+  `auto` while it is unset) and `commit_draft` are read from the user's layers only:
+  `config.Resolve` drops the project layer's value with a note, and neither is a
+  `config.PrefKeys` key, so neither the repository nor the website can turn committing
+  or a model-drafted message on. `commit_exclude` is the one project-adjustable key and
+  only adds (`projectCommitExclude`: valid relative globs within the cap, an invalid
+  one dropped with a note). Only paths the session changed from a clean state are staged
+  (`forge.SplitDirty`, `forge.Ledger`): a path that was already dirty when its first
+  turn began is Mixed and never committed, and auto mode refuses the whole commit while
+  one exists. Credential files, Git's files, Belai's state and scanner evidence
+  (`agentprofile.ProtectedWrite`), `commit_exclude` matches and files over 8 MiB are
+  withheld. The commit is `forge.CommitPaths` (`--only`, a path list, hooks run, no
+  push); an unreadable status, a moved `HEAD`, a rebase or merge underway or a refusing
+  hook leaves the tree and index as they were. `ask` answers only on an explicit `y`,
+  re-reads the tree after it and commits only the shown paths; no decision model, hook
+  allow or ask-off setting answers it, a new turn denies it, and `/commit` is the
+  interactive TUI's alone (headless, ACP and remote control never commit this way).
+  `commit_draft` sends only cleaned paths, line counts and the goal objective
+  (`rolemanager.CommitFactsBlock`, never a diff), classified before the call and again on
+  the reply (`tools.KindCommitDraft` in `tools.classifierKinds`); the reply is sanitised,
+  stripped of trailers and must pass `forge.ValidateConventional`, else the deterministic
+  message is used. Trailers come only from `attribution.Message`. The audit event and the
+  `commits/<session>.json` record hold ids, counts and cleaned paths, never the message.
+  See [docs/commit-workflow.md](docs/commit-workflow.md).
 - **Web project settings write the host's preferences only.**
   `belai rc --web-project-settings` advertises each offered directory's
   `config.ProjectPrefs` as flat keys with their resolved value and origin, and

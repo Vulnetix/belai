@@ -565,6 +565,7 @@ func routingUseCaseKeys() []string {
 		rolemanager.UseCaseClarify,
 		rolemanager.UseCaseCompaction,
 		rolemanager.UseCaseHandoffDraft,
+		rolemanager.UseCaseCommitDraft,
 		rolemanager.UseCaseSessionName,
 		rolemanager.UseCaseAgentEval,
 		rolemanager.UseCaseDepChange,

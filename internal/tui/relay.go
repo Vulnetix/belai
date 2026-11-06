@@ -479,6 +479,7 @@ func (a *App) applyRelay(text string, edited bool, directionLen int) tea.Cmd {
 	a.planExecuting = false
 	a.lastGoal = nil
 	a.resetTaskPaths()
+	a.resetCommitLedger()
 	a.resetRelayPaths()
 	a.resetTestPass()
 	a.setCompactState(session.CompactionState{})

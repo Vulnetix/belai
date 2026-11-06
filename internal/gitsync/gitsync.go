@@ -392,6 +392,11 @@ func (h *Hygiene) Watch(ctx context.Context, every time.Duration, push func(*Inf
 	}
 }
 
+// InProgress names the multi-step git operation underway in gitDir (an
+// absolute git directory), or "". A caller that is about to commit uses it to
+// refuse during a rebase, merge, cherry-pick, revert or bisect.
+func InProgress(gitDir string) string { return inProgress(gitDir) }
+
 // inProgress names the multi-step git operation underway in gitDir, or "".
 func inProgress(gitDir string) string {
 	for _, c := range []struct{ file, name string }{

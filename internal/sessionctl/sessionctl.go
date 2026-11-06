@@ -171,7 +171,7 @@ func FromSettings(s config.Settings, mode, provider, model, effort string) State
 		Guardrails:   s.GuardrailsEnabled(),
 		Ask:          s.AskPermissionEnabled(),
 		Caveman:      s.CavemanEnabled(),
-		AutoCommit:   s.AutoCommitPerTaskEnabled(),
+		AutoCommit:   s.CommitModeEffective() == config.CommitModeAuto,
 		Reasoning:    "auto",
 		Tools:        "auto",
 		Decisions:    s.InternalWorkLevel(),
@@ -218,7 +218,17 @@ func (st State) Apply(s config.Settings) config.Settings {
 	s.Guardrails = b(st.Guardrails)
 	s.AskPermission = b(st.Ask)
 	s.Caveman = b(st.Caveman)
+	// /autocommit switches commit mode auto for this session: on sets it, off
+	// clears it only when it is what is set, so ask mode is not turned off by
+	// a state that never touched it.
+	was := s.CommitModeEffective()
 	s.AutoCommitPerTask = b(st.AutoCommit)
+	switch {
+	case st.AutoCommit:
+		s.CommitMode = config.CommitModeAuto
+	case was == config.CommitModeAuto:
+		s.CommitMode = config.CommitModeOff
+	}
 	if st.Effort != "" {
 		s.Effort = st.Effort
 	}

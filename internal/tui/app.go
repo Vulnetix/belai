@@ -875,6 +875,12 @@ type App struct {
 	// per-goal auto-commit hook (see autocommit.go).
 	taskPaths   []string
 	taskPathSet map[string]bool
+	// commitBase, commitLedger, commitAsk and commitBusy are the commit
+	// workflow's state (commit_flow.go).
+	commitBase   *commitBase
+	commitLedger forge.Ledger
+	commitAsk    commitAskState
+	commitBusy   bool
 	// relayPaths is every file the session changed, for /relay's facts block
 	// (see relay.go); relay is the /relay draft and review flow.
 	relayPaths   []string
@@ -1653,6 +1659,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		history = turns[:n-1]
 	}
 	a.beginCheckpointTurn(promptText)
+	a.beginCommitTurn()
 	in := agent.TurnInput{Prompt: promptText, HarnessPrompt: a.harnessPrompt, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
 	a.harnessPrompt = ""
@@ -2673,6 +2680,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case autoCommitMsg:
 		return a, a.handleAutoCommit(m)
+
+	case commitAnsweredMsg:
+		return a, a.handleCommitAnswered(m)
 
 	case testPassMsg:
 		return a, a.handleTestPass(m)
@@ -4070,7 +4080,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.messages[last].Materialise()
 		}
 		a.persistTail()
-		a.resetTaskPaths()
+		a.endCommitTurn()
 		// A failed turn ends a test pass's fail branch: it never re-runs
 		// suites on top of a turn that errored.
 		a.testPass.fixing = false
@@ -6716,6 +6726,7 @@ func (a *App) startNewSession() {
 	a.lastGoal = nil
 	a.setCompactState(session.CompactionState{})
 	a.resetTaskPaths()
+	a.resetCommitLedger()
 	a.resetRelayPaths()
 	a.endRelay()
 	a.resetTestPass()

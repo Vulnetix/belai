@@ -72,6 +72,11 @@ func CommitPaths(ctx context.Context, r Runner, root string, paths []string, msg
 
 	commit := append([]string{"git", "commit", "--only", "-m", msg, "--"}, kept...)
 	if _, err := run(ctx, r, WriteTimeout, root, commit...); err != nil {
+		// A refusing hook leaves the paths staged by the add above. Put the
+		// index entries for these paths back so a failed commit leaves the
+		// repository as it was; the working tree is not touched.
+		unstage := append([]string{"git", "reset", "-q", "--"}, kept...)
+		_, _ = run(ctx, r, WriteTimeout, root, unstage...)
 		return "", fmt.Errorf("commit: %w", err)
 	}
 
