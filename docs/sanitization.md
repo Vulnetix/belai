@@ -288,6 +288,11 @@ kind of difference are measured by the harness. The snippet goes through `Line`
 once, capped at 200 runes, and is left out for a file whose earlier `Read` the
 classifier withheld, so a diagnostic never carries text a `Read` could not.
 
+**Patch errors.** `apply_patch` ([Patch tool](patch-tool.md)) composes its result
+and its errors from paths (through `PathText` and `Line`), hunk numbers, line
+numbers and the harness's measured kind of difference. It never quotes file text
+or hunk text, so unlike an `Edit` near-miss it has no snippet to withhold.
+
 Full-mode Bash still runs through `sh -c`; the OS sandbox is its boundary.
 `shellsafe` decides permission and the read-only classification, not what the
 shell may do once it is allowed.

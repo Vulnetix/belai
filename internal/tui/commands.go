@@ -126,6 +126,9 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("mode: " + a.mode)
 		return nil
 	})
+	r.Register("patch-tolerance", "show or set how loosely apply_patch anchors hunks this session: strict, whitespace or unicode", func() []string { return config.PatchTolerances }, func(a *App, arg string) tea.Cmd {
+		return a.patchToleranceCmd(arg)
+	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {
 		if a.todos == nil || len(a.todos.Items) == 0 {
 			a.addSystem("todos: no plan tracked yet")

@@ -363,7 +363,7 @@ func (a *App) renderToolPicker(w int) string {
 			mark = "● "
 		}
 		line := cursor + mark + t
-		if t == "Write" || t == "Edit" || t == "Bash" {
+		if t == "Write" || t == "Edit" || t == "apply_patch" || t == "Bash" {
 			line += components.MutedStyle.Render(" mutates")
 		}
 		b.WriteString(line + "\n")

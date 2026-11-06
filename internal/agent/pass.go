@@ -517,7 +517,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 						args = u.args
 						bashCalls = append(bashCalls, i)
 					}
-					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
+					u.decision, _, _ = s.decideCall(call.Name, tool, args)
 				}
 			}
 			callArgs[i] = args

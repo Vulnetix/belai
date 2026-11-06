@@ -468,6 +468,6 @@ func (s *Session) permissionDecision(call rolemanager.ToolCall) permissions.Deci
 	if !ok {
 		return permissions.DecisionBlock
 	}
-	dec, _, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
+	dec, _, _ := s.decideCall(call.Name, tool, call.Args)
 	return dec
 }

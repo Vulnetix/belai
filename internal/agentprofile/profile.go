@@ -123,6 +123,7 @@ var validEfforts = map[string]bool{
 var knownToolNames = map[string]bool{
 	"AskUserQuestion": true,
 	"Bash":            true,
+	"apply_patch":     true,
 	"Cd":              true,
 	"Edit":            true,
 	"ExitPlanMode":    true,

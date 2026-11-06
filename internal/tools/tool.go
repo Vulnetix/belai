@@ -299,6 +299,20 @@ type Targeter interface {
 	Targets(args map[string]any) []string
 }
 
+// MultiSubject is implemented by a tool whose one call touches several files.
+// The permission layer judges each named file as the single-file tool that
+// would make the same change, so a deny on any file denies the call and an
+// allow must cover every file.
+type MultiSubject interface {
+	PermissionSubjects(args map[string]any) []permissions.Subject
+}
+
+// MultiPreviewer is implemented by a tool that can show every file's before and
+// after for the approval prompt without touching disk.
+type MultiPreviewer interface {
+	PreviewFiles(args map[string]any) []PreviewFile
+}
+
 // checkPathText applies the lexical path checks (valid UTF-8, no NUL, control,
 // newline, bidirectional or invisible runes, bounded length) before a path is
 // resolved. An empty path is left to the caller, which treats it as the

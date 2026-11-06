@@ -252,3 +252,67 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	b.WriteString("$")
 	return regexp.Compile(b.String())
 }
+
+// Subject is one file a multi-file change touches, named as the single-file
+// tool that would make the same change (Edit for an update or a delete, Write
+// for a new file).
+type Subject struct {
+	Tool string
+	Path string
+}
+
+// ExplainAll decides a call that touches several files, such as a patch, by
+// asking the ordinary rule evaluation about each file under both its own tool
+// name (own, e.g. apply_patch) and the single-file tool name. The result is the
+// strictest answer, so no rule is matched a second way:
+//
+//   - a deny, block or harness rule on any file blocks the call;
+//   - an allow approves it only when every file has one, so a rule for
+//     Edit(src/**) does not approve a patch that also touches go.mod;
+//   - otherwise an ask rule on any file asks;
+//   - with no rule on some file the default applies, which for a mutating tool
+//     is to ask.
+func (s Settings) ExplainAll(own string, subs []Subject) (Decision, string) {
+	if len(subs) == 0 {
+		return DecisionAllow, ""
+	}
+	allowRule := ""
+	allAllowed, asked, askRule := true, false, ""
+	for _, sub := range subs {
+		var dec Decision
+		var rule string
+		for _, name := range []string{own, sub.Tool} {
+			d, r := s.Explain(name, sub.Path)
+			switch {
+			case d == DecisionBlock:
+				return DecisionBlock, r
+			case d == DecisionAllow && r != "":
+				if dec != DecisionAllow {
+					dec, rule = d, r
+				}
+			case d == DecisionAsk && dec != DecisionAllow:
+				dec, rule = d, r
+			}
+		}
+		switch dec {
+		case DecisionAllow:
+			if allowRule == "" {
+				allowRule = rule
+			}
+		case DecisionAsk:
+			allAllowed, asked = false, true
+			if askRule == "" {
+				askRule = rule
+			}
+		default:
+			allAllowed = false
+		}
+	}
+	switch {
+	case allAllowed:
+		return DecisionAllow, allowRule
+	case asked:
+		return DecisionAsk, askRule
+	}
+	return DecisionAllow, ""
+}

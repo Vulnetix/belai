@@ -27,8 +27,8 @@ hand the model a short note.
 | `user_prompt_submit` | a prompt is submitted, before any model call | yes (deny) |
 | `pre_tool` | before any tool call runs, after the permission rules | yes |
 | `post_tool` | after a tool call returns successfully | no |
-| `pre_edit` | before a `Write` or `Edit` runs, after `pre_tool` | yes |
-| `post_edit` | after a `Write` or `Edit` succeeds, after `post_tool` | no |
+| `pre_edit` | before a `Write`, `Edit` or `apply_patch` runs, after `pre_tool` | yes |
+| `post_edit` | after a `Write`, `Edit` or `apply_patch` succeeds, after `post_tool` | no |
 | `stop` | a turn ends | no |
 | `pre_compact` | before `/compact` or automatic compaction | no |
 | `subagent_stop` | an explore subagent finishes | no |

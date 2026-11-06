@@ -7,16 +7,39 @@ import (
 	"github.com/vulnetix/belai/internal/tools"
 )
 
-// diagnoseEdit returns the sealed diagnostics block to append to a Write/Edit
-// result, or "" when there is nothing to say.
+// maxDiagnosedFiles bounds how many files of one multi-file edit get a
+// diagnostics block, so a large patch adds a few blocks and not dozens.
+const maxDiagnosedFiles = 4
+
+// diagnoseEdit returns the sealed diagnostics blocks to append to a Write, Edit
+// or apply_patch result, or "" when there is nothing to say.
 func (s *Session) diagnoseEdit(ctx context.Context, res tools.Result) string {
 	if res.Kind != tools.KindEdit && res.Kind != tools.KindWrite {
 		return ""
 	}
-	abs, _ := res.Meta["abs_path"].(string)
-	if abs == "" {
-		return ""
+	var paths []string
+	if abs, _ := res.Meta["abs_path"].(string); abs != "" {
+		paths = append(paths, abs)
 	}
+	if many, ok := res.Meta["abs_paths"].([]string); ok {
+		paths = append(paths, many...)
+	}
+	if len(paths) > maxDiagnosedFiles {
+		paths = paths[:maxDiagnosedFiles]
+	}
+	var out string
+	for _, abs := range paths {
+		if block := s.diagnoseFile(ctx, abs); block != "" {
+			if out != "" {
+				out += "\n\n"
+			}
+			out += block
+		}
+	}
+	return out
+}
+
+func (s *Session) diagnoseFile(ctx context.Context, abs string) string {
 	body, err := os.ReadFile(abs)
 	if err != nil {
 		return ""

@@ -131,8 +131,8 @@ func (c ConflictsSpec) validate(p AgentProfile) error {
 	if p.IsolationMode() != IsolationWorktree || p.ReadOnlyWorkspace() {
 		return errors.New("kanban.conflicts needs workspace.isolation: worktree, not read-only (a fresh checkout per attempt)")
 	}
-	if !p.HasTool("Edit") && !p.HasTool("Write") {
-		return errors.New("kanban.conflicts needs Edit or Write: the worker resolves the conflicts in the files")
+	if !p.HasTool("Edit") && !p.HasTool("Write") && !p.HasTool("apply_patch") {
+		return errors.New("kanban.conflicts needs Edit, Write or apply_patch: the worker resolves the conflicts in the files")
 	}
 	return nil
 }
@@ -365,7 +365,7 @@ const (
 )
 
 // writingTools are the tools that change the workspace.
-var writingTools = []string{"Write", "Edit", "Bash"}
+var writingTools = []string{"Write", "Edit", "apply_patch", "Bash"}
 
 // Writes reports whether the profile may change files: its allowlist names a
 // writing tool, or it has no allowlist (the full surface).
@@ -383,7 +383,7 @@ func (p AgentProfile) Writes() bool {
 
 // editingTools are the file tools. Bash is not among them here: a worker that
 // only runs checks has Bash and still changes nothing it is judging.
-var editingTools = []string{"Write", "Edit"}
+var editingTools = []string{"Write", "Edit", "apply_patch"}
 
 // Decides reports whether the worker's deliverable is a recorded decision
 // rather than a change to the code: its workspace is read-only, it decides

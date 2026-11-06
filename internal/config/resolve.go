@@ -607,6 +607,23 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["edit"] = src
 		}
 	}
+	if s.PatchTool != nil {
+		// A project layer may only switch the tool off.
+		before := e.Settings.PatchTool
+		e.Settings.PatchTool = mergePatchTool(before, s.PatchTool, src == SourceProject)
+		if e.Settings.PatchTool != before {
+			e.Origin["patch_tool"] = src
+		}
+	}
+	if s.PatchTolerance != "" {
+		// Looser anchoring edits text the model did not spell exactly: a
+		// project layer may only move toward strict.
+		before := e.Settings.PatchTolerance
+		e.Settings.PatchTolerance = mergePatchTolerance(before, s.PatchTolerance, src == SourceProject)
+		if e.Settings.PatchTolerance != before {
+			e.Origin["patch_tolerance"] = src
+		}
+	}
 	if s.Screenshot != nil {
 		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
 		e.Origin["screenshot"] = src

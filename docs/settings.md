@@ -265,6 +265,15 @@ in `/settings`. Windows shows a single line saying servers are unsupported.
 the only one, and `false` makes it match byte for byte. Your own layers set it
 either way; a project file can only turn it off. See [Tolerant Edit matching](edit.md).
 
+## Patch tool
+
+`patch_tool` and `patch_tolerance` have no row on a settings screen. They are keys
+in the settings file: `patch_tool` (`true` by default) offers `apply_patch`, and
+`patch_tolerance` (`strict`, `whitespace` by default, or `unicode`) is the loosest
+rung a hunk may anchor at. Your own layers set either freely; a project file can
+only turn the tool off or move toward `strict`. `/patch-tolerance` changes the level
+for one session. See [Patch tool](patch-tool.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

@@ -29,6 +29,7 @@ import (
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/offload"
+	"github.com/vulnetix/belai/internal/patchfmt"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/plans"
 	"github.com/vulnetix/belai/internal/posture"
@@ -670,6 +671,16 @@ func NewSession(o Options) (*Session, error) {
 	if t, ok := reg.Find("Edit"); ok {
 		if ed, ok := t.(*tools.Edit); ok && ed.Tolerant != o.Settings.EditTolerant() {
 			ed.Tolerant = o.Settings.EditTolerant()
+		}
+	}
+	// patch_tool off removes apply_patch from every surface; patch_tolerance
+	// is how far its hunks may stray from the file (docs/patch-tool.md).
+	if !o.Settings.PatchToolEnabled() {
+		reg = reg.Without(tools.ApplyPatchName)
+	} else if t, ok := reg.Find(tools.ApplyPatchName); ok {
+		tol, _ := patchfmt.ParseTolerance(o.Settings.PatchToleranceValue())
+		if ap, ok := t.(*tools.ApplyPatch); ok && ap.Tolerance != tol {
+			ap.Tolerance = tol
 		}
 	}
 	// skills.self_authoring off removes SkillDraft from every surface.
@@ -2015,6 +2026,26 @@ func (s *Session) decidePermission(tool, subject string) (dec permissions.Decisi
 	return dec, rule, rule != ""
 }
 
+// decideCall is decidePermission for a tool call. A tool that touches several
+// files (apply_patch) is judged file by file through the same rule evaluation
+// (permissions.Settings.ExplainAll): a deny on any file blocks the call and an
+// allow must cover every file. Any other tool is judged by its one subject.
+func (s *Session) decideCall(name string, tool tools.Tool, args map[string]any) (dec permissions.Decision, rule string, matched bool) {
+	ms, ok := tool.(tools.MultiSubject)
+	if !ok {
+		return s.decidePermission(name, tool.Subject(args))
+	}
+	subs := ms.PermissionSubjects(args)
+	if len(subs) == 0 {
+		return s.decidePermission(name, tool.Subject(args))
+	}
+	dec, rule = s.perms.ExplainAll(name, subs)
+	if rule == "" && s.live.Level(posture.PermissionNoMatch) == posture.Enforce {
+		return permissions.DecisionBlock, "", false
+	}
+	return dec, rule, rule != ""
+}
+
 // runTool executes a tool, streaming its partial output to the UI when the
 // tool supports it. A tool that does not implement StreamingTool runs exactly
 // as before.
@@ -2130,7 +2161,7 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 		return fmt.Sprintf("tool result withheld: %q is not allowed in plan mode", call.Name)
 	}
 
-	perm, _, matched := s.decidePermission(call.Name, tool.Subject(call.Args))
+	perm, _, matched := s.decideCall(call.Name, tool, call.Args)
 	if perm == permissions.DecisionBlock {
 		return fmt.Sprintf("tool result withheld: permission denied for %q", call.Name)
 	}
@@ -2442,7 +2473,8 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 	// The decision model answers first when it is on and confident: a confident
 	// yes lets the call run and a confident no withholds it, neither asking the
 	// user and neither writing a rule. Otherwise the user is asked below.
-	if allow, decided := s.decidePermissionAsk(ctx, call.Name, tool.Subject(call.Args), emit); decided {
+	subject := askSubject(tool, call.Args)
+	if allow, decided := s.decidePermissionAsk(ctx, call.Name, subject, emit); decided {
 		return allow, "the decision model"
 	}
 	var preview *filediff.Change
@@ -2451,6 +2483,16 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 	}); ok {
 		if path, old, new, ok := p.Preview(call.Args); ok {
 			ch := filediff.Preview(path, old, new)
+			preview = &ch
+		}
+	} else if p, ok := tool.(tools.MultiPreviewer); ok {
+		// One diff per file, in the patch's order; a file the patch leaves
+		// as it was shows nothing.
+		var ch filediff.Change
+		for _, f := range p.PreviewFiles(call.Args) {
+			ch.Files = append(ch.Files, filediff.Preview(f.Path, f.Old, f.New).Files...)
+		}
+		if len(ch.Files) > 0 {
 			preview = &ch
 		}
 	}
@@ -2469,6 +2511,25 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 	case <-ctx.Done():
 		return false, "user"
 	}
+}
+
+// askSubject is what an approval names: the tool's subject, or every file of a
+// tool that touches several, so neither the user nor the decision model is
+// shown only the first.
+func askSubject(tool tools.Tool, args map[string]any) string {
+	ms, ok := tool.(tools.MultiSubject)
+	if !ok {
+		return tool.Subject(args)
+	}
+	subs := ms.PermissionSubjects(args)
+	if len(subs) == 0 {
+		return tool.Subject(args)
+	}
+	paths := make([]string, len(subs))
+	for i, sub := range subs {
+		paths[i] = sub.Path
+	}
+	return strings.Join(paths, ", ")
 }
 
 // classifierErrorMaxRunes bounds the provider detail carried in a withheld

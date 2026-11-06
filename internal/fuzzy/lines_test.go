@@ -288,3 +288,41 @@ func TestNearestRanksATypoedLine(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestLocateLinesExactIsWholeLine(t *testing.T) {
+	body := "abc\nb\nxb\n"
+	// Plain exact counts the substring wherever it sits.
+	if r := Locate(body, "b\n", Options{}); r.Matches != 2 {
+		t.Fatalf("plain exact = %d", r.Matches)
+	}
+	r := Locate(body, "b\n", Options{Lines: true})
+	if r.Tier != TierExact || r.Matches != 1 || r.Start != 4 || r.End != 6 {
+		t.Fatalf("lines exact = %+v", r)
+	}
+}
+
+func TestLocateLinesCountsOverlappingStarts(t *testing.T) {
+	r := Locate("x\nx\nx\n", "x\nx\n", Options{Lines: true})
+	if r.Matches != 2 {
+		t.Fatalf("matches = %d, want 2", r.Matches)
+	}
+}
+
+func TestLocateLinesFallsThroughOnAMidLineHit(t *testing.T) {
+	if r := Locate("abc\n", "b\n", Options{Lines: true}); r.Matches != 0 {
+		t.Fatalf("a strict whole-line search matched mid-line: %+v", r)
+	}
+	r := Locate("abc\n  b\n", "b\n", Options{Lines: true, Relaxed: true})
+	if r.Tier != TierIndent || r.Matches != 1 {
+		t.Fatalf("relaxed = %+v", r)
+	}
+}
+
+func TestLocateLinesWithoutTrailingNewlineEndsAtALineEnd(t *testing.T) {
+	if r := Locate("a\nbc\n", "a\nb", Options{Lines: true}); r.Matches != 0 {
+		t.Fatalf("matched a prefix of a line: %+v", r)
+	}
+	if r := Locate("a\nb", "a\nb", Options{Lines: true}); r.Matches != 1 {
+		t.Fatalf("missed the last line: %+v", r)
+	}
+}

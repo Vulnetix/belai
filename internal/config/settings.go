@@ -201,6 +201,14 @@ type Settings struct {
 	// Edit governs the Edit tool's matching (docs/edit.md). The user's layers
 	// set `tolerant` either way; the project layer may only turn it off.
 	Edit *EditSettings `json:"edit,omitempty"`
+	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
+	// on. The user's layers set it either way; the project layer can only turn
+	// it off.
+	PatchTool *bool `json:"patch_tool,omitempty"`
+	// PatchTolerance is how far an apply_patch hunk may stray from the file:
+	// strict, whitespace (the default) or unicode. The user's layers set any of
+	// the three; the project layer can only move toward strict.
+	PatchTolerance string `json:"patch_tolerance,omitempty"`
 	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
 	// project layer may turn it, or whole-screen capture, off; never on.
 	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
@@ -2042,6 +2050,9 @@ func (s Settings) Override(proj Settings) Settings {
 	out.BashRewrite = mergeBashRewrite(out.BashRewrite, proj.BashRewrite, true)
 	// Edit matching: a project may make it stricter, never more tolerant.
 	out.Edit = mergeEdit(out.Edit, proj.Edit, true)
+	// apply_patch: a project may switch it off or tighten its anchoring.
+	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
+	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)
 	// Fleet workers run unattended: a project may only tighten them.
 	if proj.Agents != nil {
 		out.Agents = out.Agents.tighten(proj.Agents)

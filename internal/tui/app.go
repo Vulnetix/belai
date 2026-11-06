@@ -412,8 +412,11 @@ type App struct {
 	firewallOverride   *bool
 	// ctlOverlay holds the session-only control lines (/autocommit,
 	// /decisions, /tests, /lsp, /jev) re-applied over every settings reload.
-	ctlOverlay   []string
-	lastPlanText string
+	ctlOverlay []string
+	// patchToleranceOverride is the /patch-tolerance level for this session;
+	// empty means the resolved setting.
+	patchToleranceOverride string
+	lastPlanText           string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
 	// the agent to load the plan as the execution carrier.
@@ -5583,6 +5586,9 @@ func (a *App) reloadSettings() error {
 	components.SetMacKeyHints(a.settings.MacKeyHints())
 	a.eff = eff
 	a.applyCtlOverlay()
+	if a.patchToleranceOverride != "" {
+		a.settings.PatchTolerance = a.patchToleranceOverride
+	}
 	if a.resolver != nil {
 		a.resolver.SetSettings(a.settings)
 		a.resolver.SetFirewallEnabled(a.firewallOverride)

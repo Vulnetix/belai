@@ -73,7 +73,7 @@ written in Go (the release stays `CGO_ENABLED=0`).
 Not present: `require`, modules, `fetch`, `XMLHttpRequest`, `process`, a
 filesystem, timers and anything else that reaches outside the interpreter.
 
-Callable tools are `Read`, `Grep`, `Glob`, `Edit`, `Write`, `Bash`, `WebFetch`,
+Callable tools are `Read`, `Grep`, `Glob`, `Edit`, `apply_patch`, `Write`, `Bash`, `WebFetch`,
 `WebSearch`, the native catalogue, remote tools (`GH`, `Glab`, `AWS`) and
 `SearchFetched`, narrowed by the session's tool allowlist. Interactive,
 planning, board, process-control and subagent tools, `Skill` and `Code` itself

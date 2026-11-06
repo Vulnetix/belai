@@ -83,7 +83,7 @@ func (s *Session) hookCwd() string {
 
 // isEditTool reports whether a call is one pre_edit/post_edit hooks see.
 func isEditTool(name string) bool {
-	return strings.EqualFold(name, "Write") || strings.EqualFold(name, "Edit")
+	return strings.EqualFold(name, "Write") || strings.EqualFold(name, "Edit") || strings.EqualFold(name, tools.ApplyPatchName)
 }
 
 // preToolHooks runs pre_tool, and pre_edit for Write/Edit, for one call.

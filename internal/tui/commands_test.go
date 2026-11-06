@@ -8,7 +8,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"add-dir", "agent", "agents", "ask", "autocommit", "budgets", "caveman", "clear", "commands", "compact", "crew", "decisions", "diff", "effort", "execute", "exit", "export", "firewall", "fleet", "gitsync", "guardrails", "handoff", "help", "inbox", "intel", "jev", "kanban", "knowledge", "locate", "lsp", "mcp", "mode", "model", "new", "paste-image", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "rc", "reasoning", "refine", "rename", "reset", "resume", "sandbox", "settings", "skills", "sync", "tests", "todos", "tools", "tree", "trusted", "tts", "voice", "vulnetix", "welcome", "yolo"}
+	want := []string{"add-dir", "agent", "agents", "ask", "autocommit", "budgets", "caveman", "clear", "commands", "compact", "crew", "decisions", "diff", "effort", "execute", "exit", "export", "firewall", "fleet", "gitsync", "guardrails", "handoff", "help", "inbox", "intel", "jev", "kanban", "knowledge", "locate", "lsp", "mcp", "mode", "model", "new", "paste-image", "patch-tolerance", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "rc", "reasoning", "refine", "rename", "reset", "resume", "sandbox", "settings", "skills", "sync", "tests", "todos", "tools", "tree", "trusted", "tts", "voice", "vulnetix", "welcome", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -20,7 +20,7 @@ func TestCompleteCommandFuzzy(t *testing.T) {
 	// Prefix matches rank first, in name order; scattered subsequence
 	// matches follow.
 	got := r.Complete("/p")
-	wantHead := []string{"/paste-image", "/permissions", "/plugin", "/process", "/processes", "/profile", "/prompts", "/providers"}
+	wantHead := []string{"/paste-image", "/patch-tolerance", "/permissions", "/plugin", "/process", "/processes", "/profile", "/prompts", "/providers"}
 	if len(got) < len(wantHead) || !reflect.DeepEqual(got[:len(wantHead)], wantHead) {
 		t.Fatalf("Complete(/p) = %v, want it to start with %v", got, wantHead)
 	}

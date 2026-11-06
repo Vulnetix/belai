@@ -434,7 +434,7 @@ type MessageList struct {
 // editToolNames are the file-mutation tools whose rows ShowEdits governs —
 // the KindWrite/KindEdit tools of internal/tools. A mutating Bash is not one
 // of them: its row stays under ShowTools.
-var editToolNames = map[string]bool{"Write": true, "Edit": true}
+var editToolNames = map[string]bool{"Write": true, "Edit": true, "apply_patch": true}
 
 // IsEditTool reports whether a tool row is a file mutation.
 func IsEditTool(name string) bool { return editToolNames[name] }

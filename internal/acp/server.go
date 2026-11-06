@@ -697,7 +697,7 @@ func toolKind(name string) string {
 	switch name {
 	case "Read", "Cat", "Head", "Tail", "RepoRead", "Skill":
 		return "read"
-	case "Write", "Edit", "SkillDraft":
+	case "Write", "Edit", "apply_patch", "SkillDraft":
 		return "edit"
 	case "Grep", "Glob", "SearchSessions", "SearchMemory":
 		return "search"

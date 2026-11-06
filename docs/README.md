@@ -16,6 +16,7 @@ behaviour, and implementation details.
 | Classification, posture gates, permissions, and mode decisions | [Role Manager](role-manager.md) | [Security classification](role-manager.md#security-classification), [Gates and defaults](role-manager.md#gates-and-defaults), [Operating-mode classification](role-manager.md#operating-mode-classification) |
 | Prompt to policy: permissions you state in a prompt become AI Firewall guardrails, offered on a card and applied on a click | [Firewall permissions](firewall-permissions.md) | [When it runs](firewall-permissions.md#when-it-runs), [How a rule is written](firewall-permissions.md#how-a-rule-is-written), [Allow and deny variants](firewall-permissions.md#allow-and-deny-variants), [The console's Permissions tab](firewall-permissions.md#the-consoles-permissions-tab), [Settings](firewall-permissions.md#settings) |
 | Matching `Edit`'s old_string through a fixed whitespace ladder, with near-miss diagnostics | [Tolerant Edit matching](edit.md) | [The ladder](edit.md#the-ladder), [Fitting the replacement](edit.md#fitting-the-replacement), [Near-miss diagnostics](edit.md#near-miss-diagnostics), [Setting](edit.md#setting) |
+| Changing several files in one atomic call with `apply_patch`: the envelope, anchoring ladder, per-file permissions and `patch_tolerance` | [Patch tool](patch-tool.md) | [The envelope](patch-tool.md#the-envelope), [Anchoring](patch-tool.md#anchoring), [Permissions](patch-tool.md#permissions), [Settings](patch-tool.md#settings) |
 | Mode, model, guardrails, ask, display and other per-session switches as slash commands and keys, in the TUI and from the web | [Session controls](session-controls.md) | [What a control changes](session-controls.md#what-a-control-changes) |
 | Language-server diagnostics | [LSP](lsp.md) | [Supported languages](lsp.md#supported-languages), [Security model](lsp.md#security-model), [Settings](lsp.md#settings) |
 | The settings, language server and permissions screens: groups, keys, where a change is saved, and the edge cases | [Settings screens](settings.md) | [Layout](settings.md#layout), [Groups](settings.md#groups), [Keys](settings.md#keys), [Business rules](settings.md#business-rules), [Edge cases](settings.md#edge-cases) |
@@ -145,6 +146,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | A row for each vulnerability identifier, with a console link and a triage launch | [Vulnerability row](vuln-row.md) | alpha-20261002 |
 | Stuck-loop detection inside a pass | [Resilience](resilience.md) | Roadmap |
 | Tolerant, uniqueness-checked Edit matching with near-miss diagnostics | [Tolerant Edit matching](edit.md) | alpha-20261106 |
+| Atomic multi-hunk, multi-file `apply_patch` with tolerant anchoring | [Patch tool](patch-tool.md) | alpha-20261106 |
 | Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
 
 ## Analysis

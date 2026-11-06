@@ -72,6 +72,13 @@ type Options struct {
 	// Relaxed enables the tiers after TierExact. Off, Locate is a plain
 	// substring count.
 	Relaxed bool
+	// Lines makes the exact tier whole-line: an occurrence counts only when it
+	// starts at the start of a line and ends at the end of one, so a hunk of
+	// whole lines never lands in the middle of a longer line. Every start is
+	// counted, overlapping ones included, so a repeated line is never taken
+	// for a unique place. An occurrence inside a line falls through to the
+	// relaxed tiers (when on) like any other miss.
+	Lines bool
 }
 
 // Result is what Locate found.
@@ -149,7 +156,11 @@ func Locate(body, old string, opts Options) Result {
 	if old == "" {
 		return Result{}
 	}
-	if n := strings.Count(body, old); n > 0 {
+	if opts.Lines {
+		if r, ok := exactLines(body, old); ok {
+			return r
+		}
+	} else if n := strings.Count(body, old); n > 0 {
 		i := strings.Index(body, old)
 		return Result{Tier: TierExact, Matches: n, Start: i, End: i + len(old)}
 	}
@@ -174,6 +185,32 @@ func Locate(body, old string, opts Options) Result {
 		}
 	}
 	return Result{}
+}
+
+// exactLines counts the line-aligned occurrences of old in body.
+func exactLines(body, old string) (Result, bool) {
+	res := Result{Tier: TierExact}
+	endsLine := old[len(old)-1] == '\n' || old[len(old)-1] == '\r'
+	for from := 0; from <= len(body)-len(old); {
+		i := strings.Index(body[from:], old)
+		if i < 0 {
+			break
+		}
+		i += from
+		from = i + 1
+		if i > 0 && body[i-1] != '\n' && body[i-1] != '\r' {
+			continue
+		}
+		end := i + len(old)
+		if !endsLine && end < len(body) && body[end] != '\n' && body[end] != '\r' {
+			continue
+		}
+		res.Matches++
+		if res.Matches == 1 {
+			res.Start, res.End = i, end
+		}
+	}
+	return res, res.Matches > 0
 }
 
 func locateTier(body, old string, bl, ol []line, tier Tier) Result {
