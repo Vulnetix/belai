@@ -2,6 +2,7 @@ package sessionsync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -76,6 +77,9 @@ type KanbanAgent struct {
 	SeenRef string `json:"seenRef,omitempty"`
 	Verdict string `json:"verdict,omitempty"`
 	VEX     string `json:"vex,omitempty"`
+	// CliResult is a CLI job's result document, a JSON object, set by the
+	// worker that ran the job. Same rules as the fields above.
+	CliResult json.RawMessage `json:"cliResult,omitempty"`
 }
 
 // KanbanAck is the server's answer for one pushed item. Applied is false when

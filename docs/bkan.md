@@ -23,7 +23,7 @@ A board file is four sections, back to back, with no padding:
 ```
 offset  size  field
 0       4     magic      the ASCII bytes "BKAN" (42 4b 41 4e)
-4       2     version    uint16, big endian (currently 00 04; 00 01, 00 02 and 00 03 are still read)
+4       2     version    uint16, big endian (currently 00 05; 00 01, 00 02, 00 03 and 00 04 are still read)
 6       n     payload    encoding/gob stream of one kanban.Board
 6+n     32    checksum   SHA-256 of the payload bytes only
 ```
@@ -39,7 +39,7 @@ The constants are in `format.go`:
 ```go
 const (
 	magic         = "BKAN"
-	formatVersion = 4
+	formatVersion = 5
 	minVersion    = 1
 	headerLen     = len(magic) + 2
 )
@@ -50,7 +50,7 @@ const (
 | Section | Question it answers | What happens on a mismatch |
 |---|---|---|
 | magic | Is this a kanban board at all? | `not a kanban board (bad magic)` |
-| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 4)` |
+| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 5)` |
 | payload | What is on the board? | a gob decode error |
 | checksum | Is the payload exactly what was written? | `checksum mismatch` |
 
@@ -76,8 +76,8 @@ kanban.Board{Cursor: 7, Items: []kanban.Item{{
 ```
 
 When the format was version 1, `kanban.Encode` turned it into 519 bytes, and
-that capture is what the dumps below show. Today `Encode` writes version 4 and
-the same board is 1049 bytes, because `Item` has gained fields and the schema is
+that capture is what the dumps below show. Today `Encode` writes version 5 and
+the same board is 1063 bytes, because `Item` has gained fields and the schema is
 sent with every file (see [Size](#size)). The version 1 file is still valid: it
 is read, and its missing fields decode as zero. Here are the 519 bytes, with the
 sections marked.
@@ -173,8 +173,8 @@ The full specification is the Go package documentation for `encoding/gob`.
 
 | Board | Bytes |
 |---|---|
-| empty | 935: 6 header, 897 payload (the schema alone), 32 checksum |
-| the one-item example above | 1049 (519 when the format was version 1) |
+| empty | 949: 6 header, 911 payload (the schema alone), 32 checksum |
+| the one-item example above | 1063 (519 when the format was version 1) |
 | a typical item after that | roughly 150–600 more, mostly its text |
 
 The schema is written once per file, not once per item. Each `Encode`
@@ -249,6 +249,9 @@ type Item struct {
 	SeenRef string
 	Verdict Verdict
 	VEX     string
+
+	// CLI job result (version 5), set only by the harness at a release.
+	CliResult string
 
 	// Acceptance gates (version 3), set only by the harness and never pushed.
 	Gates []Gate
@@ -325,6 +328,7 @@ type List string // backlog | review | in_progress | blocked | done
 | `SeenRef` | The full commit id of the latest scan that still showed the finding. | the harness (`UpsertFinding`) |
 | `Verdict` | A security worker's recorded verdict: `fixed`, `false_positive`, `no_fix`, `needs_human` or `rejected`. | the harness (`Reconcile`, `SetVerdict`, `Release`) |
 | `VEX` | The repository-relative path of the VEX written for the verdict. | the harness (`Release`) |
+| `CliResult` | A CLI job's result document: a JSON object of ids, counts and enums, at most 192 KiB and 500 findings (`clijobs.Result`; see [CLI jobs](cli-jobs.md)). It syncs on the wire as the object `agent.cliResult`; a pulled value is validated against the closed shape and fills a field only when the local one is empty, never replacing or clearing it, and the website cannot set it. | the harness (`Release`) |
 | `Gates` | The card's acceptance gates, at most 8: each has an id (`G1`, `G2`, by position), a title, a kind (`runnable` or `manual`), for a runnable gate the detected suite it references (plus, for a Go suite, a package directory and a test name), a state (`unmet`, `met` or `abandoned`), the commit the state was decided at, and a one-line note. See [acceptance gates](fleet.md#acceptance-gates). A pulled copy never carries or replaces them. | the harness (`Add`, `SetGate`) |
 | `Clauses` | The independently omittable parts of a request card, at most 12, each with an id (`C1`, `C2`, by position) and a one-line text of at most 160 characters. See [request coverage](fleet.md#request-coverage). A pulled copy never carries or replaces them. | the harness (`SetClauses`) |
 | `Covers` | On a handed-off card, the clause ids of its parent it covers. Each must be one of the parent's clauses. | the harness (`Add`) |
@@ -396,7 +400,7 @@ using `sessionsync.KanbanItem`; see [Sync mapping](#sync-mapping).
 2. **Otherwise reload.** Read the whole file and `Decode` it:
    1. The length must be at least 38 bytes.
    2. The magic must be `BKAN`.
-   3. The version must be 1, 2, 3 or 4 (`minVersion` to `formatVersion`).
+   3. The version must be 1, 2, 3, 4 or 5 (`minVersion` to `formatVersion`).
    4. The SHA-256 of the payload must equal the last 32 bytes.
    5. The payload must gob-decode into a `Board`.
 3. **On success,** replace the copy in memory and remember the file's
@@ -489,6 +493,9 @@ Version 4 added the request clauses and the clauses a handoff covers, again so a
 older Belai refuses the board instead of dropping them. Older files still decode,
 with none.
 
+Version 5 added `CliResult`, the result of a CLI job, for the same reason. Older
+files still decode, with none.
+
 The zero-value rule shapes new fields. A new field's zero value must mean
 "not set" or "the old behaviour", because a file written before the field
 existed will decode it as zero. For example, `ServerVersion == 0` means
@@ -499,7 +506,7 @@ rename, a type change, or a change of meaning for an existing field. The steps:
 
 1. Raise `formatVersion`.
 2. Teach `Decode` to accept the previous version and convert it. Today it
-   accepts versions 1 to 4 and rejects every other.
+   accepts versions 1 to 5 and rejects every other.
 3. Keep writing only the new version.
 4. Add a test that decodes a file written in the previous version.
 
@@ -565,6 +572,7 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `PinHost` | `agent.pinHost` | A sync host id; the website may set or clear it. Only a worker on that host claims the item. |
 | `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Bounces`, `Continuations`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.bounces`, `agent.continuations`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
 | `Finding`, `SeenRef`, `Verdict`, `VEX` | `agent.finding`, `agent.seenRef`, `agent.verdict`, `agent.vex` | Sent, but only a host sets them: the website ignores them on an edit. A pulled value is checked against its shape and fills a field only when the local one is empty, never replacing or clearing it. |
+| `CliResult` | `agent.cliResult` | Sent as a JSON object, but only a host sets it: the website ignores it on an edit. A pulled value is validated against the closed result shape (`clijobs.Clean`) and fills a field only when the local one is empty, never replacing or clearing it. |
 | `Gates`, `Clauses`, `Covers` | — | Local only; never sent, and a pulled copy keeps the local values. |
 | `Dirty` | — | Local only; never sent. |
 | `LeaseSynced` | (none) | Local only; never sent. A pulled copy of the same claim raises it to the lease the backend sent. |

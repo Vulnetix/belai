@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"sync"
@@ -254,6 +255,9 @@ func ToWire(it Item) sessionsync.KanbanItem {
 			Finding: it.Finding, SeenRef: it.SeenRef, Verdict: string(it.Verdict), VEX: it.VEX,
 		},
 	}
+	if it.CliResult != "" {
+		w.Agent.CliResult = json.RawMessage(it.CliResult)
+	}
 	for _, m := range it.History {
 		w.History = append(w.History, sessionsync.KanbanMove{
 			ID: m.ID, From: string(m.From), To: string(m.To), At: m.At, SessionID: m.SessionID, Note: m.Note,
@@ -280,6 +284,7 @@ func FromWire(w sessionsync.KanbanItem) Item {
 		it.Continuations = a.Continuations
 		// Validated by cleanRemote and applied by Merge only to an empty field.
 		it.Finding, it.SeenRef, it.Verdict, it.VEX = a.Finding, a.SeenRef, Verdict(a.Verdict), a.VEX
+		it.CliResult = string(a.CliResult)
 	}
 	for _, m := range w.History {
 		it.History = append(it.History, Move{

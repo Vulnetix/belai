@@ -168,6 +168,7 @@ func keepAgent(r *Item, local Item) {
 	// finding (and a second scan here finds the card instead of filing another).
 	pulled := *r
 	r.Finding, r.SeenRef, r.Verdict, r.VEX = local.Finding, local.SeenRef, local.Verdict, local.VEX
+	r.CliResult = local.CliResult
 	fillFinding(r, pulled)
 	// The acceptance gates are host-local for the same reason.
 	r.Gates = cloneGates(local.Gates)
@@ -214,6 +215,9 @@ func fillFinding(dst *Item, src Item) bool {
 	}
 	if dst.VEX == "" && src.VEX != "" {
 		dst.VEX, changed = src.VEX, true
+	}
+	if dst.CliResult == "" && src.CliResult != "" {
+		dst.CliResult, changed = src.CliResult, true
 	}
 	return changed
 }
@@ -276,6 +280,11 @@ func cleanRemote(r Item) Item {
 	}
 	if !vexPathRE.MatchString(r.VEX) {
 		r.VEX = ""
+	}
+	if c, ok := CleanCliResult(r.CliResult); ok {
+		r.CliResult = c
+	} else {
+		r.CliResult = ""
 	}
 	hist := make([]Move, 0, len(r.History))
 	for _, m := range r.History {

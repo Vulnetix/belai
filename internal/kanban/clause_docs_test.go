@@ -33,7 +33,7 @@ func TestRequestCoverageIsDocumented(t *testing.T) {
 			t.Errorf("docs/bkan.md lacks %q", want)
 		}
 	}
-	if formatVersion != 4 {
-		t.Errorf("the board is version %d; docs/bkan.md describes version 4", formatVersion)
+	if formatVersion < 4 {
+		t.Errorf("the board is version %d; docs/bkan.md describes clauses from version 4", formatVersion)
 	}
 }

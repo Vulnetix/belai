@@ -129,6 +129,15 @@ func CleanAssignee(s string) (string, error) {
 	return s, nil
 }
 
+func hasLabelPrefix(it Item, prefix string) bool {
+	for _, l := range it.Labels {
+		if strings.HasPrefix(l, prefix) && len(l) > len(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasLabels(it Item, want []string) bool {
 	for _, l := range want {
 		if !slices.Contains(it.Labels, l) {
@@ -182,6 +191,10 @@ type ClaimRequest struct {
 	Lists []List
 	// Labels the item must all carry.
 	Labels []string
+	// LabelPrefix, when set, is a prefix (ending in ":") of which the item must
+	// carry at least one label. It is how a cli-job worker takes any
+	// "cli-job:<id>" card; the worker then checks the id against its own list.
+	LabelPrefix string
 	// Profile is the claiming agent's profile name. An item with an Assignee
 	// is claimable only by that profile; AssignedOnly also skips unassigned
 	// items.
@@ -348,6 +361,8 @@ func (r ClaimRequest) matches(b *Board, hold holdIndex, it Item, now int64) bool
 		return false
 	case !hasLabels(it, NormLabels(r.Labels)):
 		return false
+	case r.LabelPrefix != "" && !hasLabelPrefix(it, r.LabelPrefix):
+		return false
 	case !assigneeTakes(it.Assignee, r.Profile, r.Crew):
 		return false
 	case it.Assignee == "" && r.AssignedOnly:
@@ -479,7 +494,7 @@ func (s *Store) ClaimID(ref string, r ClaimRequest) (Item, error) {
 		}
 		req := r
 		req.Lists = ClaimableLists
-		req.Labels, req.Skip, req.AssignedOnly, req.Project = nil, nil, false, ""
+		req.Labels, req.LabelPrefix, req.Skip, req.AssignedOnly, req.Project = nil, "", nil, false, ""
 		hold := newHoldIndex(b, now, r.OpenPR)
 		if it.List == Backlog {
 			if h, held := hold.of(it); held {
@@ -581,6 +596,9 @@ type Outcome struct {
 	// path of the VEX written for it.
 	Verdict Verdict
 	VEX     string
+	// CliResult, when set, records a CLI job's result document on the card. It is
+	// the harness's: the worker that ran the job composes it (internal/clijobs).
+	CliResult string
 	// Releaser is the releasing worker's profile. When the item moves to
 	// another list and is assigned to that profile, the assignment is cleared:
 	// it was for this stage, and the next stage claims only unassigned items or
@@ -623,6 +641,11 @@ func (s *Store) Release(ref, worker string, o Outcome) (Item, error) {
 		}
 		if o.VEX != "" {
 			it.VEX = CleanTitle(o.VEX)
+		}
+		if o.CliResult != "" {
+			if c, ok := CleanCliResult(o.CliResult); ok {
+				it.CliResult = c
+			}
 		}
 		out = cloneItem(*it)
 		return nil

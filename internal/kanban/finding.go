@@ -3,6 +3,7 @@ package kanban
 import (
 	"errors"
 	"fmt"
+	"github.com/vulnetix/belai/internal/clijobs"
 	"regexp"
 	"slices"
 	"strings"
@@ -350,3 +351,8 @@ func (s *Store) CloseAbsent(prov Provenance, prefix string, present map[string]b
 	}
 	return out, err
 }
+
+// CleanCliResult validates a CLI job's result document (see internal/clijobs)
+// and returns its canonical form. A document outside the closed shape is
+// refused whole.
+func CleanCliResult(doc string) (string, bool) { return clijobs.Clean(doc) }

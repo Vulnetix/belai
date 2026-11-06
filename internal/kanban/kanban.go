@@ -169,6 +169,10 @@ type Item struct {
 	SeenRef string
 	Verdict Verdict
 	VEX     string
+	// CliResult is a CLI job's result document (internal/clijobs.Result as
+	// JSON: ids, counts and enums only). The harness alone sets it, at release;
+	// a pulled copy only fills an empty field and is validated first.
+	CliResult string
 
 	// Gates are the card's acceptance gates (see Gate). The harness assigns
 	// their ids and decides their states; a pulled copy never carries or
