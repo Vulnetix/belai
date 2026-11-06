@@ -59,16 +59,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5.1.0
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
       # setup-python cannot install on the self-hosted Amazon Linux pool; uv
       # can, and activate-environment puts a venv's python and uv pip on PATH.
-      - uses: astral-sh/setup-uv@v6.8.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: '3.12'
           activate-environment: true
@@ -82,7 +82,7 @@ jobs:
       # pins the modelprep source and the HF commit revisions so a
       # silently-updated model cannot change a release.
       - name: Cache prepared models
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v6.1.0
         with:
           path: internal/mlclassify/assets
           key: models-${{ hashFiles('tools/modelprep/**') }}-6e8dbe4a-a27152c9
@@ -111,11 +111,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -134,7 +134,7 @@ jobs:
       # the checksum pinned in the source, so a changed model cannot slip into
       # a release; voiceprep verifies the file either way.
       - name: Cache the speech model
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v6.1.0
         with:
           path: internal/voice/assets
           key: voice-model-${{ hashFiles('internal/voice/models.go') }}
@@ -211,7 +211,7 @@ jobs:
     outputs:
       version: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -239,7 +239,7 @@ jobs:
       # The subject list for the provenance job. Small on purpose: the 3.4 GB
       # binaries artifact is never downloaded a second time. The bytes are the
       # release asset's, so the signed statement names what a user downloads.
-      - uses: actions/upload-artifact@v6.0.0
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: release-subjects
           path: bin/checksums.txt
@@ -267,7 +267,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    uses: Vulnetix/cli/.github/workflows/slsa-provenance.yml@d30744892a42c71dd0aa9ce622ca929e7a2b73eb
+    uses: Vulnetix/cli/.github/workflows/slsa-provenance.yml@8ed9d446fd4e2548db70ffeb72c47f76ea8c1b78
     with:
       subjects_artifact: release-subjects
       version: ${{ needs.release.outputs.version }}
@@ -285,12 +285,12 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout belai repo
-        uses: actions/checkout@v5.1.0
+        uses: actions/checkout@v7.0.1
         with:
           token: ${{ secrets.PACKAGES_TOKEN }}
 
       - name: Checkout homebrew-tap
-        uses: actions/checkout@v5.1.0
+        uses: actions/checkout@v7.0.1
         with:
           repository: Vulnetix/homebrew-tap
           ref: main
@@ -298,7 +298,7 @@ jobs:
           path: homebrew-tap
 
       - name: Checkout scoop-bucket
-        uses: actions/checkout@v5.1.0
+        uses: actions/checkout@v7.0.1
         with:
           repository: Vulnetix/scoop-bucket
           ref: main
@@ -477,7 +477,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v5.1.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Install the Vulnetix CLI
         run: |
@@ -491,7 +491,7 @@ jobs:
       # Not fatal: `tea release` drops a file it cannot read and says so.
       - name: Download the provenance bundle
         continue-on-error: true
-        uses: actions/download-artifact@v7.0.0
+        uses: actions/download-artifact@v8.0.2
         with:
           name: slsa-provenance
           path: provenance
@@ -530,7 +530,7 @@ jobs:
       # release's .sig and .pem would never be written.
       - name: Install cosign
         if: hashFiles('belai.cdx.json') != ''
-        uses: sigstore/cosign-installer@v3.9.1
+        uses: sigstore/cosign-installer@v4.1.2
 
       # cosign rather than actions/attest-build-provenance, which persists
       # through GitHub's plan-gated attestation store. Fulcio and Rekor are
