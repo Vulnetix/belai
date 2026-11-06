@@ -94,13 +94,13 @@ func TestPluginsDocParity(t *testing.T) {
 func TestSandboxDocParity(t *testing.T) {
 	body := docBody(t, "docs/sandbox.md")
 	mustName(t, "docs/sandbox.md", body, jsonKeys(config.SandboxSettings{})...)
-	mustName(t, "docs/sandbox.md", body, sandbox.ModeOff, sandbox.ModeAuto, sandbox.ModeRequired, sandbox.NetworkAllow, sandbox.NetworkDeny)
+	mustName(t, "docs/sandbox.md", body, sandbox.ModeOff, sandbox.ModeAuto, sandbox.ModeRequired, sandbox.NetworkAllow, sandbox.NetworkProxy, sandbox.NetworkDeny)
 	// The documented default must be the code's default.
 	var none *config.SandboxSettings
 	if none.ModeOr() != sandbox.ModeAuto || none.NetworkOr() != sandbox.NetworkAllow || !none.CachesOr() {
 		t.Fatal("sandbox defaults changed; update docs/sandbox.md")
 	}
-	if !strings.Contains(body, "| `mode` | `off`, `auto`, `required` | `auto` |") || !strings.Contains(body, "| `network` | `allow`, `deny` | `allow` |") {
+	if !strings.Contains(body, "| `mode` | `off`, `auto`, `required` | `auto` |") || !strings.Contains(body, "| `network` | `allow`, `proxy`, `deny` | `allow` |") {
 		t.Error("docs/sandbox.md settings table does not state the code's defaults")
 	}
 }
