@@ -68,9 +68,22 @@ func (w *Worker) workCLI(ctx, itemCtx context.Context, it kanban.Item, stopRenew
 			w.discard(ctx, it, ws)
 		}
 	}()
+	if ws != nil && ws.Worktree && !o.failed && !o.blocked && o.files > 0 {
+		o = w.verifyCLI(itemCtx, it, ws, o)
+	}
 	stopRenew()
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
+	}
+	// A card released to review carries a branch the factory opens a pull
+	// request from, so the branch must be on origin before the worktree goes.
+	// Only a card released to done is published by the harness itself.
+	if ws != nil && ws.Worktree && !o.failed && !o.blocked && o.files > 0 && w.publishes() && !w.routesToDone(o) {
+		if branch, note := w.pushProgress(ctx, it, ws); branch != "" {
+			o.note += note
+		} else {
+			o.note += "; " + ws.Branch + " could not be pushed to origin, so no pull request can be opened from it until it is"
+		}
 	}
 	publish := ws != nil && ws.Worktree && !o.failed && !o.blocked && o.files > 0 && w.publishes() && w.routesToDone(o)
 	if ws != nil && ws.Worktree && !publish {
@@ -81,6 +94,23 @@ func (w *Worker) workCLI(ctx, itemCtx context.Context, it kanban.Item, stopRenew
 	if publish && released.List == kanban.Done {
 		w.publish(ctx, ws, released, o.files)
 	}
+}
+
+// verifyCLI runs the card's gates on the branch a mutating job committed, as
+// any other worker's branch is verified (kanban.gates.verify). The gates were
+// all met before the job ran; this decides them again at the new head, so a
+// change that breaks a suite is a failed attempt and a card whose gates cannot
+// run is held for a person, whatever the job's exit code said.
+func (w *Worker) verifyCLI(itemCtx context.Context, it kanban.Item, ws *Workspace, o outcome) outcome {
+	mode := w.gatesMode()
+	if mode == "off" || itemCtx.Err() != nil {
+		return o
+	}
+	v := w.verifyBranch(itemCtx, it, ws)
+	if c := context.Cause(itemCtx); c != nil {
+		return outcome{failed: true, branch: o.branch, files: o.files, note: "the item's budget ended while its gates were verified: " + c.Error()}
+	}
+	return w.applyVerification(o, v, mode)
 }
 
 // runCLIJob runs the card's job and returns the outcome, with the worktree a

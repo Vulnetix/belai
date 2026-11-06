@@ -22,6 +22,9 @@
       ],
       "write": true
     },
+    "gates": {
+      "verify": "enforce"
+    },
     "lease": "30m",
     "lists": [
       "backlog"

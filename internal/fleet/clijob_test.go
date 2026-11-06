@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/clijobs"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testdetect"
 	"github.com/vulnetix/belai/internal/testrun"
 )
 
@@ -258,5 +259,134 @@ func TestCLIClaimTakesOnlyCliJobCards(t *testing.T) {
 	}
 	if after, _ := store.Get(other.ID); after.List != kanban.Backlog || after.ClaimedBy != "" {
 		t.Fatalf("a card without a cli-job label was claimed: %+v", after)
+	}
+}
+
+// writeJobHarness files a card for a mutating job with one runnable gate that is
+// already met, and stubs the runs: the job step changes a file in the item's
+// worktree and the gate's suite returns gate.
+type writeJobHarness struct {
+	w     *Worker
+	store *kanban.Store
+	item  kanban.Item
+	plans []testrun.Plan
+}
+
+func newWriteJobHarness(t *testing.T, mode string, gate testrun.Result) *writeJobHarness {
+	t.Helper()
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	w, store := cliWritePlan(t)
+	w.Profile.Kanban.Gates = &agentprofile.GatesSpec{Verify: mode}
+	w.Profile.Workspace.Publish = agentprofile.PublishAgent
+	w.Repo = gitRepo(t)
+	w.Suites = func(context.Context) []testdetect.Suite {
+		return []testdetect.Suite{{Name: "go", Ecosystem: "go", Framework: "go", Command: []string{"go", "test", "./..."}}}
+	}
+	it, _, err := store.Add(kanban.ItemInput{Title: "t", Labels: []string{"cli-job:ignore-sync"}, Gates: []kanban.Gate{{Title: "pkg p passes", Kind: kanban.GateRunnable, Suite: "go", Dir: "p", Test: "TestX"}}}, kanban.Provenance{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimID(it.ID, kanban.ClaimRequest{Worker: "someone", Lease: time.Minute, Lists: kanban.ClaimableLists}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetGate(it.ID, "someone", "G1", kanban.GateMet, "", "agreed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Unclaim(it.ID, "reset", "", false); err != nil {
+		t.Fatal(err)
+	}
+	h := &writeJobHarness{w: w, store: store, item: it}
+	w.RunTests = func(_ context.Context, plan testrun.Plan) []testrun.Result {
+		h.plans = append(h.plans, plan)
+		var out []testrun.Result
+		for i, name := range plan.Names {
+			r := testrun.Result{Status: testrun.Passed, Output: "ok\n"}
+			if strings.HasPrefix(name, "gate:") {
+				r = gate
+			} else if wt := worktreeOf(t, w.Repo); wt != "" {
+				// The job's step: the CLI changes a file in the item's worktree.
+				os.WriteFile(filepath.Join(wt, "synced.txt"), []byte("x\n"), 0o644)
+			}
+			r.Suite, r.Command = name, plan.Argvs[i]
+			out = append(out, r)
+		}
+		return out
+	}
+	return h
+}
+
+func worktreeOf(t *testing.T, repo string) string {
+	out, err := exec.Command("git", "-C", repo, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok && p != repo {
+			return p
+		}
+	}
+	return ""
+}
+
+func (h *writeJobHarness) run(t *testing.T) kanban.Item {
+	t.Helper()
+	if err := h.w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.store.Get(h.item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// A mutating job's branch is verified like any other worker's: the gates run on
+// it after the commit, and the harness's exit code decides the card.
+func TestCLIMutatingJobIsVerifiedOnItsBranch(t *testing.T) {
+	h := newWriteJobHarness(t, agentprofile.VerifyEnforce, testrun.Result{Status: testrun.Passed, ExitCode: 0, Output: "ok  \tp\t0.01s\n"})
+	got := h.run(t)
+	if got.List != kanban.Review || !strings.Contains(got.LastNote(), "verified at") {
+		t.Fatalf("a branch whose gates pass goes to review: %s %q", got.List, got.LastNote())
+	}
+	if got.Branch == "" || !strings.Contains(got.CliResult, `"job":"ignore-sync"`) {
+		t.Fatalf("the card keeps its branch and the result: %+v", got)
+	}
+	var gated bool
+	for _, p := range h.plans {
+		gated = gated || slices.Contains(p.Names, "gate:G1")
+	}
+	if !gated {
+		t.Fatalf("no gate ran on the branch: %+v", h.plans)
+	}
+	// There is no origin here, so the push is reported and does not fail the card.
+	if !strings.Contains(got.LastNote(), "could not be pushed to origin") {
+		t.Fatalf("a branch that did not reach origin is said so: %q", got.LastNote())
+	}
+}
+
+func TestCLIMutatingJobThatBreaksAGateIsAFailedAttempt(t *testing.T) {
+	h := newWriteJobHarness(t, agentprofile.VerifyEnforce, testrun.Result{Status: testrun.Failed, ExitCode: 1, Output: "FAIL\tp\n"})
+	got := h.run(t)
+	if got.List == kanban.Review || got.Attempts != 1 || !strings.Contains(got.LastNote(), "verification failed") {
+		t.Fatalf("a branch that breaks a met gate must not reach review: %s attempts %d %q", got.List, got.Attempts, got.LastNote())
+	}
+	if strings.Contains(got.LastNote(), "FAIL") && strings.Contains(got.LastNote(), "\tp\n") {
+		t.Fatalf("test output reached the note: %q", got.LastNote())
+	}
+}
+
+func TestCLIMutatingJobWithVerificationOffIsNotVerified(t *testing.T) {
+	h := newWriteJobHarness(t, agentprofile.VerifyOff, testrun.Result{Status: testrun.Failed, ExitCode: 1})
+	got := h.run(t)
+	if got.List != kanban.Review {
+		t.Fatalf("verification off leaves the job's own outcome: %s %q", got.List, got.LastNote())
+	}
+	for _, p := range h.plans {
+		if slices.Contains(p.Names, "gate:G1") {
+			t.Fatal("a gate ran with verification off")
+		}
 	}
 }
