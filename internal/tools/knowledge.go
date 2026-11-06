@@ -38,6 +38,10 @@ type KnowledgeHit struct {
 	Start, End int
 	Text       string
 	Score      float64
+	// Code is true for a passage of the project's source-tree index. A Read
+	// leaves such passages out of its related block: a source file resembles
+	// other source files weakly, and a search is the way to ask for them.
+	Code bool
 }
 
 // KnowledgeHub holds the session's Knowledge. The tools are built before the
@@ -199,7 +203,7 @@ func knowledgeFileList(addrs []string, similar map[string]bool) string {
 func knowledgeRelated(hits []KnowledgeHit, skipSource string) string {
 	var kept []KnowledgeHit
 	for _, h := range hits {
-		if h.Score < readRelatedMinScore || (skipSource != "" && h.Source == skipSource) {
+		if h.Code || h.Score < readRelatedMinScore || (skipSource != "" && h.Source == skipSource) {
 			continue
 		}
 		kept = append(kept, h)

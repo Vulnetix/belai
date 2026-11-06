@@ -10,6 +10,8 @@ resemble what it asked for.
 - **Project knowledge** is the scanner output the Vulnetix tools leave in the
   project's `.vulnetix` directory (SARIF, CycloneDX, OpenVEX and the rest), and
   the files you attach to a session with `@`.
+- **The source index** is the repository's own files, cut at declarations, when
+  you turn it on. It is off by default (see [Source index](#source-index)).
 
 Everything runs in the Belai process in pure Go. There is no cgo, no embedding
 model to download and no service to call, so it works offline and in every
@@ -22,6 +24,7 @@ release build.
 | A profile's documents | A fleet worker running that profile, a background agent running it, and the foreground session while that agent is engaged, in agent, plan and goal mode |
 | The project's `.vulnetix` output | Every session in the project: foreground in any mode, fleet workers, background agents, headless and ACP sessions |
 | Files attached with `@` | The foreground session that attached them, until it ends |
+| The repository's source tree, when `knowledge.source_index` is on | Every session that opens the project's store, as for the `.vulnetix` output |
 
 A handoff subagent restricted to the paths a plan names does not get knowledge,
 because its reads are limited to those paths. Explore subagents read the
@@ -194,6 +197,78 @@ Belai admits the attachment, are not written to disk, and go when the session
 ends. They share the project size limit with the `.vulnetix` output, which is
 indexed first.
 
+## Source index
+
+**Status:** new.
+
+Turn on `knowledge.source_index` and Belai also indexes the repository's own
+files. A model that calls `Grep` or `Glob` then gets, beside the exact
+matches, the declarations that resemble its words, so a question such as "where
+is the signing key rotated" finds `Store.Rotate` even when the pattern was not
+the name. The index is per project and off by default, because it sends the
+repository's text through your security classifier once (see below).
+
+What is indexed:
+
+- The files the `/locate` inventory lists, from the trusted repository root and
+  never a worktree. No symlink is followed. Hidden directories, dependency and
+  build directories (`node_modules`, `vendor`, `dist`, `build`, `target` and the
+  like), files `.gitignore` or `.ignore` exclude, binary files, and files named
+  like credentials are not listed. At most 100000 files are listed.
+- Not a file larger than `knowledge.source_max_file_bytes` (262144 by default),
+  and not a file that holds a private key block or a well-known token shape
+  (the same floor the library uses for a document).
+- Not a repository root that is the filesystem root, your home directory, a
+  credential store, a system directory or Belai's state.
+
+How a file is cut. A Go file is parsed with the standard library; any other
+text is scanned for the declaration keywords `func`, `function`, `def`, `fn`,
+`class`, `struct`, `interface`, `trait`, `type`, `enum`, `impl`, `const`, `let`, `var`,
+`module` and `object`. A passage starts at a declaration and takes the comment
+lines directly above it. A declaration under 48 estimated tokens joins the one
+after it, so a file of one-line constants is not a hundred passages, and one over
+600 is cut into the usual passages of about 200 tokens. A file with no
+declaration, or one that does not parse, is cut into plain passages. Each
+passage keeps the file's own line range, so a row points at the real line. The
+names a passage declares and the file's path are indexed with it for ranking,
+and are not part of the text a model is shown.
+
+How it is ranked. A source query is often a name, so a source passage is
+ranked two ways and the lists are fused. One is the similarity ranking the other
+indexes use. The other is BM25 over words and over whole identifiers:
+`parseConfig` is a term of its own beside `parse` and `config`. The lists are
+combined by reciprocal rank (constant 60), ties go to the lexical list, and the
+score is scaled so that a passage first in both lists is 1. The similarity list
+keeps the 0.10 floor; a lexical match must score at least a quarter of the best
+one. No model is asked and nothing leaves the process.
+
+What a model sees. Rows come back as `kb+src/<path>:line:text` from an unnarrowed
+`Grep`, and `Glob` lists `kb+src/<path>` addresses, under the same headers and
+caps as any other knowledge (rules K1, K2 and K5). A `Read` does not append
+source passages: it relates reference documents, and a model asks for related
+source with a search. A deny rule on a file hides its passages, and a `Grep` row
+from a file whose `Read` was withheld earlier in the session is withheld too.
+
+When it is built. The first refresh after the setting is turned on indexes the
+tree in the background; a search sees what is indexed so far. A refresh then
+walks the tree at most every two minutes. `/knowledge reindex` reads it again
+now. A file whose size and modification time are unchanged is not read, and one
+whose SHA-256 is unchanged is not classified again. A file that has gone, or
+that now fails a rule above, leaves the index at the next walk. When the tree is
+larger than `knowledge.source_max_tokens` (200000 estimated tokens by default),
+files are taken in path order and the rest are left out; `belai agent knowledge`
+shows the size against the limit.
+
+The index file is `knowledge/source/<hash of the project root>/index.bin` in
+Belai's state directory, mode 0600, with the same magic, version and SHA-256
+trailer as every index. The two fields it adds are optional in the file, so an index
+written before this feature still loads. A corrupt file is used for nothing, warned about and never overwritten.
+Turning the setting off drops the index from every search and leaves its file.
+
+A source document is tagged by the same fixed tables as any other (language,
+type, labels). The `knowledge_topics` Jev job never sees source text, whatever the
+backend.
+
 ## Settings
 
 ```json
@@ -203,7 +278,10 @@ indexed first.
     "max_project_tokens": 200000,
     "max_result_tokens": 3000,
     "topic_chunks": 12,
-    "topic_budget_docs": 40
+    "topic_budget_docs": 40,
+    "source_index": false,
+    "source_max_tokens": 200000,
+    "source_max_file_bytes": 262144
   }
 }
 ```
@@ -219,13 +297,17 @@ what you are charged.
 | `knowledge.max_result_tokens` | `3000`; the most one search returns, across every index | 200 to 50000 | dropped |
 | `knowledge.topic_chunks` | `12`; the most chunks of one document sent to a decision backend to find its topics (a longer document is sampled) | 1 to 64 | dropped |
 | `knowledge.topic_budget_docs` | `40`; the most documents one refresh sends to a decision backend for topics; 0 sends none | 0 to 1000 | dropped |
+| `knowledge.source_index` | `false`; index the repository's own files (see [Source index](#source-index)) | `true` or `false` | dropped |
+| `knowledge.source_max_tokens` | `200000`; the most the source index keeps for a project | 1000 to 5000000 | dropped |
+| `knowledge.source_max_file_bytes` | `262144`; the largest file the source index reads | 1024 to 16777216 | dropped |
 
 A value outside its range fails settings resolution with a message naming the
 key. A repository cannot raise a limit, so the whole `knowledge` key is ignored
 in a project's `.vulnetix/settings.json`. Set it in your global `settings.json`
-or in `/settings`, which has five rows in the *Knowledge* group, always saved
+or in `/settings`, which has eight rows in the *Knowledge* group, always saved
 to your global file: `knowledge per profile`, `knowledge for project`,
-`knowledge per search`, `knowledge topic chunks` and `knowledge topic documents`.
+`knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`,
+`index source tree`, `source index size` and `source index file size`.
 `x` returns a row to its default.
 
 When a corpus is larger than its limit, documents are taken in order and the
@@ -238,7 +320,7 @@ an existing index on the next load.
 belai agent knowledge [-index] [-json] [NAME]
 ```
 
-Prints each index with its size against its limit and one row per document:
+Prints each index (the source index as `src`, when it is on) with its size against its limit and one row per document:
 address, passages, tokens, how many were dropped at ingestion, its type and its
 topic ids. With `-json` each document also has its language and who decided its
 topics (`patterns` or `jev`). It prints counts, addresses and tag ids, never
@@ -305,7 +387,9 @@ a view for you: nothing it shows goes to a model, a transcript, telemetry or syn
 | agents | The agent profiles that list documents or have an index. `enter` picks one and lists its documents |
 
 `/knowledge global` and `/knowledge agents` open on that scope; `1`, `2`, `3` and
-`tab` switch. A document row shows its address, type, language and best topics,
+`tab` switch. The project scope lists the source index's documents under `src`
+when it is on, read-only. `/knowledge reindex` reads the source tree again in
+the background, or says how to turn the index on when it is off. A document row shows its address, type, language and best topics,
 and the pane below shows its labels, its topics with their scores and who decided
 them, its size and its passages. `enter` shows the indexed text. `/` filters by
 words or labels (`type:test`, `lang:go`, `topic:jwt`, `kind:sarif`, `tool:semgrep`).
@@ -335,8 +419,9 @@ listed as unreadable and left as it is, and nothing here writes an index.
   cosine similarity. The corpus is bounded by the limits above, so a search is
   an in-memory lookup that takes milliseconds.
 - **Storage.** Each index is one file in Belai's state directory:
-  `knowledge/profiles/<profile id>/index.bin` and
-  `knowledge/projects/<hash of the project root>/index.bin`, mode 0600. The file
+  `knowledge/profiles/<profile id>/index.bin`,
+  `knowledge/projects/<hash of the project root>/index.bin` and, when the source
+  index is on, `knowledge/source/<hash of the project root>/index.bin`, mode 0600. The file
   carries a magic, a version and a SHA-256 trailer. A file that fails the check
   is not used and not overwritten, and the session starts with an empty index
   and a warning. The state directory is hidden from every sandboxed command, so
@@ -361,6 +446,12 @@ listed as unreadable and left as it is, and nothing here writes an index.
   document's topics (see [Labels and topics](#labels-and-topics)). A flagged
   passage was never stored, so it is never sent. A backend is the one you set up
   yourself; with none, nothing is sent.
+- **The source tree is classified like a document.** Each source passage is
+  sanitised and classified as file text before it is stored, with the same
+  batching, the same drop of a flagged passage and the same refusal to index a
+  file when the classifier cannot answer. It is the one place where a whole
+  repository's text goes to your classifier, which is why the index is off until
+  you turn it on, and why only your own settings can do so.
 - **Guardrails off** sends nothing to the classifier at ingestion either, as
   everywhere else. The text is still sanitised.
 - **`Read` stays classified.** Its result is a `Read` result, so the related
@@ -447,6 +538,17 @@ test files is not named here, so this table and the code move together.
 | K58 | The topic cut-off cannot be set below 0.5, and the job is a switch like the others | `TestTopicAtDefaultAndFloor` |
 | K59 | `belai agent knowledge` reports each document's type, language, topic ids and who decided them (`patterns` or `jev`), as ids only | `TestAgentKnowledgeReportsTagsAsIdsOnly` |
 | K60 | `belai rc` advertises the knowledge catalogue of its profiles' and offered directories' indexes: each document's knowledge address, size, SHA-256, harness labels and topics, never passage text or a source path. A label or topic outside the harness shapes and a document without a knowledge address or SHA-256 are left out; an index is loaded again only when its file changes | `TestKnowledgeCatalogueCarriesFactsAndNoText`, `TestKnowledgeDocsKeepOnlyHarnessShapes`, `TestLocalKnowledgeCapsWhatOneAdvertisementCarries` |
+| K61 | The source index is off by default and is the user's opt-in: nothing is walked, indexed or saved while it is off, turning it on loads the saved file and searches the tree, turning it off hides it and keeps the file | `TestStoreSourceIndexIsOffByDefaultAndOptIn`, `TestSourceIndexFollowsTheSettingAndReindexExplainsWhenOff` |
+| K62 | A source file is cut at declarations: Go is parsed and other text is scanned, comments above a declaration go with it, small declarations join, large ones are cut, and a file with none or one that does not parse is cut as plain text, always with the file's own line range | `TestSplitSourceGoChunksStartAtDeclarations`, `TestSplitSourceOtherLanguagesAndFallbacks`, `TestSplitSourceJoinsSmallAndCutsLargeDeclarations` |
+| K63 | Only eligible files are indexed: no ignored, hidden, dependency, binary, credential-named, symlinked or oversized file, none that holds a private key or known token shape, and no blocked root; a document keeps its host path for the deny filter | `TestSyncSourceEnumeratesEligibleFilesOnly`, `TestSyncSourceCapAndBlockedRoot` |
+| K64 | Source passages are classified at ingestion: a flagged passage is never stored, a classifier error stores nothing for that file, and an unchanged file is neither read nor classified again | `TestSyncSourceGateErrorFailsClosedAndFlaggedChunkIsDropped`, `TestSyncSourceIsIncrementalAndDropsGoneFiles` |
+| K65 | A source query is ranked by similarity and by BM25 over words and whole identifiers, fused by reciprocal rank, so an exact name beats looser similarity; the order is stable and the score stays in 0 to 1; no other index changes its ranking | `TestCodeTermsKeepWholeIdentifiers`, `TestSourceSearchExactIdentifierBeatsLooseSimilarity`, `TestSourceSearchIsStableAndScoresInUnitRange`, `TestOtherIndexesAreNotHybrid` |
+| K66 | The source index file round trips and keeps its ranking, an index written before the new fields existed still loads, a corrupt file is used for nothing and never overwritten, and the file sits per project outside the repository under a path that names no directory | `TestSourceIndexRoundTripsAndAnOldSnapshotStillLoads`, `TestStoreSourceCorruptIndexIsUsedForNothing`, `TestSourceDirIsPerProjectAndOutsideTheRepository` |
+| K67 | The tree is walked at most every two minutes unless `/knowledge reindex` forces it | `TestStoreSourceRefreshIsRateLimitedUntilReindex` |
+| K68 | A `Read` relates reference documents and never source passages, a `Grep` carries source rows under the knowledge header, and a row from a file whose `Read` was withheld is withheld | `TestReadLeavesSourceIndexPassagesOut`, `TestGrepCarriesSourceIndexRows`, `TestFlaggedFilesWithholdSourceIndexRows` |
+| K69 | The three source settings have defaults and ranges, name the key when out of range, and are the user's alone: a project layer cannot turn the index on or raise a limit | `TestKnowledgeSourceDefaultsAndOverride`, `TestValidateKnowledgeSourceBounds`, `TestKnowledgeSourceIndexIsPerUser` |
+| K70 | `/settings` has the three source rows in the Knowledge group, always saved to the global file | `TestSettingsKnowledgeSourceRowsAndToggle` |
+| K71 | A source document is tagged by the fixed tables only | `TestSourceTagsStayDeterministic` |
 
 ## Edge cases
 
@@ -465,3 +567,7 @@ test files is not named here, so this table and the code move together.
 | E11 | A profile lists `.vulnetix` and the project index holds the same artifacts | A search and a glob show each passage and each document once | `TestAPassageInTheProfileAndTheProjectIsShownOnce` |
 | E12 | The decision backend answers nothing for a document | The pattern topics stand and the document is offered again at a later refresh while the budget lasts | `TestTaggerFallsBackToPatternsWhenTheBackendFails` |
 | E13 | A project or agent has no index file yet | The screen lists it as empty rather than failing, and writes nothing | `TestCatalogMissingIndexIsEmptyNotAnError` |
+| E14 | The repository root is the filesystem root, the home directory, a credential store or Belai's state | The source index refuses it and indexes nothing | `TestSyncSourceCapAndBlockedRoot` |
+| E15 | A source file holds a private key block or a known token shape | It is left out and counted as skipped; if it was indexed before, it leaves at the next walk | `TestSyncSourceEnumeratesEligibleFilesOnly` |
+| E16 | The source index file is corrupt | It is not used and not overwritten: the session starts with an empty source index and a warning | `TestStoreSourceCorruptIndexIsUsedForNothing` |
+| E17 | The source index is turned off | Searches stop seeing it at once and its file is kept | `TestStoreSourceIndexIsOffByDefaultAndOptIn` |

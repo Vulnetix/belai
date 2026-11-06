@@ -183,6 +183,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     Native third-party reports, tool logs and Belai's own state are never
     indexed. A session's `@` files are indexed in memory after the attachment
     path admitted them, and are never written.
+  - **The source index is the user's opt-in and the same gate.** `knowledge.source_index`
+    (default off, user layers only: `resolve.go` drops the project layer's
+    `knowledge` key whole, so a repository can neither enable it nor raise
+    `source_max_tokens` or `source_max_file_bytes`) adds a fourth scope, `src`,
+    per project (`config.ProjectSourceDir`, `knowledge.SyncSource`). The harness
+    enumerates the trusted repository root (never a worktree) through the
+    `internal/locate` inventory, adds no second skip list beyond
+    `BlockedAbsolute` and the shared `internal/secretshape` floor, and every
+    chunk is sanitised and admitted by `kbgate.New(…, KindRead)` at ingestion: a
+    flagged chunk is never stored and a gate error stores nothing for that file.
+    No tool and no `tools.Kind` is added; rows leave only through the existing
+    `kb+` formatter, a `Read` never relates source passages, and a `Grep` row
+    from a file whose `Read` was withheld is withheld (`agent.flaggedFiles`).
+    The `knowledge_topics` job never sees source text. Ranking fuses the
+    similarity list with BM25 (`rank_source.go`) and calls no model.
   - **Permissions still apply.** A `Read` deny rule on a chunk's source path
     hides it from search and listing. The registry's file tools carry the hub, so
     a profile's tools allowlist decides which of them see it. A handoff-scoped

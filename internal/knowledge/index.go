@@ -60,6 +60,10 @@ type storedChunk struct {
 	// labels so a search by label finds it. It is not part of the document's
 	// text and holds nothing the tag tables do not name.
 	Label bool
+	// Symbol names what a source chunk declares; it is indexed beside Text and
+	// empty for every other kind of chunk. A snapshot written before the field
+	// existed decodes with it empty.
+	Symbol string
 }
 
 type posting struct {
@@ -75,17 +79,26 @@ type Index struct {
 	chunks []storedChunk
 	tokens int
 	tagger tags.Tagger
+	// code marks a source-tree index (NewSourceIndex): its chunks also carry
+	// BM25 postings and a search fuses the two rankings (rank_source.go).
+	code bool
 
 	// derived by finalize
 	dirty bool
 	idf   map[uint32]float32
 	post  map[uint32][]posting
+	bm    *bm25
 }
 
 // NewIndex returns an empty index. name labels it in hit rows ("project", a
 // profile's name, "session").
 func NewIndex(name string) *Index {
 	return &Index{name: name, dirty: true}
+}
+
+// NewSourceIndex returns an empty index for a project's source tree.
+func NewSourceIndex(name string) *Index {
+	return &Index{name: name, dirty: true, code: true}
 }
 
 // Name is the label the index was created with.
@@ -191,7 +204,12 @@ func (ix *Index) Ingest(ctx context.Context, in Input, gate Gate, capTokens int)
 			res.Truncated = true
 			break
 		}
-		cands = append(cands, storedChunk{Start: int32(c.Start), End: int32(c.End), Text: text, Tokens: int32(tok), Tf: termFreqs(text)})
+		sc := storedChunk{Start: int32(c.Start), End: int32(c.End), Text: text, Tokens: int32(tok), Tf: termFreqs(text)}
+		if ix.code {
+			sc.Symbol = sanitize.Line(c.Symbol, maxSymbolRunes)
+			sc.Tf = termFreqs(codeVectorText(relOf(in.Address), sc.Symbol, text))
+		}
+		cands = append(cands, sc)
 		plan += tok
 	}
 	admitted, err := admit(ctx, gate, cands)
@@ -335,6 +353,10 @@ func (ix *Index) finalize() {
 			ix.post[f.B] = append(ix.post[f.B], posting{chunk: int32(ci), w: f.W})
 		}
 	}
+	ix.bm = nil
+	if ix.code {
+		ix.buildBM25()
+	}
 	ix.dirty = false
 }
 
@@ -389,6 +411,8 @@ type Hit struct {
 	Label bool
 	// Labels are the document's searchable labels (type, language, topics).
 	Labels []string
+	// Code is true for a hit from a source-tree index.
+	Code bool
 }
 
 // MinScore is the cosine similarity below which a chunk is not a hit. Hashed
@@ -407,7 +431,7 @@ func (ix *Index) search(query string, limit int) []Hit {
 		return nil
 	}
 	q := weigh(termFreqs(query), ix.idf)
-	if len(q) == 0 {
+	if len(q) == 0 && !ix.code {
 		return nil
 	}
 	score := map[int32]float32{}
@@ -416,14 +440,10 @@ func (ix *Index) search(query string, limit int) []Hit {
 			score[p.chunk] += f.W * p.w
 		}
 	}
-	type scored struct {
-		c int32
-		s float32
-	}
-	var all []scored
+	var all []rankedChunk
 	for c, s := range score {
 		if float64(s) >= MinScore {
-			all = append(all, scored{c, s})
+			all = append(all, rankedChunk{c, s})
 		}
 	}
 	sort.Slice(all, func(i, j int) bool {
@@ -432,6 +452,10 @@ func (ix *Index) search(query string, limit int) []Hit {
 		}
 		return all[i].c < all[j].c
 	})
+	if ix.code {
+		// MinScore gates the cosine list; the BM25 list has its own floor.
+		all = fuse(headOf(all, bm25Depth), ix.bm25Rank(query, bm25Depth))
+	}
 	if limit > 0 && len(all) > limit {
 		all = all[:limit]
 	}
@@ -442,7 +466,7 @@ func (ix *Index) search(query string, limit int) []Hit {
 		out = append(out, Hit{
 			Index: ix.name, Address: d.Address, Source: d.Source,
 			Start: int(c.Start), End: int(c.End), Text: c.Text, Tokens: int(c.Tokens), Score: float64(a.s),
-			Label: c.Label, Labels: d.Tags.All(),
+			Label: c.Label, Labels: d.Tags.All(), Code: ix.code,
 		})
 	}
 	return out
@@ -520,4 +544,11 @@ func admitRange(ctx context.Context, gate Gate, cands []storedChunk, out []bool,
 		return err
 	}
 	return admitRange(ctx, gate, cands, out, mid, to)
+}
+
+func headOf(r []rankedChunk, n int) []rankedChunk {
+	if len(r) > n {
+		return r[:n]
+	}
+	return r
 }

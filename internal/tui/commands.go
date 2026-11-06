@@ -611,11 +611,13 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("inbox", "cards waiting on you: flow checkpoints, cards assigned to a person, blocked cards", nil, func(a *App, arg string) tea.Cmd {
 		return a.openInbox()
 	})
-	r.Register("knowledge", "browse and search indexed knowledge: this project, every project, the agents", func() []string {
-		return []string{"project", "global", "agents"}
+	r.Register("knowledge", "browse and search indexed knowledge: this project, every project, the agents; reindex re-reads the source tree", func() []string {
+		return []string{"project", "global", "agents", "reindex"}
 	}, func(a *App, arg string) tea.Cmd {
 		tab := knowTabProject
 		switch strings.ToLower(strings.TrimSpace(arg)) {
+		case "reindex":
+			return a.reindexSource()
 		case "global":
 			tab = knowTabGlobal
 		case "agents", "agent":

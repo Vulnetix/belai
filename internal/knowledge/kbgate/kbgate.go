@@ -62,8 +62,8 @@ type Setup struct {
 
 // Open builds the session's Store: the caps come from the user's settings and
 // each part's chunks are classified through its own gate (a profile's
-// documents as file text, the scanner's output as third-party text). With
-// nothing to cover it returns nil. Open loads what is on disk at once. With
+// documents and the source tree as file text, the scanner's output as
+// third-party text). With nothing to cover it returns nil. Open loads what is on disk at once. With
 // wait the persistent indexes are then brought up to date before it returns,
 // which an unattended session wants; without it the refresh runs in the
 // background and a search sees whatever has been indexed so far. A cancelled
@@ -73,6 +73,7 @@ func Open(ctx context.Context, s Setup, wait bool) *knowledge.Store {
 		return nil
 	}
 	index, project, _ := s.Settings.KnowledgeLimits()
+	srcOn, srcTokens, srcBytes := s.Settings.KnowledgeSource()
 	store := knowledge.Open(knowledge.Options{
 		Root:          s.Root,
 		Profile:       s.Profile,
@@ -82,6 +83,12 @@ func Open(ctx context.Context, s Setup, wait bool) *knowledge.Store {
 		ProjectGate:   New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRemote),
 		CopyOutside:   s.CopyOutside,
 		Tagger:        NewTagger(s.Cfg, s.Settings),
+		// The source tree is file text, so its chunks are classified as a
+		// profile's documents are.
+		SourceIndex:     srcOn,
+		SourceTokens:    srcTokens,
+		SourceFileBytes: srcBytes,
+		SourceGate:      New(s.Cfg, s.Client, s.Cache, s.Levels, tools.KindRead),
 	})
 	if wait {
 		_, _ = store.Refresh(ctx)

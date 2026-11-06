@@ -84,7 +84,11 @@ func (f *flaggedFiles) withholdGrep(content, root, dir string) string {
 // symlinks evaluated — and reports its verdict.
 func (f *flaggedFiles) lookup(p, root, dir string) (rolemanager.Sentinel, bool) {
 	var candidates []string
-	if filepath.IsAbs(p) {
+	if rel, ok := strings.CutPrefix(p, "kb+src/"); ok {
+		// A row from the source index names the repository file it was cut
+		// from: a withheld Read of that file withholds the row too.
+		candidates = append(candidates, filepath.Join(root, filepath.FromSlash(rel)), filepath.Join(dir, filepath.FromSlash(rel)))
+	} else if filepath.IsAbs(p) {
 		candidates = append(candidates, p)
 	} else {
 		candidates = append(candidates, filepath.Join(root, p), filepath.Join(dir, p))

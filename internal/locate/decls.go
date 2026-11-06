@@ -193,3 +193,23 @@ func scanDecls(src []byte) []Decl {
 	}
 	return out
 }
+
+// ParseDecls reads the declared names of a file called name whose bytes are
+// src, as Declarations does for a path: a Go file is parsed, any other text is
+// scanned line by line. It reads no file and returns nil for text that looks
+// binary.
+func ParseDecls(name string, src []byte) []Decl {
+	head := src
+	if len(head) > sniffBytes {
+		head = head[:sniffBytes]
+	}
+	if !IsText(head) {
+		return nil
+	}
+	if strings.EqualFold(filepath.Ext(name), ".go") {
+		if ds := goDecls(name, src); ds != nil {
+			return ds
+		}
+	}
+	return scanDecls(src)
+}

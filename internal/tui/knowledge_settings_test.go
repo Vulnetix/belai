@@ -82,3 +82,49 @@ func TestSettingsKnowledgeRejectsOutOfRangeAndClears(t *testing.T) {
 		t.Fatalf("row after clear = %q", row.value)
 	}
 }
+
+func TestSettingsKnowledgeSourceRowsAndToggle(t *testing.T) {
+	a := knowledgeApp(t, config.ScopeProject)
+	for key, want := range map[string]string{
+		"knowledge.source_index":          "off",
+		"knowledge.source_max_tokens":     strconv.Itoa(config.DefaultKnowledgeSourceTokens),
+		"knowledge.source_max_file_bytes": strconv.Itoa(config.DefaultKnowledgeSourceFileBytes),
+	} {
+		row, idx := settingsRowByKey(a, key)
+		if idx < 0 || row.value != want {
+			t.Fatalf("%s row = %+v", key, row)
+		}
+		if row.group != "knowledge" || !settingsWritesGlobalOnly(key) {
+			t.Fatalf("%s must be in the knowledge group and global only", key)
+		}
+	}
+	// A project scope on the screen still writes the user's own file.
+	if err := a.cycleToggle("knowledge.source_index"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := config.LoadGlobal()
+	if err != nil || g.Knowledge == nil || g.Knowledge.SourceIndex == nil || !*g.Knowledge.SourceIndex {
+		t.Fatalf("global = %+v err=%v", g.Knowledge, err)
+	}
+	if on, _, _ := a.settings.KnowledgeSource(); !on {
+		t.Fatal("the live settings must follow the toggle")
+	}
+	row, _ := settingsRowByKey(a, "knowledge.max_index_tokens")
+	_ = row
+	if err := a.cycleToggle("knowledge.source_index"); err != nil {
+		t.Fatal(err)
+	}
+	if on, _, _ := a.settings.KnowledgeSource(); on {
+		t.Fatal("a second toggle turns it off")
+	}
+	size, _ := settingsRowByKey(a, "knowledge.source_max_file_bytes")
+	if err := a.commitTextRow(size, "100"); err == nil {
+		t.Fatal("a file size under the floor must be refused")
+	}
+	if err := a.commitTextRow(size, "65536"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.knowledgeUnset("knowledge.source_index"); err != nil {
+		t.Fatal(err)
+	}
+}

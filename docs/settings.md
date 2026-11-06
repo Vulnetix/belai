@@ -46,7 +46,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
 | Firewall | `permission offers`, `auto-apply permissions` |
-| Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents` |
+| Knowledge | `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`, `index source tree`, `source index size`, `source index file size` |
 | Jev jobs | one switch per job: `jev bash swap`, `jev compaction prune`, `jev tool selection`, `jev tool search`, `jev lsp triage`, `jev option order`, `jev explore locate`, `jev voice command`, `jev request scale`, `jev handoff clarity`, `jev gate alignment`, `jev request coverage`, `jev goal judge`, `jev knowledge topics`, `jev agent pick`, `jev teleport verify` |
 | Jev thresholds | one slider per cut-off, in the sections below |
 
@@ -225,7 +225,7 @@ movement, edit and back always stay.
 - **A track** is 20 cells with a `│` at the default, so a value reads against
   where it starts.
 - **Editing a text row** (`provider`, `model`, `session retention`, `max agents`,
-  `budget cycle`, `test command`, `test fix passes`, `test timeout`, `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`) opens the
+  `budget cycle`, `test command`, `test fix passes`, `test timeout`, `knowledge per profile`, `knowledge for project`, `knowledge per search`, `knowledge topic chunks`, `knowledge topic documents`, `source index size`, `source index file size`) opens the
   editor below the list, and the body shrinks by its height. `enter` saves,
   `esc` cancels; a refused value stays open with the reason.
 - **Settings with no row.** Some keys are edited in `settings.json` only: the

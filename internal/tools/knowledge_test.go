@@ -296,3 +296,24 @@ func TestPreviewsOfNothingAreEmpty(t *testing.T) {
 		t.Fatal("nil store")
 	}
 }
+
+func TestReadLeavesSourceIndexPassagesOut(t *testing.T) {
+	reg, root, fk := knowledgeFixture(t)
+	fk.hits = []KnowledgeHit{
+		{Address: "kb+src/other/auth.go", Source: "/x/other/auth.go", Start: 1, End: 4, Text: "func authenticate() {}", Score: 0.9, Code: true},
+		{Address: "kb+prof/a.md", Source: "/x/a.md", Start: 1, End: 1, Text: "signing key notes", Score: 0.9},
+	}
+	res := run(t, reg, WithKnowledge(context.Background()), "Read", map[string]any{"file_path": filepath.Join(root, "main.go")})
+	if strings.Contains(res.Content, "kb+src/") || !strings.Contains(res.Content, "kb+prof/a.md") {
+		t.Fatalf("a Read relates reference documents, not other source files:\n%s", res.Content)
+	}
+}
+
+func TestGrepCarriesSourceIndexRows(t *testing.T) {
+	reg, _, fk := knowledgeFixture(t)
+	fk.hits = []KnowledgeHit{{Address: "kb+src/pkg/auth.go", Source: "/x/pkg/auth.go", Start: 10, End: 11, Text: "func Rotate() {\n}", Score: 0.9, Code: true}}
+	res := run(t, reg, WithKnowledge(context.Background()), "Grep", map[string]any{"pattern": "rotate signing"})
+	if res.Kind != KindGrep || !strings.Contains(res.Content, "kb+src/pkg/auth.go:10:func Rotate() {") {
+		t.Fatalf("grep = %q", res.Content)
+	}
+}

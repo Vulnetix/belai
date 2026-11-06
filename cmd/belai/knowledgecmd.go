@@ -85,7 +85,11 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 		return 1, err
 	}
 	indexCap, projectCap, _ := settings.KnowledgeLimits()
-	opts := knowledge.Options{Root: repo, Profile: prof, IndexTokens: indexCap, ProjectTokens: projectCap}
+	srcOn, srcCap, srcBytes := settings.KnowledgeSource()
+	opts := knowledge.Options{
+		Root: repo, Profile: prof, IndexTokens: indexCap, ProjectTokens: projectCap,
+		SourceIndex: srcOn, SourceTokens: srcCap, SourceFileBytes: srcBytes,
+	}
 
 	if *index {
 		if err := trustRepo(repo, *trust); err != nil {
@@ -109,6 +113,7 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 		client := httpclient.Default()
 		opts.ProfileGate = kbgate.New(cfg, client, nil, pol, tools.KindRead)
 		opts.ProjectGate = kbgate.New(cfg, client, nil, pol, tools.KindRemote)
+		opts.SourceGate = kbgate.New(cfg, client, nil, pol, tools.KindRead)
 		opts.Tagger = kbgate.NewTagger(cfg, settings)
 	}
 
@@ -124,7 +129,11 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 			fmt.Fprintf(stderr, "%s: %d documents, %d chunks, %d reused, %d dropped by the classifier, %d skipped%s\n",
 				prof.Name, rep.Profile.Docs, rep.Profile.Chunks, rep.Profile.Reused, rep.Profile.Dropped, rep.Profile.Skipped, capNote(rep.Profile))
 		}
-		if f := rep.Project.Failed + rep.Profile.Failed; f > 0 {
+		if srcOn {
+			fmt.Fprintf(stderr, "src: %d documents, %d chunks, %d reused, %d dropped by the classifier, %d skipped%s\n",
+				rep.Source.Docs, rep.Source.Chunks, rep.Source.Reused, rep.Source.Dropped, rep.Source.Skipped, capNote(rep.Source))
+		}
+		if f := rep.Project.Failed + rep.Profile.Failed + rep.Source.Failed; f > 0 {
 			fmt.Fprintf(stderr, "%d document(s) could not be classified and were not indexed\n", f)
 		}
 	}
@@ -145,6 +154,9 @@ func agentKnowledge(ctx context.Context, fs *flag.FlagSet, rest []string, stdout
 		ir := knowledgeIndexReport{Name: sanitize.Line(n, 64), Cap: projectCap}
 		if prof != nil && n == prof.Name {
 			ir.Cap = indexCap
+		}
+		if n == knowledge.SourceScope {
+			ir.Cap = srcCap
 		}
 		for _, d := range docs[n] {
 			ir.Tokens += d.Tokens

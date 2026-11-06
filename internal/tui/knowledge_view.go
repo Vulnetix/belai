@@ -414,7 +414,7 @@ func (k *knowledgeViewKB) Search(query string) []tools.KnowledgeHit {
 	hits := k.set.Search(query, k.limit, func(h knowledge.Hit) bool { return k.deny == nil || !k.deny(h.Source) })
 	out := make([]tools.KnowledgeHit, 0, len(hits))
 	for _, h := range hits {
-		out = append(out, tools.KnowledgeHit{Address: h.Address, Source: h.Source, Start: h.Start, End: h.End, Text: h.Text, Score: h.Score})
+		out = append(out, tools.KnowledgeHit{Address: h.Address, Source: h.Source, Start: h.Start, End: h.End, Text: h.Text, Score: h.Score, Code: h.Code})
 	}
 	return out
 }

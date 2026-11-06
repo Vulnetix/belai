@@ -181,6 +181,19 @@ func ProjectKnowledgeDir(root string) (string, error) {
 	return filepath.Join(dir, "projects", hex.EncodeToString(sum[:])), nil
 }
 
+// ProjectSourceDir is the directory of one project's source-tree index
+// (docs/knowledge.md, "Source index"), keyed like ProjectKnowledgeDir so the
+// path names no directory. It sits beside the project's .vulnetix index, never
+// inside the repository, and the OS sandbox hides it with the rest of the state
+// directory. root is the trusted repository root, never a worktree.
+func ProjectSourceDir(root string) (string, error) {
+	dir, err := ProjectKnowledgeDir(root)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(dir), "source", filepath.Base(dir)), nil
+}
+
 func validKnowledgeID(id string) bool {
 	if len(id) != 36 {
 		return false

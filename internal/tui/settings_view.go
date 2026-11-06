@@ -937,6 +937,9 @@ func (a *App) cycleToggle(key string) error {
 			s.CommitDraft = nextBool(s.CommitDraft)
 		})
 	}
+	if key == "knowledge.source_index" {
+		return a.knowledgeToggle(key)
+	}
 	if key == "agents.clone" {
 		// Global only, like the daemon that reads it: on (unset) -> off -> on.
 		return a.mutateGlobalSetting(func(s *config.Settings) {

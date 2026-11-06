@@ -31,7 +31,7 @@ func (a *knowledgeAdapter) Search(query string) []tools.KnowledgeHit {
 	hits := a.set.Search(query, a.limit, func(h knowledge.Hit) bool { return !a.deny(h.Source) })
 	out := make([]tools.KnowledgeHit, 0, len(hits))
 	for _, h := range hits {
-		out = append(out, tools.KnowledgeHit{Address: h.Address, Source: h.Source, Start: h.Start, End: h.End, Text: h.Text, Score: h.Score})
+		out = append(out, tools.KnowledgeHit{Address: h.Address, Source: h.Source, Start: h.Start, End: h.End, Text: h.Text, Score: h.Score, Code: h.Code})
 	}
 	return out
 }

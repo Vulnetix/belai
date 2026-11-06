@@ -22,6 +22,10 @@ const (
 type RawChunk struct {
 	Start, End int
 	Text       string
+	// Symbol names what a source chunk declares (SplitSource), as identifiers
+	// from the chunk's own text. It is indexed beside the text for ranking and
+	// is never shown as part of it.
+	Symbol string
 }
 
 // SplitText cuts text into chunks of about TargetTokens on line boundaries,

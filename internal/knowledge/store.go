@@ -37,6 +37,9 @@ type snapshot struct {
 	Name   string
 	Docs   []Doc
 	Chunks []storedChunk
+	// Code marks a source-tree index. A snapshot written before the field
+	// existed decodes false, which is what every earlier index is.
+	Code bool
 }
 
 // Path is where the index for dir is kept.
@@ -83,6 +86,7 @@ func Load(dir, name string) (*Index, error) {
 		return nil, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
 	ix := NewIndex(name)
+	ix.code = snap.Code
 	ix.docs, ix.chunks = snap.Docs, snap.Chunks
 	for _, d := range ix.docs {
 		ix.tokens += d.Tokens
@@ -112,7 +116,7 @@ func (ix *Index) Save(dir string) error {
 		}
 	}
 	ix.mu.RLock()
-	snap := snapshot{Name: ix.name, Docs: ix.docs, Chunks: ix.chunks}
+	snap := snapshot{Name: ix.name, Docs: ix.docs, Chunks: ix.chunks, Code: ix.code}
 	var buf bytes.Buffer
 	buf.WriteString(magic)
 	var v [4]byte

@@ -158,6 +158,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Rewriting a model's Bash command word before permission matching | [Bash rewrite](bash-rewrite.md) | alpha-20261002 |
 | Searching profile documents and project scanner output by meaning | [Knowledge](knowledge.md) | alpha-20261001 |
 | A row for each vulnerability identifier, with a console link and a triage launch | [Vulnerability row](vuln-row.md) | alpha-20261002 |
+| Source index: declaration-aware passages of the repository's own files, ranked by similarity and by identifier, classified at ingestion, off by default | [Knowledge](knowledge.md#source-index) | alpha-20261106 |
 | Stuck-loop detection inside a pass | [Resilience](resilience.md) | Roadmap |
 | Tolerant, uniqueness-checked Edit matching with near-miss diagnostics | [Tolerant Edit matching](edit.md) | alpha-20261106 |
 | Configurable compaction: thresholds, keep counts, a summary circuit breaker, `/compact` focus and status | [Compaction settings](compaction.md) | alpha-20261106 |

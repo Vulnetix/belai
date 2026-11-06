@@ -17,6 +17,7 @@ var knowledgeTestFiles = []string{
 	"internal/knowledge/knowledge_test.go",
 	"internal/knowledge/manager_test.go",
 	"internal/knowledge/sources_test.go",
+	"internal/knowledge/source_test.go",
 	"internal/knowledge/newest_test.go",
 	"internal/knowledge/tagging_test.go",
 	"internal/knowledge/catalog_test.go",

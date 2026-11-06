@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/knowledge"
 	"github.com/vulnetix/belai/internal/knowledge/kbgate"
@@ -26,10 +28,14 @@ func (a *App) knowledgeStore() *knowledge.Store {
 		return a.knowStore
 	}
 	index, project, _ := a.settings.KnowledgeLimits()
+	srcOn, srcTokens, srcBytes := a.settings.KnowledgeSource()
 	// CopyOutside: the foreground agent works in the project itself, so a
 	// document it lists from elsewhere is copied under .vulnetix/knowledge for
 	// its file tools.
-	a.knowStore = knowledge.Open(knowledge.Options{Root: a.workdir, IndexTokens: index, ProjectTokens: project, CopyOutside: true})
+	a.knowStore = knowledge.Open(knowledge.Options{
+		Root: a.workdir, IndexTokens: index, ProjectTokens: project, CopyOutside: true,
+		SourceIndex: srcOn, SourceTokens: srcTokens, SourceFileBytes: srcBytes,
+	})
 	a.syncKnowledge()
 	return a.knowStore
 }
@@ -43,6 +49,8 @@ func (a *App) syncKnowledge() {
 	}
 	index, project, _ := a.settings.KnowledgeLimits()
 	a.knowStore.SetLimits(index, project)
+	srcOn, srcTokens, srcBytes := a.settings.KnowledgeSource()
+	a.knowStore.SetSource(srcOn, srcTokens, srcBytes)
 	// The gates read the provider and posture as they are now, snapshotted
 	// here on the UI goroutine so the background refresh never races them.
 	cfg, client, cache, live := a.cfg, a.client, a.cache, a.live
@@ -50,6 +58,7 @@ func (a *App) syncKnowledge() {
 		kbgate.New(cfg, client, cache, live, tools.KindRead),
 		kbgate.New(cfg, client, cache, live, tools.KindRemote),
 	)
+	a.knowStore.SetSourceGate(kbgate.New(cfg, client, cache, live, tools.KindRead))
 	a.knowStore.SetTagger(kbgate.NewTagger(cfg, a.settings))
 	var prof *knowledge.Profile
 	if p, ok := a.engagedProfile(); ok && p.ID != "" {
@@ -72,6 +81,21 @@ func (a *App) syncKnowledge() {
 		interval = 0
 	}
 	a.knowStore.RefreshAsync(context.Background(), interval)
+}
+
+// reindexSource is /knowledge reindex: it reads the source tree again in the
+// background whatever the refresh interval, through the same classifier gate.
+// A file whose content is unchanged is not classified again.
+func (a *App) reindexSource() tea.Cmd {
+	store := a.knowledgeStore()
+	a.syncKnowledge()
+	if !store.SourceOn() {
+		a.addSystem("The source index is off. Turn on knowledge.source_index in /settings (global only) to index this repository's files.")
+		return nil
+	}
+	store.Reindex(context.Background())
+	a.addSystem("Reading the source tree again in the background; /knowledge lists what is indexed.")
+	return nil
 }
 
 // engagedKnowledge reports the engaged agent profile for tests and status.

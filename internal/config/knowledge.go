@@ -24,6 +24,16 @@ const (
 	// get their turn at a later refresh.
 	DefaultKnowledgeTopicDocs = 40
 
+	// DefaultKnowledgeSourceTokens is the corpus the source index (off by
+	// default) may keep for one project.
+	DefaultKnowledgeSourceTokens = 200_000
+	// DefaultKnowledgeSourceFileBytes is the largest source file the source
+	// index reads.
+	DefaultKnowledgeSourceFileBytes = 256 << 10
+
+	MinKnowledgeSourceFileBytes = 1 << 10
+	MaxKnowledgeSourceFileBytes = 16 << 20
+
 	MinKnowledgeTopicChunks = 1
 	MaxKnowledgeTopicChunks = 64
 	MaxKnowledgeTopicDocs   = 1_000
@@ -53,6 +63,32 @@ type KnowledgeSettings struct {
 	// TopicBudgetDocs is the most documents one refresh sends to a backend for
 	// topics; 0 sends none. Default 40.
 	TopicBudgetDocs *int `json:"topic_budget_docs,omitempty"`
+	// SourceIndex turns on the per-project source-tree index: declaration-aware
+	// chunks of the repository's own files, classified at ingestion and searched
+	// by Grep and Glob beside the other knowledge. Default false.
+	SourceIndex *bool `json:"source_index,omitempty"`
+	// SourceMaxTokens caps the source index's corpus, in estimated tokens.
+	// Default 200000.
+	SourceMaxTokens *int `json:"source_max_tokens,omitempty"`
+	// SourceMaxFileBytes is the largest file the source index reads. Default
+	// 262144.
+	SourceMaxFileBytes *int `json:"source_max_file_bytes,omitempty"`
+}
+
+// KnowledgeSource returns whether the source index is on and its two bounds:
+// the corpus cap in estimated tokens and the largest file read, in bytes.
+func (s Settings) KnowledgeSource() (on bool, tokens, fileBytes int) {
+	tokens, fileBytes = DefaultKnowledgeSourceTokens, DefaultKnowledgeSourceFileBytes
+	if k := s.Knowledge; k != nil {
+		on = k.SourceIndex != nil && *k.SourceIndex
+		if k.SourceMaxTokens != nil {
+			tokens = *k.SourceMaxTokens
+		}
+		if k.SourceMaxFileBytes != nil {
+			fileBytes = *k.SourceMaxFileBytes
+		}
+	}
+	return on, tokens, fileBytes
 }
 
 // KnowledgeTopics returns the effective sample size per document and the
@@ -104,6 +140,15 @@ func (k *KnowledgeSettings) merge(from *KnowledgeSettings) {
 	if from.TopicBudgetDocs != nil {
 		k.TopicBudgetDocs = from.TopicBudgetDocs
 	}
+	if from.SourceIndex != nil {
+		k.SourceIndex = from.SourceIndex
+	}
+	if from.SourceMaxTokens != nil {
+		k.SourceMaxTokens = from.SourceMaxTokens
+	}
+	if from.SourceMaxFileBytes != nil {
+		k.SourceMaxFileBytes = from.SourceMaxFileBytes
+	}
 }
 
 // ValidateKnowledge rejects a knowledge block with a size outside its bounds,
@@ -123,6 +168,8 @@ func ValidateKnowledge(s Settings) error {
 		{"knowledge.max_result_tokens", k.MaxResultTokens, MinKnowledgeResultTokens, MaxKnowledgeResultTokens},
 		{"knowledge.topic_chunks", k.TopicChunks, MinKnowledgeTopicChunks, MaxKnowledgeTopicChunks},
 		{"knowledge.topic_budget_docs", k.TopicBudgetDocs, 0, MaxKnowledgeTopicDocs},
+		{"knowledge.source_max_tokens", k.SourceMaxTokens, MinKnowledgeCorpusTokens, MaxKnowledgeCorpusTokens},
+		{"knowledge.source_max_file_bytes", k.SourceMaxFileBytes, MinKnowledgeSourceFileBytes, MaxKnowledgeSourceFileBytes},
 	} {
 		if c.v != nil && (*c.v < c.min || *c.v > c.max) {
 			return fmt.Errorf("%s %d must be between %d and %d", c.key, *c.v, c.min, c.max)

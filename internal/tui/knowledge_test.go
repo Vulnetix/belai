@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
 )
 
@@ -129,4 +131,34 @@ func TestKnowledgeRefreshIntervalIsTwentySeconds(t *testing.T) {
 	if knowledgeRefreshEvery != 20*time.Second {
 		t.Fatalf("refresh interval = %v, docs/knowledge.md says 20 seconds", knowledgeRefreshEvery)
 	}
+}
+
+func TestSourceIndexFollowsTheSettingAndReindexExplainsWhenOff(t *testing.T) {
+	a, dir := knowledgeTUI(t)
+	if err := os.WriteFile(filepath.Join(dir, "auth.go"), []byte("package auth\n\n// RotateSigningKey replaces the oldest key.\nfunc RotateSigningKey() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if a.knowledgeStore().SourceOn() {
+		t.Fatal("the source index is off by default")
+	}
+	a.reindexSource()
+	last := a.messages[len(a.messages)-1].Content
+	if !strings.Contains(last, "knowledge.source_index") {
+		t.Fatalf("reindex while off must say how to turn it on: %q", last)
+	}
+	on := true
+	a.settings.Knowledge = &config.KnowledgeSettings{SourceIndex: &on}
+	a.syncKnowledge()
+	if !a.knowledgeStore().SourceOn() {
+		t.Fatal("turning the setting on must turn the index on")
+	}
+	waitForHit(t, a, "RotateSigningKey", true)
+	hits := a.knowledgeStore().Set().Search("RotateSigningKey", 0, nil)
+	if len(hits) == 0 || hits[0].Address != "kb+src/auth.go" {
+		t.Fatalf("hits = %+v", hits)
+	}
+	off := false
+	a.settings.Knowledge = &config.KnowledgeSettings{SourceIndex: &off}
+	a.syncKnowledge()
+	waitForHit(t, a, "RotateSigningKey", false)
 }

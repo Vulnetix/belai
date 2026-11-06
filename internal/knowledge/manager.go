@@ -48,12 +48,25 @@ type Options struct {
 	// BeginRefresh(), is told when each Refresh starts, so it can bound the
 	// work it does per refresh.
 	Tagger tags.Tagger
+	// SourceIndex turns on the source-tree index of Root (docs/knowledge.md,
+	// "Source index"): it is the user's opt-in and off by default.
+	// SourceTokens caps it and SourceFileBytes bounds one file; zero or less
+	// means the config default. SourceGate admits its chunks; nil is sanitising
+	// alone, the guardrails-off posture.
+	SourceIndex                   bool
+	SourceTokens, SourceFileBytes int
+	SourceGate                    Gate
 }
+
+// sourceEvery is how long a source sync is left alone: it walks the whole
+// tree, so a session that refreshes often does not repeat the walk. A
+// Reindex overrides it.
+const sourceEvery = 2 * time.Minute
 
 // Report is what a Refresh did, as counts and harness-worded warnings only.
 type Report struct {
-	Profile, Project Stats
-	Warnings         []string
+	Profile, Project, Source Stats
+	Warnings                 []string
 }
 
 // Store owns the indexes a session searches: the profile's, the project's and
@@ -71,6 +84,10 @@ type Store struct {
 	session *Index
 
 	mu          sync.Mutex // guards what follows
+	src         *Index     // the source-tree index, nil while it is off
+	srcDir      string
+	lastSource  time.Time
+	forceSource bool
 	prof        *Profile
 	profile     *Index
 	profDir     string
@@ -103,7 +120,75 @@ func Open(o Options) *Store {
 			s.project.Fit(o.ProjectTokens)
 		}
 	}
+	s.SetSource(o.SourceIndex, o.SourceTokens, o.SourceFileBytes)
 	return s
+}
+
+// SetSource turns the source index on or off and sets its bounds (zero or less
+// keeps the config default). Turning it on loads what is on disk at once and
+// waits for Refresh to bring it up to date; turning it off drops it from every
+// search, and leaves its file where it is. A store with no Root has none.
+func (s *Store) SetSource(on bool, tokens, fileBytes int) {
+	if s == nil {
+		return
+	}
+	if tokens <= 0 {
+		tokens = config.DefaultKnowledgeSourceTokens
+	}
+	if fileBytes <= 0 {
+		fileBytes = config.DefaultKnowledgeSourceFileBytes
+	}
+	s.mu.Lock()
+	s.opts.SourceIndex, s.opts.SourceTokens, s.opts.SourceFileBytes = on, tokens, fileBytes
+	have, root := s.src, s.opts.Root
+	s.mu.Unlock()
+	if !on || root == "" {
+		s.mu.Lock()
+		s.src, s.srcDir = nil, ""
+		s.mu.Unlock()
+		return
+	}
+	if have != nil {
+		have.Fit(tokens)
+		return
+	}
+	dir, err := config.ProjectSourceDir(root)
+	if err != nil {
+		s.warn("knowledge: source index unavailable: " + err.Error())
+		return
+	}
+	ix, err := LoadSource(dir)
+	if err != nil {
+		s.warn(fmt.Sprintf("knowledge: the source index failed to load and is empty for this session (%v)", errors.Unwrap(err)))
+		ix = NewSourceIndex(SourceScope)
+	}
+	ix.Fit(tokens)
+	s.mu.Lock()
+	s.src, s.srcDir = ix, dir
+	s.mu.Unlock()
+}
+
+// Reindex asks the next Refresh to read the source tree again whatever the
+// interval, and starts one in the background. A file whose size, time and
+// SHA-256 are unchanged is still not gated again.
+func (s *Store) Reindex(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.forceSource = true
+	s.mu.Unlock()
+	s.RefreshAsync(ctx, 0)
+}
+
+// SourceOn reports whether the source index is on for this store.
+func (s *Store) SourceOn() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.src != nil
 }
 
 // SetProfile makes p the profile whose documents are searchable, or with nil
@@ -189,7 +274,10 @@ func (s *Store) indexes() []*Index {
 	prof := s.profile
 	s.mu.Unlock()
 	var out []*Index
-	for _, ix := range []*Index{prof, s.project, s.session} {
+	s.mu.Lock()
+	src := s.src
+	s.mu.Unlock()
+	for _, ix := range []*Index{prof, s.project, s.session, src} {
 		if ix != nil {
 			out = append(out, ix)
 		}
@@ -245,10 +333,38 @@ func (s *Store) Refresh(ctx context.Context) (Report, error) {
 			rep.Warnings = append(rep.Warnings, "the project index was not saved: "+err.Error())
 		}
 	}
+	s.refreshSource(ctx, &rep)
 	for _, w := range rep.Warnings {
 		s.warn(w)
 	}
 	return rep, nil
+}
+
+// refreshSource syncs the source index when it is on and due. Its chunks are
+// admitted by SourceGate and its tags are the deterministic ones: the
+// knowledge_topics job never sees source text.
+func (s *Store) refreshSource(ctx context.Context, rep *Report) {
+	s.mu.Lock()
+	src, dir, opts := s.src, s.srcDir, s.opts
+	due := s.forceSource || s.lastSource.IsZero() || time.Since(s.lastSource) >= sourceEvery
+	s.mu.Unlock()
+	if src == nil || opts.Root == "" || !due {
+		return
+	}
+	st, err := SyncSource(ctx, src, opts.Root, opts.SourceGate, opts.SourceTokens, opts.SourceFileBytes)
+	rep.Source = st
+	if err != nil {
+		if ctx.Err() == nil {
+			rep.Warnings = append(rep.Warnings, "the source index was not refreshed: "+err.Error())
+		}
+		return
+	}
+	s.mu.Lock()
+	s.lastSource, s.forceSource = time.Now(), false
+	s.mu.Unlock()
+	if err := saveIfUsed(src, dir); err != nil {
+		rep.Warnings = append(rep.Warnings, "the source index was not saved: "+err.Error())
+	}
 }
 
 func (s *Store) limits() (indexTokens, projectTokens int) {
@@ -277,6 +393,17 @@ func (s *Store) SetTagger(t tags.Tagger) {
 	}
 	s.mu.Lock()
 	s.opts.Tagger = t
+	s.mu.Unlock()
+}
+
+// SetSourceGate replaces the gate that admits source chunks, so a store that
+// outlives a change of provider classifies with the current one.
+func (s *Store) SetSourceGate(g Gate) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.opts.SourceGate = g
 	s.mu.Unlock()
 }
 
