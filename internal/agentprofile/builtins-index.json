@@ -24,7 +24,7 @@
     {
       "name": "belai:cli-runner",
       "path": "internal/agentprofile/builtin/cli-runner.json",
-      "sha256": "591ab7b5238a5aaf5d69266b056c7670bbc5147fc158d9a65c7cd452ccd11b03"
+      "sha256": "d7d497e718f2dccc3ed457bdde157b0ab7902a10c99df78324cf70e76856c2ea"
     },
     {
       "name": "belai:cli-runner-write",

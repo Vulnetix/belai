@@ -59,7 +59,6 @@ file in the repository, the forge or a Vulnetix organisation.
 | `config-apply` | mutating | `vulnetix config apply --file .vulnetix/config.yaml --auto-approve` | none |
 | `config-plan` | read-only | `vulnetix config plan --file .vulnetix/config.yaml` | none |
 | `containers` | read-only | `vulnetix containers --disable-memory -o .vulnetix/containers.cdx.json` | `containers.sarif`, `containers.cdx.json` |
-| `defend` | read-only | `vulnetix defend --quiet` | none |
 | `fix` | mutating | `vulnetix fix --yes` | none |
 | `gha-audit` | read-only | `vulnetix gha audit --offline --format sarif --output .vulnetix/gha-audit.sarif` | `gha-audit.sarif` |
 | `gha-advisories` | mutating | `vulnetix gha publish advisories` | none |
@@ -259,9 +258,8 @@ defines.
   uploaded. The reader keeps the advisory id, the severity word and the VEX status
   of each finding that is not `not_affected` or `fixed`; the package, version,
   justification and action text are not copied.
-- `defend` takes an advisory id on the CLI (`vulnetix defend <advisory-id>`) and
-  a card's text may not reach an argument, so the table's `defend --quiet` has no
-  id to give. The `belai:defend-writer` worker runs `vulnetix defend <id>` itself
+- `vulnetix defend <advisory-id>` is not a job, because a card's text may not reach
+  an argument. The `belai:defend-writer` worker runs `vulnetix defend <id>` itself
   for the advisory its card names, under the permission rules and the sandbox.
 
 ## Limits
@@ -273,4 +271,3 @@ defines.
   commit the job runs on.
 - A read-only job runs in the host's checkout at whatever commit it holds, not at
   the commit a pull request names. The result describes that checkout.
-- `defend` needs an advisory id the fixed argv cannot carry yet.

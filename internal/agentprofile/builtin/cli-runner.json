@@ -16,7 +16,6 @@
         "cbom",
         "config-plan",
         "containers",
-        "defend",
         "gha-audit",
         "iac",
         "image",

@@ -124,7 +124,6 @@ var table = []Job{
 	{ID: "bom-validate", Steps: one("bom", "validate", ".vulnetix/inventory.cdx.json"), Needs: []string{".vulnetix/inventory.cdx.json"}, Reader: ReadNone},
 	{ID: "bom-skew", Steps: one("bom", "skew", "--from", ".vulnetix"), Reader: ReadNone},
 	{ID: "triage", Steps: one("triage", "--format", "json", "--vex-format", "json", "--vex-output", ".vulnetix/triage.json"), Artifacts: []string{"triage.json"}, Reader: ReadTriage, File: "triage.json"},
-	{ID: "defend", Steps: one("defend", "--quiet"), Reader: ReadNone},
 	{ID: "jail", Steps: one("jail"), Artifacts: []string{"jail.sarif", "jail.vex.json"}, Reader: ReadSARIF, Kind: "jail", File: "jail.sarif"},
 	{ID: "jail-explain", Steps: one("jail", "explain"), Reader: ReadNone},
 	{ID: "gha-audit", Steps: one("gha", "audit", "--offline", "--format", "sarif", "--output", ".vulnetix/gha-audit.sarif"), Artifacts: []string{"gha-audit.sarif"}, Reader: ReadSARIF, Kind: "gha", File: "gha-audit.sarif"},
