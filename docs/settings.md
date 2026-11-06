@@ -346,6 +346,14 @@ file: `headless.output_format` (`text`, `json` or `stream-json`),
 it; a project file cannot change what a script that runs Belai receives. See
 [Headless structured output](headless.md).
 
+## Prompt cache
+
+The `prompt_cache` block has no row on a settings screen. It is a block in the settings
+file: `prompt_cache.ttl` (`5m` or `1h`), `prompt_cache.keepalive_max` (0 to 100, off at 0)
+and `prompt_cache.keepalive_every_s` (60 to 3500). Only your own layers read it, because a
+longer write and every keep-alive ping spend your tokens; a project file cannot set it.
+`/cache` shows and changes it. See [Prompt cache](prompt-cache.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

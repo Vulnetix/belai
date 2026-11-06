@@ -205,7 +205,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateHeadless, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -411,6 +411,17 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Origin["headless"] = src
 	} else if s.Headless != nil {
 		e.Notes = append(e.Notes, "project headless ignored (it is a user setting)")
+	}
+	if s.PromptCache != nil && src != SourceProject {
+		// A longer cache write and every keep-alive ping spend the user's
+		// tokens: a repository cannot ask for either.
+		if e.Settings.PromptCache == nil {
+			e.Settings.PromptCache = &PromptCacheSettings{}
+		}
+		e.Settings.PromptCache.merge(s.PromptCache)
+		e.Origin["prompt_cache"] = src
+	} else if s.PromptCache != nil {
+		e.Notes = append(e.Notes, "project prompt_cache ignored (it is a user setting)")
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.

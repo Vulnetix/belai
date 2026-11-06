@@ -154,6 +154,11 @@ type Options struct {
 	// keeps sealed prefixes identical, so a provider can serve them from
 	// cache, and skips a nonce GET per build.
 	NoncePool *nonce.Pool
+	// KeepAlive, when set, refreshes the provider's prompt cache of this
+	// session's last request while it is idle (docs/prompt-cache.md). Only the
+	// interactive session sets it; a subagent, a worker and a headless run
+	// leave it nil, so none of them ever pings.
+	KeepAlive *run.KeepAlive
 	// SealMemo, when set, is the sealed-system-prompt memo the session uses
 	// instead of its own: the TUI keeps one beside the nonce pool it keeps,
 	// so a rebuilt session reuses the sealed prefix and the provider cache.
@@ -234,7 +239,10 @@ func stopReason(set run.StopReason, res run.Result, err error) run.StopReason {
 
 // Session executes the tool loop for a single user prompt.
 type Session struct {
-	cfg           run.Config
+	cfg run.Config
+	// prefix notices a cached prefix that changed between two calls of this
+	// session (cache_prefix_changed).
+	prefix        run.PrefixWatch
 	client        *http.Client
 	registry      *tools.Registry
 	perms         permissions.Settings
@@ -671,6 +679,12 @@ func toolsPlanSurface(perms permissions.Settings, surface tools.PlanSurface) too
 
 // NewSession builds a session from options.
 func NewSession(o Options) (*Session, error) {
+	// The cache lifetime is the user's setting; the keep-alive is whatever the
+	// caller owns, and nil for every session that must not ping.
+	if o.Cfg.CacheTTL == "" && o.Settings.PromptCacheTTL() == config.PromptCacheTTL1h {
+		o.Cfg.CacheTTL = config.PromptCacheTTL1h
+	}
+	o.Cfg.KeepAlive = o.KeepAlive
 	maxIter := o.MaxIterations
 	if maxIter <= 0 {
 		maxIter = o.Settings.Resilience.MaxIterationsOr(config.DefaultMaxIterations)

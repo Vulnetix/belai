@@ -116,6 +116,10 @@ func SetUsageObserver(fn UsageObserver) (cancel func()) {
 // fails or is cancelled before it completes reports nothing: providers send
 // usage only with the completed response.
 func reportUsage(ctx context.Context, cfg Config, system string, turns []Turn, a Assistant, toolDefs int, limits []budget.PlanLimit) {
+	if usageRole(ctx) == RoleAgent {
+		// A completed main-turn call restarts the keep-alive's idle clock.
+		cfg.KeepAlive.finish()
+	}
 	obs, tel := usageObserver.Load(), telemetryUsage.Load()
 	if obs == nil && tel == nil {
 		return

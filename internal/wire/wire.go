@@ -342,11 +342,25 @@ type AnthropicOutputConfig struct {
 // including the marked block is cached as one prefix.
 type AnthropicCacheControl struct {
 	Type string `json:"type"`
+	// TTL is the entry's lifetime when it is not the provider's default of
+	// five minutes: "1h". Empty is omitted, so a default marker is unchanged.
+	TTL string `json:"ttl,omitempty"`
 }
 
 // EphemeralCache is the one breakpoint type the harness uses.
 func EphemeralCache() *AnthropicCacheControl {
 	return &AnthropicCacheControl{Type: "ephemeral"}
+}
+
+// EphemeralCacheTTL is EphemeralCache with a lifetime. "1h" is the only value
+// sent; anything else, "5m" included, is the plain marker, so a default
+// request is byte-identical to one built before the ttl existed.
+func EphemeralCacheTTL(ttl string) *AnthropicCacheControl {
+	c := EphemeralCache()
+	if ttl == "1h" {
+		c.TTL = ttl
+	}
+	return c
 }
 
 // AnthropicSystemBlock is one text block of the block-form system prompt.

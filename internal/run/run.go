@@ -85,6 +85,13 @@ type Config struct {
 	// direct call. BaseURL (and, outside transparent mode, APIKey) already
 	// carry the route's values.
 	Firewall *firewall.Route
+	// CacheTTL is the prompt-cache lifetime requested on every breakpoint of a
+	// native Anthropic request: "1h", or empty for the provider's default of
+	// five minutes (prompt_cache.ttl, docs/prompt-cache.md).
+	CacheTTL string
+	// KeepAlive, when set, remembers each main-turn request so an idle session
+	// can refresh its cache. Only the interactive session sets it.
+	KeepAlive *KeepAlive
 }
 
 // ClassifierConfig is a provider/model/credentials tuple scoped to the
@@ -1035,22 +1042,24 @@ func ThinkingSource(cfg Config) string {
 // sealed block, so a change to the session block or the tools briefing still
 // reads the tools and the stable block from cache; the message breakpoint
 // caches the conversation so far for the next iteration of the tool loop.
-// The shared tool slice is copied, never marked in place.
-func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest) {
+// The shared tool slice is copied, never marked in place. Every breakpoint
+// carries the same ttl, so a longer lifetime never follows a shorter one
+// (the provider requires the longer entries first).
+func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest, ttl string) {
 	if s, ok := req.System.(string); ok && s != "" {
 		parts := splitSealedBlocks(s)
 		blocks := make([]wire.AnthropicSystemBlock, len(parts))
 		for i, p := range parts {
 			blocks[i] = wire.AnthropicSystemBlock{Type: "text", Text: p}
 		}
-		blocks[0].CacheControl = wire.EphemeralCache()
-		blocks[len(blocks)-1].CacheControl = wire.EphemeralCache()
+		blocks[0].CacheControl = wire.EphemeralCacheTTL(ttl)
+		blocks[len(blocks)-1].CacheControl = wire.EphemeralCacheTTL(ttl)
 		req.System = blocks
 	}
 	if n := len(req.Tools); n > 0 {
 		tools := make([]wire.AnthropicToolDef, n)
 		copy(tools, req.Tools)
-		tools[n-1].CacheControl = wire.EphemeralCache()
+		tools[n-1].CacheControl = wire.EphemeralCacheTTL(ttl)
 		req.Tools = tools
 	}
 	if n := len(req.Messages); n > 0 {
@@ -1058,13 +1067,13 @@ func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest) {
 		switch c := last.Content.(type) {
 		case string:
 			if c != "" {
-				last.Content = []wire.AnthropicRequestBlock{{Type: "text", Text: c, CacheControl: wire.EphemeralCache()}}
+				last.Content = []wire.AnthropicRequestBlock{{Type: "text", Text: c, CacheControl: wire.EphemeralCacheTTL(ttl)}}
 			}
 		case []wire.AnthropicRequestBlock:
 			if k := len(c); k > 0 {
 				blocks := make([]wire.AnthropicRequestBlock, k)
 				copy(blocks, c)
-				blocks[k-1].CacheControl = wire.EphemeralCache()
+				blocks[k-1].CacheControl = wire.EphemeralCacheTTL(ttl)
 				last.Content = blocks
 			}
 		}
@@ -2252,7 +2261,10 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				OutputConfig: outputConfig,
 			}
 			if d.cache {
-				applyCacheBreakpoints(&req)
+				applyCacheBreakpoints(&req, cfg.CacheTTL)
+			}
+			if isPing(ctx) {
+				pingRequest(&req)
 			}
 			return d.messagesRequest(p, req)
 		default:
@@ -2369,6 +2381,7 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 	if err != nil {
 		return Assistant{}, err
 	}
+	noteKeepAlive(ctx, cfg, d, system, turns, openAITools, anthropicTools, factory)
 	redact := func(s string) string {
 		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
 	}
@@ -2387,6 +2400,7 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 
 	res, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, onRetry)
 	if err != nil {
+		cfg.KeepAlive.finish()
 		return Assistant{}, err
 	}
 

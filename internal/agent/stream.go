@@ -443,6 +443,9 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 	// The advertised surface follows the mode this turn is running in, so a
 	// plan-mode turn never offers a tool executeCall would refuse.
 	_, openAITools, anthropicTools := s.toolSurface()
+	if part := s.prefix.Observe(system, anthropicTools, openAITools); part != "" {
+		rolemanager.RecordCachePrefixChanged(part)
+	}
 	callStart := time.Now()
 	// The call's time and usage are reported once it is done, so a
 	// transcript can attribute a turn's time to model calls.

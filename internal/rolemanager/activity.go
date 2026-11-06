@@ -72,6 +72,7 @@ const (
 	EventFirewallPermission        Event = "firewall_permission"
 	EventDocsWarmed                Event = "docs_warmed"
 	EventHazardAsk                 Event = "hazard_ask"
+	EventCachePrefix               Event = "cache_prefix_changed"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -401,6 +402,8 @@ func Describe(a Activity) (Description, bool) {
 		return docsWarmedDescription(a), true
 	case EventHazardAsk:
 		return hazardAskDescription(a), true
+	case EventCachePrefix:
+		return cachePrefixDescription(a), true
 	case EventGateDraft:
 		return gateDraftDescription(a), true
 	case EventDeliveryReport:

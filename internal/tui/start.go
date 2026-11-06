@@ -60,6 +60,7 @@ func Start(opts Options) error {
 	// ledger once here.
 	if a, ok := model.(*App); ok {
 		a.closeBudgets()
+		a.keepAlive.Close()
 	}
 	// Only a clean exit prints the card. On an error path main.go keeps its
 	// stderr-and-exit-1 behaviour; nothing is written to stdout then.

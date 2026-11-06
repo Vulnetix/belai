@@ -139,6 +139,10 @@ type Settings struct {
 	// event's text (docs/headless.md). A per-user block: the project layer is
 	// dropped, so a repository cannot change what a script receives.
 	Headless *HeadlessSettings `json:"headless,omitempty"`
+	// PromptCache sets the provider cache lifetime and the opt-in keep-alive
+	// ping (docs/prompt-cache.md). A per-user block: a longer write and every
+	// ping spend the user's tokens, so the project layer is dropped.
+	PromptCache *PromptCacheSettings `json:"prompt_cache,omitempty"`
 	// A2A configures agent-to-agent messaging between sessions (docs/a2a.md).
 	// A project layer may turn it off and narrow the filter, never the
 	// reverse.

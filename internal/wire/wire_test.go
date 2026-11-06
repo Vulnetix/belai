@@ -91,6 +91,19 @@ func TestEphemeralCache(t *testing.T) {
 	}
 }
 
+func TestEphemeralCacheTTL(t *testing.T) {
+	for _, ttl := range []string{"", "5m", "24h"} {
+		b, err := json.Marshal(EphemeralCacheTTL(ttl))
+		if err != nil || string(b) != `{"type":"ephemeral"}` {
+			t.Errorf("ttl %q = %s, %v; want the plain marker", ttl, b, err)
+		}
+	}
+	b, err := json.Marshal(EphemeralCacheTTL("1h"))
+	if err != nil || string(b) != `{"type":"ephemeral","ttl":"1h"}` {
+		t.Errorf("1h = %s, %v", b, err)
+	}
+}
+
 // An assistant message carrying tool calls is the one case where the content
 // field is legitimately absent; providers reject an empty assistant content
 // alongside tool_calls.

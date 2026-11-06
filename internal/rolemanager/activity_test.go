@@ -60,6 +60,7 @@ var allEvents = []Event{
 	EventFirewallPermission,
 	EventDocsWarmed,
 	EventHazardAsk,
+	EventCachePrefix,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

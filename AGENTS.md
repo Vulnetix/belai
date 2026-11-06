@@ -1196,6 +1196,26 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   turn once, so the cached prefix stays byte-identical. `offload` changes how
   much admitted content rides on a request, never what is admitted, so any
   settings layer may set it.
+- **Cache pings are the harness's, the user's, and never a turn.** `prompt_cache.*`
+  (`internal/config/promptcache.go`, docs/prompt-cache.md) is read from the user's
+  layers only: `resolve.go` drops the project layer's block with a note and
+  `Settings.Override` never copies it, because a one hour write and every ping spend
+  the user's tokens. A keep-alive (`run.KeepAlive`) is created by the interactive
+  TUI and handed to `agent.NewSession` through `Options.KeepAlive`, which overwrites
+  whatever the incoming config held, so a subagent, a worker, a headless, ACP or
+  remote-control session is built without one and never pings. A ping replays the
+  sealed request the last main-turn call sent, through the request factory that call
+  used (the provider, credential, firewall and netguard path; no second sender), as
+  one blocking call with `max_tokens` 1 (one above a thinking budget). Its reply is
+  dropped inside `KeepAlive.roundTrip`: it never enters the conversation, a
+  transcript, a classifier or a hook, so it has no sanitiser sink and no classifier
+  kind. Only a `RoleAgent` call on a cache-capable Anthropic dialect is remembered.
+  Pings stop for the session on any non-2xx answer, a transport error or a refused
+  request (no retry), at the count, and while a turn runs, plan mode is on, an ask is
+  open, a budget is spent or the provider is local; a rebuilt session drops the stored
+  request. Their tokens reach the budget ledger under the role `keepalive` and are
+  left out of the agent-only figures. `cache_prefix_changed` (`run.PrefixWatch`)
+  records the changed part, `system` or `tools`, and no text.
 - **Compaction numbers only narrow from a repository, a summary is always
   admitted, and the breaker is the harness's.** `compaction.*`
   (`internal/config/compaction.go`, docs/compaction.md) is a set of bounded

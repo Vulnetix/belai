@@ -381,6 +381,10 @@ type App struct {
 	// cacheStats sums how much of the agent's prompts came from the
 	// provider's prompt cache.
 	cacheStats cacheStats
+	// keepAlive refreshes the provider's prompt cache while the session is idle
+	// (cache_cmd.go); kaBudgetRed holds it still once a budget is exhausted.
+	keepAlive   *run.KeepAlive
+	kaBudgetRed bool
 	// sent is the agent's last sent conversation, continued by the next
 	// prompt while the transcript is unchanged (senthistory.go).
 	sent sentHistory
@@ -2217,6 +2221,9 @@ type sessionBuildParams struct {
 	compaction session.CompactionState
 	// runCaps is the session's run-cap meter, nil when no cap is set.
 	runCaps *budget.Meter
+	// keepAlive is the App's prompt-cache keep-alive, shared by every session it
+	// builds so a rebuild does not lose the count of pings.
+	keepAlive *run.KeepAlive
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2262,6 +2269,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		memStamp:      a.repoMemoryStamp(),
 		compaction:    a.compactState,
 		runCaps:       a.runCapsMeter(),
+		keepAlive:     a.keepAliveFor(),
 	}
 }
 
@@ -2389,6 +2397,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		WorkspaceMaps: p.workspaceMaps,
 		Forge:         p.forge,
 		RunCaps:       p.runCaps,
+		KeepAlive:     p.keepAlive,
 		// TUI is interactive, so live language servers are allowed.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(p.settings, reg.Cwd().Roots(), true),
 	})
@@ -2424,6 +2433,9 @@ func (a *App) agentSession() (*agent.Session, error) {
 // would expose.
 func (a *App) invalidateAgentSession() {
 	a.agent = nil
+	// The model, mode, tool set or settings changed: a ping must not replay a
+	// prefix the user has moved on from. The next real call remembers a new one.
+	a.keepAlive.Reset()
 	if a.cwd != a.workdir {
 		a.cwd = a.workdir
 		a.footerW = -1
@@ -2449,6 +2461,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if ic := a.syncIdlePane(); ic != nil {
 		cmd = tea.Batch(cmd, ic)
 	}
+	a.syncKeepAlive()
 	return model, cmd
 }
 

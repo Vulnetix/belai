@@ -182,6 +182,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 	if err != nil {
 		return nil, d, err
 	}
+	noteKeepAlive(ctx, cfg, d, system, turns, openAITools, anthropicTools, factory)
 	redact := func(s string) string {
 		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
 	}
@@ -214,6 +215,9 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 	}
 
 	resp, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, onRetry)
+	if err != nil {
+		cfg.KeepAlive.finish()
+	}
 	return resp, d, err
 }
 

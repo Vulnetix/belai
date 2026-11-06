@@ -73,6 +73,7 @@ var settingsPages = map[string][]string{
 	"finish_review": {"docs/finish-review.md", "docs/settings.md"},
 	"lint_loop":     {"docs/lint.md", "docs/settings.md"},
 	"headless":      {"docs/headless.md", "docs/settings.md"},
+	"prompt_cache":  {"docs/prompt-cache.md", "docs/settings.md"},
 }
 
 // TestEverySettingIsDocumented keeps the documentation in step with the

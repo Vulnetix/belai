@@ -228,6 +228,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊟` | compaction summary | `context` |
 | `⇥` | relay handoff draft | `context` |
 | `⊠` | compaction prune | `context` |
+| `⊝` | cached prefix changed | `context` |
 | `▤` | page answer | `context` |
 | `⊡` | dependency change | `context` |
 | `⊨` | test report | `context` |
