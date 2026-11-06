@@ -277,3 +277,13 @@ func (l *limitWriter) Write(p []byte) (int, error) {
 	l.left -= len(p)
 	return l.w.Write(p)
 }
+
+// Git runs one read-only git command in dir with the same hardening as the
+// pane's own calls (hooks and fsmonitor off, no optional locks, no prompts, the
+// scrubbed environment, its own process group, no stdin) and returns its
+// output, which a hostile repository cannot make larger than about 9 MiB. The
+// code review (internal/review) reads branch diffs through it, so there is one
+// set of git flags for a repository's own config not to turn into code.
+func Git(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	return git(ctx, dir, args...)
+}

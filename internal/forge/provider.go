@@ -68,6 +68,9 @@ type Provider interface {
 	ClosePR(ctx context.Context, dir string, number int, comment string) error
 	// CommentPR leaves body as a comment on PR/MR number.
 	CommentPR(ctx context.Context, dir string, number int, body string) error
+	// DiffPR reads PR/MR number's unified diff and head commit. It changes
+	// nothing on the forge (docs/review.md).
+	DiffPR(ctx context.Context, dir string, number int) (PRDiff, error)
 }
 
 // withPrefix keeps the PRs whose head branch starts with prefix.

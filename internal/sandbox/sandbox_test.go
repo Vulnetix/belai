@@ -259,6 +259,26 @@ func TestTheGoCacheDirectoriesExistBeforeTheyAreBound(t *testing.T) {
 	}
 }
 
+// Stored code reviews (docs/review.md) are in the state directory the policy
+// hides from every command, so a model's shell cannot read or edit them.
+func TestReviewStoreIsInsideTheHiddenStateDirectory(t *testing.T) {
+	t.Setenv("BELAI_HOME", "/home/x/.vulnetix/belai")
+	p := FromSettings(nil, []string{"/work"}, posture.Defaults())
+	dir, err := config.ReviewsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := false
+	for _, h := range p.Hidden {
+		if dir == h || strings.HasPrefix(dir, h+"/") {
+			hidden = true
+		}
+	}
+	if !hidden {
+		t.Fatalf("reviews dir %s is not under a hidden path %v", dir, p.Hidden)
+	}
+}
+
 // The checkpoint store (docs/checkpoints.md) is part of the state directory the
 // policy hides from every command, so a model's shell cannot read the copies of
 // the user's files kept there.

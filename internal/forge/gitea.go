@@ -121,28 +121,43 @@ func (g gitea) repoPath() string {
 }
 
 func (g gitea) do(ctx context.Context, timeout time.Duration, method, path string, in, out any) error {
+	raw, err := g.fetch(ctx, timeout, method, path, "application/json", in)
+	if err != nil {
+		return err
+	}
+	if out != nil && len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, out); err != nil {
+			return fmt.Errorf("%s: unreadable answer", g.rem.Host)
+		}
+	}
+	return nil
+}
+
+// fetch makes one API request and returns the body of a 2xx answer, at most
+// 8 MiB. accept is the Accept header: a diff is plain text, the rest is JSON.
+func (g gitea) fetch(ctx context.Context, timeout time.Duration, method, path, accept string, in any) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var body io.Reader
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		body = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, g.base+path, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "token "+g.token)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := GiteaHTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", g.rem.Host, err)
+		return nil, fmt.Errorf("%s: %w", g.rem.Host, err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -155,14 +170,9 @@ func (g gitea) do(ctx context.Context, timeout time.Duration, method, path strin
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return &giteaError{Status: resp.StatusCode, Msg: msg}
+		return nil, &giteaError{Status: resp.StatusCode, Msg: msg}
 	}
-	if out != nil && len(bytes.TrimSpace(raw)) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("%s: unreadable answer", g.rem.Host)
-		}
-	}
-	return nil
+	return raw, nil
 }
 
 type giteaError struct {

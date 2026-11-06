@@ -179,6 +179,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := sideIgnored(eff.Settings.Side, proj.Side); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn /btw off or lower a limit)")
 	}
+	if ign := reviewIgnored(eff.Settings.Review, proj.Review); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn the review off, lower its diff cap or deny posting)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -229,7 +232,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateReview, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -748,6 +751,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Side = mergeSide(before, s.Side, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.Side) {
 			e.Origin["side"] = src
+		}
+	}
+	if s.Review != nil {
+		// A repository may only turn the review off, lower the cap or deny
+		// posting (mergeReview).
+		before := e.Settings.Review
+		e.Settings.Review = mergeReview(before, s.Review, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Review) {
+			e.Origin["review"] = src
 		}
 	}
 	if s.RunCaps != nil {

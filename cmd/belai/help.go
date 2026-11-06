@@ -25,6 +25,7 @@ var topCommands = []topCommand{
 	{"agent", "list, run and manage background agents and fleet workers"},
 	{"kanban", "read and edit the global kanban board"},
 	{"crew", "read a crew run's local fault and audit log"},
+	{"review", "review a change against a rubric, with checked findings"},
 	{"skill", "list, import and export skills (library items)"},
 	{"prompt", "list, import and export prompts (library items)"},
 	{"command", "list, import and export custom slash commands (library items)"},

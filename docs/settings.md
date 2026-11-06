@@ -37,7 +37,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `commit mode`, `model-drafted commit message`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal`, `side questions` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `lint after edits`, `commit mode`, `model-drafted commit message`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal`, `side questions`, `code review` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
@@ -58,7 +58,7 @@ effect on the next start. `A2A broadcasts received` is `a2a.filter`: `repo`
 (the default) hears broadcasts about this session's repository, `all` hears
 every one, `off` hears none and still broadcasts. A project layer may turn
 A2A off and narrow the filter, never the reverse. `relay handoff` is `handoff.enabled`
-and `relay shares goal` is `handoff.include_goal` (both default on; see [Handoff](handoff.md)). `side questions` is `side.enabled` (default on; see [Side questions](side-question.md)). `A2A messages` in Display is
+and `relay shares goal` is `handoff.include_goal` (both default on; see [Handoff](handoff.md)). `side questions` is `side.enabled` (default on; see [Side questions](side-question.md)). `code review` is `review.enabled` (default on; see [Code review](review.md)). `A2A messages` in Display is
 `ui.show_a2a` (default on): it hides or shows the A2A rows in the thread and
 changes nothing else.
 
@@ -356,6 +356,14 @@ The `side` block has one row, `side questions` (`side.enabled`). The limits
 (default 4096, clamped to 512 through 8192) are settings file keys. Your own layers
 set any key; a project file can only turn `/btw` off or lower a limit. See
 [Side questions](side-question.md).
+
+## Code review
+
+The `review` block has one row, `code review` (`review.enabled`). The other keys are
+settings file keys: `review.max_diff_kb` (default 400, clamped to 16 through 2048),
+`review.post` (`ask` by default, `deny` or `allow`) and `review.rubric_file` (none). Your own
+layers set any key; a project file can only turn the review off, lower
+`review.max_diff_kb` or set `review.post` to `deny`. See [Code review](review.md).
 
 ## Headless output
 

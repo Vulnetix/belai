@@ -96,6 +96,7 @@ URL, an argument or `.git/config`.
 | CI for the CI tab and gates | check runs | pipeline jobs | the head commit's statuses (Gitea and Forgejo Actions, Woodpecker and Drone report there) |
 | Fleet publishing (`PublishBranch`) | yes | yes | yes |
 | Merge-conflict cards | yes | yes | yes |
+| Code review of a pull request (`/review pr N`, [review.md](review.md)): the diff, and a posted comment after a yes | yes | yes | yes, with the checkout at the pull request's head |
 | The forge coordinator | yes | not available | not available |
 | Software Factory clones (`belai rc`) | yes | yes | yes |
 

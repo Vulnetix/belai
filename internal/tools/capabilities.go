@@ -392,10 +392,10 @@ var cloudSpecs = []cloudSpec{
 	},
 	{
 		name: "Glab", binary: "glab",
-		desc:  "Query GitLab (read-only): auth status and MR/issue/pipeline/release views.",
+		desc:  "Query GitLab (read-only): auth status and MR (including mr diff)/issue/pipeline/release views.",
 		probe: []string{"auth", "status"},
 		prefixes: []string{
-			"auth status", "mr list", "mr view", "issue list", "issue view",
+			"auth status", "mr list", "mr view", "mr diff", "issue list", "issue view",
 			"pipeline list", "release list",
 		},
 		classify: true,

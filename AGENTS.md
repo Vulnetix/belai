@@ -1283,6 +1283,35 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   role `run.RoleSide`, so it never replaces the keep-alive's request. No model
   starts it. A project layer may turn `side.enabled` off or lower a limit, never
   enable or raise one (`mergeSide`).
+- **A code review is harness-run and model-judged, and posting is a person's.**
+  `/review` and `belai review` (`internal/review`, docs/review.md) gather a change
+  (the `/diff` collector, hardened git through `workdiff.Git`, or a pull request
+  through the forge provider's read-only `DiffPR`), apply the caps
+  (`review.max_diff_kb`, 200 files, binary, deleted, unusual-path and `Read`-denied
+  files skipped and counted) and run the built-in `belai:pr-reviewer` profile once
+  with `Read`, `Grep`, `Glob`, `Git`, `GH` and `Glab` and no `Bash`, under the
+  ordinary permission rules, hooks, classifier and OS sandbox. The prompt holds only
+  harness facts (validated ids and numbers, `review.PlainPath` paths, the fixed
+  criteria, the user's own rubric file); the diff, a pull request's text and
+  `.belai/review.md` reach the model as classified tool results, never as prompt
+  text. The reply is parsed against a closed grammar (`review.Parse`): a finding
+  stays only if its file is a reviewable file of the diff, its line lies in a hunk,
+  its severity and criterion are in the closed lists and its body is at most 2 KiB;
+  the rest are dropped and counted, never repaired. The harness narrows the verdict
+  (`request_changes` needs a surviving `blocker` or `major`; `approve` needs no
+  truncation and nothing above a `nit`) and it is advisory: it approves, blocks and
+  merges nothing. A result is stored in `config.ReviewsDir` (hidden from the
+  sandbox, 0600, atomic, newest 50, checked field by field on read). Posting is the
+  one write: only a pull request review with a known head and a readable verdict, once
+  per head from a host, built from validated fields through `sanitize.Inert`,
+  refused by `review.post` deny, a `ReviewPost` Deny rule or a denying `pre_tool` hook
+  whatever anyone answers, and made only after a yes in the TUI or, headless, with
+  `-comment` and `review.post` `allow` from the user's own layer and no rule or hook
+  that asks (`review.Post`). An allow rule or hook never skips the question. No model
+  starts a review or posts one, and there is no model-facing tool for either, so
+  `KindSubagent` needs no new entry. A project layer may turn `review.enabled` off,
+  lower `review.max_diff_kb` or set `review.post` to `deny`, never the reverse, and
+  `review.rubric_file` is the user's only (`mergeReview`).
 - **A run cap is measured by the harness and extended only by the user.**
   `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
   docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter

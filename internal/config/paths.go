@@ -76,6 +76,18 @@ func SessionsDir() (string, error) {
 	return filepath.Join(dir, "sessions"), nil
 }
 
+// ReviewsDir returns <GlobalDir>/reviews, where finished code reviews are kept,
+// one file for each repository and head commit (docs/review.md). It holds
+// validated findings. Like the rest of the state directory the OS sandbox
+// hides it from every command.
+func ReviewsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "reviews"), nil
+}
+
 // ProjectDir returns the project-local state directory for a working directory.
 func ProjectDir(workdir string) string {
 	return filepath.Join(workdir, ".vulnetix")

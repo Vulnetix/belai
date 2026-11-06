@@ -888,6 +888,9 @@ type App struct {
 	relay        relayState
 	// side is the /btw side question in flight (side.go).
 	side sideState
+	// codeReview is the /review turn in flight, its last result and the open
+	// question about posting it (code_review.go).
+	codeReview codeReviewState
 
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
@@ -2554,6 +2557,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleA2ASide(m)
 	case sideAnswerMsg:
 		return a, a.handleSideAnswer(m)
+	case codeReviewDoneMsg:
+		return a, a.handleCodeReviewDone(m)
+	case codeReviewPostedMsg:
+		return a, a.handleCodeReviewPosted(m)
 
 	case remotePromptMsg:
 		return a, tea.Batch(a.handleRemotePrompt(sessionsync.RemotePrompt(m)), a.watchRemotePrompts())

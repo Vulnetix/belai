@@ -22,6 +22,7 @@ the sanitiser sits in the tool-result pipeline.
 | Headless protocol output: every string of an event or result, a stdin prompt, a schema's descriptions and the structured value | `internal/headless` | `Text`, `Line`, `Ident` (then the vault scrub) | Repairs |
 | Headless schema path, before it is opened | `internal/headless` | `PathText` | Refuses |
 | One line of UI, log or notification text | `internal/sanitize` | `Line`, `Clip` | Repairs |
+| Text posted to a forge as a comment, where people read it as Markdown | `internal/sanitize` | `Inert` | Repairs |
 | An HTML error body shown on one line (an MCP 403 page) | `internal/sanitize` | `PlainText` | Repairs |
 | Identifier or label | `internal/sanitize` | `Ident` | Repairs |
 | State for a decision backend (Jev) | `internal/sanitize` | `ForDecision` (returns `DecisionText`) | Repairs |
@@ -193,6 +194,17 @@ address, and a model's fetch of it is still refused.
 
 Limit: the IDNA conversion rejects invisible characters and invalid names but
 cannot detect look-alike letters from different scripts.
+
+## Forge comments: `Inert`
+
+`Inert` is `Text` followed by the changes that stop a forge acting on what it
+renders. An `@name` becomes `＠name` (the fullwidth at sign), so nobody is
+notified. `#123` becomes `＃123`, so no issue is linked. `scheme://` becomes
+`scheme[:]//` and `www.` becomes `www[.]`, so no link is made. A Markdown link
+target loses its opening parenthesis, and `<` and `>` become `&lt;` and `&gt;`,
+so HTML and autolinks do not render. The text still reads the same to a person.
+The code review's comment (docs/review.md) builds every field it posts through
+it, after the field has passed its own checks.
 
 ## Headers: `Header`
 

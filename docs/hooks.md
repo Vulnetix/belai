@@ -34,6 +34,8 @@ hand the model a short note.
 | `subagent_stop` | an explore subagent finishes | no |
 | `notification` | Belai is waiting on you (see [notifications](notifications.md)) | no |
 
+`pre_tool` also fires, with the tool name `ReviewPost` and the input `{"pr": N}`, before `/review post` or `belai review -comment` posts a review to a pull request (see [Code review](review.md#posting-a-review-to-a-pull-request)). A hook that denies stops the post; one that allows never skips the question.
+
 Tool hooks also see the tool calls explore subagents make. A subagent's own
 prompt and turn end do not fire `user_prompt_submit` or `stop`; its end fires
 `subagent_stop` instead.

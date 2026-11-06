@@ -70,6 +70,7 @@ var settingsPages = map[string][]string{
 	"instructions":  {"docs/instruction-files.md", "docs/settings.md"},
 	"handoff":       {"docs/handoff.md", "docs/settings.md"},
 	"side":          {"docs/side-question.md", "docs/settings.md"},
+	"review":        {"docs/review.md", "docs/settings.md"},
 	"run_caps":      {"docs/run-caps.md", "docs/settings.md"},
 	"finish_review": {"docs/finish-review.md", "docs/settings.md"},
 	"lint_loop":     {"docs/lint.md", "docs/settings.md"},

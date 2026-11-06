@@ -5,6 +5,8 @@ Vulnetix CLI scanners, has a read-only agent check each scanner's findings
 against the code, and then hands everything to the session, which fixes what
 has one clear fix, asks you about what has several, and writes a report.
 
+This is the scanner review. To have a model review one change (the working tree, a branch or a pull request) against a rubric, use `/review` (see [Code review](review.md)).
+
 `/vulnetix` and `/vulnetix run` do the same thing. The command takes no
 arguments; what a review runs is set in [settings](#settings).
 

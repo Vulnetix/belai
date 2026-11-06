@@ -238,6 +238,10 @@ type Settings struct {
 	// (docs/side-question.md). The user layers set any key; the project layer
 	// may only turn it off or lower a limit.
 	Side *SideSettings `json:"side,omitempty"`
+	// Review governs the code review turn, /review and `belai review`
+	// (docs/review.md). The user layers set any key; the project layer may
+	// only turn it off, lower max_diff_kb or set post to deny.
+	Review *ReviewSettings `json:"review,omitempty"`
 	// RunCaps caps what one session may spend in dollars, tokens and wall time
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
@@ -2144,6 +2148,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Handoff = mergeHandoff(out.Handoff, proj.Handoff, true)
 	// /btw: a project may switch it off or lower its limits.
 	out.Side = mergeSide(out.Side, proj.Side, true)
+	// Review: a project may switch it off, lower the diff cap or deny posting.
+	out.Review = mergeReview(out.Review, proj.Review, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// Finish review: a project may add scratch patterns and raise the rounds,
