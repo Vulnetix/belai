@@ -113,6 +113,13 @@ func (s Settings) IntelEnabled() bool {
 	return s.UI == nil || s.UI.Intel == nil || *s.UI.Intel
 }
 
+// ReplyCostEnabled reports whether the TUI prints a token and estimated cost
+// line after each agent-role model call (ui.reply_cost). Default off; only a
+// user layer can turn it on.
+func (s Settings) ReplyCostEnabled() bool {
+	return s.UI != nil && s.UI.ReplyCost != nil && *s.UI.ReplyCost
+}
+
 // PlanLimitsEnabled reports whether provider rate-limit headers are parsed into
 // plan-limit readings (intel.plan_limits). Default on.
 func (s Settings) PlanLimitsEnabled() bool {

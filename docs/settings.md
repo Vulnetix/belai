@@ -42,7 +42,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
-| Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
+| Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `reply cost line`, `plan limits` |
 | Voice | `voice input`, `voice key`, `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` |
 | Read aloud | `read aloud`, `read reports aloud`, `read aloud voice`, `read aloud speed`, `read aloud cache` |
 | Firewall | `permission offers`, `auto-apply permissions` |
@@ -196,7 +196,7 @@ movement, edit and back always stay.
 
 - **Where a change is saved.** The detail pane's last line says so. Rows the
   project layer may not set are always written to your global settings whatever
-  the scope chip shows: `auto-commit per task`, `lint after edits`, `plan limits`, `clone repositories`, every `test …`,
+  the scope chip shows: `auto-commit per task`, `lint after edits`, `reply cost line`, `plan limits`, `clone repositories`, every `test …`,
   `voice …`, `read aloud …` and `knowledge …` row, `permission offers`,
   `auto-apply permissions`, and every Jev threshold. Other rows follow
   the scope (`s`), which starts as project and is remembered for the session

@@ -52,6 +52,7 @@ configuration, so it is refused unless the request says replace, and Belai's own
 | `ui.budget_warn` | any | `false` | Print a warning line on each call while a budget is amber or red |
 | `ui.intel` | any | `true` | Session intelligence: the footer slot, the intel tab and `f12`, `/intel` |
 | `intel.plan_limits` | global only | `true` | Read provider rate-limit response headers into plan-limit readings |
+| `ui.reply_cost` | user layers; a project file can only turn it off | `false` | Print one line of tokens and estimated cost after each agent-role model call ([Context and reply cost](#context-and-reply-cost)) |
 
 ```json
 {
@@ -273,6 +274,20 @@ Settings are in the table above. `ui.intel` may be set by any layer;
   one. The entry is a state line: a resumed session and an export skip it, and
   it never reaches a model.
 
+- **R25. Context breakdown.** `/context` prints where the last main-turn
+  request's tokens went, as one system row: system prompt, tool definitions,
+  history (every turn except tool results), tool results with the five largest
+  tools by size then name, and what is free. The parts are the estimated sizes the
+  harness measured for that request; they sum to the used figure, the used share
+  of the model's window is a whole percent clamped to 0 to 100, and the free
+  figure is never below 0. The window is the one the footer uses (a
+  `context_windows` override, then the model's declared window, then the built-in
+  registry); with none known the row says so, shows the request size and draws no
+  gauge and no free row, and a window is never guessed. Tool names are reduced to
+  identifier characters and 24 runes before they are printed. Before any call it
+  says `nothing sent yet`. It does not depend on `ui.intel`, and the intel full
+  screen carries the same window gauge under the request composition.
+
 ### Session intelligence edge cases
 
 | ID | Case | Behaviour |
@@ -291,3 +306,38 @@ Settings are in the table above. `ui.intel` may be set by any layer;
 | E30 | A call moves no limit by a whole percent and no word changes | Nothing is written, however many tokens it spent |
 | E31 | More than eight roles | The snapshot keeps the eight largest; the rest are dropped |
 | E32 | A session with `intel_state` lines is resumed or exported | The lines are ignored: no message is rebuilt from them, none is counted as dropped, and the export skips them |
+| E33 | A model with no built-in price, a call whose tokens are an estimate, or a request with no known window | The cost figure is left out (tokens still print), a call with no reported token split prints no cost line and counts toward no total, and `/context` draws no gauge. Nothing is invented and nothing fails |
+
+## Context and reply cost
+
+**Status:** Roadmap.
+
+Two read-only views of what a session sends and spends. Both are arithmetic on
+numbers the harness already holds: the estimated size of each part of a request
+(`run.RequestShape`), the token counts a provider reported, harness tool
+identifiers and the built-in list prices in `budget.PriceFor`. No model is asked,
+no file or provider text is shown, nothing is written to disk and nothing leaves
+the machine. They are not part of the prompt, a directive, the session record,
+session sync, telemetry or a notification. The rows are render-only: they show in
+the thread, are never saved with the session and are never sent to a model, and
+the rule for the context breakdown is R25.
+
+- `/context` is described in R25. Its last line is the session's estimated
+  spend: the sum of the priced agent-role calls of this process, labelled `est.`,
+  with the count of calls that had no known price.
+- The **reply cost line** is off by default. With `ui.reply_cost` on (the
+  settings row *reply cost line*, saved to your global settings), each completed
+  agent-role call prints one dim line such as
+  `in 12.3k (cache 90%) · out 410 · ~$0.031 est.`. `in` is the prompt tokens the
+  provider reported, the cache share is the part of them it served from its prompt
+  cache (left out when the provider reports no cache activity), `out` is the
+  completion tokens, and the figure is the estimate from the list price of that
+  provider and model, with the cache read and write rates where the table has
+  them. A local provider is free and prints `~$0 est.`. The agent role also
+  covers subagent and explorer calls, so the line is per agent-role call, not per
+  reply you see.
+- `ui.reply_cost` is a user setting. A project settings file cannot turn it on:
+  its `true` is dropped with a note (`project ui.reply_cost ignored`) and its
+  `false` is kept.
+- The figures are estimates from public list prices, not the provider's bill.
+  A model the table does not know prints tokens only.

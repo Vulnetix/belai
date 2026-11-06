@@ -50,6 +50,15 @@ type intelRequest struct {
 	// definitions, the part of a request a fresh session sends again (plan
 	// approval); lastSent is everything that call sent.
 	lastBase, lastSent int
+	// lastShape is the last main-turn call's request, by part, and lastModel
+	// the model it went to: what /context breaks down. Sizes only.
+	lastShape run.RequestShape
+	lastModel string
+	// costMicro is the estimated cost of the priced agent calls, in millionths
+	// of a dollar; priced and unpriced count the calls that did and did not
+	// have a known price. A call with no reported token split is neither.
+	costMicro        int64
+	priced, unpriced int
 }
 
 // addRequest folds one agent call's request shape in.
@@ -61,10 +70,24 @@ func (r *intelRequest) add(ev run.UsageEvent) {
 	// Only a main-turn call carries tool definitions; a probe or a tool-less
 	// side call must not stand in for what the next turn sends.
 	if ev.Request.ToolDefs > 0 {
+		r.lastShape = ev.Request
+		r.lastShape.ToolResults = make(map[string]int, len(ev.Request.ToolResults))
+		for name, n := range ev.Request.ToolResults {
+			r.lastShape.ToolResults[name] = n
+		}
+		r.lastModel = ev.Model
 		r.lastBase = ev.Request.System + ev.Request.ToolDefs
 		r.lastSent = r.lastBase + ev.Request.History
 		for _, n := range ev.Request.ToolResults {
 			r.lastSent += n
+		}
+	}
+	if cost, known, counted := replyCost(ev); counted {
+		if known {
+			r.costMicro += cost
+			r.priced++
+		} else {
+			r.unpriced++
 		}
 	}
 	r.system += ev.Request.System
@@ -648,6 +671,7 @@ func (a *App) intelView() string {
 	}
 	b.WriteString("\n" + components.LowStyle.Render("  sent this session, estimated") + "\n")
 	b.WriteString(a.intelCompositionLine(inner) + "\n")
+	b.WriteString(a.intelContextLine(inner) + "\n")
 	b.WriteString(ansi.Truncate(a.cacheStats.line(a.cfg.Provider), inner, "…") + "\n")
 	b.WriteString("\n" + components.HelpBar("↑↓", "select", "←→", "window", "m", "models", "r", "roles", "b", "budgets", "R", "re-read ledger", "esc", "back") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())

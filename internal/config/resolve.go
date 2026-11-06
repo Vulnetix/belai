@@ -520,6 +520,9 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Settings.UI = &UISettings{}
 		}
 		if src == SourceProject {
+			if s.UI.ReplyCost != nil && *s.UI.ReplyCost {
+				e.Notes = append(e.Notes, "project ui.reply_cost ignored (the reply cost line is a user setting; a project file can only turn it off)")
+			}
 			e.Settings.UI.mergeProject(s.UI)
 		} else {
 			e.Settings.UI.merge(s.UI)

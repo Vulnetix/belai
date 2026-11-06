@@ -1357,7 +1357,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a tool result or telemetry. `intel.plan_limits` is read from the user's own
   settings layers only (`resolve.go` drops the project layer's `intel` key), and
   `ui.intel` only switches the surface off. Do not add a string field to
-  `PlanLimit` or `UsageEvent.Limits`.
+  `PlanLimit` or `UsageEvent.Limits`. `/context` and the reply cost line
+  (`internal/tui/context_cmd.go`, `budget.Breakdown`, docs/token-budgets.md)
+  render from the same `UsageEvent` numbers, harness tool identifiers
+  (`sanitize.Ident`) and `budget.CostFor`'s built-in list prices, with no model
+  call, file read or provider text. Their rows are `Ephemeral` system rows, so
+  they never reach the session record, sync, a model turn or telemetry, and a
+  missing shape, window or price omits the figure rather than inventing one.
+  `ui.reply_cost` is off by default and a project layer can only turn it off
+  (`UISettings.mergeProject`).
 - **Read aloud sends text off the machine only with the user's agreement.**
   `internal/tts` reads a message aloud through Microsoft's read-aloud service
   (`speech.platform.bing.com`), so the text leaves the machine. It is off until

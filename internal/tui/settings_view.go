@@ -176,7 +176,7 @@ func settingsGroupOf(key string) string {
 		return "agents"
 	case "permissions", "lsp":
 		return "access"
-	case "token_budgets", "budget_cycle_seconds", "budget_warn", "intel", "plan_limits":
+	case "token_budgets", "budget_cycle_seconds", "budget_warn", "intel", "plan_limits", "reply_cost":
 		return "budgets"
 	}
 	return "general"
@@ -186,7 +186,7 @@ func settingsGroupOf(key string) string {
 // settings whatever scope the screen shows: the project layer cannot set it.
 func settingsWritesGlobalOnly(key string) bool {
 	switch {
-	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone", key == "lint_loop.enabled",
+	case key == "auto_commit_per_task", key == "plan_limits", key == "agents.clone", key == "lint_loop.enabled", key == "reply_cost",
 		strings.HasPrefix(key, "tests."),
 		strings.HasPrefix(key, "voice."),
 		strings.HasPrefix(key, "tts."),
@@ -382,6 +382,7 @@ func (a *App) settingsRows() []settingsRow {
 	budgetsVal := fmt.Sprintf("%d set", len(s.TokenBudgets))
 	intelVal := boolLabel(s.IntelEnabled())
 	planLimitsVal := boolLabel(s.PlanLimitsEnabled())
+	replyCostVal := boolLabel(s.ReplyCostEnabled())
 
 	rows := []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
@@ -429,6 +430,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "budget_cycle_seconds", label: "budget cycle", kind: "text", value: budgetCycleVal, src: sourceLabel(origin["ui"])},
 		{key: "budget_warn", label: "budget warnings", kind: "toggle", value: budgetWarnVal, src: sourceLabel(origin["ui"])},
 		{key: "intel", label: "session intelligence", kind: "toggle", value: intelVal, src: sourceLabel(origin["ui"]), help: "the footer slot, the intel tab (f12) and /intel"},
+		{key: "reply_cost", label: "reply cost line", kind: "toggle", value: replyCostVal, src: sourceLabel(origin["ui"]), help: "prints tokens in and out, the cache share and an estimated cost under each agent model call, from provider counts and list prices — off by default; a project layer can only turn this off"},
 		{key: "plan_limits", label: "plan limits", kind: "toggle", value: planLimitsVal, src: sourceLabel(origin["intel"]), help: "read provider rate-limit response headers into plan-limit readings — global only"},
 		{key: "voice.enabled", label: "voice input", kind: "toggle", value: boolLabel(voiceEnabledNow(s)), src: sourceLabel(origin["voice"]), help: "dictate into the composer (/voice); on by default when the speech model is built in — global only"},
 		{key: "voice.key", label: "voice key", kind: "choose", opts: config.VoiceKeys, value: s.Voice.VoiceKeyOr(), src: sourceLabel(origin["voice"]), help: "hold to dictate, or tap to start and stop; if your terminal keeps f11 for fullscreen, pick ctrl+space"},
@@ -987,6 +989,16 @@ func (a *App) cycleToggle(key string) error {
 	if strings.HasPrefix(key, "firewall.") {
 		return a.firewallPermToggle(key)
 	}
+	if key == "reply_cost" {
+		// A repository cannot turn the line on, so the row is the user's:
+		// off (unset) -> on -> off.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.ReplyCost = nextBool(s.UI.ReplyCost)
+		})
+	}
 	if key == "plan_limits" {
 		// Global only: a repository must not change what a user learns about
 		// their own account limits.
@@ -1205,6 +1217,13 @@ func (a *App) unsetSetting(key string) error {
 	}
 	if strings.HasPrefix(key, "firewall.") {
 		return a.firewallPermUnset(key)
+	}
+	if key == "reply_cost" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.UI != nil {
+				s.UI.ReplyCost = nil
+			}
+		})
 	}
 	if key == "plan_limits" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {

@@ -1349,6 +1349,10 @@ type UISettings struct {
 	// system clipboard. Default on. The project layer may turn it off, never
 	// on (docs/image-attachments.md).
 	ClipboardImages *bool `json:"clipboard_images,omitempty"`
+	// ReplyCost prints one dim line after each agent-role model call with its
+	// token counts and an estimated cost. Default off. A project layer may
+	// turn it off, never on. See ReplyCostEnabled.
+	ReplyCost *bool `json:"reply_cost,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -1415,11 +1419,15 @@ func (u *UISettings) merge(from *UISettings) {
 	if from.ClipboardImages != nil {
 		u.ClipboardImages = from.ClipboardImages
 	}
+	if from.ReplyCost != nil {
+		u.ReplyCost = from.ReplyCost
+	}
 }
 
 // mergeProject folds a project layer over u. It is merge, except that a project
-// file cannot turn clipboard images on: a repository must not be able to make
-// the composer read the clipboard for a user who switched that off.
+// file cannot turn clipboard images or the reply cost line on: a repository
+// must not be able to make the composer read the clipboard for a user who
+// switched that off, nor add a line to every reply for one who never asked.
 func (u *UISettings) mergeProject(from *UISettings) {
 	if from == nil {
 		return
@@ -1427,6 +1435,9 @@ func (u *UISettings) mergeProject(from *UISettings) {
 	cp := *from
 	if cp.ClipboardImages != nil && *cp.ClipboardImages {
 		cp.ClipboardImages = nil
+	}
+	if cp.ReplyCost != nil && *cp.ReplyCost {
+		cp.ReplyCost = nil
 	}
 	u.merge(&cp)
 }
