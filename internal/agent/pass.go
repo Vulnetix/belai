@@ -410,6 +410,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		// Goal research that landed while this pass ran is handed over
 		// before the next model call (goalkickoff.go).
 		turns = append(turns, s.deliverResearchMidPass(ctx, mode, emit)...)
+		// Instruction files under the directories the last round touched.
+		turns = append(turns, s.deliverNestedInstructions(ctx, pipe, turns, emit)...)
 		s.clearStaleToolResults(turns)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
@@ -635,6 +637,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			// read after an edit always sees the new bytes. The stat check in
 			// the index covers changes the recorder cannot see.
 			s.reads.Invalidate(s.readRoot(), effects[i].paths...)
+			s.noteInstructionTouch(u.call.Name, u.args, results[i], effects[i].paths)
 			if u.isRead && u.repeat == "" {
 				s.recordRead(u.readKey, u.call.ID, results[i])
 			}

@@ -111,9 +111,56 @@ type DirSummary struct {
 }
 
 // AgentsFile records the presence and size of an agent instruction file.
+// Name is the root-relative slash path (AGENTS.md at the root,
+// internal/x/AGENTS.md below it); Dir is the root-relative directory that
+// holds it, empty for the root.
 type AgentsFile struct {
 	Name string
+	Dir  string
 	Size int64
+}
+
+// InstructionFileNames are the file names an instruction file may have, in
+// the order they are delivered within one directory.
+var InstructionFileNames = []string{"AGENTS.md", "CLAUDE.md"}
+
+// NestedAgentsFiles lists the instruction files in the directories between
+// the repository root (excluded; the map already names those) and rel, the
+// root-relative directory a tool touched, outermost first and AGENTS.md before
+// CLAUDE.md within a directory. The walk never leaves root: an absolute rel,
+// one that climbs out with "..", one that passes through a skipped directory
+// and one that crosses a symbolic link yield nothing, and only regular files
+// are listed (lstat, so a link to a file is not one). It reads presence and
+// size only, never contents.
+func NestedAgentsFiles(root, rel string) []AgentsFile {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	if rel == "." || rel == "" || rel == ".." || strings.HasPrefix(rel, "../") || filepath.IsAbs(rel) || strings.ContainsRune(rel, 0) {
+		return nil
+	}
+	parts := strings.Split(rel, "/")
+	var out []AgentsFile
+	dir := root
+	for i, part := range parts {
+		if part == "" || part == ".." || skipDirs[part] {
+			break
+		}
+		dir = filepath.Join(dir, part)
+		fi, err := os.Lstat(dir)
+		if err != nil || !fi.IsDir() {
+			// A symlink, a file or a missing step ends the walk: nothing
+			// deeper is reachable without leaving the tree the map describes.
+			break
+		}
+		sub := strings.Join(parts[:i+1], "/")
+		for _, name := range InstructionFileNames {
+			f, err := os.Lstat(filepath.Join(dir, name))
+			if err != nil || !f.Mode().IsRegular() {
+				continue
+			}
+			out = append(out, AgentsFile{Name: sub + "/" + name, Dir: sub, Size: f.Size()})
+		}
+	}
+	return out
 }
 
 // Scan computes the repository map for workdir. It never writes and never
@@ -444,7 +491,7 @@ func layout(ctx context.Context, root string) []DirSummary {
 // agentsFiles records agent instruction files by presence and size only.
 func agentsFiles(root string) []AgentsFile {
 	var out []AgentsFile
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+	for _, name := range InstructionFileNames {
 		fi, err := os.Stat(filepath.Join(root, name))
 		if err == nil {
 			out = append(out, AgentsFile{Name: name, Size: fi.Size()})

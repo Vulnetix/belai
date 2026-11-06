@@ -191,7 +191,7 @@ func TestPlanTurnPrefetchesClassifiedContext(t *testing.T) {
 	}
 }
 
-func TestAgentTurnDoesNotPrefetchButCarriesForgeFacts(t *testing.T) {
+func TestAgentTurnAttachesInstructionFilesOnlyAndCarriesForgeFacts(t *testing.T) {
 	root := prefetchRepo(t)
 	fake := &prefetchServer{readSent: true}
 	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
@@ -211,8 +211,11 @@ func TestAgentTurnDoesNotPrefetchButCarriesForgeFacts(t *testing.T) {
 		t.Fatal("no main-model request")
 	}
 	first := strings.Join(fake.users[0], "\n")
-	if strings.Contains(first, "AGENTS-BYTES") || strings.Contains(first, "Harness-attached") {
-		t.Error("an agent-mode turn prefetched")
+	if !strings.Contains(first, "AGENTS-BYTES") || !strings.Contains(first, "Harness-attached") {
+		t.Error("an agent-mode turn lacks the root instruction file")
+	}
+	if strings.Contains(first, "A-BYTES") || strings.Contains(first, "NEW-BYTES") {
+		t.Error("an agent-mode turn prefetched changed files")
 	}
 	if !strings.Contains(first, "upstream: origin/main (ahead 3, behind 0)") {
 		t.Errorf("forge facts missing from the turn status:\n%s", first)
@@ -287,9 +290,9 @@ func TestSimpleTurnPrefetchesInstructionFilesOnly(t *testing.T) {
 		t.Fatal("no Read tool")
 	}
 	ctx := context.Background()
-	all := sess.prefetchCandidates(ctx, tool, nil, nil)
+	all := sess.prefetchCandidates(ctx, tool, nil, nil, false)
 	sess.turnSimple = true
-	got := sess.prefetchCandidates(ctx, tool, nil, nil)
+	got := sess.prefetchCandidates(ctx, tool, nil, nil, false)
 	if len(all) < 2 || strings.Join(got, ",") != "AGENTS.md" {
 		t.Fatalf("ordinary = %v, simple = %v; want the simple turn to keep AGENTS.md alone", all, got)
 	}

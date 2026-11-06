@@ -50,8 +50,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
   (`KindOffload`), a `WebFetch` answer drawn from a page (still
   `KindWebFetch`), the recovery subagent's
-  process-tail briefing and the plan/goal context prefetch
-  (`agent/prefetch.go`: instruction and changed files, read through the
+  process-tail briefing and the context prefetch
+  (`agent/prefetch.go`: the root instruction files on every agent turn, the
+  changed files too on a plan or goal turn, and a nested instruction file when a
+  tool touches its directory, `agent/instructions.go`; all read through the
   session's own `Read` and gated exactly like its result) all classify,
   unconditionally. Do not add an exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,

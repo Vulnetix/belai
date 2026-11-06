@@ -257,6 +257,9 @@ type Session struct {
 	// repeated read of an unchanged file whose result is still in the
 	// conversation is answered with a pointer to it (see readdedup.go).
 	reads *readindex.Index
+	// instr is the instruction-file settings and the turn's delivery queue
+	// (instructions.go).
+	instr instrState
 	// verdictWithheld counts tool results the classifier withheld by verdict
 	// (not by error). The goal loop reads it to stop a goal that keeps asking
 	// for content that will never be released.
@@ -824,6 +827,7 @@ func NewSession(o Options) (*Session, error) {
 		stuckWindow:        o.Settings.Resilience.StuckWindowOr(config.DefaultStuckWindow),
 		cache:              cache,
 		reads:              readindex.New(),
+		instr:              newInstrState(o.Settings),
 		caps:               o.Caps,
 		repoIndex:          o.RepoIndex,
 		planSurface:        planSurface,
@@ -1187,6 +1191,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.taskSeq = 0
 	s.handoffTodoCalled = false
 	s.turnToolRuns = 0
+	s.instr.resetTurn()
 	s.resetTodoTracking()
 	s.overflowRecovered = false
 	s.turnMutations = 0
@@ -1641,8 +1646,14 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 			prefetchSeed[p] = true
 		}
 	}
-	if (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal || modeDec.Intent == rolemanager.IntentHandoff {
-		prefetch = s.startPrefetch(ctx, pipe, history, prefetchSeed, prefetchSkip, emit)
+	fullPrefetch := (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal || modeDec.Intent == rolemanager.IntentHandoff
+	// An agent-mode turn gets the root instruction files only: the changed
+	// files stay the model's to read. A subagent and a handoff-scoped session
+	// build their own context.
+	instrPrefetch := !fullPrefetch && s.instr.enabled && !s.exploreSubagent && len(s.scope) == 0 &&
+		(modeDec.Mode == modes.ModeAgent || modeDec.Mode == modes.ModeCode)
+	if fullPrefetch || instrPrefetch {
+		prefetch = s.startPrefetch(ctx, pipe, history, prefetchSeed, prefetchSkip, instrPrefetch, emit)
 		// The prefetch emits; it must finish before run returns and RunStream
 		// closes the event channel, on every path.
 		defer prefetch.wait()

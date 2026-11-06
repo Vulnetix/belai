@@ -1550,6 +1550,10 @@ asking are skipped. Each attachment is recorded in the read index against
 its body, so a `Read` of the same unchanged file that turn is answered with a
 pointer to the attachment. The TUI rebuilds history without attachments, so
 on the next turn the file is read from disk (or prefetched again) as normal.
+An agent-mode turn prefetches the root instruction files only, and an
+instruction file in a subdirectory arrives at the next round boundary after a
+tool touched a path beneath it, through the same gate (see
+[Instruction files](instruction-files.md)).
 
 ### Release check
 

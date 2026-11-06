@@ -37,3 +37,21 @@ func TestAnalyticsPageStatesTheRepomapBounds(t *testing.T) {
 		t.Errorf("skipDirs = %v, the page lists eight directories", got)
 	}
 }
+
+// TestInstructionFilesPageNamesTheNestedWalk pins the walk docs/instruction-files.md
+// describes: the skipped directories and the file names, in order.
+func TestInstructionFilesPageNamesTheNestedWalk(t *testing.T) {
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/instruction-files.md")), " ")
+	for _, want := range []string{
+		"`repomap.NestedAgentsFiles`",
+		"`.git`, `node_modules`, `vendor`, `target`, `dist`, `.vulnetix`, `.idea` or `.vscode`",
+		"`AGENTS.md` before `CLAUDE.md`",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/instruction-files.md does not say %q", want)
+		}
+	}
+	if strings.Join(InstructionFileNames, ",") != "AGENTS.md,CLAUDE.md" {
+		t.Errorf("InstructionFileNames = %v, the page lists AGENTS.md then CLAUDE.md", InstructionFileNames)
+	}
+}

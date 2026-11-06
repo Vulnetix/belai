@@ -129,6 +129,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("patch-tolerance", "show or set how loosely apply_patch anchors hunks this session: strict, whitespace or unicode", func() []string { return config.PatchTolerances }, func(a *App, arg string) tea.Cmd {
 		return a.patchToleranceCmd(arg)
 	})
+	r.Register("init", "draft a root AGENTS.md for this repository from its detected facts; nothing is written until you approve the Write", nil, func(a *App, arg string) tea.Cmd {
+		return a.initCommand()
+	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {
 		if a.todos == nil || len(a.todos.Items) == 0 {
 			a.addSystem("todos: no plan tracked yet")

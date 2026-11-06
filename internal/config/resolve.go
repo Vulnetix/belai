@@ -143,6 +143,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := runCapsIgnored(eff.Settings.RunCaps, proj.RunCaps); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only add a cap or lower one)")
 	}
+	if ign := instructionsIgnored(eff.Settings.Instructions, proj.Instructions); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only turn instruction files off or lower a cap)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -191,7 +194,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateRunCaps, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -643,6 +646,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Compaction = mergeCompaction(before, s.Compaction, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.Compaction) {
 			e.Origin["compaction"] = src
+		}
+	}
+	if s.Instructions != nil {
+		// A repository may only switch instruction files off or lower a cap.
+		before := e.Settings.Instructions
+		e.Settings.Instructions = mergeInstructions(before, s.Instructions, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Instructions) {
+			e.Origin["instructions"] = src
 		}
 	}
 	if s.RunCaps != nil {

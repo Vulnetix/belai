@@ -205,6 +205,10 @@ type Settings struct {
 	// (docs/compaction.md). The user's layers set any key; the project layer
 	// may only compact sooner or keep more.
 	Compaction *CompactionSettings `json:"compaction,omitempty"`
+	// Instructions governs how AGENTS.md and CLAUDE.md files reach agent turns
+	// (docs/instruction-files.md). The user layers set any key in range; the
+	// project layer may only turn a switch off or lower a number.
+	Instructions *InstructionsSettings `json:"instructions,omitempty"`
 	// RunCaps caps what one session may spend in dollars, tokens and wall time
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
@@ -2060,6 +2064,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Edit = mergeEdit(out.Edit, proj.Edit, true)
 	// Compaction: a project may compact sooner or keep more, never the reverse.
 	out.Compaction = mergeCompaction(out.Compaction, proj.Compaction, true)
+	// Instruction files: a project may switch them off or lower the caps.
+	out.Instructions = mergeInstructions(out.Instructions, proj.Instructions, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.

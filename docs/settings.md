@@ -302,6 +302,14 @@ Your own layers and the `-max-cost`, `-max-tokens` and `-max-wall` flags set any
 a project file can only add a cap or lower one. `/caps` shows the numbers and
 `/caps extend` raises them. See [Run caps](run-caps.md).
 
+## Instruction files
+
+The `instructions` block has no row on a settings screen. It is a block in the settings
+file: `instructions.enabled`, `instructions.nested`, `instructions.max_files`,
+`instructions.file_bytes` and `instructions.total_bytes`. Your own layers set any key in
+its range; a project file can only turn a switch off or lower a number. See
+[Instruction files](instruction-files.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

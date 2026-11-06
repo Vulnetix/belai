@@ -40,6 +40,13 @@ func (a *App) runCustomCommand(c commandlib.Command, args string) tea.Cmd {
 	if args = strings.TrimSpace(args); args != "" {
 		line += " " + oneLine(args, 200)
 	}
+	return a.submitSlashPrompt(line, text)
+}
+
+// submitSlashPrompt sends text as the user's own typed prompt on behalf of the
+// slash command line: it is echoed, admitted by the turn (the sanitiser and the
+// classifier run there) and rides the same mode selection.
+func (a *App) submitSlashPrompt(line, text string) tea.Cmd {
 	a.addSystem("command: " + line)
 	// Agent mode with no agent engaged waits on the picker, as a typed prompt
 	// does; acceptAgent finishes the submit from the composer.

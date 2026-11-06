@@ -76,13 +76,15 @@ func (p *pendingPrefetch) wait() []prefetchResult {
 // startPrefetch begins reading and classifying the prefetch candidates in the
 // background. seed lists root-relative paths that should be prefetched first
 // (e.g. files named in a plan-handoff); skip names root-relative paths the
-// user already attached.
-func (s *Session) startPrefetch(ctx context.Context, pipe *rolemanager.Pipeline, history []run.Turn, seed, skip map[string]bool, emit func(Event)) *pendingPrefetch {
+// user already attached. instrOnly limits the candidates to the repository's
+// root instruction files (an agent-mode turn); a plan or goal turn also takes
+// the changed files.
+func (s *Session) startPrefetch(ctx context.Context, pipe *rolemanager.Pipeline, history []run.Turn, seed, skip map[string]bool, instrOnly bool, emit func(Event)) *pendingPrefetch {
 	tool, _ := s.execTool("Read")
 	if tool == nil {
 		return nil
 	}
-	cands := s.prefetchCandidates(ctx, tool, history, skip)
+	cands := s.prefetchCandidates(ctx, tool, history, skip, instrOnly)
 	if len(seed) > 0 {
 		seen := map[string]bool{}
 		for _, c := range cands {
@@ -119,22 +121,66 @@ func (s *Session) startPrefetch(ctx context.Context, pipe *rolemanager.Pipeline,
 	return p
 }
 
+// prefetchEligible reports the on-disk size of root-relative rel when the
+// harness may read it up front: a regular, non-empty file within maxBytes that
+// was not withheld earlier in the session, whose content is not already live
+// in the conversation, and which the permission rules allow a Read of without
+// asking. Root instruction files, changed files and nested instruction files
+// all pass it, so no attachment is admitted on a looser test than a Read.
+func (s *Session) prefetchEligible(tool tools.Tool, root, rel string, history []run.Turn, maxBytes int64) (int64, bool) {
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	fi, err := os.Stat(abs)
+	if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 || fi.Size() > maxBytes {
+		return 0, false
+	}
+	if _, withheld := s.flagged.lookup(abs, "", ""); withheld {
+		return 0, false
+	}
+	if s.reads != nil {
+		if _, live := s.reads.Lookup(readindex.Key{Path: abs}, func(e readindex.Entry) bool { return liveResult(history, e.ResultHash) }); live {
+			return 0, false
+		}
+	}
+	if dec, _, _ := s.decidePermission("Read", tool.Subject(map[string]any{"file_path": rel})); dec != permissions.DecisionAllow {
+		return 0, false
+	}
+	return fi.Size(), true
+}
+
 // prefetchCandidates lists root-relative paths to prefetch: the agent
-// instruction files first, then the changed paths. It skips anything deleted,
-// not a regular file, empty, too large, already live in the conversation,
-// withheld earlier in the session, or not allowed a Read by the permission
-// rules without asking.
-func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, history []run.Turn, skip map[string]bool) []string {
+// instruction files first, then (unless instrOnly) the changed paths. It skips
+// anything prefetchEligible refuses. Instruction files answer to the
+// instructions.* caps and are counted against the turn's; changed files to the
+// prefetch constants.
+func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, history []run.Turn, skip map[string]bool, instrOnly bool) []string {
 	if s.repoMap == nil || s.registry == nil || s.registry.Cwd() == nil {
 		return nil
 	}
 	root := s.registry.Cwd().Root()
 	m := s.turnRepoStatus(ctx)
 
-	var raw []string
-	for _, f := range m.AgentsFiles {
-		raw = append(raw, f.Name)
+	seen := map[string]bool{}
+	var out []string
+	if s.instr.enabled {
+		for _, f := range m.AgentsFiles {
+			rel := filepath.ToSlash(filepath.Clean(f.Name))
+			if rel == "." || seen[rel] || skip[rel] || rel == ".." || strings.HasPrefix(rel, "../") || filepath.IsAbs(rel) {
+				continue
+			}
+			seen[rel] = true
+			size, ok := s.prefetchEligible(tool, root, rel, history, s.instr.fileBytes)
+			if !ok || !s.instr.room(size) {
+				continue
+			}
+			s.instr.take(size)
+			out = append(out, rel)
+		}
 	}
+	if instrOnly {
+		return out
+	}
+
+	var raw []string
 	changed := m.Changed
 	if s.turnSimple {
 		// A simple request names its own targets; the instruction files stay,
@@ -152,8 +198,6 @@ func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, histo
 		raw = append(raw, strings.Trim(p, `"`))
 	}
 
-	seen := map[string]bool{}
-	var out []string
 	var total int64
 	for _, rel := range raw {
 		if strings.HasSuffix(rel, "/") {
@@ -164,25 +208,13 @@ func (s *Session) prefetchCandidates(ctx context.Context, tool tools.Tool, histo
 			continue
 		}
 		seen[rel] = true
-		abs := filepath.Join(root, filepath.FromSlash(rel))
-		fi, err := os.Stat(abs)
-		if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 || fi.Size() > prefetchFileBytes || total+fi.Size() > prefetchTotalBytes {
+		size, ok := s.prefetchEligible(tool, root, rel, history, prefetchFileBytes)
+		if !ok || total+size > prefetchTotalBytes {
 			continue
 		}
-		if _, withheld := s.flagged.lookup(abs, "", ""); withheld {
-			continue
-		}
-		if s.reads != nil {
-			if _, live := s.reads.Lookup(readindex.Key{Path: abs}, func(e readindex.Entry) bool { return liveResult(history, e.ResultHash) }); live {
-				continue
-			}
-		}
-		if dec, _, _ := s.decidePermission("Read", tool.Subject(map[string]any{"file_path": rel})); dec != permissions.DecisionAllow {
-			continue
-		}
-		total += fi.Size()
+		total += size
 		out = append(out, rel)
-		if len(out) == prefetchMaxFiles {
+		if len(out) >= prefetchMaxFiles {
 			break
 		}
 	}
@@ -257,7 +289,7 @@ func prefetchDirective(rs []prefetchResult) string {
 		paths[i] = sanitize.Sanitize(r.att.Label)
 	}
 	sort.Strings(paths)
-	return "Harness-attached for this turn (the repository's agent instruction files and the working tree's changed files, read and classified exactly like Read results and current as of this turn; use them instead of reading these files again): " + strings.Join(paths, ", ")
+	return "Harness-attached for this turn (the repository's agent instruction files and, on a plan or goal turn, the working tree's changed files, read and classified exactly like Read results and current as of this turn; use them instead of reading these files again): " + strings.Join(paths, ", ")
 }
 
 // attachedPaths returns the root-relative paths of the user's file
