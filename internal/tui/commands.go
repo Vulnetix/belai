@@ -411,6 +411,12 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("compact", "summarise the session into a new one; /compact <focus> steers the summary, /compact status shows thresholds and the breaker", nil, func(a *App, arg string) tea.Cmd {
 		return a.compactCommand(arg)
 	})
+	r.Register("undo", "put back the files your last prompt changed, after you confirm; what it overwrites is kept so the undo can be undone", nil, func(a *App, arg string) tea.Cmd {
+		return a.undoCommand(arg)
+	})
+	r.Register("rewind", "pick a checkpoint and restore the code, the conversation or both to just before that prompt, after you confirm", nil, func(a *App, arg string) tea.Cmd {
+		return a.rewindCommand(arg)
+	})
 	r.Register("relay", "draft a handoff note, review and edit it, then continue in a fresh session; /relay <direction> steers the note", nil, func(a *App, arg string) tea.Cmd {
 		return a.relayCommand(arg)
 	})

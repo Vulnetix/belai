@@ -312,6 +312,13 @@ The `lint_loop` block has one row on the settings screen, "lint after edits"
 project file can only turn the loop off or lower a number. `/lint-loop`, `-lint-loop`
 and `BELAI_LINT_LOOP` switch it for a session or a run. See [Lint](lint.md#per-edit-loop).
 
+The `checkpoints` block has no row on the settings screen. `checkpoints.enabled`
+(on by default), `checkpoints.max_per_session` (50, from 1 to 500),
+`checkpoints.max_bytes` (209715200, from 1 MiB to 10 GiB) and
+`checkpoints.retain_days` (7, from 1 to 365) are in the settings file. Your own
+layers and `-no-checkpoints` set them; a project file can only turn checkpoints
+off, never change a limit or the retention. See [File checkpoints](checkpoints.md#settings).
+
 ## Finish review
 
 The `finish_review` block has no row on a settings screen. It is a block in the settings

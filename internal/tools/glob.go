@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/proc"
 )
 
@@ -186,7 +187,11 @@ func (g *Glob) enumerateFd(ctx context.Context, sub, root string) []candidate {
 		if ln == "" {
 			continue
 		}
-		list = append(list, g.candidateFor(filepath.Join(base, filepath.FromSlash(ln)), base, root))
+		abs := filepath.Join(base, filepath.FromSlash(ln))
+		if strings.Contains(ln, "checkpoints") && config.UnderCheckpoints(abs) {
+			continue // the checkpoint store is never listed (docs/checkpoints.md)
+		}
+		list = append(list, g.candidateFor(abs, base, root))
 	}
 	return list
 }
@@ -201,7 +206,7 @@ func (g *Glob) enumerateWalk(sub, root string) []candidate {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" {
+			if d.Name() == ".git" || (d.Name() == "checkpoints" && config.UnderCheckpoints(p)) {
 				return filepath.SkipDir
 			}
 			return nil

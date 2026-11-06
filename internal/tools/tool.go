@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
@@ -352,8 +353,16 @@ func SanitizePath(root, raw string) (string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path escapes root")
 	}
+	if config.UnderCheckpoints(resolved) {
+		return "", errCheckpointStore
+	}
 	return rel, nil
 }
+
+// errCheckpointStore refuses the file checkpoint store (docs/checkpoints.md).
+// It holds copies of files for the user's /undo and /rewind, so no tool reads
+// or writes it, whatever the confinement roots are.
+var errCheckpointStore = fmt.Errorf("path is Belai's checkpoint store, which no tool may use")
 
 // SanitizeNewPath resolves and confines a path that may not exist yet. It
 // resolves the deepest existing ancestor, re-appends the unresolved tail, and
@@ -420,6 +429,9 @@ func SanitizeNewPath(root, raw string) (string, error) {
 	out, err := filepath.Rel(absRoot, full)
 	if err != nil {
 		return "", err
+	}
+	if config.UnderCheckpoints(full) {
+		return "", errCheckpointStore
 	}
 	return out, nil
 }

@@ -46,6 +46,7 @@ const (
 	viewControlRoom
 	viewInbox
 	viewRelay
+	viewRewind
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -97,6 +98,7 @@ func init() {
 	viewHandlers[viewControlRoom] = viewHandler{name: "crew", enter: (*App).enterControlRoom, key: (*App).handleControlRoomKey, render: (*App).controlRoomView}
 	viewHandlers[viewInbox] = viewHandler{name: "inbox", enter: (*App).enterInbox, key: (*App).handleInboxKey, render: (*App).inboxView}
 	viewHandlers[viewRelay] = viewHandler{name: "relay", enter: (*App).enterRelay, key: (*App).handleRelayKey, render: (*App).relayView}
+	viewHandlers[viewRewind] = viewHandler{name: "rewind", key: (*App).handleRewindKey, render: (*App).rewindView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

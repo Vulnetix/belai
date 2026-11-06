@@ -99,6 +99,12 @@ func (a *App) treeCommand(arg string) tea.Cmd {
 // mirror on the website sees further lines. Forking copies the chain into a
 // new session and opens that. Files are not rolled back either way.
 func (a *App) treeGo(e session.Entry, fork bool) tea.Cmd {
+	return a.treeMove(e, fork, true)
+}
+
+// treeMove is treeGo; note says whether to remind the user that files are not
+// rolled back (a /rewind that also restores code says so itself).
+func (a *App) treeMove(e session.Entry, fork, note bool) tea.Cmd {
 	if a.working() {
 		a.addSystem("tree: stop the running turn first")
 		return nil
@@ -128,7 +134,9 @@ func (a *App) treeGo(e session.Entry, fork bool) tea.Cmd {
 		cmd = a.resumeSession(a.sessionKey, a.sessionID)
 		a.addSystem("continuing from " + shortID(e.ID))
 	}
-	a.addSystem("conversation only: files on disk are not rolled back")
+	if note {
+		a.addSystem("conversation only: files on disk are not rolled back")
+	}
 	if prefill != "" {
 		a.editor.SetValue(prefill)
 		a.editor.CursorEnd()

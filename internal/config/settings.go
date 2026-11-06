@@ -240,6 +240,10 @@ type Settings struct {
 	// result. Off by default. The user's layers and the flags turn it on; the
 	// project layer may only turn it off or lower a number.
 	LintLoop *LintLoopSettings `json:"lint_loop,omitempty"`
+	// Checkpoints configures the file checkpoints behind /undo and /rewind
+	// (docs/checkpoints.md). On by default. The user's layers and the flags set
+	// any key; the project layer may only switch it off.
+	Checkpoints *CheckpointSettings `json:"checkpoints,omitempty"`
 	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
 	// on. The user's layers set it either way; the project layer can only turn
 	// it off.
@@ -2136,6 +2140,8 @@ func (s Settings) Override(proj Settings) Settings {
 	// Lint loop: a project may switch it off and lower its numbers, never
 	// switch it on or raise one.
 	out.LintLoop = mergeLintLoop(out.LintLoop, proj.LintLoop, true)
+	// Checkpoints: a project may switch them off, never change a limit.
+	out.Checkpoints = mergeCheckpoints(out.Checkpoints, proj.Checkpoints, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.
 	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
 	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)

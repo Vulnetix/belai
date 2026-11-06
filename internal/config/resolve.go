@@ -146,6 +146,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := finishReviewIgnored(eff.Settings.FinishReview, proj.FinishReview); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only add scratch patterns or raise the finish review rounds)")
 	}
+	if ign := checkpointsIgnored(proj.Checkpoints); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only switch checkpoints off)")
+	}
 	if ign := lintLoopIgnored(eff.Settings.LintLoop, proj.LintLoop); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (the lint loop is the user's opt-in; a project may only turn it off or lower a number)")
 	}
@@ -208,7 +211,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -727,6 +730,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.FinishReview = mergeFinishReview(before, s.FinishReview, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.FinishReview) {
 			e.Origin["finish_review"] = src
+		}
+	}
+	if s.Checkpoints != nil {
+		// The store holds copies of the user's files: a repository may only
+		// switch it off (mergeCheckpoints).
+		before := e.Settings.Checkpoints
+		e.Settings.Checkpoints = mergeCheckpoints(before, s.Checkpoints, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.Checkpoints) {
+			e.Origin["checkpoints"] = src
 		}
 	}
 	if s.LintLoop != nil {

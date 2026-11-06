@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,14 @@ type Recorder struct {
 	MaxBytes   int64
 	MaxDirty   int
 
+	// Baselines turns on the extra capture that [Snapshot.Baselines] needs: the
+	// bytes of every path already changed before a command runs, within
+	// BaselineMaxBytes each and BaselineBudget in all. It is off for the diff
+	// view alone.
+	Baselines        bool
+	BaselineMaxBytes int64
+	BaselineBudget   int64
+
 	// disabled latches on after git proves too slow to consult. One slow
 	// repository should cost the session once, not once per command.
 	disabled bool
@@ -53,6 +62,9 @@ func NewRecorder(root string) *Recorder {
 		MaxFiles:   DefaultMaxFiles,
 		MaxBytes:   DefaultMaxBytes,
 		MaxDirty:   DefaultMaxDirty,
+
+		BaselineMaxBytes: DefaultBaselineMaxBytes,
+		BaselineBudget:   DefaultBaselineBudget,
 	}
 	r.RepoRoot = detectRepoRoot(root)
 	return r
@@ -69,6 +81,13 @@ type Snapshot struct {
 	// heuristic path
 	targets []string          // absolute paths
 	existed map[string]string // absolute path -> content ("" means absent)
+
+	// baseline capture (see Baselines)
+	bodies map[string][]byte      // key (repo-relative or absolute) -> earlier bytes
+	bmodes map[string]fs.FileMode // key -> earlier permission bits
+	bnote  map[string]string      // key -> why the earlier bytes were not kept
+	bstat  map[string]statKey     // key -> size and time of a file whose bytes were not kept
+	absent []string               // heuristic targets that did not exist
 
 	unavailable string
 }
@@ -175,6 +194,9 @@ func (r *Recorder) beforeGit(ctx context.Context) *Snapshot {
 		if body, ok := readCapped(filepath.Join(r.RepoRoot, path), r.MaxBytes); ok {
 			s.baseln[path] = body
 		}
+	}
+	if r.Baselines {
+		r.captureBaselines(s, status)
 	}
 	return s
 }
@@ -344,14 +366,28 @@ func (r *Recorder) beforeHeuristic(command string) *Snapshot {
 		if !filepath.IsAbs(abs) {
 			abs = filepath.Join(r.Root, t)
 		}
-		if !r.within(abs) || !isRegular(abs) {
+		if !r.within(abs) {
 			continue
 		}
-		body, _ := readCapped(abs, heuristicMaxBytes)
+		if !isRegular(abs) {
+			if r.Baselines {
+				if _, err := os.Lstat(abs); err != nil && os.IsNotExist(err) {
+					s.absent = append(s.absent, abs)
+				}
+			}
+			continue
+		}
+		body, ok := readCapped(abs, heuristicMaxBytes)
 		s.existed[abs] = body
 		s.targets = append(s.targets, abs)
+		if r.Baselines && !ok {
+			if s.bnote == nil {
+				s.bnote = map[string]string{}
+			}
+			s.bnote[abs] = "over the per-file size limit"
+		}
 	}
-	if len(s.targets) == 0 {
+	if len(s.targets) == 0 && len(s.absent) == 0 {
 		return nil
 	}
 	return s

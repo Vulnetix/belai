@@ -34,6 +34,7 @@ import (
 	"github.com/vulnetix/belai/internal/bgproc"
 	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/checkpoint"
 	"github.com/vulnetix/belai/internal/clipboard"
 	"github.com/vulnetix/belai/internal/commandlib"
 	"github.com/vulnetix/belai/internal/commands"
@@ -432,7 +433,18 @@ type App struct {
 	// lintLoopOverride is the /lint-loop choice for this session; nil means
 	// the resolved setting.
 	lintLoopOverride *bool
-	lastPlanText     string
+	// ckpt is the file checkpoint store of the current session
+	// (docs/checkpoints.md), ckptSession the session it belongs to and
+	// agentCkpt the tracker the cached agent session was built with.
+	ckpt        *checkpoint.Tracker
+	ckptSession string
+	agentCkpt   *checkpoint.Tracker
+	ckptSwept   bool
+	// turnUserEntry is the session entry of the prompt that begins the turn
+	// about to start, so a checkpoint can return the conversation to it.
+	turnUserEntry string
+	rewind        rewindState
+	lastPlanText  string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
 	// the agent to load the plan as the execution carrier.
@@ -1640,6 +1652,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		promptText = turns[n-1].Content
 		history = turns[:n-1]
 	}
+	a.beginCheckpointTurn(promptText)
 	in := agent.TurnInput{Prompt: promptText, HarnessPrompt: a.harnessPrompt, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
 	a.harnessPrompt = ""
@@ -1830,6 +1843,7 @@ func (a *App) echoUserMessage(m components.Message) {
 	a.messages = append(a.messages, m)
 	if a.persistedUpTo == len(a.messages)-1 {
 		a.appendEntry(userEntry(m))
+		a.turnUserEntry = a.lastEntryID
 		// The user turn is already on disk; advance the persistence cursor
 		// past it so persistTail never double-writes it.
 		a.persistedUpTo = len(a.messages)
@@ -2152,10 +2166,13 @@ func coalesced(first agent.Event, acc string) agent.Event {
 // build reads. It is captured on the Bubble Tea goroutine so the async build
 // goroutine never races a config change.
 type sessionBuildParams struct {
-	workdir  string
-	settings config.Settings
-	cfg      run.Config
-	client   *http.Client
+	// checkpoints is the session's file checkpoint tracker, nil when they are
+	// off (docs/checkpoints.md).
+	checkpoints *checkpoint.Tracker
+	workdir     string
+	settings    config.Settings
+	cfg         run.Config
+	client      *http.Client
 	// live is the shared posture/ask holder the session consults at each gate.
 	// It is not snapshotted: the running session and the next one share it, so
 	// a toggle pressed mid-turn lands on the next gate check.
@@ -2240,6 +2257,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		pol = posture.AllIgnore()
 	}
 	return sessionBuildParams{
+		checkpoints:   a.agentCkpt,
 		workdir:       a.workdir,
 		settings:      a.settings,
 		cfg:           a.cfg,
@@ -2353,6 +2371,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	sess, err := agent.NewSession(agent.Options{
 		NoncePool:     p.noncePools.get(cfg),
 		SealMemo:      p.noncePools.memo(cfg),
+		Checkpoints:   p.checkpoints,
 		AskDecider:    p.askDecider,
 		Knowledge:     p.knowledge,
 		GitSync:       p.gitSync,

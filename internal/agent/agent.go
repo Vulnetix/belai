@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/checkpoint"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/delimiters"
 	"github.com/vulnetix/belai/internal/explore"
@@ -192,6 +193,10 @@ type Options struct {
 	// confident enough (the clef decision server's engine). nil asks the user
 	// every time. It applies only where someone could be asked.
 	AskDecider AskDecider
+	// Checkpoints keeps the file copies behind /undo and /rewind
+	// (docs/checkpoints.md). Only the interactive session sets it: nothing else
+	// can restore. nil keeps no copies.
+	Checkpoints *checkpoint.Tracker
 	// Persona is a fleet worker's profile system prompt (and identity). It is
 	// user-authored text from the global profile directory or a built-in —
 	// never repository, board or model text — and rides in the system block
@@ -447,6 +452,9 @@ type Session struct {
 	// diffs observes what a mutating command changed. Nil disables the
 	// feature; it is consulted around every mutating tool (Bash, Write, Edit).
 	diffs *filediff.Recorder
+	// ckpt keeps a copy of each file a mutating call is about to change; nil
+	// keeps none (Options.Checkpoints).
+	ckpt *checkpoint.Tracker
 	// agentPool is the shared FIFO fan-out ceiling. Explore subagents acquire
 	// a lease from it; nil means no shared ceiling.
 	agentPool *agentpool.Pool
@@ -900,6 +908,11 @@ func NewSession(o Options) (*Session, error) {
 		kanban:               newKanbanState(reg),
 	}
 	codeTool.Run = sess.runCode
+	if o.Checkpoints != nil && o.Settings.CheckpointsEnabled() {
+		sess.ckpt = o.Checkpoints
+		sess.diffs.Baselines = true
+		sess.ckpt.SetPolicy(sess.checkpointPolicy())
+	}
 	sess.installRepoMemory()
 	if offStore != nil {
 		sess.offload = offStore
@@ -2280,6 +2293,11 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	// sequential path in pass, so this never races the concurrent read-only
 	// fan-out and needs no locking. Write and Edit name their targets through
 	// tools.Targeter; Bash is still observed from its command.
+	// A file checkpoint is kept first, so a store that cannot take it withholds
+	// the call before anything changes.
+	if msg := s.checkpointBefore(tool, call); msg != "" {
+		return msg
+	}
 	var snap *filediff.Snapshot
 	if s.diffs != nil && !tool.Kind().ReadOnly() && tool.Kind() != tools.KindCode {
 		if tt, ok := tool.(tools.Targeter); ok {
@@ -2312,6 +2330,8 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 			emit(Event{Kind: EventCwdKind, Cwd: after, CwdDir: cwd.Dir()})
 		}
 	}
+
+	s.checkpointAfter(ctx, tool, snap)
 
 	// Emitted before the Role Manager classifies the result, so the diff
 	// appears while that is still running. It is render-only and is not part

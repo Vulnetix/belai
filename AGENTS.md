@@ -1324,6 +1324,30 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the trust gate for this directory is the only one that applies. Exit codes: 0 ok, 1 error,
   2 usage, 3 run cap, 4 denied or could not ask (structured formats only), 5 schema failure.
 
+- **File checkpoints are the user's, hidden from every tool, and restored only by
+  a person.** `internal/checkpoint` (docs/checkpoints.md) keeps a copy of each
+  file a mutating call is about to change, in the state directory
+  (`config.CheckpointsDir`, 0700/0600), for `/undo` and `/rewind`. No tool
+  reads or writes the store: `tools.SanitizePath` and `SanitizeNewPath` refuse a
+  path under it (`config.UnderCheckpoints`), `Glob` leaves it out, and the OS
+  sandbox hides the state directory. Nothing from it reaches a model, a
+  transcript, telemetry, audit or sync, and there is no model-facing tool, so no
+  classifier kind. A file is copied only if a model could have read it: a Read
+  deny rule, a credential file, a binary, a link, an oversize file or a full store
+  leaves a name and "not restorable". A save failure withholds the call
+  (`checkpoint unavailable`); a store that cannot be opened is
+  `checkpoint.Unavailable`, never silently off. `Write`, `Edit` and
+  `apply_patch` are copied before the call through `tools.HazardTargeter` (the
+  resolver's absolute path); `Bash` is learned from the file-diff snapshot
+  (`filediff.Snapshot.Baselines`) after the call. A restore is the user's
+  confirmed choice in the TUI only (`/undo`, `/rewind`; not headless, ACP, rc or
+  the web control table, and never the decision model). It writes through a
+  temporary file and rename, re-resolves each path against the confinement
+  roots, skips a Write or Edit deny rule, a link and a directory, and first saves
+  a safety checkpoint, so it can be undone. `checkpoints.*` is the user's: a
+  project layer may only set `enabled` to false (`mergeCheckpoints`), because a
+  lower limit would delete history. Only the interactive session keeps
+  checkpoints.
 - **Hazard rails are a floor no rule waives, and only a person answers them.**
   `shellsafe.Hazards` (a closed id set read from the commands `Analyze` found,
   failing closed to `hazard.opaque`) and `tools.HazardCall` (the fixed
