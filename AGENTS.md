@@ -685,10 +685,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `sandbox.FromSettings` from the settings, the current workspace roots and
   the effective posture, and rides on the call's context; guardrails off
   turns it off. Belai's state directory is always hidden inside it. The
-  project layer may raise `sandbox.mode`, set `network` to `deny` and
-  `caches` to `false`, never the reverse, and its `extra_writable` is
-  dropped. `required` with no working backend refuses the command; it never
-  falls back to running it bare.
+  project layer may raise `sandbox.mode`, move `network` from `allow` to
+  `proxy` to `deny` and set `caches` to `false`, never the reverse, and its
+  `extra_writable` and `egress_allow` are dropped. `required` with no working
+  backend refuses the command; it never falls back to running it bare. With
+  `network` `proxy` a command reaches only the hosts in the user's
+  `egress_allow` (and the entries the user adds with `/egress allow`, which no
+  tool, setting layer or web session can add), through `internal/egress`: the
+  proxy checks the host (`netguard.CheckHostPort`, `MatchHost`), resolves it
+  itself, refuses any non-public address and dials the address it checked, and
+  names no host in the audit log. A proxy or a backend that cannot confine the
+  command to it refuses in `required` and runs as `deny` in `auto`, never open.
 - **Bash rewrite rules are the user's, and permissions judge what runs.**
   `bash_rewrite` (`internal/config/bashrewrite.go`, docs/bash-rewrite.md) is
   read from the user's own settings layers only; the project layer may switch it

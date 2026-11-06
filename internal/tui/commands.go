@@ -454,6 +454,11 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(a.sandboxReport())
 		return nil
 	})
+	r.Register("egress", "show the hosts the sandbox egress proxy allows and the connections it refused; /egress allow HOST for this session", func() []string {
+		return []string{"list", "allow", "revoke"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.egressCommand(arg)
+	})
 	r.Register("commands", "list custom slash commands; /<name> runs one", nil, func(a *App, arg string) tea.Cmd {
 		return a.customCommandsCommand()
 	})

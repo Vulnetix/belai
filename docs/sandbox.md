@@ -12,6 +12,7 @@ the network can be switched off.
 - [What is confined](#what-is-confined)
 - [Backends](#backends)
 - [Settings](#settings)
+- [Egress proxy](#egress-proxy)
 - [When a command is blocked](#when-a-command-is-blocked)
 - [Limitations](#limitations)
 - [Edge cases](#edge-cases)
@@ -39,7 +40,8 @@ Inside the sandbox:
 - Everything else is read-only.
 - `~/.vulnetix/belai` (or `$BELAI_HOME`), which holds credentials and
   sessions, is hidden: the command sees an empty directory.
-- The network is available unless `network` is `deny`.
+- The network is available unless `network` is `deny`, or `proxy`, which leaves
+  only the [egress proxy](#egress-proxy).
 - The command dies with Belai.
 
 ## Backends
@@ -79,7 +81,8 @@ Otherwise Belai falls back to Landlock on its own, and `/sandbox` says so.
     "mode": "auto",
     "network": "allow",
     "caches": true,
-    "extra_writable": []
+    "extra_writable": [],
+    "egress_allow": []
   }
 }
 ```
@@ -87,12 +90,16 @@ Otherwise Belai falls back to Landlock on its own, and `/sandbox` says so.
 | Key | Values | Default | Project layer |
 | --- | --- | --- | --- |
 | `mode` | `off`, `auto`, `required` | `auto` | may raise (`off` to `auto` to `required`), never lower |
-| `network` | `allow`, `deny` | `allow` | may set `deny` only |
+| `network` | `allow`, `proxy`, `deny` | `allow` | may move toward `deny` only (`allow` to `proxy` to `deny`) |
 | `caches` | `true`, `false` | `true` | may set `false` only |
 | `extra_writable` | absolute paths | `[]` | dropped |
+| `egress_allow` | host names and `*.domain` wildcards | `[]` | dropped |
 
 - `auto` sandboxes when a backend works here and runs unsandboxed otherwise.
 - `required` refuses to run a command when no backend works.
+- `proxy` is the middle setting: a command has no network of its own and reaches
+  only the hosts in `egress_allow`, through a proxy Belai runs. See
+  [Egress proxy](#egress-proxy).
 - For the strict policy, set `network` to `deny` and `caches` to `false`:
   only the roots and the private `/tmp` are writable, and nothing leaves the
   machine.
@@ -100,6 +107,121 @@ Otherwise Belai falls back to Landlock on its own, and `/sandbox` says so.
   sandbox off with them. The [hazard rails](hazard-rails.md) still ask: they
   are a floor above the rules and the sandbox, and an approved command runs
   inside the sandbox.
+
+## Egress proxy
+
+**Status:** alpha-20261106.
+
+`sandbox.network: "proxy"` lets a sandboxed command reach the hosts you named
+and nothing else, so `npm install`, `go mod download` or `pip install` work
+while a command cannot send your workspace to a server of its choosing. Belai
+decides, by rule. No model is asked whether a host is safe.
+
+```json
+{
+  "sandbox": {
+    "network": "proxy",
+    "egress_allow": ["registry.npmjs.org", "proxy.golang.org", "*.githubusercontent.com"]
+  }
+}
+```
+
+An entry is a host name, or `*.` and a domain of at least two labels. A wildcard
+covers every name beneath the domain at any depth and never the domain itself:
+write `example.com` and `*.example.com` to allow both. An entry is not an
+address, an internal name (`localhost`, `*.local`, `*.internal`, a single label),
+a bare `*` or a wildcard over a top-level domain (`*.com`); a malformed entry is
+dropped with the rest of the list kept. There is no public suffix list, so
+`*.co.uk` is accepted: you chose it. At most 256 entries. The list is empty by
+default, so `proxy` alone reaches nothing.
+
+### How it works
+
+- Belai starts one filtering forward proxy per process and allowlist. It listens
+  on a unix socket in `~/.vulnetix/belai/egress` (mode 0700, socket 0600),
+  removed when Belai exits; a socket left by a crashed run is swept at the next
+  start.
+- The command keeps no network of its own. Under bubblewrap it stays in a new
+  network namespace (`--unshare-net`). Under Landlock, from ABI 4, TCP connects
+  are allowed to one loopback port and nowhere else. Under `sandbox-exec` the
+  profile allows outbound to `localhost:PORT` only.
+- A small relay (`belai __egress-exec`, the second hidden helper beside
+  `__landlock-exec`) runs beside the command. It listens on `127.0.0.1` and
+  copies bytes to the proxy's socket. Under bubblewrap the state directory is
+  still hidden: only that one socket is bound back in.
+- `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` (and their lower case forms) point at
+  the relay and `NO_PROXY` is emptied, so `curl`, `git`, `npm`, `pip`, `go` and
+  most clients use it without configuration. A client that ignores them finds
+  no network.
+- The proxy answers `CONNECT host:port` and plain `http://` requests in absolute
+  form. It does not decrypt TLS: it sees the host a client named, nothing of
+  the traffic. A plain request is forwarded with the checked `Host`, one request
+  to a connection (`Connection: close`).
+- For each request it checks the host (`netguard.CheckHostPort`: canonical, not
+  an address in a forbidden range, not an internal name), the port (80 or 443
+  only), and the allowlist (`netguard.MatchHost`). It then resolves the name
+  itself, refuses the connection if any address is not public
+  (`netguard.Forbidden`), and dials one of those exact addresses, so a DNS
+  answer cannot change between the check and the connection. A host that resolves
+  to both a public and a private address is refused.
+- Limits: 64 connections at once, 8 KiB of request line and headers, a connect
+  timeout of 10 seconds and a 60 second idle timeout.
+- A refusal is a `403` with fixed text that names no host. The refusal is also
+  appended to the `Bash` result (`the egress proxy refused: ...`), with the host
+  cleaned to one line, so the model asks you instead of looking for a way around.
+  That note is part of a `Bash` result, which is classified like any command
+  output.
+
+### Allowing a host
+
+`/egress` shows the mode, the allowlist from settings, the hosts you allowed for
+this session and the most recent refusals. `/egress allow HOST` adds a host (or
+`*.domain`) for the rest of the session and `/egress revoke HOST` removes it; both
+validate the entry like a settings entry. Run the command again afterwards.
+Only a person typing in the TUI can do this: there is no tool for it, a project
+file cannot do it, and headless, ACP and `belai rc` sessions use the settings
+list as it stands and refuse every other host. To keep a host, add it to
+`sandbox.egress_allow` in your own settings file. `/sandbox` shows the network
+line.
+
+### Failure is closed
+
+- A project file may move `network` from `allow` to `proxy` to `deny`, never back,
+  and can neither add to nor replace `egress_allow`. A `network` value that is
+  not `allow`, `proxy` or `deny` means `deny`.
+- With `mode: required`, a proxy that cannot be set up (the socket path is too long
+  for a unix socket, the state directory is not a plain directory) or a backend
+  that cannot confine a command to it (Landlock before ABI 4, which cannot
+  restrict TCP) refuses the command with an error that says why.
+- With `mode: auto` the same situations run the command as `network: deny` does
+  there, never with the network open because the proxy was missing. Under
+  Landlock before ABI 4 that is not enforced either (see
+  [Limitations](#limitations)), and `/sandbox` says so.
+- With the sandbox off (`mode: off`, or guardrails off) nothing is confined and the
+  proxy is not used.
+- The proxy serves every caller of the sandbox: `Bash`, inline `!cmd`,
+  supervised and background processes, the post-end test pass, fleet quality and
+  gate runs, worktree setup and teardown, and MCP servers that opt in. A
+  worktree hook run with `worktrees.network: deny` still gets no network.
+
+### What is recorded
+
+Refused hosts stay in a bounded in-memory list (the last 64) that `/egress` reads.
+Nothing about a host is written to disk or to the audit log. The audit log gets
+an `egress.denied` event for the first refusal of each reason, then at the 10th,
+100th and every 1000th, carrying the reason (`not_allowed`, `port`, `invalid`,
+`address`, `resolve`, `limit`) and a running `count`. See [Audit log](audit.md).
+
+### Limits of the proxy
+
+- Without TLS interception the proxy cannot tell what is sent to an allowed host.
+  An allowed host that accepts uploads can still receive data, and a wildcard
+  covers every subdomain, including ones other people control (for example on a
+  hosting service). Allow the narrowest names that work.
+- It filters by the name a client asks for. A client that connects to an allowed
+  name and sends a different `Host` header over a tunnel is not inspected.
+- TCP on ports 80 and 443 only: no `ssh`, `git://` or database traffic.
+- Under Landlock, UDP and unix sockets still pass, as with `network: deny`.
 
 ## When a command is blocked
 
@@ -115,8 +237,8 @@ asks you rather than retrying blindly.
   inside the workspace to pass files between commands.
 - Your home directory stays readable (read-only) apart from Belai's state
   directory, so a command can still read files such as `~/.ssh/config`.
-- With `network` set to `deny`, a supervised dev server is not reachable from
-  your browser.
+- With `network` set to `deny` or `proxy`, a supervised dev server is not reachable
+  from your browser.
 - MCP stdio servers run in the sandbox only when their settings say
   `sandbox: true` (see [MCP servers](mcp.md)).
 - The native cloud tools (`AWS`, `Terraform`, `Kubectl` and the others) run outside
@@ -170,7 +292,7 @@ Under Landlock, which has no mount or network namespaces:
 - An unknown `mode` means `auto` when no layer sets a valid one. When layers
   are merged an unknown `mode` is skipped, so the layer below it stands: a
   project file saying `strict` over a global `required` leaves `required`. A
-  `network` value other than `allow` means `deny`.
+  `network` value other than `allow` or `proxy` means `deny`.
 - Belai's state directory stays hidden even when it sits under a writable
   path.
 - The backends are probed once per run, bubblewrap first. If it is installed

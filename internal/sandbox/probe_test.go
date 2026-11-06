@@ -181,7 +181,7 @@ func TestLandlockBelowABI4CannotCutTheNetworkOff(t *testing.T) {
 	if d := Describe(); d != "landlock (ABI 3, network deny needs ABI 4: Linux 6.7+)" {
 		t.Fatalf("Describe() = %q", d)
 	}
-	if l := Limits(); len(l) != 4 || !strings.Contains(l[3], "network deny is not enforced") {
+	if l := Limits(); len(l) != 5 || !strings.Contains(l[3], "network deny is not enforced") || !strings.Contains(l[4], "network proxy is unavailable") {
 		t.Fatalf("Limits() = %v", l)
 	}
 }

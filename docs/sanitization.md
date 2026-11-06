@@ -32,6 +32,7 @@ the sanitiser sits in the tool-result pipeline.
 | URL a model asked to fetch | `internal/netguard` | `CheckURL` with the `Fetch` profile | Refuses |
 | URL a user configured for a service | `internal/netguard` | `CheckURL` with the `Endpoint` profile | Refuses |
 | Address a connection would reach | `internal/netguard` | `Forbidden`, `ForbiddenIP` | Refuses |
+| Host a sandboxed command asks the egress proxy to reach, and an egress allowlist entry | `internal/netguard` | `CheckHostPort`, `CheckAllowEntry`, `CheckAllowList`, `MatchHost` | Refuses |
 | Loopback test used by all of the above | `internal/netguard` | `IsLoopbackHost` | n/a |
 | Private range a host explicitly allows | `internal/netguard` | `ParseAllowCIDRs`, `SetAllowedPrefixes`, `AllowedPrefixes` | Refuses all but the named range |
 | Shell command line | `internal/shellsafe` | `Analyze`, `ReadOnly`, `Clean` | Refuses |
@@ -165,6 +166,26 @@ connection. Every redirect target goes through `CheckURL` again. The four
 earlier copies of the loopback test all call `IsLoopbackHost`, which accepts
 `localhost` (with a trailing dot, or as a subdomain), loopback literals and
 IPv4-mapped IPv6 loopback.
+
+**Hosts for the egress proxy.** `sandbox.network: proxy` sends a sandboxed
+command's connections through a harness proxy ([Sandbox](sandbox.md#egress-proxy)),
+which asks `CheckHostPort` about every target before it looks at the allowlist.
+The host is as the client wrote it (a name, an IP literal, an IPv6 literal with
+or without brackets). It is refused, never repaired, when the port is not 80 or
+443, the host is empty, over 253 bytes or holds a space, control character,
+slash, backslash or at sign, is a non-canonical numeric form or holds an escape
+or a zone identifier (the same `canonicalHost` as `CheckURL`), is an address in a
+forbidden range, is an internal name, or has an empty label, a label over 63
+bytes or a label that starts or ends with a hyphen. What passes is the canonical
+lower-case host (punycode for a non-ASCII name), and checking that result again
+returns it unchanged (`FuzzCheckHostPort`). `CheckAllowEntry` validates an
+allowlist entry: a name, or `*.` and a domain with at least two labels; never an
+address, an internal name, a bare `*` or a wildcard over a top-level domain.
+`CheckAllowList` keeps the valid entries, de-duplicated, at most 256, and returns
+what it dropped. `MatchHost(entry, host)` is an exact comparison, or for
+`*.example.com` any name beneath `example.com` at any depth and never
+`example.com` itself. The proxy applies `Forbidden` to every resolved address and
+dials the one it checked.
 
 **An explicit allow list.** A host whose own network answers with addresses in
 a private range can name that range, and only that range, with

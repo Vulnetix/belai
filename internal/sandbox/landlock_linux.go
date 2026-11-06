@@ -58,6 +58,15 @@ func landlockProbe(exe string) (int, error) {
 	return abi, nil
 }
 
+// landlockRuleNetPort is LANDLOCK_RULE_NET_PORT and landlockNetPortAttr is
+// struct landlock_net_port_attr (ABI 4); x/sys does not carry them.
+const landlockRuleNetPort = 2
+
+type landlockNetPortAttr struct {
+	AllowedAccess uint64
+	Port          uint64
+}
+
 // applyLandlock builds the ruleset and restricts this thread with it. From
 // here on the thread and everything it starts have only the plan's rights.
 func applyLandlock(plan llPlan, abi int) error {
@@ -70,6 +79,13 @@ func applyLandlock(plan llPlan, abi int) error {
 		return fmt.Errorf("landlock ruleset: %v", landlockMissing(e))
 	}
 	defer unix.Close(int(fd))
+	for _, port := range plan.ConnectPorts {
+		na := landlockNetPortAttr{AllowedAccess: llNetConnectTCP, Port: uint64(port)}
+		_, _, e := unix.Syscall6(unix.SYS_LANDLOCK_ADD_RULE, fd, landlockRuleNetPort, uintptr(unsafe.Pointer(&na)), 0, 0, 0)
+		if e != 0 {
+			return fmt.Errorf("landlock net rule for port %d: %v", port, e)
+		}
+	}
 	for _, r := range plan.Rules {
 		pfd, err := unix.Open(r.Path, unix.O_PATH|unix.O_CLOEXEC, 0)
 		if errors.Is(err, unix.ENOENT) {

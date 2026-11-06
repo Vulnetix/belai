@@ -63,8 +63,9 @@ the harness read itself, and nothing else can be recorded.
 | agent | `a2a.blackout` | the organisation's A2A blackout switched, outcome `on` or `off` |
 | agent | `run_cap` | a run cap (`reason` is the cap word `cost`, `tokens`, `passes` or `wall`, `passes` a count) told the model to finalise (outcome `finalise`), was extended by the user (`extended`) or stopped the run (`stopped`, `stopped_keep`) ([run caps](run-caps.md)); no text and no ceiling |
 | agent | `hazard.asked`, `hazard.denied` | the always-ask floor put a call to a person, and a call it withheld or the person refused ([hazard rails](hazard-rails.md)); `id` holds the hazard identifiers joined by `+` and `tool` the tool name, never a command or a path |
+| agent | `egress.denied` | the sandbox egress proxy refused connections ([egress proxy](sandbox.md#egress-proxy)); recorded for the first refusal of each `reason` (`not_allowed`, `port`, `invalid`, `address`, `resolve`, `limit`) and again at the 10th, 100th and every 1000th, with `count` the running total for that reason; never a host name |
 
-`data` keys: `attempt`, `change`, `class`, `commit`, `decision`, `dispatch`, `ecosystem`, `exit`,
+`data` keys: `attempt`, `change`, `class`, `commit`, `count`, `decision`, `dispatch`, `ecosystem`, `exit`,
 `files`, `forge`, `from`, `gate`, `hops`, `id`, `justification`, `kind`, `list`, `message_id`, `os`,
 `package`, `passes`, `path`, `peer`, `pr`, `previous`, `profile`, `reason`,
 `regressed`, `retries`, `rule`, `schedule`, `severity`, `state`, `status`,

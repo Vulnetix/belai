@@ -86,6 +86,8 @@ func serverFixture(t *testing.T) *Recorder {
 		Data: map[string]string{"id": "exec.delete.catastrophic+exec.privilege", "tool": "Bash"}})
 	emit(Fact{Kind: HazardDenied, ActorKind: ActorHarness, SessionID: session, Outcome: "withheld",
 		Data: map[string]string{"id": "path.vcs", "tool": "Write"}})
+	emit(Fact{Kind: EgressDenied, ActorKind: ActorHarness, Outcome: "denied",
+		Data: map[string]string{"reason": "not_allowed", "count": "10"}})
 	emit(Fact{Kind: RunCap, ActorKind: ActorHarness, SessionID: session, Outcome: "extended",
 		Data: map[string]string{"reason": "cost", "passes": "4"}})
 	return r

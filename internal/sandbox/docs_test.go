@@ -49,7 +49,8 @@ func TestSandboxPageStatesTheSettingValues(t *testing.T) {
 	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/sandbox.md")), " ")
 	for _, want := range []string{
 		"| `mode` | `off`, `auto`, `required` | `auto` |",
-		"| `network` | `allow`, `deny` | `allow` |",
+		"| `network` | `allow`, `proxy`, `deny` | `allow` |",
+		"| `egress_allow` | host names and `*.domain` wildcards | `[]` | dropped |",
 		"| `caches` | `true`, `false` | `true` |",
 		"may raise (`off` to `auto` to `required`), never lower",
 	} {
@@ -57,7 +58,7 @@ func TestSandboxPageStatesTheSettingValues(t *testing.T) {
 			t.Errorf("docs/sandbox.md does not say %q", want)
 		}
 	}
-	if ModeOff != "off" || ModeAuto != "auto" || ModeRequired != "required" || NetworkDeny != "deny" {
+	if ModeOff != "off" || ModeAuto != "auto" || ModeRequired != "required" || NetworkDeny != "deny" || NetworkProxy != "proxy" {
 		t.Errorf("mode and network constants disagree with the page")
 	}
 }

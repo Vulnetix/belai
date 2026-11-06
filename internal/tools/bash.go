@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/egress"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/shellsafe"
 	"github.com/vulnetix/belai/internal/vaultenv"
 )
@@ -223,6 +225,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	// The OS sandbox, when the call's policy asks for one. Required mode with
 	// no backend refuses the command rather than running it bare.
 	policy := sandbox.FromContext(ctx)
+	started := time.Now()
 	sandboxed, err := sandbox.Wrap(ec, policy)
 	if err != nil {
 		return Result{}, err
@@ -235,6 +238,11 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	tw.Flush()
 
 	content := vaultenv.Default.Scrub(tw.Content())
+	if sandboxed && policy.Egress && !policy.DenyNetwork {
+		if note := egressNote(started); note != "" {
+			content += "\n" + vaultenv.Default.Scrub(note)
+		}
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		// Keep whatever the command managed to produce. Returning an error
 		// here would discard it: executeCall drops the Result when err is
@@ -286,8 +294,35 @@ func sandboxNote(p sandbox.Policy) string {
 	note := "(ran inside the Belai sandbox: writes outside the workspace roots, /tmp and tool caches fail"
 	if p.DenyNetwork && sandbox.NetworkDenyEnforced() {
 		note += ", and the network is off"
+	} else if p.Egress && sandbox.NetworkDenyEnforced() {
+		note += ", and the network reaches only the hosts the user allowed"
 	}
 	return note + "; if the command needs more, ask the user to adjust sandbox settings)"
+}
+
+// egressNote tells the model, in the harness's words, which connections the
+// egress proxy refused while the command ran, so it asks the user instead of
+// retrying or hunting for a way around the proxy. The hosts are the command's
+// own and are cleaned to one line each; the note rides on the Bash result, which
+// is classified like any command output.
+func egressNote(since time.Time) string {
+	den := egress.Default.Since(since)
+	if len(den) == 0 {
+		return ""
+	}
+	var hosts []string
+	for i, d := range den {
+		if i == 5 {
+			hosts = append(hosts, fmt.Sprintf("and %d more", len(den)-i))
+			break
+		}
+		h := d.Host
+		if h == "" {
+			h = "(request without a host)"
+		}
+		hosts = append(hosts, fmt.Sprintf("%s:%d (%s)", sanitize.Line(h, 80), d.Port, d.Reason))
+	}
+	return "(the egress proxy refused: " + strings.Join(hosts, ", ") + ". These hosts are not on the user's allowlist; do not look for a way around the proxy. If the command needs one, ask the user to run /egress allow HOST)"
 }
 
 // vaultEnvNote names the environment variables the vault gives this sandbox's

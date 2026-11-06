@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/netguard"
 	"github.com/vulnetix/belai/internal/wire"
 )
 
@@ -716,13 +717,19 @@ type MCPServer struct {
 type SandboxSettings struct {
 	// Mode is off, auto (default: sandbox when a backend exists) or required.
 	Mode string `json:"mode,omitempty"`
-	// Network is allow (default) or deny.
+	// Network is allow (default), proxy or deny. proxy cuts the command off
+	// from the network except for a harness-run proxy that connects only to
+	// the hosts in EgressAllow (docs/sandbox.md#egress-proxy).
 	Network string `json:"network,omitempty"`
 	// Caches keeps the usual tool caches under $HOME writable. Default true;
 	// false is the strict policy.
 	Caches *bool `json:"caches,omitempty"`
 	// ExtraWritable adds absolute paths the sandbox may write. Global only.
 	ExtraWritable []string `json:"extra_writable,omitempty"`
+	// EgressAllow lists the hosts the egress proxy may connect a sandboxed
+	// command to when Network is proxy: a name, or *.domain. Empty by default,
+	// so proxy mode alone reaches nothing. Global only.
+	EgressAllow []string `json:"egress_allow,omitempty"`
 }
 
 var sandboxModeRank = map[string]int{"off": 0, "auto": 1, "required": 2}
@@ -738,13 +745,36 @@ func (s *SandboxSettings) ModeOr() string {
 	return "auto"
 }
 
+// Network settings. The rank is how restrictive: a project layer may only move
+// up it.
+const (
+	SandboxNetworkAllow = "allow"
+	SandboxNetworkProxy = "proxy"
+	SandboxNetworkDeny  = "deny"
+)
+
+var sandboxNetworkRank = map[string]int{SandboxNetworkAllow: 0, SandboxNetworkProxy: 1, SandboxNetworkDeny: 2}
+
 // NetworkOr returns the network setting, defaulting to allow. Anything but
-// allow or deny is deny.
+// allow or proxy is deny, so a misspelling closes the network.
 func (s *SandboxSettings) NetworkOr() string {
-	if s == nil || s.Network == "" || s.Network == "allow" {
-		return "allow"
+	if s == nil || s.Network == "" || s.Network == SandboxNetworkAllow {
+		return SandboxNetworkAllow
 	}
-	return "deny"
+	if s.Network == SandboxNetworkProxy {
+		return SandboxNetworkProxy
+	}
+	return SandboxNetworkDeny
+}
+
+// EgressAllowList returns the egress allowlist, each entry validated and in
+// canonical form; a malformed entry is dropped. It is empty unless set.
+func (s *SandboxSettings) EgressAllowList() []string {
+	if s == nil {
+		return nil
+	}
+	kept, _ := netguard.CheckAllowList(s.EgressAllow)
+	return kept
 }
 
 // CachesOr reports whether tool caches stay writable. Default true.
@@ -761,8 +791,20 @@ func mergeSandbox(s *SandboxSettings, from *SandboxSettings, project bool) {
 			s.Mode = from.Mode
 		}
 	}
-	if from.Network != "" && (!project || from.Network == "deny") {
-		s.Network = from.Network
+	if from.Network != "" {
+		// A value that is neither allow nor proxy is deny, as NetworkOr reads
+		// it. A project layer applies a network setting only when it is more
+		// restrictive than the one standing, so it can never move proxy or
+		// deny back toward allow.
+		v := SandboxSettings{Network: from.Network}
+		next := v.NetworkOr()
+		if !project || sandboxNetworkRank[next] > sandboxNetworkRank[s.NetworkOr()] {
+			s.Network = next
+		}
+	}
+	if !project && from.EgressAllow != nil {
+		kept, _ := netguard.CheckAllowList(from.EgressAllow)
+		s.EgressAllow = kept
 	}
 	if from.Caches != nil && (!project || !*from.Caches) {
 		s.Caches = from.Caches

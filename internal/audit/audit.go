@@ -84,6 +84,11 @@ const (
 	HazardAsked  Kind = "hazard.asked"
 	HazardDenied Kind = "hazard.denied"
 
+	// EgressDenied is the sandbox egress proxy (docs/sandbox.md#egress-proxy)
+	// refusing connections. The data holds the reason enum and a running count,
+	// never a host: host names stay in memory for /egress.
+	EgressDenied Kind = "egress.denied"
+
 	// RunCap is a run cap (docs/run-caps.md) acting on a session: the model told
 	// to finalise, the run extended by the user, or the run stopped. The outcome
 	// is the enum and the data holds the cap word and the pass count.
@@ -107,7 +112,8 @@ var kindScope = map[Kind]string{
 	FindingCarded: ScopeAgent, FindingReconciled: ScopeAgent,
 	A2ASent: ScopeAgent, A2AReceived: ScopeAgent, A2AWithheld: ScopeAgent, A2ABlackout: ScopeAgent,
 	HazardAsked: ScopeAgent, HazardDenied: ScopeAgent,
-	RunCap: ScopeAgent,
+	EgressDenied: ScopeAgent,
+	RunCap:       ScopeAgent,
 }
 
 // Kinds lists every kind, sorted, for tests and docs.
@@ -164,6 +170,7 @@ var dataKeys = map[string]bool{
 	"retries": true, "class": true, "target": true, // worker.fault and worker.fallback
 	"message_id": true, "kind": true, "peer": true, "decision": true, // a2a
 	"id": true, "tool": true, // hazard.*: closed hazard identifiers joined by +, and the tool name
+	"count": true, // egress.denied: how many connections the proxy has refused for the reason
 }
 
 // DataKeys lists the allowed Data keys, sorted.

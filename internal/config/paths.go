@@ -220,6 +220,18 @@ func ForgeDir() (string, error) {
 	return filepath.Join(dir, "forge"), nil
 }
 
+// EgressDir returns <GlobalDir>/egress, where the egress proxy listens (one
+// unix socket per process and allowlist, mode 0600, in a 0700 directory). The
+// OS sandbox hides the state directory from a command and exposes only the one
+// socket that command's policy names.
+func EgressDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "egress"), nil
+}
+
 // ScreenshotsDir returns <GlobalDir>/screenshots, where the Screenshot tool
 // keeps its newest captures for the user.
 func ScreenshotsDir() (string, error) {

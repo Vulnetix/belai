@@ -34,6 +34,7 @@ const (
 	ModeRequired = "required"
 
 	NetworkAllow = "allow"
+	NetworkProxy = "proxy"
 	NetworkDeny  = "deny"
 )
 
@@ -42,8 +43,19 @@ type Policy struct {
 	// Mode is off, auto (sandbox when a backend exists) or required (refuse
 	// to run without one).
 	Mode string
-	// DenyNetwork cuts the command off from the network.
+	// DenyNetwork cuts the command off from the network. It wins over Egress.
 	DenyNetwork bool
+	// Egress cuts the command off from the network except for the harness's
+	// egress proxy, which connects only to EgressAllow (and the user's session
+	// entries). The proxy is started by Wrap.
+	Egress      bool
+	EgressAllow []string
+	// egressSock and egressPort are set by Wrap on its own copy once the proxy
+	// is up: the unix socket the in-sandbox relay copies to and the loopback
+	// port it listens on.
+	egressSock string
+	egressPort int
+	egressExe  string
 	// Writable are the paths the command may write, besides a private /tmp.
 	Writable []string
 	// Visible are paths the command may read even where the default layout
@@ -79,6 +91,12 @@ var ErrUnavailable = errors.New("sandbox required but no sandbox backend is avai
 // ErrLandlockVault is returned when a command would hold vault variables and the
 // backend is Landlock, which has no pid namespace. The command is not run.
 var ErrLandlockVault = errors.New("a command holding vault variables needs its own pid namespace; the Landlock sandbox has none and cannot keep a command from reading other processes' /proc/PID/environ, so the command was not run (install bubblewrap for commands that hold vault variables)")
+
+// ErrEgressUnavailable is returned in required mode with network proxy when the
+// egress proxy cannot be set up or the backend cannot confine the command to it.
+// In auto mode the command runs as network deny does, never with the network open
+// by the proxy's absence. The command is not run.
+var ErrEgressUnavailable = errors.New("sandbox required with network proxy, but the egress proxy is not available here, so the command was not run")
 
 // ErrNetworkDeny is returned in required mode with network deny when the
 // kernel's Landlock cannot cut the network off. The command is not run.
@@ -142,7 +160,12 @@ func customTempDir(v string) string {
 // FromSettings builds the policy for a command. roots are the workspace
 // roots. pol is the effective posture: guardrails off turns the sandbox off.
 func FromSettings(s *config.SandboxSettings, roots []string, pol posture.Policy) Policy {
-	p := Policy{Mode: s.ModeOr(), DenyNetwork: s.NetworkOr() == NetworkDeny}
+	netw := s.NetworkOr()
+	p := Policy{Mode: s.ModeOr(), DenyNetwork: netw == NetworkDeny}
+	if netw == NetworkProxy {
+		p.Egress = true
+		p.EgressAllow = s.EgressAllowList()
+	}
 	if guardrailsOff(pol) {
 		p.Mode = ModeOff
 	}
@@ -370,6 +393,9 @@ func Limits() []string {
 	}
 	if s.abi < landlockNetABI {
 		out = append(out, fmt.Sprintf("network deny is not enforced: Landlock ABI %d cannot cut the network off (needs ABI %d, Linux 6.7+)", s.abi, landlockNetABI))
+		out = append(out, fmt.Sprintf("network proxy is unavailable: Landlock ABI %d cannot restrict TCP to the proxy (needs ABI %d, Linux 6.7+)", s.abi, landlockNetABI))
+	} else {
+		out = append(out, "network proxy confines TCP only: UDP and unix sockets still pass")
 	}
 	return out
 }
@@ -472,6 +498,20 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 	if name == "bwrap" && vaultenv.Default.HasActive(time.Now()) && pidModeFn() == pidNone {
 		return false, ErrPIDIsolation
 	}
+	// Network proxy: start the egress proxy and confine the command to it. Where
+	// that cannot be done, required refuses and auto runs as network deny does,
+	// never with the network open.
+	if p.Egress && !p.DenyNetwork {
+		planned, err := planEgress(p, st)
+		if err != nil {
+			if p.Mode == ModeRequired {
+				return false, err
+			}
+			p.DenyNetwork = true
+		} else {
+			p = planned
+		}
+	}
 	var landlockEnv string
 	if name == "landlock" {
 		// Landlock has no pid namespace and no way to keep /proc/PID/environ
@@ -505,23 +545,46 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 		}
 		cmd.Env = append(cmd.Env, p.Env...)
 	}
+	if p.egressPort > 0 {
+		cmd.Env = append(cmd.Env, proxyEnv(p.egressPort)...)
+	}
 	target := cmd.Path
 	if target == "" && len(cmd.Args) > 0 {
 		target = cmd.Args[0]
 	}
 	argv := append([]string{target}, cmd.Args[1:]...)
 	var args []string
+	runPath := path
 	switch name {
 	case "bwrap":
-		args = BwrapArgs(p, cmd.Dir, argv)
+		inner := argv
+		if p.egressPort > 0 {
+			// The relay runs inside the sandbox, beside the command. The
+			// helper is this executable, kept visible even where it sits under
+			// the private /tmp (a binary built by go run or go test).
+			inner = append(append([]string{p.egressExe}, egressPrefix(p)...), argv...)
+			p.Visible = append(append([]string(nil), p.Visible...), p.egressExe)
+		}
+		args = BwrapArgs(p, cmd.Dir, inner)
 	case "landlock":
 		// The helper reads the policy from its environment and takes it out
 		// before it execs the command.
 		cmd.Env = append(cmd.Env, landlockEnv)
 		args = append([]string{LandlockCommand, "--"}, argv...)
+		if p.egressPort > 0 {
+			// The relay runs outside the Landlock domain, as this process's
+			// child; only the command is restricted, and it may connect to the
+			// relay's port and nowhere else.
+			args = append(append(egressPrefix(p), path), args...)
+		}
 	case "sandbox-exec":
 		args = append([]string{"-p", SeatbeltProfile(p), "--"}, argv...)
+		if p.egressPort > 0 {
+			runPath = p.egressExe
+			args = append(append(egressPrefix(p), path), args...)
+		}
 	}
+	path = runPath
 	cmd.Path = path
 	cmd.Args = append([]string{path}, args...)
 	cmd.Err = nil
@@ -557,8 +620,13 @@ func BwrapArgs(p Policy, dir string, argv []string) []string {
 			args = append(args, "--tmpfs", h)
 		}
 	}
-	if p.DenyNetwork {
+	if p.DenyNetwork || p.egressPort > 0 {
 		args = append(args, "--unshare-net")
+	}
+	// The proxy socket is bound in last, over the hidden state directory it
+	// lives in: the command sees that one file and nothing else there.
+	if p.egressSock != "" {
+		args = append(args, "--bind", p.egressSock, p.egressSock)
 	}
 	// With vault variables in the command's environment, give it its own pid
 	// namespace: it cannot see another process (a background command, an earlier
@@ -599,6 +667,9 @@ func SeatbeltProfile(p Policy) string {
 	}
 	if p.DenyNetwork {
 		b.WriteString("(deny network-outbound (remote ip))\n(deny network-inbound (local ip))\n")
+	} else if p.egressPort > 0 {
+		// Only the relay's loopback port; the later rule overrides the deny.
+		fmt.Fprintf(&b, "(deny network-outbound (remote ip))\n(deny network-inbound (local ip))\n(allow network-outbound (remote ip \"localhost:%d\"))\n", p.egressPort)
 	}
 	return b.String()
 }

@@ -25,6 +25,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/egress"
 )
 
 // LandlockCommand is the hidden subcommand that applies a policy and execs.
@@ -103,10 +105,13 @@ type landlockPolicy struct {
 	Hidden      []string `json:"hidden"`
 	Mounts      []Mount  `json:"mounts,omitempty"`
 	DenyNetwork bool     `json:"deny_network"`
+	// EgressPort is the one loopback TCP port the command may connect to when
+	// the network goes through the egress proxy's relay. Zero means none.
+	EgressPort int `json:"egress_port,omitempty"`
 }
 
 func landlockPolicyFrom(p Policy) landlockPolicy {
-	pol := landlockPolicy{Writable: uniq(p.Writable), Hidden: uniq(p.Hidden), DenyNetwork: p.DenyNetwork}
+	pol := landlockPolicy{Writable: uniq(p.Writable), Hidden: uniq(p.Hidden), DenyNetwork: p.DenyNetwork, EgressPort: p.egressPort}
 	for _, m := range p.Mounts {
 		pol.Mounts = append(pol.Mounts, Mount{Path: filepath.Clean(m.Path), Writable: m.Writable})
 	}
@@ -164,7 +169,9 @@ type llRule struct {
 type llPlan struct {
 	Rules []llRule
 	Net   bool
-	Notes []string
+	// ConnectPorts are the TCP ports a command may connect to when Net is on.
+	ConnectPorts []int
+	Notes        []string
 }
 
 // llSpec is one path the policy names with the rights it should have.
@@ -303,7 +310,10 @@ func landlockPlan(pol landlockPolicy, abi int, list func(dir string) ([]llEntry,
 		}
 		carve(s.path, s.rights, holes)
 	}
-	plan := llPlan{Net: pol.DenyNetwork && abi >= landlockNetABI, Notes: notes}
+	plan := llPlan{Net: (pol.DenyNetwork || pol.EgressPort > 0) && abi >= landlockNetABI, Notes: notes}
+	if plan.Net && !pol.DenyNetwork && pol.EgressPort > 0 {
+		plan.ConnectPorts = []int{pol.EgressPort}
+	}
 	for p, r := range rules {
 		plan.Rules = append(plan.Rules, llRule{Path: p, Access: r})
 	}
@@ -346,6 +356,9 @@ func init() { HelperMain() }
 func HelperMain() {
 	if len(os.Args) > 1 && os.Args[1] == LandlockCommand {
 		os.Exit(LandlockExecMain(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == egress.Command {
+		os.Exit(egress.ExecMain(os.Args[2:], os.Stdout, os.Stderr))
 	}
 }
 

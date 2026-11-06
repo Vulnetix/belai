@@ -25,6 +25,7 @@ import (
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/deciderserver"
 	"github.com/vulnetix/belai/internal/decisionserver"
+	"github.com/vulnetix/belai/internal/egress"
 	"github.com/vulnetix/belai/internal/gitsync"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
@@ -52,6 +53,8 @@ func main() {
 	// Stop any local decision server this process launched, on every exit.
 	defer decisionserver.StopAll()
 	defer deciderserver.StopAll()
+	// Close the egress proxies this process started and remove their sockets.
+	defer egress.Shutdown()
 	_, _ = config.Migrate()
 	activatePlugins()
 	// Remember providers without a nonce endpoint across runs, so a session

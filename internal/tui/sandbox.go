@@ -7,6 +7,15 @@ import (
 	"github.com/vulnetix/belai/internal/sandbox"
 )
 
+// egressFallback says what a proxy request becomes where the backend cannot
+// confine a command to it.
+func egressFallback(mode string) string {
+	if mode == sandbox.ModeRequired {
+		return "commands are refused"
+	}
+	return "commands run as network deny does there"
+}
+
 // sandboxReport renders /sandbox: whether commands run sandboxed here, with
 // which backend, and what the policy lets them touch.
 func (a *App) sandboxReport() string {
@@ -33,11 +42,22 @@ func (a *App) sandboxReport() string {
 		return "sandbox: n/a · no backend is available here, so commands run unsandboxed" + why
 	}
 	network := "allowed"
-	if p.DenyNetwork {
+	switch {
+	case p.DenyNetwork:
 		network = "denied"
 		if name == "landlock" && sandbox.NetworkDenyEnforced() {
 			network = "denied (TCP only)"
 		}
+	case p.Egress:
+		switch {
+		case !sandbox.NetworkDenyEnforced():
+			network = "proxy requested, unavailable here: " + egressFallback(p.Mode)
+		case name == "landlock":
+			network = fmt.Sprintf("proxy, %d allowed host(s) (TCP only)", len(p.EgressAllow))
+		default:
+			network = fmt.Sprintf("proxy, %d allowed host(s)", len(p.EgressAllow))
+		}
+		network += "; /egress lists them"
 	}
 	fmt.Fprintf(&b, "sandbox: on (%s, mode %s) · network %s", sandbox.Describe(), p.Mode, network)
 	tmp, hidden := ", a private /tmp", ""

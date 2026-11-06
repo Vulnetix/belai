@@ -90,7 +90,7 @@ func TestEventKeysClosed(t *testing.T) {
 }
 
 func TestDataKeysAllowlist(t *testing.T) {
-	want := []string{"attempt", "change", "class", "commit", "decision", "dispatch", "ecosystem", "exit", "files", "forge", "from", "gate",
+	want := []string{"attempt", "change", "class", "commit", "count", "decision", "dispatch", "ecosystem", "exit", "files", "forge", "from", "gate",
 		"hops", "id", "justification", "kind", "list", "message_id", "os", "package", "passes", "path", "peer", "pr", "previous", "profile", "reason",
 		"regressed", "retries", "rule", "schedule", "severity", "state", "status", "suite", "target", "to", "tool", "version", "worker"}
 	if got := DataKeys(); !reflect.DeepEqual(got, want) {
@@ -114,7 +114,7 @@ func TestKindsAndScopes(t *testing.T) {
 	if Kind("shell.run").Valid() || Kind("").Valid() {
 		t.Fatal("an unknown kind must not be valid")
 	}
-	if len(Kinds()) != 29 {
+	if len(Kinds()) != 30 {
 		t.Fatalf("%d kinds; update docs/audit.md and the server's kind table together", len(Kinds()))
 	}
 }
