@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // gitIn runs git in dir for test setup, with no user or system configuration.
@@ -16,7 +17,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+	cmd.Env = append(proc.WithoutGitEnv(os.Environ()), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.test")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

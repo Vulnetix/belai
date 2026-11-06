@@ -117,6 +117,10 @@ func quietRepo(t *testing.T) *autoCommitRunner {
 
 func commitTestApp(t *testing.T, mode string, f *autoCommitRunner) *App {
 	t.Helper()
+	// The commit message is asserted as built, so pin the test outside the
+	// sandbox attribution file: attribution.Message appends trailers when the
+	// machine running the tests carries one.
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
 	a := New(Options{})
@@ -664,6 +668,10 @@ func realRepo(t *testing.T) string {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
+	// The commit message is asserted as built, so pin the test outside the
+	// sandbox attribution file: attribution.Message appends trailers when the
+	// machine running the tests carries one.
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
 	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 	t.Setenv("GIT_AUTHOR_NAME", "t")
