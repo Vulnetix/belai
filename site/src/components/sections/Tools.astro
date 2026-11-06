@@ -11,7 +11,7 @@ import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
 // go, and the boundary Bash runs inside (internal/sandbox).
 
 const sealText =
-  'Tools: the core tools take the arguments models are trained on, a fixed-argv native catalogue of 25 read-only utilities never goes through a shell, and Cd is confined so the working directory moves inside the session roots. Bash, inline !cmd and supervised processes run in an OS sandbox: bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend. Other repositories on this machine: Repos lists the git checkouts among the sibling directories of the working directory, two levels deep, without following a symlink, RepoFiles lists a checkout with git ls-files and RepoRead reads one file from it, each call limited to the checkout it names, and a file RepoRead returns is classified like any file read.';
+  'Tools: the core tools take the arguments models are trained on, Edit retries a miss through a fixed whitespace ladder, apply_patch changes several files all or nothing, Outline and Symbol find declarations without reading a file, a fixed-argv native catalogue of 25 read-only utilities never goes through a shell, and Cd is confined so the working directory moves inside the session roots. Bash, inline !cmd and supervised processes run in an OS sandbox: bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied or limited to hosts you list through a proxy Belai runs. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend. Other repositories on this machine: Repos lists the git checkouts among the sibling directories of the working directory, two levels deep, without following a symlink, RepoFiles lists a checkout with git ls-files and RepoRead reads one file from it, each call limited to the checkout it names, and a file RepoRead returns is classified like any file read.';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -47,11 +47,13 @@ const catalogue = [
   { group: 'environment', tools: [['Echo', false], ['Date', false], ['Pwd', false], ['Env', false]] },
 ] as const;
 
-const core = [
+const core: [string, string, string?][] = [
   ['Grep', '`glob`, `type`, `-i`, context lines and `output_mode`'],
   ['Bash', 'a `timeout` of up to ten minutes, two by default, so a normal test run finishes'],
   ['Edit · Write', 'refuse a file the model has not read in this session, or one that changed on disk since'],
-  ['Edit', 'an exact match always wins. Without one it retries on whole lines, in a fixed order: line endings folded, trailing spaces and tabs ignored, then one consistent indentation shift. It applies a relaxed match only when exactly one place matches, fits the new text to the file\'s line endings and indentation, and says which step matched. A second match, a mix of tabs and spaces or mixed line endings fails instead of guessing, and `replace_all` is always exact. A miss names the three closest lines and whether they differ in line ending, trailing space, indentation or content, and omits the text of a file whose read was withheld. `edit.tolerant` switches it off, and a project file can turn it off and never on'],
+  ['Edit', 'an exact match always wins. Without one it retries on whole lines in a fixed order: line endings folded, trailing spaces and tabs ignored, then one consistent indentation shift. It applies a relaxed match only when exactly one place matches and says which step matched. `replace_all` stays exact, and `edit.tolerant` switches the retry off.', 'edit.md'],
+  ['apply_patch', 'several files in one call, all or nothing. One envelope holds Update, Add and Delete sections. The harness anchors each hunk in exactly one place, builds every file in memory, checks that each was read and has not changed, and only then writes, so a failure leaves every file as it was. A deny rule on any file blocks the call and an allow must cover them all. `patch_tolerance` sets how far anchoring relaxes (`strict`, `whitespace` by default, `unicode` for curly quotes and dashes), and a project file can only narrow `patch_tool` and `patch_tolerance`. Limits: 64 files, 256 hunks, no rename. Not offered in plan mode or on read-only turns.', 'patch-tool.md'],
+  ['Outline · Symbol', 'Outline lists what a file declares and Symbol finds where a name is declared, so the model can locate code without reading the file. The index builds the first time it is asked, in five seconds or not at all, and its names never enter the repository map or the system block. Results are classified like a `Read`, and a file whose read was withheld or denied stays hidden. `/symbols` shows you the same answer, and a project file can only turn `symbol_index` off.', 'symbol-map.md'],
   ['Git', 'status, log, diff, show, rev-parse, ls-files, grep and describe, nothing that writes'],
   ['Bash · BashOutput · KillShell', '`run_in_background` starts a server and returns a handle, BashOutput reads what it printed since the last read, KillShell stops it. It asks and runs in the sandbox like any Bash call, and is never restarted by the recovery agent'],
   ['Screenshot', 'a page served from this machine, rendered in headless Chrome or Chromium with every request to anywhere else blocked, or the desktop, which asks every time. Only loopback addresses are accepted, and Belai checks that a server is listening first. The PNG is kept under `~/.vulnetix/belai/screenshots` (newest 20) and the path is in the result'],
@@ -77,7 +79,7 @@ const sandbox = [
   { what: 'Writable', items: ['the workspace roots, including folders added with `/add-dir`', 'a private `/tmp` that exists only for that command', 'with `caches` on, the usual tool caches: `~/.cache`, `~/go`, `~/.npm`, `~/.cargo`, `~/.m2`, `~/.gradle` and more'], tone: 'bg-vx-mint/25' },
   { what: 'Read-only', items: ['everything else your account can see'], tone: 'bg-vx-bone/60' },
   { what: 'Hidden', items: ['`~/.vulnetix/belai`, which holds credentials and sessions. The command sees an empty directory'], tone: 'bg-vx-ink text-vx-cream' },
-  { what: 'Network', items: ['available by default, so builds work', '`"network": "deny"` turns it off'], tone: 'bg-vx-sand/60' },
+  { what: 'Network', items: ['available by default, so builds work', '`"network": "deny"` turns it off', '`"network": "proxy"` reaches only the hosts you list'], tone: 'bg-vx-sand/60' },
 ];
 
 const sandboxModes = [
@@ -94,6 +96,13 @@ const limits = [
   ['One switch', 'Guardrails off turns the sandbox off with every other check. `/sandbox` shows the policy in effect.'],
   ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. A `Bash` call made from a code-mode script runs under the same policy as a direct one. The command dies with Belai.'],
   ['A script has no sandbox to escape', 'The code-mode interpreter has no filesystem, process or network access of its own. Everything it does goes through a tool call, and a `Bash` call is wrapped like any other.'],
+];
+
+const egress: [string, string][] = [
+  ['Hosts you name, nothing else', 'With `"network": "proxy"`, a sandboxed command reaches only the names in `sandbox.egress_allow`, each a host or `*.domain`, through a proxy Belai runs. The list is empty by default, so `proxy` alone reaches nothing. Ports 80 and 443 only, 64 connections at once.'],
+  ['Refused by rule, not by a model', 'Any other host gets a 403, and the `Bash` result names it. Belai resolves each name itself and dials a public address it checked, so a DNS answer cannot change between the check and the connection. TLS is not decrypted.'],
+  ['Shown and extended by you', '`/egress` lists the allow list and the latest refusals. `/egress allow HOST` adds a host for the session, and only a person at the terminal can. Headless, ACP and remote sessions use the settings list as it stands.'],
+  ['A repository only tightens', 'A project file can move `network` toward `deny` and cannot add a host. When the proxy or the backend cannot confine a command, `required` refuses it and `auto` runs it under `deny`.'],
 ];
 
 const repoTools: [string, string][] = [
@@ -174,10 +183,10 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     <summary>The core tools and their arguments</summary>
     <div class="deep__body">
   <dl class="mt-4 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 @2xl:grid-cols-2">
-    {core.map(([tool, what]) => (
+    {core.map(([tool, what, doc]) => (
       <div class="bg-vx-cream p-5">
         <dt><code class="mono text-base font-semibold">{tool}</code></dt>
-        <dd class="m-0 mt-2 text-vx-ink/80">{split(what).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</dd>
+        <dd class="m-0 mt-2 text-vx-ink/80">{split(what).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}{doc && <>{' '}<a class="underline" href={`${docBase}${doc}`}>docs/{doc}</a></>}</dd>
       </div>
     ))}
   </dl>
@@ -293,6 +302,16 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </p>
     </div>
   </div>
+
+  <details class="deep deep--wide">
+    <summary>The egress proxy: the allow list, what it refuses and /egress</summary>
+    <div class="deep__body">
+      <Limits items={egress} cols={2} class="mt-4" />
+      <p class="mt-3 text-sm text-vx-ink/75">
+        <a class="underline" href={`${docBase}sandbox.md#egress-proxy`}>docs/sandbox.md</a>
+      </p>
+    </div>
+  </details>
 
   <Limits items={limits} />
 </SealedSection>

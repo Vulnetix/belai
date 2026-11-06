@@ -134,6 +134,20 @@ tools section (`Tools.astro`, anchor `#sandbox`). Each card links to the matchin
 doc under `docs/` on GitHub, so the site states the rule and the doc carries
 the edge cases.
 
+Later features sit inside the section a reader would look in, as a row or a fold, not as new
+sections. The tools section's folded core list carries the tolerant `Edit` match, `apply_patch` and
+`Outline` and `Symbol`, each with an optional third element that links its doc, and the sandbox block
+folds the egress proxy. Permissions has the hazard floor (`#hazards`). Diagnostics has "Checks beyond
+the language server" (`#beyond-lsp`): the per-edit lint loop and `/review`. Budgets has the compaction,
+prompt-cache, `/context` and reply-cost items in its smaller-requests list and a fold behind them, then
+run caps (`#run-caps`). Memory carries the instruction-file card and the source index in its knowledge
+list. Goal-mode finish review is a row in the modes limits, best-of-N and worktree setup are in the
+agents section (the assurance row and the crew-worker fold), and the CLI section lists the structured
+output flags, exit codes, `belai review` and `belai worktree`. The quality of life groups hold the
+commit workflow, `/undo` and `/rewind`, `/relay` and `/btw`. The web sessions audit list must hold
+every kind in `internal/audit`, and `internal/docsuite` fails when one is missing. The comparison
+table gets a row only when every other column can be checked against a public source.
+
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
 table, shot carousel); the session intelligence demo carries a small inline script, and everything else ships zero JS.
 

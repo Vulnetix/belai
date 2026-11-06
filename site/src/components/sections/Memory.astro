@@ -6,7 +6,7 @@ import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 
 const sealText =
-  'Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read. Knowledge: beside the usual Grep, Glob and Read answer, a model gets passages that resemble its query from the documents an agent profile lists and from the scanner output in .vulnetix and the files attached with @. Every chunk is sanitized and admitted by the security classifier when it is indexed, so a search calls no model, the search is pure Go with no embedding model or service, a deny rule hides a source path, and /knowledge shows what is indexed.';
+  'Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and agent turns carry the repository\'s AGENTS.md and CLAUDE.md, with a subdirectory\'s file arriving after a tool touches a path beneath it, while plan and goal turns also prefetch the changed files, all through a classified Read. Knowledge: beside the usual Grep, Glob and Read answer, a model gets passages that resemble its query from the documents an agent profile lists and from the scanner output in .vulnetix and the files attached with @, and from the repository\'s own source when knowledge.source_index is on. Every chunk is sanitized and admitted by the security classifier when it is indexed, so a search calls no model, the search is pure Go with no embedding model or service, a deny rule hides a source path, and /knowledge shows what is indexed.';
 
 const tools = [
   { n: '01', name: 'SearchSessions', key: 'regex', lead: 'Searches past sessions with a regular expression, by default only those recorded in the current project. With `prompts_only`, only prompt history is searched, which is faster.' },
@@ -18,9 +18,9 @@ const agents = ['Belai', 'Claude Code', 'Codex', 'pi', 'Goose', 'opencode', 'Cop
 const needsSqlite = new Set(['Goose', 'opencode']);
 
 const knowledge: [string, string][] = [
-  ['Two kinds of knowledge', 'Profile knowledge is the documents an agent profile lists, such as a handbook, a style guide or runbooks. Project knowledge is the scanner output in `.vulnetix` and the files you attach with `@`.'],
+  ['Where knowledge comes from', 'Profile knowledge is the documents an agent profile lists, such as a handbook, a style guide or runbooks. Project knowledge is the scanner output in `.vulnetix` and the files you attach with `@`. Turn on `knowledge.source_index` ("index source tree" in `/settings`) and the repository\'s own files join, cut at declarations and ranked by meaning and by exact identifier, so `parseConfig` is a term of its own. It is off by default and only your own settings enable it or raise its limits.'],
   ['Through the tools it already uses', 'A model\'s own `Grep`, `Glob` and `Read` calls add labelled `kb+` rows after the filesystem result. A harness read, such as an `@` attachment, gets the filesystem alone.'],
-  ['Classified once, when indexed', 'Every chunk is sanitized and admitted by the security classifier at ingestion, and a flagged chunk is never stored. A search then calls no model.'],
+  ['Classified once, when indexed', 'Every chunk is sanitized and admitted by the security classifier at ingestion, and a flagged chunk is never stored. A file that holds a key or a token is skipped, `/knowledge reindex` rebuilds the source index, and a search calls no model.'],
   ['Runs in the process', 'The search is pure Go, with no embedding model to download, no service to call and no cgo, so it works offline in every release build.'],
   ['Permissions still apply', 'A deny rule on a document\'s source path hides it from search and listing, and a profile whose tools leave out `Grep` has no knowledge through `Grep`.'],
   ['See what is indexed', '`/knowledge` opens the indexes read-only for this project, every project or the agents, with each document\'s type, labels and topics, and searches them as a model\'s tools would.'],
@@ -44,8 +44,8 @@ const knows = [
     body: 'When the model reads an unchanged file again and the earlier copy is still in the conversation, it gets a short note instead: the path, the lines, the size and the git blob id. The index stores those facts, never file contents. Any edit, a changed timestamp or a file whose read was withheld sends the next read to disk and through the classifier as usual.',
   },
   {
-    title: 'Context prefetch',
-    body: "Plan and goal turns, and approved plans, start by reading `AGENTS.md`, `CLAUDE.md` and the files changed in the working tree. The reads use the session's own `Read` and are classified the same way. They stop at 12 files, 48 KiB per file and 128 KiB in total, and a file a permission rule would ask about is skipped.",
+    title: 'Instruction files',
+    body: "`AGENTS.md` and `CLAUDE.md` at the repository root ride on every agent turn, and one in a subdirectory arrives at the next round after a tool touches a path beneath it, outermost first. Plan and goal turns also read the changed files. Each read uses the session's own `Read`, is classified the same way, never enters the system block and grants no permission. The limits are 12 files, 48 KiB each and 128 KiB a turn, and a project file can only lower them or switch them off. `/init` drafts a root file and asks before it writes.",
   },
 ];
 
@@ -113,7 +113,8 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 
   <SubHead id="knowledge" title="Search your reference documents by meaning">
     Beside the usual answer, a model gets passages that resemble its query from the documents an agent
-    profile lists and from the scanner output in <code class="mono">.vulnetix</code>.
+    profile lists, from the scanner output in <code class="mono">.vulnetix</code> and, if you turn it on, from the
+    repository's own source.
   </SubHead>
   <Limits items={knowledge} cols={2} class="mt-head" />
 

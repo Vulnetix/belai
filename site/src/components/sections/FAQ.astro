@@ -12,7 +12,7 @@ interface Props {
 const { chapter = true } = Astro.props;
 
 const sealText =
-  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced, what happens to a prompt injection in a file, how a permission in a prompt becomes firewall policy, what is free, which platforms and editors are supported, and how it runs unattended.';
+  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state. About Belai: what leaves the machine, which providers work, whether it runs offline, what a cloned repository can change, how commands are fenced and which ones always ask, what happens to a prompt injection in a file, how a permission in a prompt becomes firewall policy, what is free, which platforms and editors are supported, and how it runs unattended.';
 
 // Product questions. Each answer is a list of paragraphs, and text between
 // backticks renders as code. An optional link renders as a last paragraph.
@@ -48,6 +48,7 @@ const product: { q: string; a: string[]; link?: { href: string; label: string } 
     q: 'Can the model run any command it likes?',
     a: [
       'Commands go through `Bash`, which follows your permission rules and, where a backend exists, runs inside an operating-system sandbox. A deny rule is matched against every command on a line, including ones wrapped in `sudo`, `env`, `xargs` or `sh -c`. The common cloud and file tools run without a shell at all. In code mode, a script\'s calls are the same calls: each is permission-checked, asked about and sandboxed on its own, and the script itself has no filesystem, network or process access.',
+      'A short list of lines always asks a person, whatever your allow rules, ask off or a hook say: a catastrophic `rm`, a raw disk write, a download piped into a shell, `sudo`, a force push, and writes to `.git`, CI workflows, lockfiles and credential files. A line Belai cannot parse asks too.',
     ],
   },
   {
@@ -79,7 +80,7 @@ const product: { q: string; a: string[]; link?: { href: string; label: string } 
   {
     q: 'Can it run unattended?',
     a: [
-      '`belai -prompt` answers one task and exits, which suits CI. For longer work, crews of worker agents take cards from the kanban board and open draft pull requests, each in its own worktree. Guardrails stay on for workers, an autonomous worker needs a pass budget, and the harness runs the acceptance gates itself.',
+      '`belai -prompt` answers one task and exits, which suits CI. For longer work, crews of worker agents take cards from the kanban board and open draft pull requests, each in its own worktree. Guardrails stay on for workers, an autonomous worker needs a pass budget, and the harness runs the acceptance gates itself. In a script, `-output-format json` and `-json-schema` give a result you can parse, and `-max-cost`, `-max-tokens` and `-max-wall` stop a run at a ceiling with exit code 3.',
     ],
   },
 ];

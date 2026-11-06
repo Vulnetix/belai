@@ -9,7 +9,7 @@ import permMerge from '../../assets/concepts/permission-merge.svg?raw';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
 
 const sealText =
-  'Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff.';
+  'Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff. A floor of hazard rails sits under the rules: a catastrophic rm, a raw disk write, a download piped into a shell, sudo, destructive git, an unreadable shell line, and writes to .git, CI workflows, lockfiles, credential files and your protected paths always ask a person, whatever allow rule, ask off, hook allow or decision model would say, and no allow-always is kept for them. Only your own settings can turn the floor off.';
 
 const rules = [
   { n: '01', name: 'Allow', key: 'allow', lead: 'The tool runs without asking. An allow never skips an ask that another rule or a hook demanded.' },
@@ -24,12 +24,21 @@ const sources = [
   ['role', 'what the running role is granted'],
 ];
 
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
+const hazards: [string, string][] = [
+  ['Shell lines', 'Belai reads the parsed line and sees through `env`, `sudo`, `xargs`, `sh -c`, `eval` and `find -exec`. A catastrophic `rm`, a raw disk write, a download piped into a shell, `sudo` or a setuid bit, destructive git and any line it cannot read all ask.'],
+  ['Files', 'A write to `.git`, a CI workflow, a lockfile, a credential file, a shell start-up file or a path in `permissions.protected_paths` asks, after symlinks are resolved. `Write`, `Edit` and `apply_patch` are all covered.'],
+  ['Only a person answers', 'The ask offers allow once and deny. The terminal, an editor over ACP and the web remember nothing, no decision model is consulted, and a session that cannot ask withholds the call.'],
+  ['Yours to loosen', 'The floor is on. Only your own settings turn it off (`permissions.hazard_ask`) or let ask off skip it (`hazard_yolo_waive`), and a repository can only add paths. `/hazards` lists every table. The audit log records the rail ids and the tool, never the command or the path.'],
+];
+
 const surfaces = ['the agent session', 'inline !cmd', '@file attachments', 'background agents', 'the CLI'];
 
 const limits = [
   ['Grants add up', 'Merging adds grants and keeps where each came from. It never widens a surface on its own, and an explicit deny beats every allow.'],
   ['When no rule matches', 'The call is allowed by default. Set `permission_no_match` to `enforce` and it is blocked.'],
-  ['Rules read the command', 'A Bash rule is matched against each command the line contains, not the raw text. `Bash(git status*)` does not approve `git status; rm -rf x`, and a deny for `git push` also stops `env git push` and `sh -c \'git push\'`.'],
+  ['Rules read the command', 'A Bash rule is matched against each command the line contains, not the raw text. `Bash(git status*)` does not approve `git status; rm -rf x`, and a deny for `git push` also stops `env git push` and `sh -c \'git push\'`. A patch from `apply_patch` is judged per file: a deny on any file blocks it and an allow must cover them all.'],
   ['Some calls always ask', 'A desktop `Screenshot` asks every time, whatever your rules say. Pages on localhost follow your rules, so `Screenshot(url:http://127.0.0.1:*)` lets your dev server through.'],
   ['The switch comes first', 'Every gated path checks the guardrails switch before calling the classifier, so turning a gate off also stops its classifier calls.'],
 ];
@@ -80,6 +89,15 @@ const limits = [
     marks={[{ row: 7, col: 92 }, { row: 11, col: 40 }]}
     notes={['The change itself, line by line, before anything is written.', 'Approve, deny or open the full diff.']}
   />
+
+  <SubHead id="hazards" title="A floor under the rules">
+    A short list of shell lines and files always asks a person. An allow rule, ask off, <code class="mono">/yolo</code>,
+    a hook allow or a confident decision model does not skip it, and allow-always is never offered for it.
+  </SubHead>
+  <Limits items={hazards} cols={2} class="mt-head" />
+  <p class="mt-3 text-sm text-vx-ink/75">
+    <a class="underline" href={`${docBase}hazard-rails.md`}>docs/hazard-rails.md</a>
+  </p>
 
   <SubHead title="One switch for every surface">
     <code class="mono">f3</code> turns guardrails off for every surface at once, and a red{' '}
@@ -134,4 +152,7 @@ const limits = [
   </div>
 
   <Limits items={limits} />
+  <p class="mt-3 text-sm text-vx-ink/75">
+    A run can also be capped on cost, tokens or time: see <a class="underline" href="#run-caps">run caps</a>.
+  </p>
 </SealedSection>

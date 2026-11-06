@@ -8,7 +8,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 // subcommands and the gates, each group a terminal block beside its notes.
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, -usage-json records what a run spent, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags. The subcommands are agent, kanban, rc, plugin, acp and login, and belai help followed by a command prints that command own flags. -teleport continues a session from another host, sandbox or the web in this checkout under a new id. The top-level flags fall into five groups: session, model, safety, security classifier and other.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, -usage-json records what a run spent, -output-format json or stream-json prints a result a script can parse, -json-schema checks the final answer, -prompt - reads the prompt from stdin, exit codes tell a run cap, a denied approval and a schema failure apart, belai review judges a change against a rubric, belai worktree manages the worktrees workers use, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags. The subcommands are agent, kanban, rc, plugin, acp and login, and belai help followed by a command prints that command own flags. -teleport continues a session from another host, sandbox or the web in this checkout under a new id. The top-level flags fall into five groups: session, model, safety, security classifier and other.';
 
 const groups = [
   {
@@ -18,6 +18,9 @@ const groups = [
       ['belai -plan -prompt "map the repo"', 'runs the plan-mode surface with Bash absent, writes a structured plan document, and exits without asking for approval.'],
       ['belai -detect-mode -prompt "…"', 'runs the mode classifier and prints the mode it would pick. No tools run.'],
       ['belai -prompt "…" -usage-json usage.json', 'writes the tokens the run spent per role and per model, cache reads and writes included, even when the run fails.'],
+      ['belai -prompt "…" -output-format json', 'prints one result object when the run ends. stream-json prints one event per line and then the result. Standard output holds only that format, and a failed run still ends with a result.'],
+      ['belai -prompt "…" -json-schema review.json', 'requires the final answer to be JSON that satisfies the schema. A miss gets one repair turn composed from a fixed code, never from the reply, and then exit code 5.'],
+      ['git diff | belai -prompt -', 'reads the prompt from standard input, 1 MiB at most by default. -resume ID or -continue with -prompt replays a stored session and adds the new prompt to it.'],
       ['belai -export <id-prefix>', 'prints a deterministic Markdown transcript of a saved session. It reads the session store and nothing in the repository.'],
     ],
   },
@@ -27,6 +30,8 @@ const groups = [
       ['BELAI_NO_TUI=1', 'The TUI launches only when stdin and stdout are both terminals. In a pipeline, under GitHub Actions, or with BELAI_NO_TUI=1 or CI set, Belai stays headless.'],
       ['belai -trust-dir', 'grants trust to the current directory once, so an unattended job can start in a fresh checkout without a prompt.'],
       ['tests.post_end', 'With it set, a -prompt run that completes a goal, or ends on a changed tree at session level, runs the detected tests. The result and report go to stderr, stdout stays the reply, and the exit code is unchanged, so a script reads stderr to gate on the result.'],
+      ['exit codes', '0 ok, 1 error, 2 usage, 3 a run cap, 4 a tool call needed an approval nobody could give (json formats), 5 the answer failed its schema.'],
+      ['-max-cost -max-tokens -max-wall', 'cap one run\'s spend. Nobody can extend a -prompt run, so it stops with exit code 3 when a cap is reached.'],
       ['-guardrails -ask-permission -tools -firewall -verbose', 'Every gate works from the command line. Scripts get the same blocking defaults as the TUI.'],
     ],
   },
@@ -35,6 +40,8 @@ const groups = [
     lines: [
       ['belai acp', 'serves the Agent Client Protocol on stdin and stdout, so Zed, JetBrains IDEs and Neovim plugins drive Belai with every gate in place. An untrusted directory is refused without a prompt.'],
       ['belai plugin install <git-url|dir>', 'prints every skill, hook command, prompt and agent a plugin adds and installs only on your yes, or -yes after reading it. list, update, enable, disable and remove manage what is installed.'],
+      ['belai review -pr 12 -comment', 'judges the working tree, a branch (-base REF) or a pull request against nine fixed criteria and prints findings the harness checked against the diff. -comment posts to the pull request only when review.post is allow in your own settings, and otherwise exits 2.'],
+      ['belai worktree list', 'new, list, update and drop manage the git worktrees the harness made for cards. update and drop ask first and show every command they would run, and -yes answers for a script.'],
       ['belai kanban add "…" -label build', 'add, list, show, move, note, release and import put work on the board from scripts. Labels, priority, an assignee and dependencies route it, and -json prints items for tooling.'],
       ['belai rc --detach', 'remote control: the Vulnetix website starts and drives sessions on this machine, in the directories you offer. --status shows the daemon and --stop ends it.'],
       ['belai login kiro', 'signs in to Kiro with an AWS Builder ID or an IAM Identity Center start URL, and -import reuses the sign-in Kiro already made.'],
@@ -46,9 +53,9 @@ const groups = [
 ];
 
 const flagGroups: [string, string, string[]][] = [
-  ['Session', 'what to run and what to keep', ['-prompt', '-mode', '-plan', '-resume', '-continue', '-teleport', '-teleport-ref', '-export', '-no-transcript', '-usage-json', '-detect-mode']],
+  ['Session', 'what to run and what to keep', ['-prompt', '-mode', '-plan', '-resume', '-continue', '-teleport', '-teleport-ref', '-export', '-no-transcript', '-usage-json', '-detect-mode', '-output-format', '-json-schema', '-max-cost', '-max-tokens', '-max-wall']],
   ['Model', 'who answers and how', ['-provider', '-model', '-effort', '-firewall', '-caveman', '-defer-tools', '-tools', '-agent', '-agent-create']],
-  ['Safety', 'the gates, and the choice to relax one', ['-guardrails', '-ask-permission', '-trust-dir', '-dangerously-yolo-everything', '-allow-unsafe-prompt', '-allow-malformed-prompt', '-allow-unsafe-tool-result', '-allow-malformed-tool-result', '-allow-unpermitted-tools', '-allow-ask-without-tty', '-allow-invalid-skills', '-allow-invalid-hooks', '-tool-call-mismatch']],
+  ['Safety', 'the gates, and the choice to relax one', ['-guardrails', '-ask-permission', '-trust-dir', '-dangerously-yolo-everything', '-allow-unsafe-prompt', '-allow-malformed-prompt', '-allow-unsafe-tool-result', '-allow-malformed-tool-result', '-allow-unpermitted-tools', '-allow-ask-without-tty', '-allow-invalid-skills', '-allow-invalid-hooks', '-tool-call-mismatch', '-no-finish-review', '-no-checkpoints', '-lint-loop']],
   ['Security classifier', 'the engine and each phase', ['-classifier-kind', '-classifier-provider', '-classifier-model', '-classifier-effort', '-classifier-phase1-model', '-classifier-phase1-source', '-classifier-phase1-threshold', '-classifier-phase2-model', '-classifier-phase2-source', '-classifier-phase2-threshold']],
   ['Other', 'output and housekeeping', ['-verbose', '-session-retention-days', '-no-prune', '-version']],
 ];

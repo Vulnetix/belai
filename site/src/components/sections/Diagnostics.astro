@@ -9,7 +9,7 @@ import Limits from '../ui/Limits.astro';
 // and the limits on language servers.
 
 const sealText =
-  'Diagnostics: the harness checks the file the model just edited and hands the errors back on the same tool result. Language servers detected on PATH, fixed-argv syntax checks when none is installed, per-language on/off in /settings. Every message is capped, flattened to one line, stripped of control runes, and sealed with a nonce and a SHA-256.';
+  'Diagnostics: the harness checks the file the model just edited and hands the errors back on the same tool result. Language servers detected on PATH, fixed-argv syntax checks when none is installed, per-language on/off in /settings. Every message is capped, flattened to one line, stripped of control runes, and sealed with a nonce and a SHA-256. Beyond the language server, the repository\'s own linter can run on each edited file (off by default, findings classified and sealed, never reported clean), and /review judges a working tree, branch or pull request against a fixed rubric, keeping only findings whose line sits in the diff.';
 
 // From internal/lsp/registry.go. `fallback` is the check run when no server
 // is installed; languages without one report nothing until a server is.
@@ -28,6 +28,15 @@ const languages = [
   ['Swift', 'sourcekit-lsp', 'swiftc -parse'],
   ['TypeScript / JavaScript', 'typescript-language-server', 'node --check'],
   ['Zig', 'zls', 'zig ast-check'],
+];
+
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
+const beyond: [string, string][] = [
+  ['Lint after each edit', 'Off by default. Turn it on with `lint_loop.enabled`, the "lint after edits" row in `/settings`, `/lint-loop on`, `-lint-loop` or `BELAI_LINT_LOOP=1`. After a `Write`, `Edit` or `apply_patch`, Belai runs ruff, rubocop or golangci-lint on the edited file with a fixed argv and returns up to ten rows on the same result. It works in the terminal, over ACP and headless.'],
+  ['A linter is not trusted either', 'It runs under your permission rules, the sandbox and a scrubbed environment, and a deny or ask rule skips it. Its rows are classified and then sealed, a withheld row leaves only a count, and a file is never reported clean. A project file can only turn the loop off or lower a number.'],
+  ['Review a change against a rubric', '`/review` and `belai review` judge the working tree, a branch or a pull request against nine fixed criteria. The model proposes findings in a read-only turn with no shell, and the harness keeps a finding only when its file is reviewable and its line sits in the diff, at most 20. The verdict is advice and approves nothing.'],
+  ['Posting needs a yes', 'A review reaches a pull request only after you confirm in the terminal, or with `-comment` and `review.post` set to `allow` in your own settings. A `ReviewPost` deny rule or a denying hook stops it, and a project file can only narrow `review.*`.'],
 ];
 
 const steps = [
@@ -100,6 +109,16 @@ const limits = [
     </tbody>
   </table>
   </div>
+
+  <SubHead id="beyond-lsp" title="Checks beyond the language server" surfaces={['tui', 'cli', 'self-hosted']}>
+    The repository's own linter can run on each edited file, and a whole change can be reviewed against a
+    fixed rubric. In both, the harness decides what counts, never the text it reads.
+  </SubHead>
+  <Limits items={beyond} cols={2} class="mt-head" />
+  <p class="mt-3 text-sm text-vx-ink/75">
+    <a class="underline" href={`${docBase}lint.md#per-edit-loop`}>docs/lint.md</a> ·{' '}
+    <a class="underline" href={`${docBase}review.md`}>docs/review.md</a>
+  </p>
 
   <SubHead title="When another pass will not help">
     From the second pass on, if errors are still reported for a file, the decision backend rates how likely

@@ -10,7 +10,7 @@ import footerShot from '../../assets/shots/footer.svg';
 // colours, and what counts against a budget.
 
 const sealText =
-  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns. Smaller requests, measured: defer_tools sends the core tools in full and loads the rest through ToolSearch, an oversized result becomes a preview and a reference read back with ReadResult, -usage-json writes tokens per role and model with the request composition as sizes only, and context_windows overrides a model window.";
+  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns. Smaller requests, measured: defer_tools sends the core tools in full and loads the rest through ToolSearch, an oversized result becomes a preview and a reference read back with ReadResult, -usage-json writes tokens per role and model with the request composition as sizes only, and context_windows overrides a model window. Compaction runs on numbers you set (compaction.*), with a breaker that pauses a failing summary, /compact takes a focus and /cache keeps the prompt prefix warm. /context and an opt-in reply cost line show where tokens and estimated spend went, on screen only. Run caps put a ceiling on one session's cost, tokens or turn time: the model is told once to wrap up, and the run stops at the cap unless you extend it.";
 
 const windows = [
   {
@@ -49,17 +49,45 @@ const counts = [
   ['older sessions', "Imported from transcripts. A transcript keeps only its last call's usage, so the imported figure is a lower bound"],
 ];
 
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
 const economy: [string, string][] = [
   ['Core tools in full, the rest on demand', '`defer_tools` is on by default. A request carries the core tools in full and names the rest in a sealed briefing. `ToolSearch` loads a definition into later requests, and a deferred tool stays callable by name.'],
   ['Large results stay out of the history', 'A result above the size limit becomes a head-and-tail preview and a reference. `ReadResult` reads slices of the stored result when the model asks, and each slice is classified.'],
-  ['See where the tokens went', '`belai -prompt "…" -usage-json file` writes a summary on exit: tokens per role and model, cache reads and writes, and the request composition, which is the size of the system prompt, tool definitions, history and each tool\'s results. Sizes only, never content.'],
+  ['See where the tokens went', '`belai -prompt "…" -usage-json file` writes a summary on exit: tokens per role and model, cache reads and writes, and the request composition, which is the size of the system prompt, tool definitions, history and each tool\'s results. Sizes only, never content. `/context` shows the same live, and `ui.reply_cost` adds a cost line to each reply.'],
   ['Windows you can correct', '`context_windows` overrides the context window Belai assumes for a model, in tokens.'],
+  ['Compaction you can set', 'A long session compacts at `compaction.threshold_pct` (70) of the window. Five more keys set what a prune keeps and when a failing summary pauses. A cloned repository can only compact sooner or keep more.'],
+  ['A prompt cache you can keep warm', '`/cache ttl 1h` asks the provider to hold your prefix for an hour, and `/cache keepalive N` allows up to N idle pings, off by default. A ping replays the last request and discards the reply.'],
 ];
+
+const economyDeep: [string, string][] = [
+  ['Six compaction keys', '`threshold_pct` 70, `keep_recent_turns` 6, `keep_result_chars` 300, `keep_tool_results` 2, `breaker_failures` 3 and `breaker_cooldown_passes` 4, under `compaction` in settings. A project value that would compact later or keep less is dropped with a note.'],
+  ['A failing summary pauses', 'After three failed summaries in a row the summary step pauses for four pass boundaries while pruning goes on. The terminal saves the pause with the session, so a resume does not retry at once. ACP, headless, remote and fleet sessions apply the numbers and keep the pause in memory.'],
+  ['/compact in the terminal', '`/compact <focus>` steers one summary (500 characters, on the user side only) and `/compact status` shows the thresholds and the breaker without a model call. A manual summary is classified before it is stored, and a refusal leaves the session as it was.'],
+  ['What a ping does', 'The gap is 270 seconds (3300 with `1h`) and at most 100 pings run. A ping stops on any refused answer, and waits while a turn runs, in plan mode, under an open ask, with a spent budget and on a local provider. Its tokens are booked under the role `keepalive`.'],
+  ['A changed prefix is named', 'A `cache_prefix_changed` row says whether the system block or the tool definitions changed. The `prompt_cache` block is read from your own settings only. The lifetime applies wherever the native Anthropic provider is used, and pings run only in the terminal.'],
+  ['/context and the cost line', '`/context` prints the system prompt, tool definitions, history and the five largest tool results against the model\'s window, with free room and an estimated session cost. `ui.reply_cost` (off by default) adds a dim line such as `in 12.3k (cache 90%) · out 410 · ~$0.031 est.`. Both are estimates from reported counts and list prices, shown on screen and never sent to a model.'],
+];
+
+const runSteps = [
+  'Set a ceiling in `run_caps` (`max_cost_usd`, `max_tokens`, `max_wall_minutes`, all off by default) or for one run with `-max-cost`, `-max-tokens` and `-max-wall`.',
+  'At 90 percent of a cap (`finalize_at`) the model gets one fixed wrap-up directive with no number in it.',
+  'At the cap the run stops unless you extend it by half the original ceiling, up to three times: a key on the terminal ask, the editor\'s choice over ACP, or a typed `/caps extend`.',
+];
+
+const runDeep: [string, string][] = [
+  ['Only you extend', 'A headless `-prompt` run stops with exit code 3. A remote session, a subagent, ask off, the website, a spoken word and the decision model never extend.'],
+  ['A repository can only lower', 'A project file can add a cap or lower one, and lower `finalize_at` and `max_extends`. Raising or clearing a cap takes your own settings or a flag.'],
+  ['Measured by the harness', 'Cost is an estimate at the model\'s list price, and a model with no known price leaves the cost cap off. Wall time counts turns only. A subagent spends on its parent\'s meter, and a fleet worker keeps its own profile budget.'],
+  ['Where it shows', 'A footer chip shows the largest used share and `/caps` lists each cap. Counters are saved per session, so a resume keeps the spend, and the audit log records the outcome as a word and a pass count.'],
+];
+
+const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
 
 const limits = [
   ['Set in your own settings', "Budgets are global. A repository's settings file cannot raise or remove them."],
   ['Counted once', 'A session is never counted twice, even when two belai windows import it at the same time.'],
-  ['Warnings only', 'A call over budget still runs. Turn on ui.budget_warn for a warning line on every call while a budget is amber or red.'],
+  ['Warnings only', 'A call over budget still runs. Turn on ui.budget_warn for a warning line on every call while a budget is amber or red. A run cap is what stops one.'],
 ];
 ---
 
@@ -189,6 +217,40 @@ const limits = [
     first place, and show where the tokens went.
   </SubHead>
   <Limits items={economy} cols={2} class="mt-head" />
+
+  <details class="deep deep--wide">
+    <summary>Compaction keys, the breaker, /cache and /context</summary>
+    <div class="deep__body">
+      <Limits items={economyDeep} cols={2} class="mt-4" />
+      <p class="mt-3 text-sm text-vx-ink/75">
+        <a class="underline" href={`${docBase}compaction.md`}>docs/compaction.md</a> ·{' '}
+        <a class="underline" href={`${docBase}prompt-cache.md`}>docs/prompt-cache.md</a> ·{' '}
+        <a class="underline" href={`${docBase}token-budgets.md#context-and-reply-cost`}>docs/token-budgets.md</a>
+      </p>
+    </div>
+  </details>
+
+  <SubHead id="run-caps" title="A ceiling that stops a run" surfaces={['tui', 'acp', 'cli', 'self-hosted']}>
+    A budget only warns. A run cap puts a ceiling on one session's cost, tokens or turn time, and the
+    harness enforces it. The model never sees the number.
+  </SubHead>
+  <ol class="mt-head list-none p-0">
+    {runSteps.map((step, i) => (
+      <li class={`grid grid-cols-[2rem_minmax(0,1fr)] gap-3 py-4 ${i < runSteps.length - 1 ? 'border-b border-vx-ink/20' : ''}`}>
+        <span class="mono text-vx-ink/60">{i + 1}</span>
+        <p>{split(step).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
+      </li>
+    ))}
+  </ol>
+  <details class="deep deep--wide">
+    <summary>Who can extend, what a cap measures and where it shows</summary>
+    <div class="deep__body">
+      <Limits items={runDeep} cols={2} class="mt-4" />
+      <p class="mt-3 text-sm text-vx-ink/75">
+        <a class="underline" href={`${docBase}run-caps.md`}>docs/run-caps.md</a>
+      </p>
+    </div>
+  </details>
 
   <div class="mt-sub grid border-t border-vx-ink/60 @3xl:grid-cols-3">
     {limits.map(([title, body]) => (

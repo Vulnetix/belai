@@ -94,7 +94,7 @@ const promises: [string, string][] = [
 
 const assurance: [string, string][] = [
   ['A gate is a reference', 'A gate names a test suite the harness detected and, for Go, a package directory and a test name. It never holds a command: the harness builds the argv from its own table and runs it without a shell.'],
-  ['The exit code decides', 'The harness runs the gates on the builder branch and again on the reviewer branch, in the OS sandbox with a scrubbed environment. A run that tested nothing is not a pass.'],
+  ['The exit code decides', 'The harness runs the gates on the builder branch and again on the reviewer branch, in the OS sandbox with a scrubbed environment. A run that tested nothing is not a pass. With `kanban.candidates` a worker tries a card up to four times in separate worktrees, the gates run on every branch, and a fixed rule picks the winner. The model never ranks.'],
   ['Manual gates go to the reviewer', 'A gate no test can observe is decided by the reviewer with `KanbanGate`. Manual gates reset to unmet before each review, and an abandoned one blocks the card for a person.'],
   ['Regressions count', 'The harness compares a branch with the quality record of its base commit, so a branch cannot pass by breaking a suite that passed before.'],
   ['Every clause is tracked', 'A request becomes at most twelve clauses, and the `request_coverage` job also files a gap card when the tasks look unlikely to finish the request.'],
@@ -146,6 +146,7 @@ const fences = [
   ['Settings from the root', 'Trust, settings and credentials are read from your repository root, so an agent cannot plant them in a worktree for the next one.'],
   ['Refuses to start', 'No worker runs with guardrails off. An autonomous one needs a pass budget; one with Bash needs a working OS sandbox.'],
   ['Stops when the board is dry', 'A worker with nothing to claim, and no crew mate still working, waits two polls and exits, freeing its slot. Pass -stay to keep one waiting. A worker whose profile has its own schedule stays, and one started from a stored schedule runs with -drain and exits when the board is dry.'],
+  ['Setup and teardown you wrote', 'A worker\'s worktree can run `worktrees.setup` and `worktrees.teardown`, which are argv lists with no shell. They run scrubbed, sandboxed, permission-checked and offline unless you allow the network. A failed setup removes the worktree, a failed teardown keeps it, and their output never reaches the board. `/worktree new TITLE` files a card that gets one, and `update` and `drop` ask first.'],
   ['Test sweeps on HEAD', 'Each time the delivery crew starts, the harness runs your detected test suites once for the current commit and files what they show as work for the scout: failing suites, thin coverage, untested packages, property tests, fixtures, contract tests and mutation testing. Launching it again on the same commit adds nothing the board already has.'],
 ];
 
@@ -494,6 +495,14 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
         elsewhere, and flags that send a tool's credentials to another endpoint are refused with or without
         facts. A role the profile lists is assumed without a prompt, and any other role asks you first. The
         temporary credentials stay in memory and reach only the AWS and Terraform commands.
+      </p>
+      <p>
+        A worker can also try a card more than once. <code class="mono">kanban.candidates</code> (2 to 4) needs
+        worktree isolation and gate verification set to <code class="mono">record</code> or
+        <code class="mono">enforce</code>. Each candidate runs alone on the item's budget, and the harness picks the
+        winner by gates met, scanner clear, any change, fewest files, fewest tokens, then lowest number. A blocked,
+        regressed, scanner-present or failed candidate is never chosen. <code class="mono">agents.max_candidates</code>
+        (4) is your ceiling and a project can only lower it.
       </p>
       <p>
         Or start from one sentence. <code class="mono">belai agent draft "what it should do"</code> drafts every

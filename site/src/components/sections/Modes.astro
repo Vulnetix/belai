@@ -87,6 +87,7 @@ const limits = [
   ['Nobody to answer', 'A headless run or a background agent is told to proceed on its own judgement, and nothing widens.'],
   ['A stalled goal asks you', 'Five passes in a row that repeat the same work, or change nothing, stop the loop and ask you how to proceed. Your direction joins the objective and the loop starts again; no answer ends the goal with its report.'],
   ['Surveys end', 'After eight rounds of reading without changing a file, a goal is told to stop surveying and make the first edit.'],
+  ['A finished goal is checked', 'Before a goal is accepted as complete, Belai reads the working tree and may send it back up to twice: for scratch files new since the goal began, a test that lost lines or gained a skip marker, or source changed with no passing check after it. Any part of the tree it could not read is named in the report. No model decides. `/finish-review`, `-no-finish-review` and `finish_review.*` set it, and a repository can only tighten it.'],
   ['A clear score ends a pass, an unclear one is checked harder', 'With a decision backend, a clearly complete or not started pass is settled by its scores. Anything else goes to the model judge with the scores, and completion needs a check made with tools. The verification pass still runs.'],
 ];
 
