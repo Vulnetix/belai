@@ -749,7 +749,7 @@ func toolKind(name string) string {
 		return "read"
 	case "Write", "Edit", "apply_patch", "SkillDraft":
 		return "edit"
-	case "Grep", "Glob", "SearchSessions", "SearchMemory":
+	case "Grep", "Glob", "Outline", "Symbol", "SearchSessions", "SearchMemory":
 		return "search"
 	case "Bash", "ProcessRestart", "BashOutput", "KillShell":
 		return "execute"

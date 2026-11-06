@@ -100,6 +100,11 @@ const (
 	// because it observes the desktop, so it asks and runs on the sequential
 	// path.
 	KindScreenshot Kind = "screenshot"
+	// KindSymbol is an Outline or Symbol result: declaration names, kinds and
+	// line spans from the symbol index (internal/symindex, docs/symbol-map.md).
+	// The names are the repository's own text, so the result is read-only and
+	// always classifies, as a Read of the same files would.
+	KindSymbol Kind = "symbol"
 	// KindFetched is a SearchFetched result: passages of pages this session
 	// fetched with WebFetch. Every chunk was classified when it was indexed
 	// (the same rule as the knowledge store's kb+ rows), so the result is
@@ -155,7 +160,7 @@ var AllKinds = []Kind{
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindLint, KindCommitDraft, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 	KindOffload, KindScreenshot, KindFetched, KindCode, KindTeleport, KindDecision,
-	KindPeer, KindA2A, KindRepoMemory, KindRepoMemoryWrite,
+	KindPeer, KindA2A, KindRepoMemory, KindRepoMemoryWrite, KindSymbol,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -180,6 +185,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindKanbanWrite: true,
 	KindToolSearch:  true,
 	KindOffload:     true,
+	KindSymbol:      true,
 	KindFetched:     true,
 	KindDecision:    true,
 	KindA2A:         true,

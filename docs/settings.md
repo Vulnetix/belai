@@ -319,6 +319,15 @@ The `checkpoints` block has no row on the settings screen. `checkpoints.enabled`
 layers and `-no-checkpoints` set them; a project file can only turn checkpoints
 off, never change a limit or the retention. See [File checkpoints](checkpoints.md#settings).
 
+## Symbol index
+
+The `symbol_index` block has no row on the settings screen. `symbol_index.enabled`
+(on by default), `symbol_index.max_files` (2000, from 100 to 10000),
+`symbol_index.max_results` (50, from 1 to 200) and `symbol_index.refresh_secs` (60,
+from 5 to 3600) are in the settings file. Your own layers set any key; a project
+file can only turn the index off, and its numbers are dropped with a note. See
+[Symbol map](symbol-map.md#settings).
+
 ## Commit workflow
 
 Three top-level keys set how the harness commits. `commit_mode` (`off`, `ask` or `auto`, default `off`) has a row on the settings screen, "commit mode"; `commit_draft` (default `false`) has the row "model-drafted commit message"; `commit_exclude` is a list of relative path globs in the settings file (at most 64, each at most 200 characters). The legacy `auto_commit_per_task: true` still means `auto` while `commit_mode` is unset, and an explicit `commit_mode` wins. `commit_mode` and `commit_draft` are read from your own layers only: a project file cannot set either, and the project value is dropped with a note. A project file may add `commit_exclude` patterns, never remove one of yours. See [Commit workflow](commit-workflow.md#settings).

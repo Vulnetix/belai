@@ -36,6 +36,10 @@ package tools
 //   - KindCommitDraft is the changed-path facts a commit-message drafter is
 //     shown and the message it writes back. Paths come from the repository
 //     and the reply is model text, so both classify before they are used.
+//   - KindSymbol is an Outline or Symbol result. The harness parsed the
+//     declarations, but a declared name is the repository's own text, so a
+//     poisoned file can put an instruction in one; it classifies like a Read
+//     of the same file would.
 //   - KindOffload is a ReadResult slice of a result the harness offloaded.
 //     The whole result was admitted before it was stored, but a slice is the
 //     same arbitrary bytes read back, so it classifies again rather than
@@ -78,6 +82,7 @@ var classifierKinds = map[Kind]bool{
 	KindMCP:         true,
 	KindKanban:      true,
 	KindOffload:     true,
+	KindSymbol:      true,
 	KindTeleport:    true,
 	KindPeer:        true,
 	KindRepoMemory:  true,

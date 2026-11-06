@@ -44,7 +44,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
-  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), an A2A direct message or reply (`KindPeer`, another agent's model text, from this host or another, classified on receipt), the per-edit lint loop's rows (`KindLint`, linter messages that quote the edited file), `RepoMemoryRead` notes (`KindRepoMemory`, text other agents and the Software Factory console wrote), the `Vulnetix` tool (`KindRemote`,
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), a teleport replay's hand-over (`KindTeleport`, another host's model's text and patch parts), an A2A direct message or reply (`KindPeer`, another agent's model text, from this host or another, classified on receipt), the per-edit lint loop's rows (`KindLint`, linter messages that quote the edited file), `Outline` and `Symbol` results (`KindSymbol`, declared names from the repository's own files), `RepoMemoryRead` notes (`KindRepoMemory`, text other agents and the Software Factory console wrote), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
@@ -923,6 +923,33 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   anything unsupported leave an empty block, and the loop never claims a file is
   clean. The only thing persisted (`.vulnetix/belai/lint_loop.json`) is counts,
   a tool name, an exit code and a duration.
+- **The symbol index serves the repository's names only through classified tools.**
+  `internal/symindex` (docs/symbol-map.md) parses the declarations of the files
+  `internal/locate`'s inventory already allows (never an ignored, hidden,
+  symlinked, binary, oversized, credential-bearing or dependency file) into a
+  name, a kind from the closed `locate.Kinds` set, a container and a line span:
+  no body, comment or signature. A declared name is repository text, so it
+  **never enters the repo map, the system block or a directive**
+  (`TestRepoMapBlockNeverCarriesADeclarationName`) and reaches a model only in an
+  `Outline` or `Symbol` result, whose `tools.KindSymbol` is in
+  `tools.classifierKinds` unconditionally (guardrails off skips the round trip
+  only). Names and containers go through `sanitize.Ident` at the tool, a path
+  that fails `sanitize.PathText` drops its row, and the index refuses a name that
+  is not an ASCII identifier when it parses. Rows from a file whose `Read` the
+  classifier withheld (`agent.flaggedFiles`) become a count that points at no
+  other tool, and a `Read` deny rule hides a file entirely; both run at query
+  time in the session, so the cache never stores either. The tools are read-only,
+  take a path only through the `*Cwd` confinement (the session root alone is
+  indexed) or a name checked against a fixed shape, never a pattern, a command or
+  a limit above the user's. The build is bounded (5 seconds, `symbol_index.max_files`
+  files, 200 declarations a file, 20000 in all) and a build that runs out of time
+  serves no partial rows. The cache lives in the user's state directory (mode
+  0600, a SHA-256 trailer, atomic, symlinks refused) and is untrusted on load: any
+  failed check, or a row outside the bounds, discards the whole file. `symbol_index`
+  is read from the user's layers; a project layer may only set `enabled` to false
+  (`mergeSymbolIndex`). `/symbols` draws the same tools' output for the user
+  alone, as an ephemeral row. Do not add a path argument, a second parser or any
+  declared text to the repo map.
 - **Acceptance gates are references, and the harness decides them.**
   A gate on a card (`kanban.Gate`) names a test suite the harness detected
   (`internal/testdetect`) and, for a Go suite, a package directory and a test

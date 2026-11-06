@@ -1346,6 +1346,8 @@ func formatToolInvocation(name, argsJSON string) string {
 		"Edit":      {"file_path", "path"},
 		"Grep":      {"pattern", "query"},
 		"Glob":      {"pattern", "query"},
+		"Outline":   {"file_path", "path"},
+		"Symbol":    {"name"},
 		"WebSearch": {"query", "q"},
 		"WebFetch":  {"url"},
 		"Git":       {"command"},

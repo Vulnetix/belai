@@ -400,6 +400,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindToolSearch: true,
 		KindPublish:    false,
 		KindOffload:    true,
+		// Outline and Symbol read the harness's own index.
+		KindSymbol: true,
 		// SearchFetched is a lookup over the session's own index.
 		KindFetched: true,
 		// A screenshot observes the desktop, so it is mutating: it asks and

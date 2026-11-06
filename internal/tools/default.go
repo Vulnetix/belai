@@ -25,6 +25,10 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Write{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &Edit{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &ApplyPatch{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
+	// Outline and Symbol serve the session's symbol index; until a session
+	// installs its source in the hub they answer that it is not available.
+	symbols := &SymbolHub{}
+	list = append(list, &Outline{Root: workdir, Cwd: cwd, Hub: symbols}, &Symbol{Hub: symbols, MaxResults: 50})
 	pages := &WebPages{}
 	list = append(list, &WebFetch{Pages: pages})
 	ws := &WebSearch{}
@@ -57,6 +61,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	base.hub = hub
 	base.cloud = cloud
 	base.pages = pages
+	base.symbols = symbols
 	base.memory = memory
 	if readOnly {
 		return base.ReadOnly()

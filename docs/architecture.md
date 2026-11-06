@@ -1509,6 +1509,12 @@ system block: repository prose still reaches the model only through
 `RepoRead`/`Read`, which classify. The map is an accelerant, never a gate; a
 failed or empty scan renders nothing.
 
+Symbol-level facts are deliberately not in the map. A declared name is the
+repository's own text, so the symbol index (`internal/symindex`,
+[Symbol map](symbol-map.md)) is reachable only through the `Outline` and
+`Symbol` tools, whose results are `tools.KindSymbol` and classify. A test holds
+that `prompt.RepoMapBlock` never carries a declaration name.
+
 The facts that move with every commit or edit — branch, HEAD, the dirty flag
 and the changed paths — are **not** in the system block. They are refreshed
 before each turn (`Map.RefreshStatus`: one bounded `git status --porcelain

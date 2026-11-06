@@ -55,6 +55,10 @@ type Options struct {
 	// exploration with the edits. Plan mode must never set this: plan mode has
 	// its own read-only contract and must not be told to start editing.
 	WorkDiscipline bool
+	// SymbolTools adds one line to the work discipline naming the Outline and
+	// Symbol tools. It is set only when those tools are on the session's
+	// surface, so the text never promises a tool the registry lacks.
+	SymbolTools bool
 	// CodeMode adds the code-mode section (docs/code-mode.md). It is set only
 	// on an explicit code-mode turn, so no other mode's system text changes.
 	CodeMode bool
@@ -131,7 +135,11 @@ const CavemanVoice = "Voice guidance: talk like caveman. Short words. No long wo
 // change well: understand the code first, change as little as solves the
 // task, verify. It is trusted harness text, rendered only when WorkDiscipline
 // is requested and Explore is not.
-func workDiscipline() string {
+func workDiscipline(symbolTools bool) string {
+	symbols := ""
+	if symbolTools {
+		symbols = "- Outline lists a file's declarations with their line spans and Symbol finds where a name is declared: use them to choose a range to Read instead of reading a large file whole.\n"
+	}
 	return "Work discipline.\n" +
 		"- Read the code you will change before editing it, along with its callers or the conventions it must follow. Edit from the exact bytes you read, never from memory.\n" +
 		"- Make the smallest change that fully solves the task, matching the surrounding code's style, naming and comment density. Do not refactor or add features beyond what was asked.\n" +
@@ -139,6 +147,7 @@ func workDiscipline() string {
 		"- After changing code, run the detected test or lint command and fix what it reports before calling the work done.\n" +
 		"- Do not narrate a plan you are about to carry out; carry it out, then report what changed.\n" +
 		"- The repository map lists the build/test commands and justfile recipes, and each turn's repository status lists the branch and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
+		symbols +
 		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file. Never re-read what you already have.\n" +
 		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n" +
 		"- A result that starts \"tool call rejected\", \"tool result withheld: execution error\", \"malformed arguments\" or \"arguments may be truncated\" is an error in your own call: read it, fix the arguments, and issue the call again. A permission, hook, mode or scope refusal is a decision, not an error: do not retry it.\n"
@@ -202,7 +211,7 @@ func SystemParts(opts Options) (stable, session string, err error) {
 		st.WriteString(opts.WorkspaceBlock + "\n")
 	}
 	if opts.WorkDiscipline && !opts.Explore {
-		st.WriteString(workDiscipline())
+		st.WriteString(workDiscipline(opts.SymbolTools))
 	}
 	if opts.CodeMode && !opts.Explore {
 		st.WriteString(codeContract())

@@ -135,6 +135,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("lint-loop", "show or set the per-edit lint loop, which runs the detected linter on each edited file: status, on or off for this session", func() []string { return []string{"status", "on", "off"} }, func(a *App, arg string) tea.Cmd {
 		return a.lintLoopCmd(arg)
 	})
+	r.Register("symbols", "show the symbol index: /symbols for its size, /symbols <name> for where a name is declared, /symbols <path> for a file's declarations, /symbols refresh to re-read it; shown to you only, never sent to a model", func() []string { return []string{"status", "refresh"} }, func(a *App, arg string) tea.Cmd {
+		return a.symbolsCommand(arg)
+	})
 	r.Register("init", "draft a root AGENTS.md for this repository from its detected facts; nothing is written until you approve the Write", nil, func(a *App, arg string) tea.Cmd {
 		return a.initCommand()
 	})

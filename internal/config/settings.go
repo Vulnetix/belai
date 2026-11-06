@@ -260,6 +260,10 @@ type Settings struct {
 	// result. Off by default. The user's layers and the flags turn it on; the
 	// project layer may only turn it off or lower a number.
 	LintLoop *LintLoopSettings `json:"lint_loop,omitempty"`
+	// SymbolIndex configures the symbol index behind the Outline and Symbol
+	// tools (docs/symbol-map.md). On by default. The user's layers set any
+	// key; the project layer may only switch it off.
+	SymbolIndex *SymbolIndexSettings `json:"symbol_index,omitempty"`
 	// Checkpoints configures the file checkpoints behind /undo and /rewind
 	// (docs/checkpoints.md). On by default. The user's layers and the flags set
 	// any key; the project layer may only switch it off.
@@ -2164,6 +2168,8 @@ func (s Settings) Override(proj Settings) Settings {
 	// Lint loop: a project may switch it off and lower its numbers, never
 	// switch it on or raise one.
 	out.LintLoop = mergeLintLoop(out.LintLoop, proj.LintLoop, true)
+	// Symbol index: a project may switch it off, never change a number.
+	out.SymbolIndex = mergeSymbolIndex(out.SymbolIndex, proj.SymbolIndex, true)
 	// Checkpoints: a project may switch them off, never change a limit.
 	out.Checkpoints = mergeCheckpoints(out.Checkpoints, proj.Checkpoints, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.

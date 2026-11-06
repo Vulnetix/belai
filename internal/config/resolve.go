@@ -167,6 +167,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := checkpointsIgnored(proj.Checkpoints); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only switch checkpoints off)")
 	}
+	if ign := symbolIndexIgnored(proj.SymbolIndex); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only switch the symbol index off)")
+	}
 	if ign := lintLoopIgnored(eff.Settings.LintLoop, proj.LintLoop); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (the lint loop is the user's opt-in; a project may only turn it off or lower a number)")
 	}
@@ -235,7 +238,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateCheckpoints, ValidateCommitWorkflow, ValidateReview, ValidateWorktrees, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateFinishReview, ValidateLintLoop, ValidateSymbolIndex, ValidateCheckpoints, ValidateCommitWorkflow, ValidateReview, ValidateWorktrees, ValidateHeadless, ValidatePromptCache, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -789,6 +792,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.FinishReview = mergeFinishReview(before, s.FinishReview, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.FinishReview) {
 			e.Origin["finish_review"] = src
+		}
+	}
+	if s.SymbolIndex != nil {
+		// The index reads more of a repository: a repository may only switch
+		// it off (mergeSymbolIndex).
+		before := e.Settings.SymbolIndex
+		e.Settings.SymbolIndex = mergeSymbolIndex(before, s.SymbolIndex, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.SymbolIndex) {
+			e.Origin["symbol_index"] = src
 		}
 	}
 	if s.Checkpoints != nil {

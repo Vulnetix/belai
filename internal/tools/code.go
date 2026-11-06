@@ -94,7 +94,7 @@ func (c Code) Execute(ctx context.Context, args map[string]any) (Result, error) 
 var nestedKinds = map[Kind]bool{
 	KindRead: true, KindGrep: true, KindGlob: true, KindEdit: true, KindWrite: true,
 	KindBash: true, KindWebFetch: true, KindWebSearch: true, KindNative: true,
-	KindRemote: true, KindFetched: true, KindDecision: true,
+	KindRemote: true, KindFetched: true, KindDecision: true, KindSymbol: true,
 }
 
 // nestedExcluded names tools whose kind is otherwise reachable but which a

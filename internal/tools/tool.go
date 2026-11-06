@@ -69,6 +69,9 @@ type Registry struct {
 	// memory is the repo memory tools' hub (repomemory.go); the tools are
 	// core, so a narrowing that drops them gets them back over this hub.
 	memory *RepoMemoryHub
+	// symbols is the hub behind the Outline and Symbol tools (symbol.go). It
+	// rides on the registry like hub does, so a narrowing keeps the one source.
+	symbols *SymbolHub
 }
 
 // NewRegistry builds a registry from the provided tools.
@@ -92,6 +95,7 @@ func (r *Registry) withCwd(reg *Registry) *Registry {
 	reg.cloud = r.cloud
 	reg.pages = r.pages
 	reg.memory = r.memory
+	reg.symbols = r.symbols
 	return reg
 }
 

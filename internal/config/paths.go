@@ -93,6 +93,32 @@ func ProjectDir(workdir string) string {
 	return filepath.Join(workdir, ".vulnetix")
 }
 
+// SymbolIndexDir returns <GlobalDir>/symbols, where the symbol index caches
+// what it parsed (docs/symbol-map.md). It lives in the user's state directory,
+// never in the repository, so the OS sandbox hides it from every command.
+func SymbolIndexDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "symbols"), nil
+}
+
+// ProjectSymbolIndexPath returns the cache file of one working directory's
+// symbol index: <GlobalDir>/symbols/<WorkdirKey(workdir)>.idx. The file is a
+// cache of declarations the harness parsed; it is untrusted on load.
+func ProjectSymbolIndexPath(workdir string) (string, error) {
+	dir, err := SymbolIndexDir()
+	if err != nil {
+		return "", err
+	}
+	abs := workdir
+	if a, err := filepath.Abs(workdir); err == nil {
+		abs = a
+	}
+	return filepath.Join(dir, WorkdirKey(abs)+".idx"), nil
+}
+
 // ProjectBelaiDir returns the project-local Belai directory.
 func ProjectBelaiDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "belai")

@@ -732,6 +732,16 @@ func NewSession(o Options) (*Session, error) {
 			ap.Tolerance = tol
 		}
 	}
+	// symbol_index off removes Outline and Symbol from every surface;
+	// otherwise Symbol returns at most the configured number of rows
+	// (docs/symbol-map.md).
+	if !o.Settings.SymbolIndexEnabled() {
+		reg = reg.Without(tools.OutlineName, tools.SymbolName)
+	} else if t, ok := reg.Find(tools.SymbolName); ok {
+		if sy, ok := t.(*tools.Symbol); ok && sy.MaxResults != o.Settings.SymbolIndexMaxResults() {
+			sy.MaxResults = o.Settings.SymbolIndexMaxResults()
+		}
+	}
 	// skills.self_authoring off removes SkillDraft from every surface.
 	if !o.Settings.Skills.SelfAuthoringEnabled() {
 		reg = reg.Without("SkillDraft")
@@ -926,6 +936,7 @@ func NewSession(o Options) (*Session, error) {
 		locCat.s = sess
 	}
 	sess.installKnowledge(o.Knowledge)
+	sess.installSymbols()
 	sess.installWebPages(pages)
 	return sess, nil
 }
@@ -1761,6 +1772,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// session (an explore subagent) that runs in agent mode on the plan
 	// surface. s.planMode is already latched for this turn.
 	opts.WorkDiscipline = modeDec.Mode != modes.ModePlan && !s.planMode
+	opts.SymbolTools = s.hasSymbolTools()
 	opts.CodeMode = s.turnCode
 	// The decision tools are described to the model only when the session has them.
 	if _, ok := s.registry.Find("mcp__clef__decide_enum"); ok {

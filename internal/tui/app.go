@@ -2557,6 +2557,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleA2ASide(m)
 	case sideAnswerMsg:
 		return a, a.handleSideAnswer(m)
+	case symbolsMsg:
+		return a, a.handleSymbols(m)
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
 	case codeReviewPostedMsg:

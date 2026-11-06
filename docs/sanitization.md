@@ -25,6 +25,7 @@ the sanitiser sits in the tool-result pipeline.
 | Text posted to a forge as a comment, where people read it as Markdown | `internal/sanitize` | `Inert` | Repairs |
 | An HTML error body shown on one line (an MCP 403 page) | `internal/sanitize` | `PlainText` | Repairs |
 | Identifier or label | `internal/sanitize` | `Ident` | Repairs |
+| A declared name and its container in an `Outline` or `Symbol` result | `internal/tools` | `Ident` (120 bytes), then `Sanitize`; the index itself refuses a name that is not an ASCII identifier | Repairs at the tool, refuses at the index |
 | State for a decision backend (Jev) | `internal/sanitize` | `ForDecision` (returns `DecisionText`) | Repairs |
 | File path, before resolution | `internal/sanitize` | `PathText` | Refuses |
 | HTTP header value | `internal/sanitize` | `Header` | Refuses |

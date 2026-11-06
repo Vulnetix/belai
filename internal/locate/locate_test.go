@@ -444,3 +444,62 @@ func TestDryRunListsTopLevelDirectoriesAndReasons(t *testing.T) {
 		t.Errorf("a dry run lists directories and counts, not file names:\n%s", got)
 	}
 }
+
+func TestDeclarationsCarryKindEndLineAndContainer(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "a.go", "package a\n\ntype Server struct {\n\tn int\n}\n\ntype Doer interface{ Do() }\n\ntype ID string\n\nfunc (s *Server) Handle() {\n}\n\nfunc (b Box[T]) Get() {}\n\nfunc helper() {}\n\nconst Max = 3\n\nvar Limit, Floor = 1, 2\n")
+	write(t, root, "b.py", "class Widget:\n    def render(self):\n        pass\n")
+	ds, _ := Declarations(filepath.Join(root, "a.go"))
+	type row struct {
+		name, kind, container string
+		line, end             int
+	}
+	got := make([]row, len(ds))
+	for i, d := range ds {
+		got[i] = row{d.Name, d.Kind, d.Container, d.Line, d.EndLine}
+	}
+	want := []row{
+		{"Server", KindStruct, "", 3, 5},
+		{"Doer", KindInterface, "", 7, 7},
+		{"ID", KindType, "", 9, 9},
+		{"Handle", KindMethod, "Server", 11, 12},
+		{"Get", KindMethod, "Box", 14, 14},
+		{"helper", KindFunc, "", 16, 16},
+		{"Max", KindConst, "", 18, 18},
+		{"Limit", KindVar, "", 20, 20},
+		{"Floor", KindVar, "", 20, 20},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("go decls:\n got %+v\nwant %+v", got, want)
+	}
+	py, _ := Declarations(filepath.Join(root, "b.py"))
+	if len(py) != 2 || py[0].Kind != KindClass || py[1].Kind != KindFunc || py[0].EndLine != 0 || py[0].Container != "" {
+		t.Errorf("scanned decls = %+v", py)
+	}
+	for _, d := range append(ds, py...) {
+		if !ValidKind(d.Kind) {
+			t.Errorf("%s has kind %q outside the closed set", d.Name, d.Kind)
+		}
+	}
+}
+
+// Locate's ranking and previews must be blind to the symbol index's fields.
+func TestRankingAndPreviewsIgnoreTheSymbolFields(t *testing.T) {
+	plain := []Decl{{Name: "AuthSession", Line: 4}, {Name: "helper", Line: 9}}
+	rich := []Decl{
+		{Name: "AuthSession", Line: 4, Kind: KindStruct, EndLine: 8, Container: "X"},
+		{Name: "helper", Line: 9, Kind: KindFunc, EndLine: 12},
+	}
+	f := File{Path: "a/b.go", Size: 100}
+	if fileLabel(f, plain, true) != fileLabel(f, rich, true) {
+		t.Errorf("preview label changed: %q vs %q", fileLabel(f, plain, true), fileLabel(f, rich, true))
+	}
+	q := words("auth session")
+	if bestLine(plain, q) != bestLine(rich, q) {
+		t.Error("bestLine changed")
+	}
+	a, b := newDoc("a/b.go", plain), newDoc("a/b.go", rich)
+	if !reflect.DeepEqual(a.tf, b.tf) || a.len != b.len {
+		t.Error("lexical document changed")
+	}
+}

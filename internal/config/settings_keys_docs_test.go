@@ -75,6 +75,7 @@ var settingsPages = map[string][]string{
 	"run_caps":      {"docs/run-caps.md", "docs/settings.md"},
 	"finish_review": {"docs/finish-review.md", "docs/settings.md"},
 	"lint_loop":     {"docs/lint.md", "docs/settings.md"},
+	"symbol_index":  {"docs/symbol-map.md", "docs/settings.md"},
 	"checkpoints":   {"docs/checkpoints.md", "docs/settings.md"},
 	"headless":      {"docs/headless.md", "docs/settings.md"},
 	"prompt_cache":  {"docs/prompt-cache.md", "docs/settings.md"},
