@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sandbox"
 )
 
@@ -21,5 +22,9 @@ func TestMain(m *testing.M) {
 	// These tests exercise the CLI's outside-the-sandbox path; the marker
 	// leaks in when `go test` itself runs inside a Belai sandbox.
 	os.Unsetenv(sandbox.EnvMarker)
+	// Ambient git locator variables (GIT_DIR, GIT_WORK_TREE, …) exported by a
+	// sandbox or worktree helper would point every git subprocess at a foreign
+	// repository instead of the test's own fixture directory.
+	proc.UnsetGitEnv()
 	os.Exit(m.Run())
 }

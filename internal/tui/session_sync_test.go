@@ -69,6 +69,26 @@ func (r *ackRecorder) ack(t *testing.T, id string) map[string]string {
 	return nil
 }
 
+// ackStatus polls until the recorder holds an ack for id with the wanted
+// status. A prompt is acked more than once (queued, then accepted) and the
+// map keeps only the newest, so the newer one can land before the caller has
+// deleted the older: waiting for a second send would then never return.
+func (r *ackRecorder) ackStatus(t *testing.T, id, status string) map[string]string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		r.mu.Lock()
+		got, ok := r.acks[id]
+		r.mu.Unlock()
+		if ok && got["status"] == status {
+			return got
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("no %s ack for %s", status, id)
+	return nil
+}
+
 func newSyncApp(t *testing.T) (*App, *ackRecorder) {
 	t.Helper()
 	a := newPersistApp(t)
@@ -119,10 +139,7 @@ func TestRemotePromptQueuesThenRunsAsUserLine(t *testing.T) {
 	if u.Type != "user" || u.Content != "run the tests" || u.Meta["remote_prompt_id"] != "p1" || u.Meta["source"] != "web" {
 		t.Fatalf("user entry = %+v", u)
 	}
-	rec.mu.Lock()
-	delete(rec.acks, "p1")
-	rec.mu.Unlock()
-	if got := rec.ack(t, "p1"); got["status"] != sessionsync.AckAccepted || got["entryId"] != u.ID {
+	if got := rec.ackStatus(t, "p1", sessionsync.AckAccepted); got["entryId"] != u.ID {
 		t.Fatalf("ack = %v, want accepted with entry %s", got, u.ID)
 	}
 	// The TUI shows it as a web prompt.

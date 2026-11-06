@@ -51,16 +51,26 @@ func inList(key string, list []string) bool {
 	return false
 }
 
-// WithoutGitEnv drops ambient variables that point git at another repository
-// (a wrapper, worktree or hook the process was started from), so a git command
-// operates on the directory it is run in.
+// gitLocator reports whether key points git at another repository: a wrapper,
+// worktree or hook the process was started from. A git command that inherits
+// one operates on that foreign repository instead of the directory it is run
+// in.
+func gitLocator(key string) bool {
+	switch key {
+	case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE":
+		return true
+	}
+	return false
+}
+
+// WithoutGitEnv drops ambient variables that point git at another repository,
+// so a git command operates on the directory it is run in.
 func WithoutGitEnv(env []string) []string {
 	var out []string
 	for _, e := range env {
 		key, _, _ := strings.Cut(e, "=")
-		switch key {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE":
+		if gitLocator(key) {
 			continue
 		}
 		out = append(out, e)
@@ -73,8 +83,9 @@ func WithoutGitEnv(env []string) []string {
 // exports them, and a git subprocess that inherits one operates on that
 // foreign repository instead of the test's own fixture directory.
 func UnsetGitEnv() {
-	for _, e := range WithoutGitEnv(os.Environ()) {
-		if key, _, ok := strings.Cut(e, "="); ok {
+	for _, e := range os.Environ() {
+		key, _, _ := strings.Cut(e, "=")
+		if gitLocator(key) {
 			os.Unsetenv(key)
 		}
 	}
