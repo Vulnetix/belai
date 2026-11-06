@@ -39,12 +39,18 @@ const (
 	TriggerPlan Trigger = "plan"
 	// TriggerSession is the end of the session.
 	TriggerSession Trigger = "session"
+	// TriggerTurn is a plain agent turn that edited files, enabled by
+	// `tests.each_turn`.
+	TriggerTurn Trigger = "turn"
 )
 
 // Should reports whether the user's `tests.post_end` level runs the pass at
-// trigger t. "goal" covers a completed goal, "goal_plan" adds a completed
+// trigger t. TriggerTurn follows `tests.each_turn` alone. "goal" covers a completed goal, "goal_plan" adds a completed
 // plan, and "session" adds session end on top of both.
 func Should(s config.Settings, t Trigger) bool {
+	if t == TriggerTurn {
+		return s.TestsEachTurn()
+	}
 	switch s.TestsPostEnd() {
 	case "goal":
 		return t == TriggerGoal

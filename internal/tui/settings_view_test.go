@@ -373,3 +373,33 @@ func TestMacKeyHintsRowShowsTheEffectiveValue(t *testing.T) {
 		t.Fatalf("forced off shows %q", row.value)
 	}
 }
+
+// The per-turn test pass toggle writes the global layer even with the project
+// scope selected, and does not dim with the post-end level off.
+func TestTestsEachTurnRowWritesGlobalAndDoesNotDim(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+
+	row, idx := settingsRowByKey(a, "tests.each_turn")
+	if idx < 0 || row.dim || row.value != "off" {
+		t.Fatalf("each_turn row = %+v (idx %d)", row, idx)
+	}
+	a.settingsState.selected = idx
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	a = m.(*App)
+
+	if proj, err := config.LoadProject(workdir); err != nil || proj.Tests != nil {
+		t.Fatalf("project layer took a tests block: %+v, %v", proj.Tests, err)
+	}
+	glob, err := config.LoadGlobal()
+	if err != nil || !glob.TestsEachTurn() {
+		t.Fatalf("global tests.each_turn not written: %+v, %v", glob.Tests, err)
+	}
+	// With each_turn on, the other tests rows are live even at post_end off.
+	if scope, _ := settingsRowByKey(a, "tests.scope"); scope.dim {
+		t.Fatal("tests rows must not dim while each_turn is on")
+	}
+}

@@ -1,5 +1,8 @@
 # Test suites and the post-end test pass
 
+**Status:** the pass is shipped. `tests.each_turn`, which also runs it after a
+plain agent turn that edited files, is new.
+
 Belai detects a repository's test suites, tells the model how the project
 tests itself, and can run those suites when work ends. A pass gets a short
 report, and a failure gets a bounded diagnose-and-fix loop. The pass is off
@@ -95,16 +98,19 @@ layer can only tighten it.
 | `tests.max_fix_passes` | integer | 3 | Ceiling for the fail branch |
 | `tests.timeout_seconds` | integer | 300 | Bound on one suite run |
 | `tests.report` | bool | true | Fast-model report on a pass; false uses the harness line |
+| `tests.each_turn` | bool | `false` | Also run the pass after a plain TUI agent turn that edited files; see [When the pass runs](#when-the-pass-runs) |
 
 Rules:
 
-- **Unknown values fail closed.** An unrecognised `post_end` is off, and an
+- **Unknown values fail closed.** `tests.each_turn` is on only when it is
+  explicitly `true`; any other value is off. An unrecognised `post_end` is off, and an
   unrecognised `on_fail` is `off`, so a typo never widens the pass to editing
   files. An unrecognised `scope` is `affected`.
 - **A project layer may only tighten.** A repository's `.vulnetix/settings.json`
-  may set `tests.post_end` to `off`, and lower `max_fix_passes` and
-  `timeout_seconds`. It can never turn the pass on or set `command`, `scope`,
-  `on_fail` or `report`, because a cloned repository must not choose commands
+  may set `tests.post_end` to `off` (which also closes `tests.each_turn`), set
+  `tests.each_turn` to `false`, and lower `max_fix_passes` and
+  `timeout_seconds`. It can never turn the pass on, set `tests.each_turn` to
+  `true`, or set `command`, `scope`, `on_fail` or `report`, because a cloned repository must not choose commands
   that run on the user's machine or widen the fail branch. The resolver adds a
   note when it drops a key.
 - **`tests.command` is an argv, not a shell line.** It runs without a shell, so
@@ -121,8 +127,24 @@ Rules:
 | `goal_plan` | yes | yes | no |
 | `session` | yes | yes | yes |
 
-- **Only a completed goal triggers.** A turn that ends `GOAL_PARTIAL`,
-  `GOAL_NOT_STARTED`, a stopped goal or a plain agent turn does not.
+`tests.each_turn` is independent of that ladder and adds one more moment, a
+plain agent turn. It works with `post_end` at any level, `off` included.
+
+| `tests.each_turn` | After a plain agent turn that edited files |
+| ------------------- | ------------------------------------------ |
+| `false` (default) | no |
+| `true` | yes, in the TUI |
+
+- **A goal triggers only when it completes.** A turn that ends `GOAL_PARTIAL`,
+  `GOAL_NOT_STARTED` or a stopped goal does not.
+- **A plain turn triggers only with `tests.each_turn`.** The turn must have run
+  in agent mode (or auto mode that chose agent), changed a file, and not be a
+  goal, a plan, an approved plan still executing or a code mode turn. A turn that
+  only read files starts nothing. The harness decides all of it; the model only
+  edits code in the fix turn.
+- **The fix loop does not re-trigger itself.** A fail-branch turn's end re-runs
+  the suites as the next fix pass, and `tests.max_fix_passes` ends the loop. The
+  turn trigger never starts a second pass over a fix turn.
 - **Plan mode never runs it.** Plan mode changes nothing, so there is nothing
   to test.
 - **Session end needs an edit.** The session-end pass runs only when the
@@ -206,9 +228,9 @@ agentic loop, bounded by `tests.max_fix_passes`.
 
 | Surface | Trigger | Fail loop |
 | ------- | ------- | --------- |
-| TUI | Completed goal, completed plan, and quit at session level | A visible turn on the main session, then a re-run |
-| Headless (`-prompt`) | Completed goal, or run end at session level with a changed tree | The same session, then a re-run |
-| ACP | Completed goal only | A turn streamed to the editor; permission asks go to the editor |
+| TUI | Completed goal, completed plan, a plain agent turn that edited files (`tests.each_turn`), and quit at session level | A visible turn on the main session, then a re-run |
+| Headless (`-prompt`) | Completed goal, or run end at session level with a changed tree; never `tests.each_turn` | The same session, then a re-run |
+| ACP | Completed goal only; never `tests.each_turn` | A turn streamed to the editor; permission asks go to the editor |
 
 - **TUI.** The pass runs off the UI loop. A failing run starts an ordinary
   visible turn (goal mode for a fix, plan mode for a diagnosis), and that turn's
@@ -222,6 +244,9 @@ agentic loop, bounded by `tests.max_fix_passes`.
 - **ACP.** An editor has no session-end moment, so only a completed goal
   triggers. Results stream as agent messages, and nothing but protocol
   messages is written to stdout. Cancelling the prompt cancels the pass.
+- **`tests.each_turn` is TUI only.** Headless and ACP runs have one turn or an
+  editor-driven turn loop with no per-turn moment of their own, so they ignore
+  the setting.
 - **Guardrails off** applies `posture.AllIgnore()` on every surface: the gate
   only sanitises, and the sandbox is off. Sanitising always runs.
 
@@ -234,8 +259,12 @@ agentic loop, bounded by `tests.max_fix_passes`.
   attachment, never in a prompt, system block or directive.
 - The fast report role and the repository-map facts carry harness facts and
   gated text only. The map line carries a verdict and a count.
-- The project layer can turn the pass off and lower its budgets. It can never
-  turn it on or choose a command.
+- The project layer can turn the pass off (`tests.each_turn` included) and lower
+  its budgets. It can never turn it on or choose a command.
+- A per-turn pass changes none of the rules above: the failing output is still
+  `KindProcess` through `testpass.NewGate`, still an attachment only, and a
+  withheld output is never replaced by a pointer. No suite run means no fix
+  branch.
 - The suites run under the user's permission rules and the OS sandbox with a
   scrubbed environment.
 
@@ -254,7 +283,7 @@ agentic loop, bounded by `tests.max_fix_passes`.
 | | `AllPassed` | True only for a non-empty result where every suite passed |
 | | `Subject` | The string a `Bash` permission rule is matched against |
 | | `Result.OK` | True for a `pass` result |
-| `internal/testpass` | `Should` | Maps `tests.post_end` and a trigger to yes or no |
+| `internal/testpass` | `Should` | Maps `tests.post_end`, `tests.each_turn` and a trigger to yes or no |
 | | `RunOnce` | One run of the suites and the fix request it implies; the TUI's primitive |
 | | `Run` | The blocking loop headless and ACP use: run, then report or fix and re-run |
 | | `NewGate` | The classification gate for process output, level checked before the classifier |

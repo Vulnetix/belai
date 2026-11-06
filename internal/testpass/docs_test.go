@@ -26,7 +26,7 @@ func TestTestingPageNamesEverySettingKey(t *testing.T) {
 	doc := docparity.Read(t, testingDoc)
 	for _, key := range []string{
 		"tests.post_end", "tests.command", "tests.scope", "tests.on_fail",
-		"tests.max_fix_passes", "tests.timeout_seconds", "tests.report",
+		"tests.max_fix_passes", "tests.timeout_seconds", "tests.report", "tests.each_turn",
 	} {
 		if !strings.Contains(doc, key) {
 			t.Errorf("%s does not document %s", testingDoc, key)
@@ -45,6 +45,9 @@ func TestTestingPageNamesEveryStatusAndTrigger(t *testing.T) {
 		if !strings.Contains(doc, "`"+string(s)+"`") {
 			t.Errorf("%s does not name the %q status", testingDoc, s)
 		}
+	}
+	if !strings.Contains(doc, "running tests: turn") && !strings.Contains(doc, "plain agent turn") {
+		t.Errorf("%s does not describe the %q trigger", testingDoc, TriggerTurn)
 	}
 	for _, level := range []string{"off", "goal", "goal_plan", "session"} {
 		if !strings.Contains(doc, "`"+level+"`") {

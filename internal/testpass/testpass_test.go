@@ -47,6 +47,35 @@ func TestShould(t *testing.T) {
 	}
 }
 
+// TriggerTurn follows tests.each_turn alone, at every post_end level, and
+// each_turn never turns on the post-end triggers.
+func TestShouldTurnTrigger(t *testing.T) {
+	on, off := true, false
+	for _, level := range []string{"", "off", "goal", "goal_plan", "session", "bogus"} {
+		s := config.Settings{Tests: &config.TestsSettings{PostEnd: level}}
+		if Should(s, TriggerTurn) {
+			t.Errorf("level %q without each_turn must not run on a turn", level)
+		}
+		s.Tests.EachTurn = &off
+		if Should(s, TriggerTurn) {
+			t.Errorf("level %q with each_turn false must not run on a turn", level)
+		}
+		s.Tests.EachTurn = &on
+		if !Should(s, TriggerTurn) {
+			t.Errorf("level %q with each_turn true must run on a turn", level)
+		}
+	}
+	onlyTurn := config.Settings{Tests: &config.TestsSettings{EachTurn: &on}}
+	for _, trig := range []Trigger{TriggerGoal, TriggerPlan, TriggerSession} {
+		if Should(onlyTurn, trig) {
+			t.Errorf("each_turn alone must not run on trigger %s", trig)
+		}
+	}
+	if !onlyTurn.TestsEnabled() {
+		t.Error("each_turn alone must enable the pass machinery")
+	}
+}
+
 func TestRunOffSkips(t *testing.T) {
 	out := Run(context.Background(), Config{Settings: settings("off", "")}, TriggerGoal)
 	if out.Skipped == "" || len(out.Results) != 0 {

@@ -253,3 +253,136 @@ func TestResetTestPassClearsState(t *testing.T) {
 		t.Fatalf("state = %+v", a.testPass)
 	}
 }
+
+// eachTurnApp is a test app with only tests.each_turn on; post_end stays off.
+func eachTurnApp(t *testing.T, command ...string) *App {
+	t.Helper()
+	a := testPassApp(t, "off", command...)
+	on := true
+	a.settings.Tests.EachTurn = &on
+	a.testPass.edited = true
+	return a
+}
+
+func TestEachTurnStartsAPassAfterAnEditedPlainTurn(t *testing.T) {
+	a := eachTurnApp(t, "sh", "-c", "exit 0")
+	cmd := a.flushTestPass(run.Result{}, false)
+	if cmd == nil || !a.testPass.running || a.testPass.trigger != testpass.TriggerTurn {
+		t.Fatalf("a plain edited turn must start the suites: %+v", a.testPass)
+	}
+	a.handleTestPass(cmd().(testPassMsg))
+	if a.testPass.edited || a.repoMap.LastTestRun == nil || !a.repoMap.LastTestRun.Passed {
+		t.Fatalf("state after the pass = %+v, %+v", a.testPass, a.repoMap.LastTestRun)
+	}
+}
+
+func TestEachTurnStartsNothingWhenGuardsFail(t *testing.T) {
+	cases := map[string]func(a *App) run.Result{
+		"setting off": func(a *App) run.Result {
+			a.settings.Tests.EachTurn = nil
+			return run.Result{}
+		},
+		"no edit": func(a *App) run.Result {
+			a.testPass.edited = false
+			return run.Result{}
+		},
+		"plan mode": func(a *App) run.Result {
+			a.mode = "plan"
+			return run.Result{}
+		},
+		"goal mode": func(a *App) run.Result {
+			a.mode = "goal"
+			return run.Result{}
+		},
+		"code mode": func(a *App) run.Result {
+			a.mode = "code"
+			return run.Result{}
+		},
+		"goal turn": func(a *App) run.Result {
+			return run.Result{GoalSentinel: rolemanager.GoalPartial}
+		},
+		"plan sentinel": func(a *App) run.Result {
+			return run.Result{PlanSentinel: rolemanager.PlanSentinel("x")}
+		},
+		"approved plan executing": func(a *App) run.Result {
+			a.planExecuting = true
+			return run.Result{}
+		},
+		"auto picked goal": func(a *App) run.Result {
+			a.mode = "auto"
+			return run.Result{ModeDecision: rolemanager.ModeDecision{Mode: modes.ModeGoal}}
+		},
+		"already running": func(a *App) run.Result {
+			a.testPass.running = true
+			return run.Result{}
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := eachTurnApp(t, "sh", "-c", "exit 0")
+			res := setup(a)
+			if cmd := a.flushTestPass(res, false); cmd != nil {
+				t.Fatalf("%s must not start a pass", name)
+			}
+		})
+	}
+}
+
+func TestEachTurnDoesNotOverrideAnAutoAgentChoice(t *testing.T) {
+	a := eachTurnApp(t, "sh", "-c", "exit 0")
+	a.mode = "auto"
+	res := run.Result{ModeDecision: rolemanager.ModeDecision{Mode: modes.ModeAgent}}
+	if cmd := a.flushTestPass(res, false); cmd == nil {
+		t.Fatal("auto mode that chose agent is a plain turn")
+	}
+}
+
+// The fix loop a turn pass starts is bounded by tests.max_fix_passes and the
+// fix turn's own end re-runs the suites rather than starting a fresh pass.
+func TestEachTurnFixLoopIsBoundedAndNotRetriggered(t *testing.T) {
+	a := eachTurnApp(t, "sh", "-c", "exit 1")
+	a.settings.Tests.MaxFixPasses = 1
+	msg := a.flushTestPass(run.Result{}, false)().(testPassMsg)
+	if msg.step.Fix == nil {
+		t.Fatalf("a failing run must offer a fix: %+v", msg.step.Outcome)
+	}
+	if cmd := a.handleTestPass(msg); cmd == nil || !a.testPass.fixing {
+		t.Fatal("the fail branch must start a fix turn")
+	}
+	// The fix turn edits files, then ends as a plain turn.
+	a.testPass.edited = true
+	again := a.flushTestPass(run.Result{}, false)
+	if again == nil || a.testPass.fixing || a.testPass.trigger != testpass.TriggerTurn || !a.testPass.running {
+		t.Fatalf("the fix turn's end must re-run the suites: %+v", a.testPass)
+	}
+	msg = again().(testPassMsg)
+	if msg.step.Fix != nil {
+		t.Fatalf("budget spent, yet a fix was offered: %+v", msg.step.Fix)
+	}
+	if cmd := a.handleTestPass(msg); cmd != nil || a.testPass.fixing {
+		t.Fatal("no turn may start once the budget is spent")
+	}
+	if cmd := a.flushTestPass(run.Result{}, false); cmd != nil {
+		t.Fatal("the loop ended with nothing edited since: no new pass")
+	}
+}
+
+func TestEachTurnSkippedPassStartsNoFixBranch(t *testing.T) {
+	a := eachTurnApp(t) // no command and no detected suite
+	msg := a.flushTestPass(run.Result{}, false)().(testPassMsg)
+	if cmd := a.handleTestPass(msg); cmd != nil || a.testPass.fixing {
+		t.Fatal("no suite ran, so there is nothing to fix")
+	}
+}
+
+// A project layer cannot turn the setting on, so a repository cannot make the
+// session run its suites after each turn.
+func TestEachTurnProjectLayerCannotEnableIt(t *testing.T) {
+	a := testPassApp(t, "off", "sh", "-c", "exit 0")
+	on := true
+	a.settings = a.settings.Override(config.Settings{Tests: &config.TestsSettings{EachTurn: &on}})
+	a.testPass.edited = true
+	if cmd := a.flushTestPass(run.Result{}, false); cmd != nil {
+		t.Fatal("a project each_turn true must not start a pass")
+	}
+}

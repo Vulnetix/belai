@@ -865,6 +865,10 @@ type TestsSettings struct {
 	// Report enables the fast-model report on pass. Default true; false uses
 	// the harness-composed line only.
 	Report *bool `json:"report,omitempty"`
+	// EachTurn also runs the pass after a plain TUI agent turn that edited
+	// files. Default false, and only an explicit true enables it. User layers
+	// only: a project layer may set it false, never true.
+	EachTurn *bool `json:"each_turn,omitempty"`
 }
 
 // DefaultTestsMaxFixPasses is the diagnose-and-fix pass ceiling when unset.
@@ -881,13 +885,20 @@ func (s Settings) TestsPostEnd() string {
 	return s.Tests.PostEnd
 }
 
-// TestsEnabled reports whether any post-end moment triggers the pass.
+// TestsEachTurn reports whether a plain agent turn that edited files runs the
+// pass. It is true only when the user set each_turn explicitly to true.
+func (s Settings) TestsEachTurn() bool {
+	return s.Tests != nil && s.Tests.EachTurn != nil && *s.Tests.EachTurn
+}
+
+// TestsEnabled reports whether any moment triggers the pass: a post-end level
+// or the per-turn trigger.
 func (s Settings) TestsEnabled() bool {
 	switch s.TestsPostEnd() {
 	case "goal", "goal_plan", "session":
 		return true
 	}
-	return false
+	return s.TestsEachTurn()
 }
 
 // TestsCommand returns the user's command override, or nil.
@@ -974,23 +985,26 @@ func mergeTests(dst, from *TestsSettings) *TestsSettings {
 	if from.Report != nil {
 		out.Report = from.Report
 	}
+	if from.EachTurn != nil {
+		out.EachTurn = from.EachTurn
+	}
 	return out
 }
 
 // projectTestsWidens reports whether a project layer's tests block sets
 // anything tightenTests will drop: a post_end other than off, a command, a
-// scope, an on_fail or a report.
+// scope, an on_fail, a report or each_turn true.
 func projectTestsWidens(p *TestsSettings) bool {
 	if p == nil {
 		return false
 	}
-	return (p.PostEnd != "" && p.PostEnd != "off") || len(p.Command) > 0 || p.Scope != "" || p.OnFail != "" || p.Report != nil
+	return (p.PostEnd != "" && p.PostEnd != "off") || len(p.Command) > 0 || p.Scope != "" || p.OnFail != "" || p.Report != nil || (p.EachTurn != nil && *p.EachTurn)
 }
 
 // tightenTests applies a project layer's tests block. A repo-visible settings
 // file may turn the pass off (post_end "off") and lower max_fix_passes or
 // timeout_seconds, never the reverse, and it may never set the command, scope,
-// on_fail or report: those would let a cloned repo run arbitrary commands or
+// on_fail or report. It may set each_turn false, never true: those would let a cloned repo run arbitrary commands or
 // widen the fail branch on the user's machine.
 func tightenTests(dst, proj *TestsSettings) *TestsSettings {
 	out := &TestsSettings{}
@@ -1002,6 +1016,12 @@ func tightenTests(dst, proj *TestsSettings) *TestsSettings {
 	}
 	if proj.PostEnd == "off" {
 		out.PostEnd = "off"
+	}
+	// post_end off is the project asking for no test pass at all, so it
+	// closes the per-turn trigger too.
+	if (proj.EachTurn != nil && !*proj.EachTurn) || proj.PostEnd == "off" {
+		f := false
+		out.EachTurn = &f
 	}
 	if proj.MaxFixPasses > 0 {
 		cur := out.MaxFixPasses

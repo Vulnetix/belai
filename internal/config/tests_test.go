@@ -239,3 +239,74 @@ func TestResolveProjectTestsTighteningDrawsNoNote(t *testing.T) {
 		t.Fatalf("tightening drew a note: %v", eff.Notes)
 	}
 }
+
+// tests.each_turn is the plain-turn trigger: off unless explicitly true, and a
+// repo-visible project layer can only close it.
+func TestTestsEachTurnDefaultsAndMerge(t *testing.T) {
+	var unset Settings
+	if unset.TestsEachTurn() {
+		t.Fatal("each_turn unset must be off")
+	}
+	on, off := true, false
+	if !(Settings{Tests: &TestsSettings{EachTurn: &on}}).TestsEachTurn() {
+		t.Fatal("explicit true must be on")
+	}
+	if (Settings{Tests: &TestsSettings{EachTurn: &off}}).TestsEachTurn() {
+		t.Fatal("explicit false must be off")
+	}
+	if (Settings{Tests: &TestsSettings{PostEnd: "session"}}).TestsEachTurn() {
+		t.Fatal("a post_end level must not turn each_turn on")
+	}
+	if !(Settings{Tests: &TestsSettings{EachTurn: &on}}).TestsEnabled() {
+		t.Fatal("each_turn alone must enable the pass")
+	}
+
+	eff := Effective{Settings: Settings{Tests: &TestsSettings{PostEnd: "goal"}}, Origin: map[string]Source{}}
+	eff.apply(Settings{Tests: &TestsSettings{EachTurn: &on}}, SourceGlobal)
+	if !eff.Settings.TestsEachTurn() || eff.Settings.TestsPostEnd() != "goal" {
+		t.Fatalf("user layer lost: %+v", eff.Settings.Tests)
+	}
+	eff.apply(Settings{Tests: &TestsSettings{PostEnd: "session"}}, SourceGlobal)
+	if !eff.Settings.TestsEachTurn() {
+		t.Fatal("a later layer that does not name each_turn must keep it")
+	}
+}
+
+func TestTestsEachTurnProjectCanOnlyClose(t *testing.T) {
+	on, off := true, false
+	global := Settings{Tests: &TestsSettings{PostEnd: "off", EachTurn: &on}}
+	if got := global.Override(Settings{Tests: &TestsSettings{EachTurn: &on}}); !got.TestsEachTurn() {
+		t.Fatal("a project true must leave the user's own true alone")
+	}
+	if got := (Settings{}).Override(Settings{Tests: &TestsSettings{EachTurn: &on}}); got.TestsEachTurn() || got.TestsEnabled() {
+		t.Fatal("a project layer must never turn each_turn on")
+	}
+	if got := global.Override(Settings{Tests: &TestsSettings{EachTurn: &off}}); got.TestsEachTurn() {
+		t.Fatal("a project false must close each_turn")
+	}
+	if got := global.Override(Settings{Tests: &TestsSettings{PostEnd: "off"}}); got.TestsEachTurn() {
+		t.Fatal("a project post_end off must close each_turn too")
+	}
+	if !projectTestsWidens(&TestsSettings{EachTurn: &on}) || projectTestsWidens(&TestsSettings{EachTurn: &off}) {
+		t.Fatal("projectTestsWidens must flag a project true only")
+	}
+}
+
+func TestResolveDropsProjectEachTurnTrueWithANote(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	on := true
+	if err := SaveProject(workdir, Settings{Tests: &TestsSettings{EachTurn: &on}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if eff.Settings.TestsEachTurn() || eff.Settings.TestsEnabled() {
+		t.Fatalf("project each_turn took effect: %+v", eff.Settings.Tests)
+	}
+	if !hasNote(eff.Notes, "project tests settings ignored") {
+		t.Fatalf("no drop note: %v", eff.Notes)
+	}
+}

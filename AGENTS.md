@@ -396,7 +396,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   unknown `tests.on_fail` or `post_end` value is off. The `tests` block is read
   from the user's layers: a project layer may set `post_end` off and lower the
   budgets, never turn the pass on or set `command`, `scope`, `on_fail` or
-  `report`.
+  `report`. `tests.each_turn` adds the plain-agent-turn trigger (TUI only,
+  explicit `true` or off): user layers only, and a project layer may set it
+  `false` (as `post_end` `off` does), never `true`.
 - **Task subagent reports are arbitrary content.** The result of the `Task` tool is model-written text, so it is added to `tools.classifierKinds` as `KindSubagent` and classified before promotion.
 - **Jev intent detection sees only harness facts.** The detector payload carries the sanitized prompt, the current mode, and derived metadata such as a plan-file task count. It never carries attachment bytes or file contents.
 - **Sticky mode changes only with the user's choice.** When a confident detected intent disagrees with a mode the user set, the deterministic mode-choice panel asks before leaving the sticky mode. In headless mode the sticky mode is preserved.

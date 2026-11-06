@@ -190,7 +190,7 @@ func TestProjectPrefsInvalidKeysAreDropped(t *testing.T) {
 func TestProjectPrefsFlatKeys(t *testing.T) {
 	var p ProjectPrefs
 	for k, v := range map[string]any{
-		"guardrails": false, "mode": "plan", "show_internal_work": "all", "tests.on_fail": "fix",
+		"guardrails": false, "mode": "plan", "show_internal_work": "all", "tests.on_fail": "fix", "tests.each_turn": true,
 		"lsp.enabled": true, "lsp.languages.rust": false, "jev.jobs.bash_swap": false, "jev.thresholds.keep_at": 0.456,
 	} {
 		if err := p.SetFlat(k, v); err != nil {
@@ -198,10 +198,13 @@ func TestProjectPrefsFlatKeys(t *testing.T) {
 		}
 	}
 	f := p.Flat()
+	if f["tests.each_turn"] != true || !p.toSettings().TestsEachTurn() {
+		t.Fatalf("each_turn lost: %v", f)
+	}
 	if f["jev.thresholds.keep_at"] != 0.46 || f["mode"] != "plan" || f["lsp.languages.rust"] != false {
 		t.Fatalf("flat = %v", f)
 	}
-	for _, k := range []string{"lsp.languages.rust", "lsp.enabled", "jev.jobs.bash_swap", "jev.thresholds.keep_at", "tests.on_fail"} {
+	for _, k := range []string{"lsp.languages.rust", "lsp.enabled", "jev.jobs.bash_swap", "jev.thresholds.keep_at", "tests.on_fail", "tests.each_turn"} {
 		if err := p.UnsetFlat(k); err != nil {
 			t.Fatal(err)
 		}
@@ -210,7 +213,7 @@ func TestProjectPrefsFlatKeys(t *testing.T) {
 		t.Fatalf("empty blocks kept: %+v", p)
 	}
 	for k, v := range map[string]any{
-		"providers": "x", "agent": "nightly", "tests.command": "rm", "mode": "yolo", "guardrails": "off",
+		"tests.each_turn": "yes", "providers": "x", "agent": "nightly", "tests.command": "rm", "mode": "yolo", "guardrails": "off",
 		"jev.thresholds.keep_at": 2.0, "jev.jobs.nope": true, "lsp.servers.go": "/bin/sh",
 	} {
 		if err := p.SetFlat(k, v); err == nil {

@@ -39,7 +39,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 | --- | --- |
 | General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
-| Tests | `test pass`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
+| Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
 | Access | `permissions`, `language servers` (each opens its own screen) |
 | Budgets | `token budgets` (opens its own screen), `budget cycle`, `budget warnings`, `session intelligence`, `plan limits` |
@@ -206,8 +206,8 @@ movement, edit and back always stay.
 - **The source column** is blank for a default and shows the layer name
   (`global`, `project`, `project-prefs`, `state`, `env`, `flag`) for anything
   else. The rail's `●` marks a group with at least one such value.
-- **Dependent rows dim, and stay editable.** `test …` rows (except `test pass`)
-  read as muted while `test pass` is `off`; `voice …` rows (except `voice
+- **Dependent rows dim, and stay editable.** `test …` rows (except `test pass` and `test pass each turn`)
+  read as muted while both `test pass` and `test pass each turn` are off; `voice …` rows (except `voice
   input`) while voice input is off; `read aloud …` rows (except `read aloud`)
   while read aloud is off. The detail pane says what they wait on. Dimming never
   blocks an edit, so a value can be prepared before its switch is turned on.

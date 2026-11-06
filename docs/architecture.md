@@ -1916,7 +1916,8 @@ is committed whole, including the user's edits — the toggle's help text says s
 #### Post-end test pass
 
 The harness can run the repository's test suites when a goal, an approved plan
-or the session ends. It is off by default (`tests.post_end`), read from the
+or the session ends, or (`tests.each_turn`, TUI only) after a plain agent turn
+that edited files. It is off by default (`tests.post_end`), read from the
 user's own layers, and a project layer can only turn it off or lower its
 budgets. `internal/testdetect` derives the suites from the same fixed
 marker-file table the repository map uses and scopes Go suites to the packages
@@ -3804,7 +3805,7 @@ overridden off by `BELAI_NO_KITTY=1`),
 `auto_commit_per_task` (default off; global-only — see the per-goal
 auto-commit section in Goal mode),
 `tests` (`post_end`, `command`, `scope`, `on_fail`, `max_fix_passes`,
-`timeout_seconds`, `report`; the pass is off by default and a project layer can
+`timeout_seconds`, `report`, `each_turn`; the pass is off by default and a project layer can
 only turn it off or lower budgets — see [testing.md](testing.md)),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,

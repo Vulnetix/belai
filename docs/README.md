@@ -160,6 +160,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Hazard rails: an always-ask floor for destructive commands and protected paths that no allow rule can waive | [Hazard rails](hazard-rails.md) | alpha-20261106 |
 | Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
 | Finish review: a harness check of the working tree for scratch files, weakened tests, unverified changes and unread files before a goal is accepted | [Finish review](finish-review.md) | Roadmap |
+| Test-until-pass on plain agent turns: `tests.each_turn` runs the detected suites after a turn that edited files | [Testing](testing.md#when-the-pass-runs) | Roadmap |
 
 ## Analysis
 

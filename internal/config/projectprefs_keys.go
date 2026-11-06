@@ -43,6 +43,7 @@ var prefFixedKeys = map[string]prefKey{
 	"auto_commit_per_task": {kind: prefBool, origin: "auto_commit_per_task"},
 	"tests.post_end":       {kind: prefWord, words: []string{"off", "goal", "goal_plan", "session"}, origin: "tests"},
 	"tests.on_fail":        {kind: prefWord, words: []string{"off", "diagnose", "fix"}, origin: "tests"},
+	"tests.each_turn":      {kind: prefBool, origin: "tests"},
 	"lsp.enabled":          {kind: prefBool, origin: "lsp"},
 }
 
@@ -119,6 +120,7 @@ func (p ProjectPrefs) Flat() map[string]any {
 		if p.Tests.OnFail != "" {
 			out["tests.on_fail"] = p.Tests.OnFail
 		}
+		putB("tests.each_turn", p.Tests.EachTurn)
 	}
 	if p.LSP != nil {
 		putB("lsp.enabled", p.LSP.Enabled)
@@ -201,6 +203,11 @@ func (p *ProjectPrefs) SetFlat(key string, v any) error {
 		} else {
 			p.Tests.OnFail = w
 		}
+	case "tests.each_turn":
+		if p.Tests == nil {
+			p.Tests = &PrefsTests{}
+		}
+		p.Tests.EachTurn = &b
 	case "lsp.enabled":
 		if p.LSP == nil {
 			p.LSP = &PrefsLSP{}
@@ -269,6 +276,13 @@ func (p *ProjectPrefs) UnsetFlat(key string) error {
 			} else {
 				p.Tests.OnFail = ""
 			}
+			if *p.Tests == (PrefsTests{}) {
+				p.Tests = nil
+			}
+		}
+	case "tests.each_turn":
+		if p.Tests != nil {
+			p.Tests.EachTurn = nil
 			if *p.Tests == (PrefsTests{}) {
 				p.Tests = nil
 			}
@@ -349,6 +363,8 @@ func EffectivePrefs(eff Effective, mode string) map[string]EffectivePref {
 			v = s.TestsPostEnd()
 		case "tests.on_fail":
 			v = s.TestsOnFail()
+		case "tests.each_turn":
+			v = s.TestsEachTurn()
 		case "lsp.enabled":
 			v = s.LSPEnabled()
 		default:

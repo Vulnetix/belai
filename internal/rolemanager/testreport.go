@@ -27,7 +27,7 @@ type TestReportSuite struct {
 // digest the caller has already sanitised and classified as process output.
 // An empty digest means the output was withheld or empty.
 type TestReportInput struct {
-	// Trigger is the moment that started the pass (goal, plan, session).
+	// Trigger is the moment that started the pass (goal, plan, session, turn).
 	Trigger string
 	Suites  []TestReportSuite
 	// FixPasses is how many diagnose-and-fix passes ran before this report.

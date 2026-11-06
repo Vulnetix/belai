@@ -205,7 +205,7 @@ func decorateSettingsRows(rows []settingsRow, s config.Settings) {
 		r := &rows[i]
 		r.group = settingsGroupOf(r.key)
 		switch {
-		case strings.HasPrefix(r.key, "tests.") && r.key != "tests.post_end" && s.TestsPostEnd() == "off":
+		case strings.HasPrefix(r.key, "tests.") && r.key != "tests.post_end" && r.key != "tests.each_turn" && !s.TestsEnabled():
 			r.dim, r.dimWhy = true, "takes effect once test pass is on"
 		case strings.HasPrefix(r.key, "voice.") && r.key != "voice.enabled" && !voiceEnabledNow(s):
 			r.dim, r.dimWhy = true, "takes effect once voice input is on"
@@ -360,6 +360,7 @@ func (a *App) settingsRows() []settingsRow {
 	testsScopeVal := s.TestsScope()
 	testsOnFailVal := s.TestsOnFail()
 	testsReportVal := boolLabel(s.TestsReportEnabled())
+	testsEachTurnVal := boolLabel(s.TestsEachTurn())
 	testsMaxFixVal := strconv.Itoa(s.TestsMaxFixPasses())
 	testsTimeoutVal := fmt.Sprintf("%ds", s.TestsTimeoutSeconds())
 	testsCommandVal := "detected"
@@ -405,6 +406,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
 		{key: "tests.post_end", label: "test pass", kind: "choose", opts: []string{"off", "goal", "goal_plan", "session"}, value: testsPostEndVal, src: sourceLabel(origin["tests"]), help: "runs detected tests at the end of a goal, plan, or session — off by default; a project layer can only turn this off"},
+		{key: "tests.each_turn", label: "test pass each turn", kind: "toggle", value: testsEachTurnVal, src: sourceLabel(origin["tests"]), help: "also runs detected tests after a plain agent turn that edited files, in the TUI only — off by default; a project layer can only turn this off"},
 		{key: "tests.scope", label: "test scope", kind: "choose", opts: []string{"affected", "full"}, value: testsScopeVal, src: sourceLabel(origin["tests"]), help: "affected runs only the suites owning changed paths, falling back to the full suite"},
 		{key: "tests.on_fail", label: "test on fail", kind: "choose", opts: []string{"off", "diagnose", "fix"}, value: testsOnFailVal, src: sourceLabel(origin["tests"]), help: "what happens when the test pass fails: nothing, a read-only diagnosis, or an agentic diagnose-and-fix loop"},
 		{key: "tests.command", label: "test command", kind: "text", value: testsCommandVal, src: sourceLabel(origin["tests"]), help: "override the detected test command argv — user layers only; clear to return to the detected command"},
@@ -943,6 +945,22 @@ func (a *App) cycleToggle(key string) error {
 			}
 		})
 	}
+	if key == "tests.each_turn" {
+		// The pass runs commands after every edit turn, so it is the user's
+		// opt-in and global only: off (unset) -> on -> off.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			if s.TestsEachTurn() {
+				f := false
+				s.Tests.EachTurn = &f
+			} else {
+				t := true
+				s.Tests.EachTurn = &t
+			}
+		})
+	}
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceToggle(key)
 	}
@@ -1287,6 +1305,8 @@ func (a *App) unsetTestsKey(key string) error {
 			s.Tests.Command = nil
 		case "tests.report":
 			s.Tests.Report = nil
+		case "tests.each_turn":
+			s.Tests.EachTurn = nil
 		case "tests.max_fix_passes":
 			s.Tests.MaxFixPasses = 0
 		case "tests.timeout_seconds":

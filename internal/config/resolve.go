@@ -125,7 +125,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	// The test pass runs commands, so a repo-visible file may only turn it off
 	// and lower its budgets; tightenTests drops the rest when it is applied.
 	if projectTestsWidens(proj.Tests) {
-		eff.Notes = append(eff.Notes, "project tests settings ignored except post_end off and lower budgets (the post-end test pass is the user's opt-in)")
+		eff.Notes = append(eff.Notes, "project tests settings ignored except post_end off, each_turn false and lower budgets (the test pass is the user's opt-in)")
 	}
 	// A forge host decides where a forge token is sent, so a repository may
 	// not name one.

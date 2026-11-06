@@ -68,7 +68,7 @@ func (a *App) flushTestPass(res run.Result, planDone bool) tea.Cmd {
 		return a.startTestPass(a.testPass.trigger, a.testPass.fixPasses)
 	}
 	if res.GoalSentinel != rolemanager.GoalComplete {
-		return nil
+		return a.flushTurnTestPass(res)
 	}
 	trigger := testpass.TriggerGoal
 	if planDone {
@@ -78,6 +78,25 @@ func (a *App) flushTestPass(res run.Result, planDone bool) tea.Cmd {
 		return nil
 	}
 	return a.startTestPass(trigger, 0)
+}
+
+// flushTurnTestPass starts the per-turn pass (`tests.each_turn`) after a plain
+// agent turn that edited files. The fail-branch turn is handled before this is
+// reached, so a fix turn's own end never starts a second pass; fixPasses and
+// `tests.max_fix_passes` bound the loop from there.
+func (a *App) flushTurnTestPass(res run.Result) tea.Cmd {
+	if !testpass.Should(a.settings, testpass.TriggerTurn) || !a.testPass.edited {
+		return nil
+	}
+	// Only a turn that ran as plain agent mode: not a goal, a plan (planMode
+	// or an approved plan still executing) or code mode.
+	if (a.mode != "agent" && a.mode != "auto") || a.planExecuting || !agentTurnCompleted(res, a.planMode) {
+		return nil
+	}
+	if res.ModeDecision.Mode == modes.ModeCode {
+		return nil
+	}
+	return a.startTestPass(testpass.TriggerTurn, 0)
 }
 
 // startTestPass snapshots every input on the UI loop and runs the suites off

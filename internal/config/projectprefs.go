@@ -39,8 +39,9 @@ type ProjectPrefs struct {
 
 // PrefsTests is the part of the post-end test pass a project preference sets.
 type PrefsTests struct {
-	PostEnd string `json:"post_end,omitempty"`
-	OnFail  string `json:"on_fail,omitempty"`
+	PostEnd  string `json:"post_end,omitempty"`
+	OnFail   string `json:"on_fail,omitempty"`
+	EachTurn *bool  `json:"each_turn,omitempty"`
 }
 
 // PrefsLSP is the part of the language-server settings a project preference
@@ -71,8 +72,8 @@ func (p ProjectPrefs) toSettings() Settings {
 		s.UI = &UISettings{ShowReasoning: p.ShowReasoning, ShowToolCalls: p.ShowToolCalls, ShowEdits: p.ShowEdits, ShowInternalWork: p.ShowInternalWork, Layout: p.Layout}
 	}
 	s.AutoCommitPerTask = p.AutoCommitPerTask
-	if p.Tests != nil && (p.Tests.PostEnd != "" || p.Tests.OnFail != "") {
-		s.Tests = &TestsSettings{PostEnd: p.Tests.PostEnd, OnFail: p.Tests.OnFail}
+	if p.Tests != nil && (p.Tests.PostEnd != "" || p.Tests.OnFail != "" || p.Tests.EachTurn != nil) {
+		s.Tests = &TestsSettings{PostEnd: p.Tests.PostEnd, OnFail: p.Tests.OnFail, EachTurn: p.Tests.EachTurn}
 	}
 	if p.LSP != nil && (p.LSP.Enabled != nil || len(p.LSP.Languages) > 0) {
 		s.LSP = &LSPSettings{Enabled: p.LSP.Enabled, Languages: p.LSP.Languages}
