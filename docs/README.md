@@ -174,6 +174,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
 | Finish review: a harness check of the working tree for scratch files, weakened tests, unverified changes and unread files before a goal is accepted | [Finish review](finish-review.md) | Roadmap |
 | Test-until-pass on plain agent turns: `tests.each_turn` runs the detected suites after a turn that edited files | [Testing](testing.md#when-the-pass-runs) | Roadmap |
+| CLI jobs: a card labelled `cli-job:<id>` makes the harness run one fixed Vulnetix CLI job and record ids, counts and signals on the card, with mutating jobs behind a write profile and met gates | [CLI jobs](cli-jobs.md) | Roadmap |
 | Per-edit lint loop: the detected linter runs on each edited file and its classified, bounded findings ride back on the tool result | [Lint](lint.md#per-edit-loop) | Roadmap |
 | `/context` token breakdown against the model's window, and an optional per-call cost line | [Context and reply cost](token-budgets.md#context-and-reply-cost) | Roadmap |
 | Prompt cache: a one hour lifetime, opt-in keep-alive pings, a prefix-change notice and `/cache` | [Prompt cache](prompt-cache.md) | alpha-20261106 |
