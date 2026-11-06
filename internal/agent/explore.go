@@ -391,6 +391,8 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 		RepoMap:   s.repoMap,
 		SessionID: s.sessionID,
 		Hooks:     s.hookSet, // tool hooks see subagent calls too
+		// Its spend counts against this session's run caps (docs/run-caps.md).
+		RunCaps: s.runCaps,
 	})
 	if err != nil {
 		return ""

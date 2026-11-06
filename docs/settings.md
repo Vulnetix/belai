@@ -293,6 +293,15 @@ either, and a project file cannot. `protected_paths` adds paths to the fixed fil
 table from any layer and removes none. `/hazards` shows the result. See
 [Hazard rails](hazard-rails.md).
 
+## Run caps
+
+The `run_caps` block has no row on a settings screen. It is a block in the settings
+file: `run_caps.max_cost_usd`, `run_caps.max_tokens`, `run_caps.max_wall_minutes`,
+`run_caps.finalize_at` and `run_caps.max_extends`. Every cap is off until you set it.
+Your own layers and the `-max-cost`, `-max-tokens` and `-max-wall` flags set any key;
+a project file can only add a cap or lower one. `/caps` shows the numbers and
+`/caps extend` raises them. See [Run caps](run-caps.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

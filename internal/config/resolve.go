@@ -140,6 +140,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if ign := compactionIgnored(eff.Settings.Compaction, proj.Compaction); len(ign) > 0 {
 		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only compact sooner or keep more)")
 	}
+	if ign := runCapsIgnored(eff.Settings.RunCaps, proj.RunCaps); len(ign) > 0 {
+		eff.Notes = append(eff.Notes, "project "+strings.Join(ign, ", ")+" ignored (a project may only add a cap or lower one)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -188,7 +191,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateRunCaps, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -640,6 +643,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Compaction = mergeCompaction(before, s.Compaction, src == SourceProject)
 		if !reflect.DeepEqual(before, e.Settings.Compaction) {
 			e.Origin["compaction"] = src
+		}
+	}
+	if s.RunCaps != nil {
+		// A repository may only add a cap or lower one (mergeRunCaps).
+		before := e.Settings.RunCaps
+		e.Settings.RunCaps = mergeRunCaps(before, s.RunCaps, src == SourceProject)
+		if !reflect.DeepEqual(before, e.Settings.RunCaps) {
+			e.Origin["run_caps"] = src
 		}
 	}
 	if s.Screenshot != nil {

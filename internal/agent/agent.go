@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/delimiters"
@@ -98,6 +99,12 @@ type Options struct {
 	// resolves to allow and mutating calls run without a prompt. It is the
 	// operator's explicit ask-off choice (guardrails/ask controls).
 	AskDisabled bool
+	// RunCaps is the run-cap meter (docs/run-caps.md), or nil for none. A
+	// surface builds it from the run_caps settings and keeps it across rebuilds
+	// of the session, so a setting change does not reset what was spent. Explore
+	// subagents are given their parent's meter, so their spend counts against it.
+	// A fleet worker leaves it nil: its profile budget is its cap.
+	RunCaps *budget.Meter
 	// AllowPassLoop gates the goal-mode pass loop. It is a distinct authority
 	// from AllowExplore: a subagent may explore (or not) but must never enter
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
@@ -484,6 +491,16 @@ type Session struct {
 	// site; runTurn folds it into run.Result.StopReason. askWithheld names
 	// the tools whose calls were withheld because nobody could be asked.
 	turnStop run.StopReason
+	// runCaps is the run-cap meter, nil when no cap is set (runcaps.go).
+	// capReserve is the model rounds a run still has to finalise in after a cap
+	// was reached unwarned; capSeen is set once the turn's finalise directive was
+	// delivered; capStopped is set when the turn ended on a cap; capLast is the
+	// model's latest words at that stop.
+	runCaps    *budget.Meter
+	capReserve int
+	capSeen    bool
+	capStopped bool
+	capLast    string
 	// turnGoalContext is the classified text of a worker's claimed item, which
 	// the goal evaluator reads as untrusted evidence.
 	turnGoalContext string
@@ -800,6 +817,7 @@ func NewSession(o Options) (*Session, error) {
 		allowExplore:       o.AllowExplore,
 		allowClarify:       o.AllowClarify,
 		allowAsk:           o.AllowAsk,
+		runCaps:            o.RunCaps,
 		allowPassLoop:      o.AllowPassLoop,
 		maxIter:            maxIter,
 		stuckRepeat:        o.Settings.Resilience.StuckRepeatOr(config.DefaultStuckRepeat),
@@ -1173,6 +1191,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.overflowRecovered = false
 	s.turnMutations = 0
 	s.turnStop, s.turnGoalContext = "", ""
+	s.capReserve, s.capSeen, s.capStopped, s.capLast = 0, false, false, ""
 	s.askMu.Lock()
 	s.askWithheld = nil
 	s.askMu.Unlock()
@@ -1813,14 +1832,15 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		emit(e)
 	}
 	res, err := s.passLoop(ctx, pipe, system, turns, loopDec, loopGoal, planContext, clean, streaming, loopEmit)
-	if loopDec.Mode == modes.ModeGoal {
+	res, err = s.endOnRunCap(res, err)
+	if loopDec.Mode == modes.ModeGoal || s.capStopped {
 		res.StopReason = stopReason(s.turnStop, res, err)
 	}
 	s.askMu.Lock()
 	res.AsksWithheld = slices.Clone(s.askWithheld)
 	s.askMu.Unlock()
 	// A fleet worker's item is released by the harness, never by a wrap-up.
-	if err == nil && !s.planMode && res.Clarify == nil && s.lastTurns != nil && !s.kanban.worker {
+	if err == nil && !s.planMode && res.Clarify == nil && s.lastTurns != nil && !s.kanban.worker && !s.capStopped {
 		todoMu.Lock()
 		kt := kanbanTurn{
 			work:     loopDec.Mode == modes.ModeGoal || in.ExecutePlan || len(in.Review) > 0 || s.turnToolRuns > 0,

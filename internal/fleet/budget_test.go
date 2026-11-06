@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,31 @@ func TestAnUnpricedModelLeavesTheCostBoundOff(t *testing.T) {
 	w.setPrice(run.Config{Provider: "custom", Model: "other"})
 	if w.price.Load() != nil {
 		t.Fatal("a price for one model was used for another")
+	}
+}
+
+// R14: a worker's meter is the run-cap meter in its cancel mode: no extension,
+// and a spend past the profile's budget ends the claim with the cost cause.
+func TestRunCapsRule14_FleetMeterNeverExtends(t *testing.T) {
+	p := builderProfile()
+	p.Budget = &agentprofile.BudgetSpec{MaxCostUSDPerItem: 10}
+	w := &Worker{Profile: p}
+	w.price.Store(&budget.Price{Input: 1, Output: 1})
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	m := w.newMeter(cancel)
+	if m.meter.Extend() || m.meter.ExtendsLeft() != 0 {
+		t.Fatal("a fleet claim can be extended")
+	}
+	m.call(tx.Usage{PromptTokens: 9_000_000})
+	if ctx.Err() != nil {
+		t.Fatal("the claim ended under its budget")
+	}
+	m.call(tx.Usage{PromptTokens: 2_000_000})
+	if !errors.Is(context.Cause(ctx), errCostBudget) {
+		t.Fatalf("cause = %v", context.Cause(ctx))
+	}
+	if m.spent() != 11_000_000 {
+		t.Fatalf("spent = %d", m.spent())
 	}
 }

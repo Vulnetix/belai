@@ -67,6 +67,7 @@ var settingsPages = map[string][]string{
 	"vulnetix":      {"docs/vulnetix.md"},
 	"edit":          {"docs/edit.md", "docs/settings.md"},
 	"compaction":    {"docs/compaction.md", "docs/settings.md"},
+	"run_caps":      {"docs/run-caps.md", "docs/settings.md"},
 }
 
 // TestEverySettingIsDocumented keeps the documentation in step with the

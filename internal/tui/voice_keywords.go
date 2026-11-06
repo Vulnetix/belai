@@ -50,6 +50,10 @@ func (a *App) voiceKeyword(k voicecmd.Keyword, n int) (bool, tea.Cmd) {
 		a.voiceAck("stop reading")
 		return true, nil
 	case a.permAskOpen():
+		if a.permAskState.runCap() && k != voicecmd.Deny {
+			// A run cap is extended by a key, never by a word.
+			return false, nil
+		}
 		decision := ""
 		switch k {
 		case voicecmd.Approve:

@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/a2alink"
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/gitsync"
@@ -116,6 +117,9 @@ type Params struct {
 	// A2A is the session's A2A endpoint (OpenA2A): its tools join the
 	// registry and the session is attached to it. nil when A2A is off.
 	A2A *a2alink.Link
+	// RunCaps is the session's run-cap meter (docs/run-caps.md), or nil for
+	// none. A fleet worker leaves it nil: its profile budget is its cap.
+	RunCaps *budget.Meter
 }
 
 // OpenA2A opens the A2A endpoint for a session about to be built from p
@@ -209,6 +213,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	}
 
 	sess, err := agent.NewSession(agent.Options{
+		RunCaps:       p.RunCaps,
 		AskDecider:    p.AskDecider,
 		Knowledge:     kb,
 		WebPages:      true, // top-level session: WebFetch cache and index (docs/web-fetch.md)

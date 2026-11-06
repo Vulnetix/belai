@@ -49,6 +49,10 @@ const (
 	askAllowOnce   = "allow_once"
 	askAllowAlways = "allow_always"
 	askDeny        = "deny"
+	// The two answers only a run-cap ask has (docs/run-caps.md). A run-cap ask
+	// is extended at the keyboard only: the website's answer is deny.
+	askRunCapExtend = "run_cap_extend"
+	askRunCapKeep   = "run_cap_stop_keep"
 )
 
 // Plan-review choices.
@@ -287,6 +291,12 @@ func (a *App) recordActivity(act rolemanager.Activity) {
 // recordPermissionAsk writes a permission ask: the tool, its subject and
 // arguments, the rule allow-always would add, and the diff it would make.
 func (a *App) recordPermissionAsk(ask *agent.AskRequest) string {
+	if ask.RunCap != nil {
+		// Numbers and an enum only; the only answer the website may give is deny.
+		return a.recordAsk(askPermission, ask.RunCap.Text(), map[string]any{
+			"tool": agent.RunCapAskName, "subject": ask.RunCap.Reason, "options": []string{askDeny},
+		})
+	}
 	args := toolArgsString(ask.Args)
 	if len(args) > maxAskArgsBytes {
 		args = truncateUTF8(args, maxAskArgsBytes)
@@ -339,6 +349,9 @@ func (a *App) settlePermissionAsk(decision, source, remoteID string) string {
 	if st.reply == nil {
 		return ""
 	}
+	if st.runCap() {
+		return a.settleRunCapAsk(decision, source, remoteID)
+	}
 	if decision == askAllowAlways && st.hazard() {
 		// A hazard ask is asked every time, so no rule is written, whichever
 		// surface (a key, the web, a spoken keyword) sent the answer.
@@ -356,6 +369,34 @@ func (a *App) settlePermissionAsk(decision, source, remoteID string) string {
 		text = strings.Replace(text, "permission:", "permission for "+st.ask.Name+":", 1)
 	}
 	entryID := a.recordAskAnswer(st.askID, askPermission, source, remoteID, text, map[string]any{"decision": decision})
+	a.permAskState = permissionAskViewState{}
+	a.dropView(viewPermissionAsk)
+	return entryID
+}
+
+// settleRunCapAsk answers the open run-cap ask. Only the keyboard (a key on
+// this view) extends or keeps the counters; any other source, and every
+// decision that is not one of those two, stops the run and clears them.
+func (a *App) settleRunCapAsk(decision, source, remoteID string) string {
+	st := a.permAskState
+	choice := agent.RunCapStop
+	if source == answerFromHost {
+		switch decision {
+		case askRunCapExtend:
+			choice = agent.RunCapExtend
+		case askRunCapKeep:
+			choice = agent.RunCapStopKeep
+		}
+	}
+	if reply := st.reply; reply != nil {
+		go func() { reply <- agent.PermissionAskReply{Choice: choice} }()
+	}
+	text := "run cap: " + strings.ReplaceAll(string(choice), "_", " ")
+	if source == answerFromWeb {
+		text += " (answered on the web)"
+	}
+	entryID := a.recordAskAnswer(st.askID, askPermission, source, remoteID, text, map[string]any{"decision": string(choice)})
+	a.addSystem(text)
 	a.permAskState = permissionAskViewState{}
 	a.dropView(viewPermissionAsk)
 	return entryID
@@ -484,6 +525,17 @@ func (a *App) handleRemoteAnswer(ans sessionsync.RemoteAnswer) tea.Cmd {
 	case ans.AskID == a.permAskState.askID && a.permAskState.reply != nil:
 		if ans.Kind != askPermission {
 			return refuse("the answer does not fit a permission ask")
+		}
+		if a.permAskState.runCap() {
+			// A reached run cap is extended by the person at this keyboard.
+			var p struct {
+				Decision string `json:"decision"`
+			}
+			if err := json.Unmarshal(ans.Payload, &p); err != nil || p.Decision != askDeny {
+				return refuse("a run cap can only be extended at the keyboard; answer deny to stop")
+			}
+			accept(a.settlePermissionAsk(askDeny, answerFromWeb, ans.ID))
+			return a.nextAgent()
 		}
 		var p struct {
 			Decision string `json:"decision"`

@@ -396,6 +396,14 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		if nudge := planBudgetNudge(mode, i, budget); nudge != "" {
 			turns = append(turns, directiveTurns(nudge)...)
 		}
+		// A run cap (docs/run-caps.md): the finalise directive at finalize_at, or
+		// the end of the run once the cap is reached and not extended.
+		if dir, stop := s.capBoundary(ctx, emit); stop {
+			s.capLast = lastText
+			return finish(passOutcome{text: text, lastText: lastText}), turns, errRunCapStop
+		} else if len(dir) > 0 {
+			turns = append(turns, dir...)
+		}
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		// A2A broadcasts and replies that landed since the last round.
 		turns = append(turns, s.drainPeers()...)

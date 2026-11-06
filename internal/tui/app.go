@@ -443,6 +443,12 @@ type App struct {
 	// reported it (live or rehydrated). The next session built from this App
 	// starts with it, and it is written to the session as compaction_state.
 	compactState session.CompactionState
+	// runCaps is the run-cap meter of this session id (runcaps.go), kept across
+	// rebuilds of the agent session; runCapsBase is the ceilings it was last
+	// given from the settings.
+	runCaps     *budget.Meter
+	runCapsID   string
+	runCapsBase budget.Caps
 	// admitSummary replaces the Role Manager admission of a manual /compact
 	// summary. Nil admits through run.NewPipeline; a test sets it to stay
 	// offline.
@@ -2198,6 +2204,8 @@ type sessionBuildParams struct {
 	memStamp func() repomemory.Stamp
 	// compaction is the circuit breaker the session starts with.
 	compaction session.CompactionState
+	// runCaps is the session's run-cap meter, nil when no cap is set.
+	runCaps *budget.Meter
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -2242,6 +2250,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		a2aHub:        a.a2aToolHub(),
 		memStamp:      a.repoMemoryStamp(),
 		compaction:    a.compactState,
+		runCaps:       a.runCapsMeter(),
 	}
 }
 
@@ -2368,6 +2377,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		RepoMap:       &p.repoMap,
 		WorkspaceMaps: p.workspaceMaps,
 		Forge:         p.forge,
+		RunCaps:       p.runCaps,
 		// TUI is interactive, so live language servers are allowed.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(p.settings, reg.Cwd().Roots(), true),
 	})
@@ -5665,6 +5675,7 @@ func (a *App) refreshFooter() {
 	a.footer.RoutedModels = routedModelCount(a.cfg)
 	a.footer.RC = a.rcFooterLabel()
 	a.footer.Inbox = a.inboxFooterLabel()
+	a.footer.Cap, a.footer.CapWarn = a.capFooterLabel()
 	a.footer.A2A = a.a2aFooterLabel()
 	a.footer.Voice, a.footer.VoiceOn = a.voiceFooter()
 	now := time.Now()

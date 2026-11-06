@@ -775,6 +775,9 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		}
 
 		l.passes++
+		if s.runCaps != nil {
+			s.runCaps.SetPasses(l.passes)
+		}
 		emit(Event{Kind: EventPassKind, Pass: l.passes, Explored: l.surveyPending})
 		l.surveyPending = false
 

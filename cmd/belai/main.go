@@ -161,6 +161,9 @@ func main() {
 	classifierPhase2Source := flag.String("classifier-phase2-source", "", "phase-2 source: embedded, huggingface, or disabled")
 	classifierPhase2Threshold := flag.Float64("classifier-phase2-threshold", 0, "phase-2 attack threshold (default 0.75)")
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
+	maxCost := flag.Float64("max-cost", 0, "stop a run at this many US dollars of model spend (run_caps.max_cost_usd): the model is told to finalise at 90%, then the run ends unless a person extends it; 0 is off")
+	maxTokens := flag.Int("max-tokens", 0, "stop a run at this many tokens (run_caps.max_tokens); 0 is off")
+	maxWall := flag.Int("max-wall", 0, "stop a run after this many minutes spent running turns (run_caps.max_wall_minutes); 0 is off")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	flag.BoolVar(&noTranscript, "no-transcript", false, "with -prompt, do not keep a session transcript of the run")
@@ -346,6 +349,11 @@ func main() {
 	if *sessionRetentionDays > 0 {
 		settings.SessionRetentionDays = sessionRetentionDays
 	}
+	applyRunCapFlags(&settings, *maxCost, *maxTokens, *maxWall)
+	if err := config.ValidateRunCaps(settings); err != nil {
+		fmt.Fprintln(os.Stderr, "belai:", err)
+		exitProcess(2)
+	}
 
 	fs := posture.FlagSet{
 		AllowUnsafeToolResult:    allowUnsafeToolResult,
@@ -460,6 +468,10 @@ func main() {
 	if *prompt != "" {
 		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, modes.Mode(*modeFlag), settings)
 		shutdown()
+		if errors.Is(err, errRunCapReached) {
+			fmt.Fprintln(os.Stderr, "belai:", err)
+			exitProcess(exitRunCap)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			exitProcess(1)
@@ -659,6 +671,9 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		}
 	}
 	fmt.Println(res.Reply)
+	if res.StopReason == run.StopRunCap {
+		return errRunCapReached
+	}
 	return nil
 }
 
@@ -745,8 +760,14 @@ func newCLISessionAsking(ctx context.Context, cfg run.Config, client *http.Clien
 // newCLISessionLinked is newCLISessionAsking with the session's A2A endpoint.
 func newCLISessionLinked(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk, allowClarify bool, gs *gitsync.Hygiene, link *a2alink.Link) (*agent.Session, error) {
 	store, src := cliKanban(workdir, sessionID, settings)
+	// A malformed run cap refuses the run before any model call.
+	caps, err := budget.MeterFor(settings, sessionID)
+	if err != nil {
+		return nil, err
+	}
 	return headless.NewSession(ctx, headless.Params{
-		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
+		RunCaps: caps,
+		Cfg:     cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
 		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk, AllowClarify: allowClarify,
 		AskDecider: cliAskDecider(allowAsk, settings, workdir),
 		MCP:        mcp.Active(), Kanban: store, KanbanSource: src, GitSync: gs, A2A: link,
@@ -824,6 +845,8 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 }
 
 func pruneSessions(settings config.Settings, skipKey session.Key, skipID string) {
+	// A run-cap state file goes with the sessions it belongs to.
+	budget.PruneState(time.Duration(settings.SessionRetention())*24*time.Hour, time.Now())
 	store, err := session.NewStore()
 	if err != nil {
 		return

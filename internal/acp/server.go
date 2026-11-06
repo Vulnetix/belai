@@ -626,6 +626,10 @@ func (s *Server) forward(ctx context.Context, ss *acpSession, ev agent.Event) {
 		}
 	case agent.EventPermissionAskKind:
 		if ev.Ask != nil && ev.AskReply != nil {
+			if ev.Ask.RunCap != nil {
+				ev.AskReply <- agent.PermissionAskReply{Choice: s.askRunCap(ctx, ss, ev)}
+				break
+			}
 			ev.AskReply <- agent.PermissionAskReply{Allow: s.askPermission(ctx, ss, ev)}
 		}
 	case agent.EventClarifyAskKind:
@@ -693,6 +697,39 @@ func (s *Server) askPermission(ctx context.Context, ss *acpSession, ev agent.Eve
 		return true
 	}
 	return false
+}
+
+// askRunCap puts a reached run cap (docs/run-caps.md) to the editor's user:
+// extend, stop, or stop and keep the counters. Only an explicit selection of
+// extend or keep-state counts; a failure, a cancellation or any other option
+// stops the run, and nothing is remembered for the session.
+func (s *Server) askRunCap(ctx context.Context, ss *acpSession, ev agent.Event) agent.RunCapChoice {
+	params := map[string]any{
+		"sessionId": ss.id,
+		"toolCall": map[string]any{
+			"toolCallId": ev.ToolCallID,
+			"title":      ev.Ask.RunCap.Text(),
+			"kind":       "other",
+		},
+		"options": []any{
+			map[string]any{"optionId": string(agent.RunCapExtend), "name": "Extend the cap", "kind": "allow_once"},
+			map[string]any{"optionId": string(agent.RunCapStop), "name": "Stop now", "kind": "reject_once"},
+			map[string]any{"optionId": string(agent.RunCapStopKeep), "name": "Stop and keep the counters", "kind": "reject_always"},
+		},
+	}
+	var res struct {
+		Outcome struct {
+			Outcome  string `json:"outcome"`
+			OptionID string `json:"optionId"`
+		} `json:"outcome"`
+	}
+	if err := s.conn.Call(ctx, "session/request_permission", params, &res); err != nil || res.Outcome.Outcome != "selected" {
+		return agent.RunCapStop
+	}
+	if c := agent.RunCapChoice(res.Outcome.OptionID); c.Valid() {
+		return c
+	}
+	return agent.RunCapStop
 }
 
 // permissionOptions lists the answers an editor may give. A hazard ask has no

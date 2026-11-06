@@ -317,6 +317,11 @@ type SubagentUpdate struct {
 type PermissionAskReply struct {
 	// Allow is the decision: true executes the call once, false withholds it.
 	Allow bool
+	// Choice answers a run-cap ask (AskRequest.RunCap) and is ignored for every
+	// other ask. Anything but RunCapExtend or RunCapStopKeep, an empty Choice
+	// and an Allow of true included, stops the run: a surface that does not know
+	// about run caps cannot extend one by accident.
+	Choice RunCapChoice
 }
 
 // AskRequest is an interactive tool-permission request emitted on
@@ -333,6 +338,11 @@ type AskRequest struct {
 	// must also refuse to remember the answer: an "always allow" for a hazard
 	// call writes no rule and sets no session grant.
 	Hazard []string
+	// RunCap is set when this ask is a run cap reached (docs/run-caps.md) and
+	// not a tool call: Name is "RunCap" and the surface offers the three
+	// RunCapChoice answers instead of allow and deny. It holds an enum and
+	// integers only.
+	RunCap *RunCapAsk
 }
 
 // RunStream runs the full pipeline on the supplied input (continuing history)
@@ -438,6 +448,7 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 	// transcript can attribute a turn's time to model calls.
 	done := func(a run.Assistant) run.Assistant {
 		emit(Event{Kind: EventModelCallKind, Duration: time.Since(callStart), Usage: a.Usage})
+		s.noteSpend(a.Usage, emit)
 		return a
 	}
 	if streaming {

@@ -81,6 +81,7 @@ var flagGroups = []flagGroup{
 		"classifier-phase1-model", "classifier-phase1-source", "classifier-phase1-threshold",
 		"classifier-phase2-model", "classifier-phase2-source", "classifier-phase2-threshold",
 	}},
+	{"Run caps", []string{"max-cost", "max-tokens", "max-wall"}},
 	{"Other", []string{"verbose", "session-retention-days", "no-prune", "version"}},
 }
 

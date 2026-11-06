@@ -720,6 +720,15 @@ func runTurn(ctx context.Context, o SessionOptions, history []run.Turn, text str
 		case agent.EventPermissionAskKind:
 			// Only an explicit web allow lets the call run; with nobody to
 			// ask, it is denied.
+			if e.AskReply != nil && e.Ask != nil && e.Ask.RunCap != nil {
+				// A reached run cap is extended by the person at the keyboard of the
+				// session's own surface; the website's answer is to stop.
+				select {
+				case e.AskReply <- agent.PermissionAskReply{Choice: agent.RunCapStop}:
+				case <-ctx.Done():
+				}
+				return
+			}
 			if e.AskReply != nil {
 				allow := false
 				switch {

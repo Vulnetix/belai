@@ -938,7 +938,8 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		// AskDisabled stays with the settings unless the start request said
 		// otherwise (rcAskDisabled): it resolves every ask to allow.
 		sess, err := headless.NewSession(ctx, headless.Params{
-			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
+			RunCaps: rcRunCaps(settings, sessionID),
+			Cfg:     cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 			WorkspaceDirs: pick.Dirs, PlanMode: mode == modes.ModePlan, SessionID: sessionID,
 			AllowAsk: false, AskDisabled: rcAskDisabled(pick.Ask),
 			MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
@@ -963,7 +964,8 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 			opts.Executor = func() (rc.Runner, error) {
 				allow := true
 				return headless.NewSession(ctx, headless.Params{
-					Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
+					RunCaps: rcRunCaps(settings, sessionID),
+					Cfg:     cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
 					WorkspaceDirs: pick.Dirs, SessionID: sessionID, AllowAsk: false, AskDisabled: &allow,
 					MCP: mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,
 					Narrow: rcProfileNarrow(pick.Profile), A2A: link,
@@ -1023,7 +1025,8 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		gate := rolemanager.DiagnosticsGateFromSettings(s, roots, st.LSP && s.LSPEnabled())
 		askOff := !st.Ask
 		sess, err := headless.NewSession(ctx, headless.Params{
-			Cfg: c, Client: httpclient.Default(), Posture: p, Workdir: cwd, WorkspaceDirs: pick.Dirs, Settings: s,
+			RunCaps: rcRunCaps(s, sessionID),
+			Cfg:     c, Client: httpclient.Default(), Posture: p, Workdir: cwd, WorkspaceDirs: pick.Dirs, Settings: s,
 			SessionID: sessionID, AllowAsk: st.Ask, AskDisabled: &askOff,
 			AskDecider: cliAskDecider(st.Ask, s, cwd),
 			MCP:        mcp.Active(), Kanban: board, KanbanSource: src, GitSync: gs,

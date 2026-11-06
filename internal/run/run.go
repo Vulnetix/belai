@@ -2759,6 +2759,7 @@ const (
 	StopStalled    StopReason = "stalled"    // repeated or unproductive passes
 	StopWithheld   StopReason = "withheld"   // the classifier withheld what the goal needs
 	StopMaxPasses  StopReason = "max_passes" // resilience.max_passes reached
+	StopRunCap     StopReason = "run_cap"    // a run cap (docs/run-caps.md) was reached and the run was not extended
 	StopEvaluator  StopReason = "evaluator"  // the goal evaluator failed or stopped the loop
 	StopCancelled  StopReason = "cancelled"  // the context ended
 	StopError      StopReason = "error"      // any other failure

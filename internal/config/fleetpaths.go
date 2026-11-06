@@ -66,6 +66,56 @@ func KnowledgeDir() (string, error) {
 	return filepath.Join(dir, "knowledge"), nil
 }
 
+// RunCapsDir returns <GlobalDir>/run_caps, where the run-cap counters of each
+// session are kept so a resumed session carries its spend (docs/run-caps.md).
+// It holds numbers only. Like the rest of the state directory the OS sandbox
+// hides it from every command.
+func RunCapsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "run_caps"), nil
+}
+
+// RunCapsFile is the state file of one session: a name made of the session id
+// when it is plain identifier characters, or the id's SHA-256 when it holds
+// anything else, inside RunCapsDir. The result is checked to stay inside the
+// directory.
+func RunCapsFile(sessionID string) (string, error) {
+	dir, err := RunCapsDir()
+	if err != nil {
+		return "", err
+	}
+	if sessionID == "" {
+		return "", errors.New("a run-cap state file needs a session id")
+	}
+	name := sessionID
+	if !plainStateName(name) {
+		sum := sha256.Sum256([]byte(sessionID))
+		name = hex.EncodeToString(sum[:])
+	}
+	path := filepath.Join(dir, name+".json")
+	if !within(dir, path) {
+		return "", fmt.Errorf("%q is not a session id", sessionID)
+	}
+	return path, nil
+}
+
+func plainStateName(s string) bool {
+	if s == "" || len(s) > 64 || s[0] == '.' {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // ProfileKnowledgeDir is the directory of one agent profile's index, keyed by
 // the profile's id (a lowercase UUID) because a profile can be renamed.
 func ProfileKnowledgeDir(profileID string) (string, error) {

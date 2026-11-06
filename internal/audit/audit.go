@@ -83,6 +83,11 @@ const (
 	// hazard identifiers and the tool name, never the command or the path.
 	HazardAsked  Kind = "hazard.asked"
 	HazardDenied Kind = "hazard.denied"
+
+	// RunCap is a run cap (docs/run-caps.md) acting on a session: the model told
+	// to finalise, the run extended by the user, or the run stopped. The outcome
+	// is the enum and the data holds the cap word and the pass count.
+	RunCap Kind = "run_cap"
 )
 
 // Scope is where an event shows on the website: a host's audit or an agent's.
@@ -102,6 +107,7 @@ var kindScope = map[Kind]string{
 	FindingCarded: ScopeAgent, FindingReconciled: ScopeAgent,
 	A2ASent: ScopeAgent, A2AReceived: ScopeAgent, A2AWithheld: ScopeAgent, A2ABlackout: ScopeAgent,
 	HazardAsked: ScopeAgent, HazardDenied: ScopeAgent,
+	RunCap: ScopeAgent,
 }
 
 // Kinds lists every kind, sorted, for tests and docs.

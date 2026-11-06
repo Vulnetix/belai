@@ -101,3 +101,74 @@ func moduleRoot(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// TestRunCapsDocParity is TestBudgetDocParity for docs/run-caps.md: every rule
+// (R) and edge case (E) it defines has a test named TestRunCapsRuleN_… or
+// TestRunCapsEdgeN_… somewhere in the module, and no test names an ID the doc
+// does not define.
+func TestRunCapsDocParity(t *testing.T) {
+	root := moduleRoot(t)
+	doc, err := os.ReadFile(filepath.Join(root, "docs", "run-caps.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docIDs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^- \*\*(R\d+)\.`).FindAllStringSubmatch(string(doc), -1) {
+		docIDs[m[1]] = true
+	}
+	for _, m := range regexp.MustCompile(`(?m)^\| (E\d+) \|`).FindAllStringSubmatch(string(doc), -1) {
+		docIDs[m[1]] = true
+	}
+	if len(docIDs) < 15 {
+		t.Fatalf("found only %d rule/edge IDs in the doc; has its format changed?", len(docIDs))
+	}
+	testIDs := map[string][]string{}
+	testRe := regexp.MustCompile(`func (TestRunCaps(Rule|Edge)(\d+)_\w+)\(`)
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "site", "bin", "dist":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range testRe.FindAllStringSubmatch(string(src), -1) {
+			id := map[string]string{"Rule": "R", "Edge": "E"}[m[2]] + m[3]
+			rel, _ := filepath.Rel(root, path)
+			testIDs[id] = append(testIDs[id], m[1]+" ("+rel+")")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missing, unknown []string
+	for id := range docIDs {
+		if len(testIDs[id]) == 0 {
+			missing = append(missing, id)
+		}
+	}
+	for id, tests := range testIDs {
+		if !docIDs[id] {
+			unknown = append(unknown, id+": "+strings.Join(tests, ", "))
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(unknown)
+	if len(missing) > 0 {
+		t.Errorf("rules/edge cases in docs/run-caps.md with no test: %v", missing)
+	}
+	if len(unknown) > 0 {
+		t.Errorf("tests naming IDs the doc does not define: %v", unknown)
+	}
+}

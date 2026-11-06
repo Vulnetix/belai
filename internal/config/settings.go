@@ -205,6 +205,10 @@ type Settings struct {
 	// (docs/compaction.md). The user's layers set any key; the project layer
 	// may only compact sooner or keep more.
 	Compaction *CompactionSettings `json:"compaction,omitempty"`
+	// RunCaps caps what one session may spend in dollars, tokens and wall time
+	// (docs/run-caps.md). Off by default. The user's layers and the flags set
+	// and raise any key; the project layer may only narrow.
+	RunCaps *RunCapsSettings `json:"run_caps,omitempty"`
 	// PatchTool switches the apply_patch tool (docs/patch-tool.md). nil means
 	// on. The user's layers set it either way; the project layer can only turn
 	// it off.
@@ -2056,6 +2060,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Edit = mergeEdit(out.Edit, proj.Edit, true)
 	// Compaction: a project may compact sooner or keep more, never the reverse.
 	out.Compaction = mergeCompaction(out.Compaction, proj.Compaction, true)
+	// Run caps: a project may add a cap or lower one, never raise or clear it.
+	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// apply_patch: a project may switch it off or tighten its anchoring.
 	out.PatchTool = mergePatchTool(out.PatchTool, proj.PatchTool, true)
 	out.PatchTolerance = mergePatchTolerance(out.PatchTolerance, proj.PatchTolerance, true)

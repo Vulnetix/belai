@@ -291,6 +291,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("budgets", "manage token budgets per provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.openBudgets()
 	})
+	r.Register("caps", "run caps: show what the session may spend and how much is used; /caps extend raises them by half", nil, func(a *App, arg string) tea.Cmd {
+		return a.capsCommand(arg)
+	})
 	r.Register("intel", "session intelligence: plan limits, pace, trend, runway and usage over time (f12 opens the pane)", nil, func(a *App, arg string) tea.Cmd {
 		if !a.settings.IntelEnabled() {
 			a.addSystem("session intelligence is off (ui.intel is false)")

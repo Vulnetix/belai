@@ -61,6 +61,7 @@ the harness read itself, and nothing else can be recorded.
 | agent | `a2a.sent`, `a2a.received` | an A2A envelope this host sent (outcome `local` or `relayed`) or received and showed (`matched`) ([A2A messaging](a2a.md)) |
 | agent | `a2a.withheld` | an A2A envelope held back: by the A2A blackout from the relay, or by the classifier from the model |
 | agent | `a2a.blackout` | the organisation's A2A blackout switched, outcome `on` or `off` |
+| agent | `run_cap` | a run cap (`reason` is the cap word `cost`, `tokens`, `passes` or `wall`, `passes` a count) told the model to finalise (outcome `finalise`), was extended by the user (`extended`) or stopped the run (`stopped`, `stopped_keep`) ([run caps](run-caps.md)); no text and no ceiling |
 | agent | `hazard.asked`, `hazard.denied` | the always-ask floor put a call to a person, and a call it withheld or the person refused ([hazard rails](hazard-rails.md)); `id` holds the hazard identifiers joined by `+` and `tool` the tool name, never a command or a path |
 
 `data` keys: `attempt`, `change`, `class`, `commit`, `decision`, `dispatch`, `ecosystem`, `exit`,

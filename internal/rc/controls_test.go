@@ -403,3 +403,40 @@ func TestRunSessionAskTurnedOffWhileAPermissionIsOpenLetsTheTurnGoOn(t *testing.
 		t.Fatal("ask is still on")
 	}
 }
+
+// R13: a run cap reached in a remote session stops the run: the website is
+// never asked and never extends it, and the ask is not offered as a permission.
+func TestRunCapsRule13_RemoteSessionStopsOnACap(t *testing.T) {
+	r := &capAskRunner{}
+	m := &fakeMirror{prompts: make(chan sessionsync.RemotePrompt)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = RunSession(ctx, SessionOptions{Agent: r, Log: turnlog.New(nil), Mirror: m, Prompt: "go", Idle: time.Hour})
+	}()
+	eventuallyRC(t, "the ask", func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.answered })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.choice != agent.RunCapStop || r.allowed {
+		t.Fatalf("a remote cap ask was answered %q allow=%v", r.choice, r.allowed)
+	}
+}
+
+type capAskRunner struct {
+	mu       sync.Mutex
+	answered bool
+	allowed  bool
+	choice   agent.RunCapChoice
+}
+
+func (a *capAskRunner) RunInputObserved(ctx context.Context, _ []run.Turn, _ agent.TurnInput, emit func(agent.Event)) (run.Result, error) {
+	reply := make(chan agent.PermissionAskReply, 1)
+	emit(agent.Event{Kind: agent.EventPermissionAskKind, AskReply: reply, Ask: &agent.AskRequest{
+		Name: agent.RunCapAskName, RunCap: &agent.RunCapAsk{Reason: "tokens", Used: 2, Limit: 1, ExtendBy: 1, ExtendsLeft: 3},
+	}})
+	got := <-reply
+	a.mu.Lock()
+	a.answered, a.allowed, a.choice = true, got.Allow, got.Choice
+	a.mu.Unlock()
+	return run.Result{}, nil
+}

@@ -198,7 +198,10 @@ Retry budgets are configurable via `config.Settings.Resilience`:
   that reaches the ceiling without having been told to finalise first gets two
   reserve passes to commit, record its findings and publish before the loop
   stops; its card is then resumed by the next claim (see
-  [Budgets and continuations](fleet.md#budgets-and-continuations)).
+  [Budgets and continuations](fleet.md#budgets-and-continuations)). While a
+  [run cap](run-caps.md) is set, the model is also told to finalise at
+  `run_caps.finalize_at` of this ceiling, and the loop's own stop still ends the
+  run; the ceiling is not extended by the run-cap ask.
 - `max_clarify_rounds`: bounds the clarify loop (default 3). A round whose
   questions were all asked before ends the loop early.
   A **negative** value is the documented way to disable clarification

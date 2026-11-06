@@ -21,6 +21,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	if !s.exploreSubagent {
 		defer s.resetCwdAfterTurn(emit)()
 	}
+	defer s.beginRunCapTurn()()
 	s.clearSent()
 	if !otel.Enabled() || s.exploreSubagent {
 		return s.runWithClarify(ctx, history, in, streaming, emit)

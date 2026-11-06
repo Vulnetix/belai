@@ -25,6 +25,10 @@ const (
 	// CoordFinalize is the fleet worker's own harness telling the goal loop that
 	// a per-item budget is nearly spent: finalise now. Not a coordinator event.
 	CoordFinalize CoordEvent = "finalize"
+	// CoordRunCap is the harness telling a session that a run cap
+	// (docs/run-caps.md) is nearly reached: finalise. It carries a FinalizeReasons
+	// word and nothing the model or a user wrote.
+	CoordRunCap CoordEvent = "run_cap"
 )
 
 // FinalizeReasons are the budgets a finalise fact may name.
@@ -41,6 +45,23 @@ func NewFinalizeFact(reason string) (CoordFact, error) {
 		return CoordFact{}, errors.New("not a budget")
 	}
 	return CoordFact{event: CoordFinalize, reason: reason}, nil
+}
+
+// NewRunCapFact is the fact that tells a session to finalise because the run
+// cap named by reason (a FinalizeReasons word) is nearly reached.
+func NewRunCapFact(reason string) (CoordFact, error) {
+	if !FinalizeReasons[reason] {
+		return CoordFact{}, errors.New("not a run cap")
+	}
+	return CoordFact{event: CoordRunCap, reason: reason}, nil
+}
+
+// runCapText is the fixed finalise directive for a run cap word. It names no
+// ceiling, and no amount: the model never sees the number it is held to.
+func runCapText(reason string) string {
+	return "Run cap: this session's " + reason + " cap is nearly reached, and the run ends when it is. Finalise now, in this pass: stop investigating and do not start new work. " +
+		"Finish or safely park the change in hand, leaving the tree in a state that builds if you can. " +
+		"Then say what is done, what remains and the exact next step, and end the turn. Unfinished work is kept; the user decides whether the run goes on."
 }
 
 // finalizeText is the fixed finalise directive for a budget word.
@@ -161,6 +182,8 @@ func (f CoordFact) Text() string {
 		return fmt.Sprintf("coordinator could not publish: %s", f.reason)
 	case CoordFinalize:
 		return finalizeText(f.reason)
+	case CoordRunCap:
+		return runCapText(f.reason)
 	}
 	return ""
 }

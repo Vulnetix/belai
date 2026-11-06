@@ -31,11 +31,23 @@ const (
 // always: the floor asks every time, so a remembered answer would be a lie.
 func (s permissionAskViewState) hazard() bool { return s.ask != nil && len(s.ask.Hazard) > 0 }
 
+// runCap reports an ask that is a reached run cap, not a tool call.
+func (s permissionAskViewState) runCap() bool { return s.ask != nil && s.ask.RunCap != nil }
+
 func newPermissionAskState(ask *agent.AskRequest, reply chan agent.PermissionAskReply) permissionAskViewState {
-	return permissionAskViewState{ask: ask, reply: reply, selected: permAskAllow}
+	st := permissionAskViewState{ask: ask, reply: reply, selected: permAskAllow}
+	if st.runCap() {
+		// The highlighted row is the one that stops the run: an enter pressed
+		// without looking never extends it.
+		st.selected = 1
+	}
+	return st
 }
 
 func (s permissionAskViewState) options() []string {
+	if s.runCap() {
+		return []string{"extend", "stop now", "stop and keep state"}
+	}
 	if s.hazard() {
 		return []string{"allow once", "deny"}
 	}
@@ -53,6 +65,10 @@ func (s permissionAskViewState) decisionAt(i int) string {
 		return askAllowOnce
 	case "allow always":
 		return askAllowAlways
+	case "extend":
+		return askRunCapExtend
+	case "stop and keep state":
+		return askRunCapKeep
 	}
 	return askDeny
 }
@@ -64,10 +80,31 @@ func (a *App) permissionAskView() string {
 	w := a.contentWidth()
 	st := a.permAskState
 	var b strings.Builder
-	b.WriteString(components.SectionHeader("Approve change", "esc deny", w))
+	title, esc := "Approve change", "esc deny"
+	if st.runCap() {
+		title, esc = "Run cap reached", "esc stop"
+	}
+	b.WriteString(components.SectionHeader(title, esc, w))
 
 	if st.ask == nil {
 		b.WriteString("\n(no pending request)\n")
+		return lipgloss.NewStyle().Padding(1).Render(b.String())
+	}
+	if st.runCap() {
+		b.WriteString("\n" + components.EmphStyle.Render(st.ask.RunCap.Text()) + "\n")
+		for i, opt := range st.options() {
+			selected := i == st.selected
+			box := "○"
+			if selected {
+				box = "●"
+			}
+			line := components.Cursor(selected) + box + " " + opt
+			if selected {
+				line = components.EmphStyle.Render(line)
+			}
+			b.WriteString("\n" + line)
+		}
+		b.WriteString("\n" + components.HelpBar("↑↓", "move", "enter", "confirm", "esc", "stop") + "\n")
 		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
@@ -144,7 +181,7 @@ func (a *App) answerPermissionAsk(allow bool) {
 func (a *App) resolvePendingAsk(allow bool) {
 	// Turning ask off allows an ordinary ask. A hazard ask stays open for the
 	// user: the floor is not part of the gate that was switched off.
-	if allow && a.permAskState.hazard() {
+	if allow && (a.permAskState.hazard() || a.permAskState.runCap()) {
 		return
 	}
 	decision := askDeny

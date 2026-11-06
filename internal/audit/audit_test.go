@@ -114,7 +114,7 @@ func TestKindsAndScopes(t *testing.T) {
 	if Kind("shell.run").Valid() || Kind("").Valid() {
 		t.Fatal("an unknown kind must not be valid")
 	}
-	if len(Kinds()) != 28 {
+	if len(Kinds()) != 29 {
 		t.Fatalf("%d kinds; update docs/audit.md and the server's kind table together", len(Kinds()))
 	}
 }
@@ -331,4 +331,19 @@ func readEvents(t *testing.T, path string) []Event {
 		out = append(out, e)
 	}
 	return out
+}
+
+// A run cap's event is agent scope and its data keys are the closed set's
+// existing ones (docs/run-caps.md).
+func TestRunCapsRule15_KindIsAgentScopeWithClosedKeys(t *testing.T) {
+	if !RunCap.Valid() || RunCap.Scope() != ScopeAgent || string(RunCap) != "run_cap" {
+		t.Fatalf("kind %q scope %q", RunCap, RunCap.Scope())
+	}
+	keys := map[string]bool{}
+	for _, k := range DataKeys() {
+		keys[k] = true
+	}
+	if !keys["reason"] || !keys["passes"] {
+		t.Fatal("the run cap's data keys are not in the closed set")
+	}
 }

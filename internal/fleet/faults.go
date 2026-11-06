@@ -112,6 +112,10 @@ func classifyFault(runErr, cause error, stop run.StopReason) Fault {
 		return Fault{Code: FaultEvaluator}
 	case run.StopMaxPasses:
 		return Fault{Code: FaultMaxPasses}
+	case run.StopRunCap:
+		// A worker has no run-cap meter (its profile budget ends the claim), so
+		// this is not reached today; a claim that ends on a cap is incomplete.
+		return Fault{Code: FaultIncomplete}
 	}
 	return Fault{Code: FaultIncomplete}
 }

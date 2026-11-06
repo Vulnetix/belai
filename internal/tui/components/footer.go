@@ -68,6 +68,12 @@ type Footer struct {
 	// waiting for you.
 	Inbox string
 
+	// Cap is the run-cap segment ("cap cost 82%": the largest used share of a
+	// cap); empty while no cap is set. CapWarn colours it amber once the model
+	// has been told to finalise.
+	Cap     string
+	CapWarn bool
+
 	// A2A is the A2A messaging segment ("A2A: local only" with no Vulnetix
 	// login, "A2A: blackout" while the organisation's blackout is on); empty
 	// when A2A relays normally or is off.
@@ -589,6 +595,13 @@ func (f Footer) permissionChipsAt(bareFirewall bool) string {
 	}
 	if f.Inbox != "" {
 		out += "  " + WarnStyle.Render(f.Inbox)
+	}
+	if f.Cap != "" {
+		style := MutedStyle
+		if f.CapWarn {
+			style = WarnStyle
+		}
+		out += "  " + style.Render(f.Cap)
 	}
 	if f.A2A != "" {
 		out += "  " + lipgloss.NewStyle().Foreground(ColorA2A).Render(f.A2A)

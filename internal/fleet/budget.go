@@ -2,9 +2,7 @@ package fleet
 
 import (
 	"context"
-	"math"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,8 +21,10 @@ import (
 // stand in for it.
 
 // itemMeter adds up one item's spend and decides when to finalise and when to
-// end the claim. Its methods are called from the turn's event goroutine and the
-// wall timer.
+// end the claim. It wraps the shared run-cap meter (internal/budget,
+// docs/run-caps.md) in its cancel mode: a fleet worker's claim is cancelled when
+// the cost is over the profile's budget, and it never extends. Its methods are
+// called from the turn's event goroutine and the wall timer.
 type itemMeter struct {
 	w          *Worker
 	finalizeAt float64
@@ -32,9 +32,7 @@ type itemMeter struct {
 	tokBudget  int
 	maxPasses  int
 	cancel     context.CancelCauseFunc
-
-	mu   sync.Mutex
-	cost int64
+	meter      *budget.Meter
 }
 
 func (w *Worker) newMeter(cancel context.CancelCauseFunc) *itemMeter {
@@ -43,7 +41,17 @@ func (w *Worker) newMeter(cancel context.CancelCauseFunc) *itemMeter {
 	if b := p.Budget; b != nil {
 		m.tokBudget, m.maxPasses = b.MaxTokensPerItem, b.MaxPassesPerItem
 	}
+	m.meter = budget.NewMeter(budget.Caps{CostMicroUSD: m.costBudget, Tokens: m.tokBudget, Passes: m.maxPasses, FinalizeAt: m.finalizeAt})
 	return m
+}
+
+// finalise tells the worker to finalise when a verdict says so. A fleet claim
+// has no extend step: a reached ceiling ends the claim through the cancel causes
+// the worker already has.
+func (m *itemMeter) finalise(v budget.Verdict) {
+	if v.Level != budget.OK {
+		m.w.raiseFinalize(v.Reason)
+	}
 }
 
 // call adds one main-model call at the turn's price.
@@ -52,18 +60,13 @@ func (m *itemMeter) call(u tx.Usage) {
 	if price == nil {
 		return
 	}
-	m.mu.Lock()
-	m.cost += price.MicroUSD(u)
-	cost := m.cost
-	m.mu.Unlock()
+	// The call's tokens are the goal loop's to report (goal), which counts them
+	// across rounds; only the cost is added here.
+	v := m.meter.Spend(price.MicroUSD(u), 0)
+	cost := m.meter.Snapshot().CostMicroUSD
 	m.w.liveCost.Store(cost)
-	if m.costBudget <= 0 {
-		return
-	}
-	if reached(int64(cost), m.costBudget, m.finalizeAt) {
-		m.w.raiseFinalize("cost")
-	}
-	if cost > m.costBudget {
+	m.finalise(v)
+	if m.costBudget > 0 && cost > m.costBudget {
 		m.cancel(errCostBudget)
 	}
 }
@@ -71,20 +74,11 @@ func (m *itemMeter) call(u tx.Usage) {
 // goal reads the goal loop's running totals: the item's tokens across rounds
 // and the round's passes.
 func (m *itemMeter) goal(tokens, passes int) {
-	if m.tokBudget > 0 && reached(int64(tokens), int64(m.tokBudget), m.finalizeAt) {
-		m.w.raiseFinalize("tokens")
-	}
-	if m.maxPasses > 0 && reached(int64(passes), int64(m.maxPasses), m.finalizeAt) {
-		m.w.raiseFinalize("passes")
-	}
+	m.finalise(m.meter.Observe(tokens, passes))
 }
 
 // spent is the item's estimated cost so far.
-func (m *itemMeter) spent() int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.cost
-}
+func (m *itemMeter) spent() int64 { return m.meter.Snapshot().CostMicroUSD }
 
 // wallTimer raises the wall-time finalise at finalize_at of the wall budget d.
 // The returned function stops it.
@@ -96,11 +90,8 @@ func (m *itemMeter) wallTimer(d time.Duration) func() {
 	return func() { t.Stop() }
 }
 
-// reached reports whether used is at least frac of limit (rounded up, so a
-// small pass limit still finalises before its last pass).
-func reached(used, limit int64, frac float64) bool {
-	return limit > 0 && used >= int64(math.Ceil(float64(limit)*frac))
-}
+// reached reports whether used is at least frac of limit (budget.Reached).
+func reached(used, limit int64, frac float64) bool { return budget.Reached(used, limit, frac) }
 
 // raiseFinalize tells the item in hand to finalise, once: on the running turn's
 // goal loop at its next pass boundary, or the next turn's when none is running.

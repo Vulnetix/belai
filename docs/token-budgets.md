@@ -4,7 +4,8 @@ A token budget caps how many tokens one provider+model may spend in a
 **session**, a local calendar **day**, or a local calendar **month**. Belai
 counts every model call, shows the selected model's budgets in the footer, and
 can warn when spend is outrunning the clock. Budgets never block a call: they
-inform, they do not enforce.
+inform, they do not enforce. To stop a run at a spend, token or wall-clock
+ceiling, see [Run caps](run-caps.md).
 
 The same ledger feeds **session intelligence**: plan limits with their reset
 times, pace, trend, runway, and today, week and 30-day roll-ups. It has its own

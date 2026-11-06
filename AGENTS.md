@@ -1189,6 +1189,24 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   never asks a model, and skips only the summary step: pruning and a forced
   overflow recovery run regardless. Its `compaction_state` entry is numbers,
   and is clamped on load because the session file is not trusted.
+- **A run cap is measured by the harness and extended only by the user.**
+  `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
+  docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter
+  reads provider usage numbers and a clock; no model is asked whether a run is
+  affordable, and the finalise directive (`agent.NewRunCapFact`) names a cap
+  word and no number. A reached cap ends the run unless the user extends it, and
+  only an explicit `agent.RunCapExtend` answer on the user's own channel does:
+  a key on the TUI ask, the editor's selection over ACP, or a typed `/caps
+  extend`. A permission reply with `Allow` set and no choice, the website, a
+  spoken word, the decision model (`AskDecider` is never consulted), ask off, a
+  session that cannot ask, a subagent and a remote session all stop. The project
+  layer adds or lowers a cap, `finalize_at` and `max_extends` and never raises,
+  clears or extends one (`mergeRunCaps`); a malformed value fails the load and the
+  session does not build (`budget.MeterFor`). A subagent spends on its parent's
+  meter; a fleet worker keeps its profile budget on the same meter in cancel mode
+  and never reads `run_caps`. The saved counters (`run_caps/` in the state
+  directory, numbers only, 0600, never through a link) and the `run_cap` audit
+  event hold enums and integers, never text.
 - **Hazard rails are a floor no rule waives, and only a person answers them.**
   `shellsafe.Hazards` (a closed id set read from the commands `Analyze` found,
   failing closed to `hazard.opaque`) and `tools.HazardCall` (the fixed
