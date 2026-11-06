@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/audit"
 	"github.com/vulnetix/belai/internal/builddetect"
+	"github.com/vulnetix/belai/internal/clijobs"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
@@ -181,6 +182,8 @@ type Worker struct {
 	// git. Both exist so a test can stand in for the CLI and git.
 	Review func(ctx context.Context) error
 	Head   func(ctx context.Context) (string, error)
+	// CLIPath names the vulnetix program a CLI job runs; nil detects it on PATH.
+	CLIPath func() (string, error)
 	// Suites detects the test suites and RunTests runs a plan, for a quality
 	// sweep; nil detects from the repository and runs the real suites.
 	// Scan scans a worktree for one finding after a patcher's round; nil runs
@@ -765,6 +768,9 @@ func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	}
 	if k != nil {
 		r.Lists, r.Labels, r.AssignedOnly = k.ClaimLists(), k.Labels, k.AssignedOnly
+		if k.CLI != nil {
+			r.LabelPrefix = clijobs.Label
+		}
 	}
 	w.mu.Lock()
 	for id, at := range w.failures {
@@ -793,6 +799,9 @@ func (w *Worker) wants(project string) string {
 	s := strings.Join(lists, "/") + " items"
 	if len(r.Labels) > 0 {
 		s += " labelled " + strings.Join(r.Labels, "+")
+	}
+	if r.LabelPrefix != "" {
+		s += " labelled " + r.LabelPrefix + "<job>"
 	}
 	if r.AssignedOnly {
 		s += " assigned to " + r.Profile
@@ -928,6 +937,13 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		w.Record.Tokens += tokens
 		tokMu.Unlock()
 		w.Record.CostMicroUSD += meter.spent()
+	}
+
+	if w.cliMode() {
+		// The harness runs the card's CLI job itself; no model turn runs
+		// (clijob.go).
+		w.workCLI(ctx, itemCtx, it, stopRenew)
+		return
 	}
 
 	if w.conflictMode(it) {
@@ -1395,6 +1411,8 @@ type outcome struct {
 	note      string
 	branch    string
 	files     int
+	// cliResult is a CLI job's result document, recorded on the card at release.
+	cliResult string
 	stop      run.StopReason
 	passes    int
 	// The security verdict routes the item and names its VEX. to, when set,
@@ -1613,6 +1631,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 		}
 	}
 	out.Verdict, out.VEX = o.verdict, o.vex
+	out.CliResult = o.cliResult
 	switch {
 	case out.Continued, config:
 	case o.failed:

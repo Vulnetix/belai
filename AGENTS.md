@@ -1055,6 +1055,24 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the scan created (never following a link) so scan output is never committed,
   and fail the attempt when the scanner still reports the finding after the last
   round, whatever the model said. No scanner text reaches a model.
+- **CLI jobs are a closed table the harness runs, and the card holds ids only.**
+  `internal/clijobs` (docs/cli-jobs.md) names every Vulnetix CLI job a card can
+  ask for as a fixed argv of plain words and fixed `.vulnetix` paths; no card,
+  model or setting text reaches an argument, and `TestArgvIsFixedWords` pins it.
+  A worker with `kanban.cli.jobs` claims a card labelled `cli-job:<id>` (a prefix
+  claim), takes only an id its profile lists (else the card is blocked with
+  harness text), and the harness runs the argv through `internal/testrun` (no
+  shell, the permission rules, the OS sandbox, the scrubbed environment); no
+  model turn runs. A mutating job needs `kanban.cli.write` in the profile, a
+  worktree, and a card whose acceptance gates are all met, and a profile that is
+  not the write profile cannot list one. The result (`CliResult`, `clijobs.Result`)
+  is ids, counts and enums read through `internal/scanartifacts`, at most 500
+  findings and 192 KiB, never scanner, advisory or matched text. It is set by the
+  harness at release; a pulled copy only fills an empty field after
+  `clijobs.Clean` accepts it, never replaces or clears a local value, and the
+  website cannot set it. The scout job's signals come from a fixed token detector
+  and are dropped unless they are in the closed signal set. Do not add a job argument that
+  holds free text, and do not read a scanner message into a result.
 - **Fleet workers claim by harness, work in isolation, and hand back facts.**
   `internal/fleet` workers (`belai agent run|start`, `/fleet`) take work
   only from the kanban board. The rules:
