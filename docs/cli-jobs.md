@@ -174,6 +174,35 @@ object `agent.cliResult`):
 
 Every other job records the exit code and the artifacts present.
 
+## Fixer profiles
+
+The Software Factory turns a job's findings into cards, and a model worker fixes
+what the CLI can report but not repair. Each fixer claims one card label, works
+on a worktree branch, is held to the card's gates by the harness
+(`kanban.gates.verify: enforce`, except `belai:defend-writer`, whose rules no
+suite runs) and releases to review labelled `needs-review`. The Software Factory
+then opens the draft pull request from the card's branch. None of them merges,
+weakens a test or a policy, adds an exception, or reaches the web or GitHub.
+
+| Profile | Claims label | Card is filed from | Reuses |
+| --- | --- | --- | --- |
+| `belai:patcher` | `vuln` | `sca` and `scan` findings (security crew) | existing |
+| `belai:verifier` | `needs-verify` | the patcher's branches | existing |
+| `belai:secret-triager` | `sf:secret-triage` | `secrets` findings | existing |
+| `belai:workflow-hardener` | `sf:workflow-review` | workflow changes | existing |
+| `belai:workflow-fixer` | `sf:fix-workflow` | `gha-audit` findings | existing |
+| `belai:pqc-fixer` | `sf:pqc` | `cbom` findings (`crypto` kind) | new |
+| `belai:iac-fixer` | `sf:fix-iac` | `iac` findings | new |
+| `belai:container-fixer` | `sf:fix-container` | `containers` findings | new |
+| `belai:license-fixer` | `license` | `license` findings | new |
+| `belai:defend-writer` | `sf:no-fix` | advisories with no fixed release | new |
+
+The Software Factory and the console mirror this list: the five new profile
+names and the labels above are the contract, and a test in this repository pins
+them (`TestFactoryFixerProfiles`). The label `license` has no `sf:` prefix. Labels are lower-cased, limited to
+`a-z0-9:_-` and cut at 32 characters, and every label here is already in that
+form.
+
 ## Signals
 
 `scout` emits `signals` for the deep signals only: `crypto`, `ai-sdk`,

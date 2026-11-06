@@ -37,9 +37,19 @@
       "sha256": "230ce00559f6ca25805cacd3662f60639f76162e713594c6fb452410fdd8ec30"
     },
     {
+      "name": "belai:container-fixer",
+      "path": "internal/agentprofile/builtin/container-fixer.json",
+      "sha256": "324f8003f5b08d30d9f7a50530ec0fd451fe8d5bc6433022f9a686c36eb8ac3a"
+    },
+    {
       "name": "belai:debug",
       "path": "internal/agentprofile/builtin/debug.json",
       "sha256": "e444dc1a8c40d790b20d6a3faeba01c7efa74192692b10a44ca529719d07ed16"
+    },
+    {
+      "name": "belai:defend-writer",
+      "path": "internal/agentprofile/builtin/defend-writer.json",
+      "sha256": "3688f1cf0be33bcb3b04e0cd009e81998c66ec41fb1555a23e0c11ec792a1248"
     },
     {
       "name": "belai:dep-scope",
@@ -152,6 +162,16 @@
       "sha256": "a0062063f31227866d4c57b96fd4bfec56cc2b0bd2818bd354239ec6e0c2e2c8"
     },
     {
+      "name": "belai:iac-fixer",
+      "path": "internal/agentprofile/builtin/iac-fixer.json",
+      "sha256": "2afebad0df689fbefee74a91b2081e6e746ef77025afd74eb55d82ad8634ce9d"
+    },
+    {
+      "name": "belai:license-fixer",
+      "path": "internal/agentprofile/builtin/license-fixer.json",
+      "sha256": "506b3ec0eb323aa490214b0c71ef65041cb4f5dfc9b9884f4efdd0513440f4ef"
+    },
+    {
       "name": "belai:lint-fixer",
       "path": "internal/agentprofile/builtin/lint-fixer.json",
       "sha256": "036f3ab22577e112fab2de6d9d5e71f135662e1ab2b0002c78b9b6117ba00024"
@@ -175,6 +195,11 @@
       "name": "belai:planner",
       "path": "internal/agentprofile/builtin/planner.json",
       "sha256": "c254cf36416ebfa6f6d5df2d9c0c34fd80fa7c0082356aef631240efd76faf01"
+    },
+    {
+      "name": "belai:pqc-fixer",
+      "path": "internal/agentprofile/builtin/pqc-fixer.json",
+      "sha256": "d901db54ce9b26c4a1ec351d281d769d9762185dce6d78abb8f069645d3e9b16"
     },
     {
       "name": "belai:pr-reviewer",
