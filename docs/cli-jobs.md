@@ -116,7 +116,23 @@ harness-composed note; an error or timeout counts as a failed attempt.
 3. A mutating job also needs `kanban.cli.write` and a card whose acceptance gates
    are all met (at least one gate). Otherwise the card is blocked. It then
    runs in the item's worktree, the scan output is removed, and the harness
-   commits what changed on the item's branch and releases the card to review.
+   commits what changed on the item's branch.
+   With `kanban.gates.verify: enforce` (the built-in write profile sets it) the
+   harness then runs the card's runnable gates on that branch, as it does for any
+   other worker (`verifyBranch`), and decides each by exit code. The gates were
+   met before the job ran; this decides them again at the new head, so a change
+   that breaks a suite is a failed attempt, and a gate that cannot run (a deny or
+   ask rule, no binary) blocks the card for a person. Verification runs only when
+   the job changed files.
+   The card is then released to review with the branch recorded. The harness
+   pushes that branch to `origin` itself when `agents.publish` and the
+   profile's `workspace.publish` allow it (a model worker's own tool does that
+   for the other profiles), because the Software Factory opens the draft pull
+   request from the card's branch and finds nothing when the branch is only
+   local. A failed push is said in the release note and is not a failed attempt;
+   the pull request is the factory's to open, and the harness never opens one for
+   a card that goes to review. A profile that routes to `done` is published by the
+   harness as any worker is.
 4. The argv runs through `internal/testrun`: no shell, the user's permission rules
    (a deny or ask rule blocks the card), the OS sandbox, the scrubbed environment
    and the `tests.timeout_seconds` bound. A read-only job runs in the trusted
@@ -231,3 +247,7 @@ defines.
   uploaded. The reader keeps the advisory id, the severity word and the VEX status
   of each finding that is not `not_affected` or `fixed`; the package, version,
   justification and action text are not copied.
+- `defend` takes an advisory id on the CLI (`vulnetix defend <advisory-id>`) and
+  a card's text may not reach an argument, so the table's `defend --quiet` has no
+  id to give. The `belai:defend-writer` worker runs `vulnetix defend <id>` itself
+  for the advisory its card names, under the permission rules and the sandbox.

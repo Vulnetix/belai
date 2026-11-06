@@ -1065,7 +1065,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   shell, the permission rules, the OS sandbox, the scrubbed environment); no
   model turn runs. A mutating job needs `kanban.cli.write` in the profile, a
   worktree, and a card whose acceptance gates are all met, and a profile that is
-  not the write profile cannot list one. The result (`CliResult`, `clijobs.Result`)
+  not the write profile cannot list one. After a mutating job commits, the
+  harness runs the card's gates on the branch (`verifyCLI`, the same
+  `verifyBranch` other workers use) and decides them by exit code, and pushes
+  the branch to `origin` only when `agents.publish` allows it, so the factory can
+  open the draft pull request; a CLI worker never opens or merges one. The five
+  fixer workers (`pqc-fixer`, `iac-fixer`, `container-fixer`,
+  `license-fixer`, `defend-writer`) have no web or GitHub tool, never add an
+  exception or edit a policy, and are listed in docs/cli-jobs.md. The result (`CliResult`, `clijobs.Result`)
   is ids, counts and enums read through `internal/scanartifacts`, at most 500
   findings and 192 KiB, never scanner, advisory or matched text. It is set by the
   harness at release; a pulled copy only fills an empty field after
