@@ -5,8 +5,7 @@
 // Every outbound request already identifies Belai through
 // version.UserAgent(). calltrace adds the correlation a server, proxy or child
 // process needs to tie a request back to the session and tool call that made
-// it, following the conventions other coding agents use (Claude Code's
-// X-Claude-Code-Session-Id, Codex's session_id/originator/version) under a
+// it, as session, originator and version headers under a
 // Belai-namespaced X-Belai-* prefix, plus the vendor-neutral W3C Trace
 // Context traceparent header (and the OpenTelemetry TRACEPARENT environment
 // variable for child processes).

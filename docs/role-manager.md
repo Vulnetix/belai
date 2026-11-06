@@ -2611,7 +2611,7 @@ exchange survives in the session record.
 
 The harness clarify loop above asks questions the clarifier drafts before
 planning starts. `AskUserQuestion` is the model's own way to ask, at any point,
-in every mode. It takes the trained Claude Code shape:
+in every mode. It takes the trained shape:
 
 ```json
 {"questions": [{"question": "Which database should the service use?",

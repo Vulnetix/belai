@@ -9,7 +9,7 @@ import (
 )
 
 // AskUserQuestion lets the model ask the user multiple-choice questions
-// instead of guessing. It is the trained Claude Code name and argument shape,
+// instead of guessing. It is the trained name and argument shape,
 // offered in every mode. In agent and goal mode the harness asks at once and
 // the answers are the tool result. In plan mode, final pass included, asking
 // ends the planning pass and the answers start a new agent-mode turn with the

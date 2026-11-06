@@ -1,6 +1,6 @@
 # Belai architecture
 
-Belai is a role-managed, injection-safe LLM coding harness with a Codex-style
+Belai is a role-managed, injection-safe LLM coding harness with a
 terminal UI. This document describes its security model and the modes it
 exposes.
 
@@ -591,10 +591,9 @@ search backend `WebSearch` queries can see it, and can link together every
 request from one session. It is an opaque random id and carries no credential,
 path or prompt content.
 
-**Conventions followed.** The scheme mirrors the ones other coding agents use:
-Claude Code's `X-Claude-Code-Session-Id`, Codex's `session_id`/`originator`/`version`,
-and Copilot's `editor-version`, namespaced under `X-Belai-*`, plus the
-vendor-neutral W3C `traceparent`. Web Bot Auth (`Signature-Agent` with RFC 9421
+**Conventions followed.** The scheme uses session, originator and version
+headers namespaced under `X-Belai-*`, plus the vendor-neutral W3C
+`traceparent`. Web Bot Auth (`Signature-Agent` with RFC 9421
 message signatures) is not implemented. It is still an individual IETF draft
 and is tracked as future work.
 
@@ -1168,8 +1167,8 @@ honoured instead of rejected:
 
 Business rules and edge cases:
 
-- **The default mode is `content`, a deliberate divergence.** Claude Code
-  defaults to `files_with_matches`; a model that omits `output_mode` here
+- **The default mode is `content`, a deliberate divergence.** The trained
+  default is `files_with_matches`; a model that omits `output_mode` here
   gets the matching lines, which is a superset of what it expected. The tool
   description says so.
 - **The output stays shaped.** Content is `path:line:text`, context lines are
@@ -1463,7 +1462,7 @@ with optional `- Files:` and `- Verify:` sub-bullets), `## Test Plan`,
 then returns the sentinel; the pass loop threads the plan text to
 `plans.Record`, which canonicalises it through `Doc.Render` so the file on
  disk has one stable shape regardless of the model's formatting. `update_plan`
-(the Codex checklist tool, offered in plan mode only) drives the planning
+(the trained checklist tool, offered in plan mode only) drives the planning
 checklist; the `[DONE:n]` marker convention remains as a fallback.
 
 **The checklist tool is per mode.** Goal, agent and code mode keep a *todo
@@ -2243,7 +2242,7 @@ volatile repository facts ride the user turn instead (see
 [Repository map](#repository-map)).
 
 **Work discipline** (agent and goal mode only; never plan mode or a read-only
-session such as an explore subagent) is Claude Code-style guidance: read the
+session such as an explore subagent) is guidance: read the
 code you will change and its callers first; make the smallest change that
 fully solves the task in the surrounding style; batch independent reads in
 one response; run the detected test or lint command after changing code;
@@ -2253,7 +2252,7 @@ reasoning, which pushed edits ahead of reading.
 
 ## TUI
 
-`internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript
+`internal/tui` is a Bubble Tea app: a scrolling transcript
 viewport, Pix banner, streaming assistant/tool output, slash-command editor
 with autocomplete, the agent picker, `/model` provider/model/effort picker (a
 windowed list that scrolls with the cursor and a `/` search filter),

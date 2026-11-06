@@ -10,7 +10,7 @@ import (
 	"github.com/vulnetix/belai/internal/todos"
 )
 
-// UpdatePlan is the trained checklist-progress tool (Codex's update_plan). It
+// UpdatePlan is the trained checklist-progress tool (the update_plan name). It
 // is plan mode's way of reporting research progress; goal, agent and code mode
 // use the Todo tool instead (todo.go), which shares this file's parser. The
 // [DONE:n] marker convention remains as a fallback parser for models that emit
@@ -91,7 +91,7 @@ func checklistResult(list todos.List, noun string) Result {
 }
 
 // planKeys are the argument names a model may use for the checklist itself.
-// Codex's name is "plan"; the rest are what models actually send when they
+// The trained name is "plan"; the rest are what models actually send when they
 // paraphrase the schema.
 var planKeys = []string{"plan", "steps", "todos", "items", "tasks", "checklist"}
 
@@ -221,7 +221,7 @@ func planEntry(r any) (string, todos.Status) {
 	return "", todos.StatusPending
 }
 
-// mapStatus maps the Codex status vocabulary, and the paraphrases models
+// mapStatus maps the trained status vocabulary, and the paraphrases models
 // reach for, onto the todos statuses. An unreadable status is pending: the
 // checklist is bookkeeping, and refusing the whole call over one word would
 // cost an iteration and tell the model nothing it could act on.

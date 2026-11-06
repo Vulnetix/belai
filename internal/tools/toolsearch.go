@@ -13,7 +13,7 @@ import (
 // although a typical turn uses five of them. The session advertises a core
 // set in full and names the rest in the sealed tools briefing; ToolSearch
 // loads a deferred tool's definition into the request on demand. The name and
-// argument shape are Claude Code's, which models are trained on.
+// argument shape are the ones models are trained on.
 //
 // Deferral changes what is advertised, never what may run: a deferred tool is
 // still registered, still permission-checked, and still executes if the model
@@ -58,7 +58,7 @@ type ToolSearch struct {
 	Catalog ToolCatalog
 }
 
-// Definition describes the tool with Claude Code's argument shape.
+// Definition describes the tool with the trained argument shape.
 func (ToolSearch) Definition() Definition {
 	return Definition{
 		Name: ToolSearchName,

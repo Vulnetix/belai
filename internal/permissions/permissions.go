@@ -1,5 +1,5 @@
 // Package permissions implements the tool permission layer (allow/ask/block
-// per tool), adopting the Claude Code permission-settings shape for
+// per tool), using the widely adopted permission-settings shape for
 // interoperability: allow/ask/deny arrays of rule strings, with "block"
 // accepted as an alias for "deny".
 package permissions
