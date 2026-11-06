@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
@@ -59,6 +60,10 @@ func TestWorkspaceCommitCarriesTheSession(t *testing.T) {
 
 func TestEnsureAttributionRewritesOnlyWhatLacksIt(t *testing.T) {
 	testEnv(t)
+	// The commits below must be made with no attribution file in view, so
+	// pin the test outside the sandbox attribution file: attribution.Message
+	// appends trailers when the machine running the tests carries one.
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	repo := gitRepo(t)
 	ctx := context.Background()
 	ws, err := PrepareWorktree(ctx, repo, kanban.Item{ID: "3f9a2c00-0000-4000-8000-000000000001", Title: "t"}, "")
