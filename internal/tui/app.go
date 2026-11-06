@@ -856,6 +856,11 @@ type App struct {
 	// per-goal auto-commit hook (see autocommit.go).
 	taskPaths   []string
 	taskPathSet map[string]bool
+	// relayPaths is every file the session changed, for /relay's facts block
+	// (see relay.go); relay is the /relay draft and review flow.
+	relayPaths   []string
+	relayPathSet map[string]bool
+	relay        relayState
 
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
@@ -2599,6 +2604,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case compactDoneMsg:
 		return a, a.handleCompactDone(m)
+
+	case relayDraftMsg:
+		return a, a.handleRelayDraft(m)
+
+	case relayAcceptedMsg:
+		return a, a.handleRelayAccepted(m)
+
+	case relayEditedMsg:
+		return a, a.handleRelayEdited(m)
 
 	case exportDoneMsg:
 		return a, a.handleExportDone(m)
@@ -6662,6 +6676,8 @@ func (a *App) startNewSession() {
 	a.lastGoal = nil
 	a.setCompactState(session.CompactionState{})
 	a.resetTaskPaths()
+	a.resetRelayPaths()
+	a.endRelay()
 	a.resetTestPass()
 	a.publishSessionID()
 	a.lastEntryID = ""

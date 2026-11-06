@@ -73,18 +73,51 @@ func ValidateSummary(raw string) (string, error) { return ValidateServedSummary(
 // ValidateServedSummary is ValidateSummary for a reply whose answering
 // provider/model is known (see TrackServedModel).
 func ValidateServedSummary(raw, model string) (string, error) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
+	s, fault := checkSections(raw, compactionHeadings, 0)
+	switch fault {
+	case sectionsEmpty:
 		recordModel(EventCompactionSummary, "invalid", "", "empty", 0, model)
 		return "", ErrIncompleteSummary
-	}
-	if !strings.Contains(s, "## Goal") ||
-		!strings.Contains(s, "## Next Steps") ||
-		!strings.Contains(s, "## Critical Context") {
+	case sectionsIncomplete, sectionsOversize:
 		return "", ErrIncompleteSummary
 	}
 	recordModel(EventCompactionSummary, "valid", "", "", 0, model)
-	return sanitize.Sanitize(s), nil
+	return s, nil
+}
+
+// compactionHeadings are the headings a compaction summary must carry.
+var compactionHeadings = []string{"## Goal", "## Next Steps", "## Critical Context"}
+
+// sectionsFault names why checkSections refused a reply.
+type sectionsFault string
+
+const (
+	sectionsOK         sectionsFault = ""
+	sectionsEmpty      sectionsFault = "empty"
+	sectionsIncomplete sectionsFault = "incomplete"
+	sectionsOversize   sectionsFault = "oversize"
+)
+
+// checkSections is the shared body of the structured-prose validators (the
+// compaction summary and the /relay handoff): the reply is trimmed, must not be
+// empty, must carry every heading, must fit maxBytes when that is above zero,
+// and is returned with delimiter markup removed so text embedded in the
+// conversation cannot survive into what is stored. It never repairs a reply.
+func checkSections(raw string, headings []string, maxBytes int) (string, sectionsFault) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", sectionsEmpty
+	}
+	for _, h := range headings {
+		if !strings.Contains(s, h) {
+			return "", sectionsIncomplete
+		}
+	}
+	s = sanitize.Sanitize(s)
+	if maxBytes > 0 && len(s) > maxBytes {
+		return "", sectionsOversize
+	}
+	return s, sectionsOK
 }
 
 // SummaryPrefix/Suffix wrap a validated summary when it re-enters as a

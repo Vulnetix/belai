@@ -25,6 +25,7 @@ var allEvents = []Event{
 	EventGoalDraft,
 	EventClarify,
 	EventCompactionSummary,
+	EventHandoffDraft,
 	EventSessionName,
 	EventBoundarySeal,
 	EventBoundaryVerifyFailure,

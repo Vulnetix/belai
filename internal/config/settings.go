@@ -214,6 +214,10 @@ type Settings struct {
 	// (docs/instruction-files.md). The user layers set any key in range; the
 	// project layer may only turn a switch off or lower a number.
 	Instructions *InstructionsSettings `json:"instructions,omitempty"`
+	// Handoff governs /relay, the reviewed handoff into a fresh session
+	// (docs/handoff.md). The user layers set any key; the project layer may
+	// only turn it off, turn include_goal off or lower max_bytes.
+	Handoff *HandoffSettings `json:"handoff,omitempty"`
 	// RunCaps caps what one session may spend in dollars, tokens and wall time
 	// (docs/run-caps.md). Off by default. The user's layers and the flags set
 	// and raise any key; the project layer may only narrow.
@@ -2096,6 +2100,8 @@ func (s Settings) Override(proj Settings) Settings {
 	out.Compaction = mergeCompaction(out.Compaction, proj.Compaction, true)
 	// Instruction files: a project may switch them off or lower the caps.
 	out.Instructions = mergeInstructions(out.Instructions, proj.Instructions, true)
+	// /relay: a project may switch it off, drop the goal facts or lower the cap.
+	out.Handoff = mergeHandoff(out.Handoff, proj.Handoff, true)
 	// Run caps: a project may add a cap or lower one, never raise or clear it.
 	out.RunCaps = mergeRunCaps(out.RunCaps, proj.RunCaps, true)
 	// Finish review: a project may add scratch patterns and raise the rounds,

@@ -1217,6 +1217,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and `-no-finish-review` switch it off for a run and `/finish-review` for a
   session, none from a web session. The review approves, deletes and changes
   nothing, and nothing from it reaches telemetry, audit or sync.
+- **`/relay` is the user's, reviewed, and admitted like a summary.** The
+  handoff note (`internal/tui/relay.go`, docs/handoff.md) is drafted on the main
+  model from the serialized transcript and a nonce-fenced facts block the harness
+  composes (`rolemanager.RelayFactsBlock`: goal, todos, branch, changed paths, each
+  cleaned per sink, a path `sanitize.PathText` refuses dropped). The reply must carry
+  the four headings and fit `handoff.max_bytes` (`rolemanager.ValidateHandoff`,
+  sharing `checkSections` with the compaction validator) or it is refused, never
+  repaired. It is admitted through the same classifier step as a `/compact` summary
+  before the user sees it, an edit is validated, sanitised and admitted again on accept,
+  and the note re-enters only through `buildTurns` as an untrusted user turn. Nothing
+  is stored before accept, no model starts the command or accepts the note, and any
+  error leaves the old session untouched. `handoff.*` may be turned off, narrowed or
+  lowered by a project layer, never enabled or raised (`mergeHandoff`).
 - **A run cap is measured by the harness and extended only by the user.**
   `run_caps.*` (`internal/config/runcaps.go`, `internal/budget/runcaps.go`,
   docs/run-caps.md) bounds one session's cost, tokens and turn time. The meter

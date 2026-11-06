@@ -237,3 +237,14 @@ func TestBkanDocParity(t *testing.T) {
 		}
 	}
 }
+
+func TestHandoffDocParity(t *testing.T) {
+	body := docBody(t, "docs/handoff.md")
+	for _, k := range jsonKeys(config.HandoffSettings{}) {
+		mustName(t, "docs/handoff.md", body, "handoff."+k)
+	}
+	mustName(t, "docs/handoff.md", body, "/relay", "handoff_draft", "pre_compact")
+	for _, h := range []string{"## Goal", "## State", "## Next Steps", "## Open Questions"} {
+		mustName(t, "docs/handoff.md", body, h)
+	}
+}

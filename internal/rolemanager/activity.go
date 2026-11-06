@@ -36,6 +36,7 @@ const (
 	EventClarify                   Event = "clarify"
 	EventCompactionSummary         Event = "compaction_summary"
 	EventSessionName               Event = "session_name"
+	EventHandoffDraft              Event = "handoff_draft"
 	EventBoundarySeal              Event = "boundary_seal"
 	EventBoundaryVerifyFailure     Event = "boundary_verify_failure"
 	EventToolCallMismatch          Event = "tool_call_mismatch"
@@ -356,6 +357,8 @@ func Describe(a Activity) (Description, bool) {
 		return clarifyDescription(a), true
 	case EventCompactionSummary:
 		return compactionDescription(a), true
+	case EventHandoffDraft:
+		return handoffDraftDescription(a), true
 	case EventSessionName:
 		return sessionNameDescription(a), true
 	case EventLSPDiagnose:
@@ -578,6 +581,24 @@ func compactionDescription(a Activity) Description {
 	}
 }
 
+// handoffDraftDescription renders one /relay draft check.
+func handoffDraftDescription(a Activity) Description {
+	if a.Verdict == "valid" {
+		return Description{
+			Summary: "Drafted a handoff note for a fresh session",
+			Outcome: "ready for review",
+			Tone:    ToneClear,
+			Levels:  LevelDecisions,
+		}
+	}
+	return Description{
+		Summary: "Tried to draft a handoff note",
+		Outcome: "not usable, kept the session as it was",
+		Tone:    ToneCaution,
+		Levels:  LevelDecisions,
+	}
+}
+
 // depChangeDescription renders one dependency-change decision on a manifest
 // the session changed.
 func depChangeDescription(a Activity) Description {
@@ -772,6 +793,8 @@ func useCasePhrase(useCase string) string {
 		return "clarifying questions"
 	case UseCaseCompaction:
 		return "compaction"
+	case UseCaseHandoffDraft:
+		return "handoff drafting"
 	case UseCaseSessionName:
 		return "session naming"
 	case UseCaseAgentEval:

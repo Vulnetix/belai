@@ -82,7 +82,7 @@ func (a *App) permissionsStatus() string {
 // user can leave it: an approval, a question, or a plan waiting on a verdict.
 func (a *App) screensBlocked() bool {
 	switch a.view {
-	case viewPermissionAsk, viewClarify, viewPlanReview, viewResumeCompact:
+	case viewPermissionAsk, viewClarify, viewPlanReview, viewResumeCompact, viewRelay:
 		return true
 	case viewChat:
 		return a.savePromptMode || a.saveFileMode || a.promptAction || a.historyActive || a.forgeFlowActive() || a.kanbanInputActive()

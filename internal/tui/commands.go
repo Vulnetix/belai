@@ -399,6 +399,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("compact", "summarise the session into a new one; /compact <focus> steers the summary, /compact status shows thresholds and the breaker", nil, func(a *App, arg string) tea.Cmd {
 		return a.compactCommand(arg)
 	})
+	r.Register("relay", "draft a handoff note, review and edit it, then continue in a fresh session; /relay <direction> steers the note", nil, func(a *App, arg string) tea.Cmd {
+		return a.relayCommand(arg)
+	})
 	r.Register("resume", "resume a session by id or browse sessions on disk", nil, func(a *App, arg string) tea.Cmd {
 		if strings.TrimSpace(arg) != "" {
 			return a.resumeByID(arg)

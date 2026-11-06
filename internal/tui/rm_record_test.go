@@ -19,7 +19,7 @@ var allRolemanagerEvents = []rolemanager.Event{
 	rolemanager.EventModeClassify, rolemanager.EventModeDetect, rolemanager.EventModeForced,
 	rolemanager.EventModeGoalLengthLimit, rolemanager.EventGoalEval, rolemanager.EventGoalEvalRepair,
 	rolemanager.EventPlanEval, rolemanager.EventAgentEval, rolemanager.EventGoalDraft, rolemanager.EventClarify,
-	rolemanager.EventCompactionSummary, rolemanager.EventSessionName, rolemanager.EventBoundarySeal,
+	rolemanager.EventCompactionSummary, rolemanager.EventHandoffDraft, rolemanager.EventSessionName, rolemanager.EventBoundarySeal,
 	rolemanager.EventBoundaryVerifyFailure, rolemanager.EventToolCallMismatch, rolemanager.EventAgentPoolAdmit,
 	rolemanager.EventLSPDetect, rolemanager.EventLSPDiagnose, rolemanager.EventLSPServerDown,
 	rolemanager.EventRouteFallback, rolemanager.EventDepChange, rolemanager.EventWebFetchAnswer,

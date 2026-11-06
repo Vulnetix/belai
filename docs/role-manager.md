@@ -917,13 +917,14 @@ and agent-less. The invariant holds for all eight builders:
 
 #### Prose payloads versus sentinel payloads
 
-Three builders produce **prose** a human reads — the compaction summary, the
-session name, and the generated agent profile. Those three, and only those
-three, accept the caveman voice (`classifier.caveman` /
+Four builders produce **prose** a human reads — the compaction summary, the
+`/relay` handoff note, the session name, and the generated agent profile. Those
+four, and only those four, accept the caveman voice (`classifier.caveman` /
 `BELAI_CLASSIFIER_CAVEMAN`, edited from `/model`). The voice always rides
 with a structure guard telling the model to keep every required heading, path
 and identifier verbatim, because the replies are still parsed:
 `ValidateSummary` requires `## Goal`, `## Next Steps` and `## Critical Context`,
+`ValidateHandoff` requires `## Goal`, `## State`, `## Next Steps` and `## Open Questions` within `handoff.max_bytes`,
 `ParseSessionName` requires a single printable line, and the agent profile must
 still be valid JSON.
 
@@ -1165,7 +1166,7 @@ work` selects how much shows, in four additive levels:
 | Level | Shows |
 | ----- | ----- |
 | `hidden` (default) | nothing — the feed is render-only and never changes a verdict |
-| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit, language-server diagnostics (`lsp_diagnose`, `lsp_server_down`), hazard rail asks (`hazard_ask`) |
+| `decisions` | agent evaluator, goal drafting, clarification, compaction, `/relay` handoff drafting (`handoff_draft`), session naming, tool-call mismatch, goal-length limit, language-server diagnostics (`lsp_diagnose`, `lsp_server_down`), hazard rail asks (`hazard_ask`) |
 | `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 
@@ -2763,6 +2764,7 @@ tool-less, skill-less, and agent-less for every attempt.
 | Directive cannot be sealed | Dropped, never sent as bare prose | — |
 | `[DONE:n]` marker in a tool result or file | Ignored — only assistant text advances a todo list | — |
 | Compaction summary empty or missing required headings | Refuse compaction, keep session | — |
+| `/relay` draft empty, missing a heading or over `handoff.max_bytes`, or refused by the security classifier | Show nothing, keep session | — |
 | Session-name classifier returns malformed output | Leave session unnamed | — |
 
 ## Debugging and audit trail

@@ -58,7 +58,7 @@ type gsSection struct {
 var gsSections = []gsSection{
 	{"Stay in control", "Belai checks untrusted content, such as tool results, web pages and files, before it can steer a turn. `shift+tab` cycles the modes (agent, plan, goal, code, auto), `f3` toggles guardrails and `f4` toggles asking before a tool runs. `/permissions` sets allow, ask and deny rules, and commands run inside an OS sandbox."},
 	{"Choose the models and agents", "Every job can use its own model, and a decision backend can route them. `/model` picks them, `/providers` holds credentials and local models, `/agent` engages a profile, `/budgets` caps spend and `/intel` shows plan limits and pace."},
-	{"Keep work going", "Sessions persist: `/resume` returns to one and `/compact` condenses it. `/kanban` and `/fleet` hand work to isolated workers. `/firewall`, `/mcp`, `/skills` and `/plugin` extend and protect Belai, and `/rc` and `/sync` reach your sessions from the website. `/help` lists every key and command."},
+	{"Keep work going", "Sessions persist: `/resume` returns to one, `/compact` condenses it and `/relay` hands it to a fresh session. `/kanban` and `/fleet` hand work to isolated workers. `/firewall`, `/mcp`, `/skills` and `/plugin` extend and protect Belai, and `/rc` and `/sync` reach your sessions from the website. `/help` lists every key and command."},
 }
 
 type gsField struct {

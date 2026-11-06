@@ -162,6 +162,7 @@ var presentations = map[Event]presentation{
 	EventAgentEval:                 {CategoryMode, "agent"},
 	EventGoalDraft:                 {CategoryMode, "draft"},
 	EventCompactionSummary:         {CategoryContext, "compact"},
+	EventHandoffDraft:              {CategoryContext, "relay"},
 	EventPruneCompaction:           {CategoryContext, "prune"},
 	EventWebFetchAnswer:            {CategoryContext, "page"},
 	EventDepChange:                 {CategoryContext, "deps"},

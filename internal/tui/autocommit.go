@@ -41,6 +41,7 @@ func (a *App) observeTaskDiff(ch *filediff.Change) {
 	if ch == nil || len(ch.Files) == 0 {
 		return
 	}
+	a.observeRelayPaths(ch)
 	if a.taskPathSet == nil {
 		a.taskPathSet = map[string]bool{}
 	}

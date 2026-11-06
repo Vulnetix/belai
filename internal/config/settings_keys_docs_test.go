@@ -68,6 +68,7 @@ var settingsPages = map[string][]string{
 	"edit":          {"docs/edit.md", "docs/settings.md"},
 	"compaction":    {"docs/compaction.md", "docs/settings.md"},
 	"instructions":  {"docs/instruction-files.md", "docs/settings.md"},
+	"handoff":       {"docs/handoff.md", "docs/settings.md"},
 	"run_caps":      {"docs/run-caps.md", "docs/settings.md"},
 	"finish_review": {"docs/finish-review.md", "docs/settings.md"},
 	"headless":      {"docs/headless.md", "docs/settings.md"},

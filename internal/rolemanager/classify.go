@@ -83,6 +83,10 @@ const (
 	UseCaseTeleportDistill = "teleport_distill"
 	// UseCaseTeleportVerify judges a replayed checkout against the hand-over.
 	UseCaseTeleportVerify = "teleport_verify"
+	// UseCaseHandoffDraft drafts the note /relay hands to a fresh session. It
+	// stays on the main model, as compaction does: the note is the next
+	// session's whole memory of this one.
+	UseCaseHandoffDraft = "handoff_draft"
 	// UseCaseAgentAvatar draws a customised Pix for an agent (internal/avatar). It
 	// stays on the main model: the drawing is long and its quality is the point.
 	UseCaseAgentAvatar = "agent_avatar"

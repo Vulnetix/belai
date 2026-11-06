@@ -37,7 +37,7 @@ Every row belongs to exactly one group. A group with no rows is not on the rail.
 
 | Group | Rows |
 | --- | --- |
-| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received` |
+| General | `provider`, `model`, `effort`, `caveman`, `read-only tools`, `session retention`, `update check`, `auto-commit per task`, `A2A messaging`, `A2A broadcasts received`, `relay handoff`, `relay shares goal` |
 | Display | `banner`, `colours`, `spinner`, `reasoning`, `tool calls`, `file edits`, `internal work`, `layout`, `empty composer pane`, `todo panel`, `A2A messages`, `mouse capture`, `macOS keyboard hints`, `session names` |
 | Tests | `test pass`, `test pass each turn`, `test scope`, `test on fail`, `test command`, `test report`, `test fix passes`, `test timeout` |
 | Agents | `max agents`, `plan explore`, `goal explore`, `clone repositories` |
@@ -57,7 +57,8 @@ work on and can message one another ([A2A messaging](a2a.md)). It takes
 effect on the next start. `A2A broadcasts received` is `a2a.filter`: `repo`
 (the default) hears broadcasts about this session's repository, `all` hears
 every one, `off` hears none and still broadcasts. A project layer may turn
-A2A off and narrow the filter, never the reverse. `A2A messages` in Display is
+A2A off and narrow the filter, never the reverse. `relay handoff` is `handoff.enabled`
+and `relay shares goal` is `handoff.include_goal` (both default on; see [Handoff](handoff.md)). `A2A messages` in Display is
 `ui.show_a2a` (default on): it hides or shows the A2A rows in the thread and
 changes nothing else.
 
@@ -319,6 +320,14 @@ file: `instructions.enabled`, `instructions.nested`, `instructions.max_files`,
 `instructions.file_bytes` and `instructions.total_bytes`. Your own layers set any key in
 its range; a project file can only turn a switch off or lower a number. See
 [Instruction files](instruction-files.md).
+
+## Reviewed handoff
+
+The `handoff` block has two rows on the settings screen, `relay handoff`
+(`handoff.enabled`) and `relay shares goal` (`handoff.include_goal`). The size cap
+`handoff.max_bytes` (default 16384, clamped to 2048 through 65536) is a settings file
+key. Your own layers set any key; a project file can only turn `/relay` off, turn
+`include_goal` off or lower `max_bytes`. See [Handoff](handoff.md).
 
 ## Headless output
 

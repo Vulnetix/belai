@@ -226,6 +226,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `◍` | agent check | `mode` |
 | `✎` | goal drafted | `mode` |
 | `⊟` | compaction summary | `context` |
+| `⇥` | relay handoff draft | `context` |
 | `⊠` | compaction prune | `context` |
 | `▤` | page answer | `context` |
 | `⊡` | dependency change | `context` |
