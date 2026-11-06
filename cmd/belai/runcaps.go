@@ -5,12 +5,13 @@ import (
 
 	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/headless"
 )
 
 // exitRunCap is the exit code of a `-prompt` run that stopped on a run cap
 // (docs/run-caps.md): distinct from a failure (1), a usage error (2) and an
 // interrupt (130), so a script can tell a bounded run from a broken one.
-const exitRunCap = 3
+const exitRunCap = headless.ExitRunCap
 
 // errRunCapReached ends a headless run whose run cap was reached. The reply was
 // already printed.

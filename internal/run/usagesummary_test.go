@@ -105,3 +105,13 @@ func TestUsageSummaryWrite(t *testing.T) {
 		t.Fatalf("roles = %v", roles)
 	}
 }
+
+func TestUsageSummaryTotals(t *testing.T) {
+	var u UsageSummary
+	u.Add(UsageEvent{Provider: "p", Model: "m", Tokens: 30, Prompt: 20, Completion: 10, CacheRead: 5})
+	u.Add(UsageEvent{Provider: "p", Model: "m", Role: "security", Tokens: 12, Prompt: 10, Completion: 2, CacheWrite: 3})
+	calls, tokens, prompt, completion, cacheRead, cacheWrite := u.Totals()
+	if calls != 2 || tokens != 42 || prompt != 30 || completion != 12 || cacheRead != 5 || cacheWrite != 3 {
+		t.Fatalf("totals = %d %d %d %d %d %d", calls, tokens, prompt, completion, cacheRead, cacheWrite)
+	}
+}

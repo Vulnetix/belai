@@ -21,7 +21,9 @@ estimate of its request's shape: system prompt, tool definitions, history,
 and tool results by tool name. These are sizes only, never content.
 
 `belai -prompt "…" -usage-json path.json` writes the summary on exit, a
-failed run included:
+failed run included. A run with `-output-format json` or `stream-json` reports
+the same totals in its result's `usage` field (see
+[Headless structured output](headless.md#the-result)):
 
 ```json
 {

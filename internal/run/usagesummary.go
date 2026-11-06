@@ -103,6 +103,16 @@ func (u *UsageSummary) Add(ev UsageEvent) {
 	}
 }
 
+// Totals returns the call count and the token sums folded in so far, across
+// every role. It is the numbers a headless run's result reports, so there is
+// one usage path.
+func (u *UsageSummary) Totals() (calls, tokens, prompt, completion, cacheRead, cacheWrite int) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	s := &u.s
+	return s.Calls, s.Tokens, s.Prompt, s.Completion, s.CacheRead, s.CacheWrite
+}
+
 // Roles returns the roles seen so far, sorted.
 func (u *UsageSummary) Roles() []string {
 	u.mu.Lock()

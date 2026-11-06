@@ -1209,6 +1209,29 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and never reads `run_caps`. The saved counters (`run_caps/` in the state
   directory, numbers only, 0600, never through a link) and the `run_cap` audit
   event hold enums and integers, never text.
+- **A scripted run's contract is the user's, and its protocol carries cleaned text only.**
+  `internal/headless` (output, schema, stdin and resume; docs/headless.md) gives
+  `belai -prompt` a machine-readable result. `headless.*` (`output_format`,
+  `max_stdin_bytes`, `event_text_cap`) is read from the user's layers only
+  (`resolve.go` ignores the project layer's block with a note), so a repository
+  cannot change what a script receives or raise the caps. Standard output holds only the
+  chosen format; the `stream-json` event types are a closed set mapped explicitly from
+  `agent.Event` (reasoning, permission asks and clarify asks are never emitted, an
+  unknown kind is dropped). Every string passes `sanitize.Text`, `Line` or `Ident` and
+  then `vaultenv.Default.Scrub`, text goes out in whole lines so delimiter cleaning never
+  sees half a tag, a tool result is the post-gate text (a withheld result stays a
+  placeholder), and tool arguments appear only with `-verbose`. `Reply` and `Structured`
+  are model text and are documented as untrusted data. A `-json-schema` is a closed subset
+  (an unsupported keyword is a load error), the check is deterministic Go and no model is
+  asked whether an answer is valid, and the one repair turn is composed from a fixed code
+  and a pointer built from the schema's own names, never from the reply. A stdin prompt is
+  read to the cap plus one byte and refused when empty, oversize, not UTF-8 or holding NUL;
+  it is the user's own prompt and takes the typed-prompt admission. A headless resume
+  replays stored history without classifying it again, appends to the same transcript, and
+  copies a session of another project into this one rather than entering that directory, so
+  the trust gate for this directory is the only one that applies. Exit codes: 0 ok, 1 error,
+  2 usage, 3 run cap, 4 denied or could not ask (structured formats only), 5 schema failure.
+
 - **Hazard rails are a floor no rule waives, and only a person answers them.**
   `shellsafe.Hazards` (a closed id set read from the commands `Analyze` found,
   failing closed to `hazard.opaque`) and `tools.HazardCall` (the fixed

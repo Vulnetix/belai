@@ -129,7 +129,9 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")
 	noGitSync := flag.Bool("no-git-sync", false, "do not rebase the branch onto origin's default branch before a turn (git.sync in settings; /gitsync in the TUI)")
-	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
+	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit; -prompt - (or a piped stdin with no -prompt) reads the prompt from standard input")
+	outputFormat := flag.String("output-format", "", "with -prompt, how the run reports: text (default; the reply), json (one result object) or stream-json (one event per line, then the result); headless.output_format sets the default. Exit codes: 0 ok, 1 error, 2 usage, 3 run cap, 4 denied or could not ask, 5 schema failure (see docs/headless.md)")
+	jsonSchema := flag.String("json-schema", "", "with -prompt, require the final answer to be JSON that satisfies the schema in this file (a subset: type, properties, required, enum, items, additionalProperties); one repair turn is allowed, then the run exits 5")
 	model := flag.String("model", "", "model id (defaults per provider)")
 	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, groq, deepseek, fireworks, mistral, together, xai, moonshot, minimax, alibaba, or a custom name from settings.json")
 	detectMode := flag.Bool("detect-mode", false, "run the operating-mode classifier and report the decision")
@@ -174,8 +176,9 @@ func main() {
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
 	resume := flag.String("resume", "", "resume a session by id or unique id prefix")
 	flag.StringVar(resume, "r", "", "shorthand for -resume")
-	continueLast := flag.String("continue", "", "continue the most recent session for this project")
-	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
+	continueLast := new(string)
+	flag.Var(bareFlag{continueLast}, "continue", "continue the most recent session for this project (with -prompt, run the prompt as its next turn)")
+	flag.Var(bareFlag{continueLast}, "c", "shorthand for -continue")
 	teleportID := flag.String("teleport", "", "continue a session of your account from another host, sandbox or the web: its transcript and any agent profile it needs are fetched, and the session opens here under a new id (the original carries on)")
 	teleportPush := flag.Bool("teleport-push", false, "with -teleport, agree that the origin host may push the session's uncommitted and unpushed changes to the forge as one belai/teleport/<id> branch, which this host then fetches; without it they are sent as a patch and replayed here")
 	teleportRef := flag.String("teleport-ref", "", "with -teleport, check out this ref or commit instead of the one the session was at")
@@ -213,13 +216,13 @@ func main() {
 		exitProcess(0)
 	}
 
-	if *resume != "" && *prompt != "" {
-		fmt.Fprintln(os.Stderr, "belai: -resume requires the interactive TUI (not supported with -prompt)")
-		exitProcess(1)
-	}
 	if *continueLast != "" && *resume != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue cannot be combined with -resume")
 		exitProcess(1)
+	}
+	if _, err := headless.ParseFormat(*outputFormat); err != nil {
+		fmt.Fprintln(os.Stderr, "belai:", err)
+		exitProcess(headless.ExitUsage)
 	}
 	if *teleportRef != "" && *teleportID == "" {
 		fmt.Fprintln(os.Stderr, "belai: -teleport-ref needs -teleport")
@@ -241,10 +244,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, "belai: -teleport opens the terminal UI, so it needs a terminal")
 			exitProcess(1)
 		}
-	}
-	if *continueLast != "" && *prompt != "" {
-		fmt.Fprintln(os.Stderr, "belai: -continue requires the interactive TUI (not supported with -prompt)")
-		exitProcess(1)
 	}
 
 	// First-run trust gate: block on an unknown directory before any repo
@@ -426,6 +425,44 @@ func main() {
 		}
 	}
 
+	// A prompt from standard input, the output format and the schema are the
+	// contract of a noninteractive run (docs/headless.md). They are settled
+	// here, after the trust gate and the settings, and before any model call.
+	var ho headlessOptions
+	if *agentName == "" && *agentCreate == "" && *teleportID == "" {
+		stdinEligible := !interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv)
+		text, _, perr := resolvePrompt(*prompt, os.Stdin, stdinEligible, settings.HeadlessStdinLimit())
+		if perr != nil {
+			fmt.Fprintln(os.Stderr, "belai:", perr)
+			exitProcess(headless.ExitUsage)
+		}
+		*prompt = text
+	}
+	if *prompt != "" {
+		var ferr error
+		if ho.Format, ferr = resolveOutputFormat(*outputFormat, settings); ferr != nil {
+			fmt.Fprintln(os.Stderr, "belai:", ferr)
+			exitProcess(headless.ExitUsage)
+		}
+		ho.EventCap = settings.HeadlessEventCap()
+		ho.ResumeKey, ho.ResumeID = resumeKey, resumeID
+		if *jsonSchema != "" {
+			sch, serr := headless.ParseSchema(*jsonSchema)
+			if serr != nil {
+				fmt.Fprintln(os.Stderr, "belai:", serr)
+				exitProcess(headless.ExitUsage)
+			}
+			ho.Schema = sch
+		}
+		if cerr := checkHeadlessCombo(ho, *detectMode, *enableTools, *planMode, modes.Mode(*modeFlag)); cerr != nil {
+			fmt.Fprintln(os.Stderr, "belai:", cerr)
+			exitProcess(headless.ExitUsage)
+		}
+	} else if *jsonSchema != "" || *outputFormat != "" {
+		fmt.Fprintln(os.Stderr, "belai: -output-format and -json-schema need a prompt (-prompt, -prompt - or a piped stdin)")
+		exitProcess(headless.ExitUsage)
+	}
+
 	if !*noPrune {
 		go pruneSessions(settings, resumeKey, resumeID)
 	}
@@ -466,17 +503,16 @@ func main() {
 	}
 
 	if *prompt != "" {
-		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, modes.Mode(*modeFlag), settings)
+		code, err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, modes.Mode(*modeFlag), settings, ho)
 		shutdown()
-		if errors.Is(err, errRunCapReached) {
-			fmt.Fprintln(os.Stderr, "belai:", err)
-			exitProcess(exitRunCap)
-		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			exitProcess(1)
+			if code == 0 {
+				code = headless.ExitError
+			}
+			exitProcess(code)
 		}
-		exitProcess(0)
+		exitProcess(code)
 	}
 
 	if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
@@ -497,6 +533,31 @@ func main() {
 	shutdown()
 	fmt.Println("belai", version.Version)
 }
+
+// bareFlag is a string flag that may be written with no value: `-continue` is
+// "1", so it can sit in front of another flag (`-continue -prompt x`), which a
+// plain string flag would swallow as its value. `-continue=false` clears it.
+type bareFlag struct{ p *string }
+
+func (b bareFlag) String() string {
+	if b.p == nil {
+		return ""
+	}
+	return *b.p
+}
+
+func (b bareFlag) Set(v string) error {
+	switch v {
+	case "true":
+		v = "1"
+	case "false":
+		v = ""
+	}
+	*b.p = v
+	return nil
+}
+
+func (b bareFlag) IsBoolFlag() bool { return true }
 
 // hardExitOnSecondSignal waits for the first signal to cancel ctx, then exits
 // immediately on the next one. The graceful path unwinds at a pass boundary,
@@ -578,25 +639,58 @@ var securityFallbackOnce sync.Once
 // decisionNoticeOnce keeps the decision-server notice to one line per process.
 var decisionNoticeOnce sync.Once
 
-func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, forceMode modes.Mode, settings config.Settings) error {
+func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, forceMode modes.Mode, settings config.Settings, ho headlessOptions) (code int, err error) {
+	began := time.Now()
+	em := newEmitter(ho, verbose, os.Stdout)
+	sessionID := session.MustID()
+	var sum *run.UsageSummary
+	resultSent := false
+	// A structured run always ends with a result object, a failure before the
+	// model was reached included: the caller reads one protocol, not stderr.
+	defer func() {
+		if err != nil && ho.Format.Structured() && !resultSent {
+			f := buildFinal(ho, sessionID, planMode, forceMode, agentOutcome{}, err, sum, time.Since(began))
+			_ = em.Result(f)
+			code = headless.ExitCode(f.Subtype)
+		}
+	}()
+
 	resolver, err := newResolver(workdir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
 	if err != nil {
 		var nce *run.NotConfiguredError
-		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
+		if errors.As(err, &nce) && !ho.Format.Structured() && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			fmt.Fprintf(os.Stderr, "belai: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
-			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode, Firewall: forceFirewall})
+			return 0, tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode, Firewall: forceFirewall})
 		}
 		// Without a TTY, fail closed naming every location searched.
-		return err
+		return 0, err
 	}
 	cfg, err = withClassifier(cfg, settings, resolver)
 	if err != nil {
-		return err
+		return 0, err
+	}
+
+	// A resumed session replays its stored conversation and appends to the same
+	// transcript (to a copy in this project, when it came from another). With
+	// -no-transcript the history is read and nothing is written.
+	var resumed *headless.Resumed
+	if ho.ResumeID != "" {
+		store, serr := session.NewStore()
+		if serr != nil {
+			return 0, serr
+		}
+		cur, _ := session.KeyFor(workdir)
+		if resumed, err = headless.LoadResume(store, cur, ho.ResumeKey, ho.ResumeID, !noTranscript); err != nil {
+			return 0, err
+		}
+		if resumed.Writer != nil {
+			sessionID = resumed.ID
+		}
 	}
 
 	// A headless prompt gets its own session id so its provider requests and
@@ -604,10 +698,13 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	// (it resumes, exports and searches, and records every role-manager
 	// decision it made). -no-transcript opts out; the file is private to the
 	// user, pruned by session_retention_days, and never synced.
-	sessionID := session.MustID()
 	ctx = calltrace.WithSession(ctx, sessionID)
 	tlog := turnlog.New(nil)
-	if !noTranscript {
+	switch {
+	case noTranscript:
+	case resumed != nil:
+		tlog = turnlog.New(resumed.Writer)
+	default:
 		var terr error
 		tlog, terr = turnlog.Open(workdir, sessionID, session.Meta{Cwd: workdir, Mode: string(forceMode)})
 		if terr != nil && verbose {
@@ -617,13 +714,16 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	defer tlog.AttachRoleManager()()
 	tlog.SetModel(cfg.Provider, cfg.Model, nil)
 	tlog.User(prompt, nil)
+	em.Init(sessionID, cfg.Provider, cfg.Model)
 	// A headless prompt spends tokens like any other session: record them so
 	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
 	// With -usage-json the same events are summarised to a file on exit, a
-	// failed run included, so a benchmark can price every attempt.
-	var sum *run.UsageSummary
-	if usageJSONPath != "" {
+	// failed run included, so a benchmark can price every attempt. A
+	// structured run reports the same numbers in its result.
+	if usageJSONPath != "" || ho.Format.Structured() {
 		sum = &run.UsageSummary{}
+	}
+	if usageJSONPath != "" {
 		defer func() {
 			if werr := sum.WriteFile(usageJSONPath); werr != nil {
 				fmt.Fprintf(os.Stderr, "belai: write usage summary: %v\n", werr)
@@ -634,20 +734,25 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	// Firewall events print one line each to stderr; stdout stays the reply.
 	defer watchFirewallHeadless(os.Stderr)()
 
-	var res run.Result
+	var out agentOutcome
 	if detectMode || !enableTools {
-		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
+		out.Res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
 		if err == nil {
 			if w := tlog.Writer(); w != nil {
-				w.Assistant(res.Reply, nil, nil)
+				w.Assistant(out.Res.Reply, nil, nil)
 			}
 		}
 	} else {
-		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode, sessionID, tlog)
+		var history []run.Turn
+		if resumed != nil {
+			history = resumed.History
+		}
+		out, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode, sessionID, tlog, ho, em, history)
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
+	res := out.Res
 	// A plan-mode run's deliverable is the plan file; stdout carries the
 	// reply, so the path goes to stderr. A headless run cannot ask, so it
 	// says how to approve, refine or leave the plan, the three choices the
@@ -670,14 +775,11 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 			}
 		}
 	}
-	fmt.Println(res.Reply)
-	if res.StopReason == run.StopRunCap {
-		return errRunCapReached
-	}
-	return nil
+	resultSent = true
+	return reportHeadless(em, buildFinal(ho, sessionID, planMode, forceMode, out, nil, sum, time.Since(began)))
 }
 
-func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string, tlog *turnlog.Log) (run.Result, error) {
+func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string, tlog *turnlog.Log, ho headlessOptions, em *headless.Emitter, history []run.Turn) (agentOutcome, error) {
 	// A headless prompt starts from a branch that is current with origin's
 	// default branch, unless git.sync (or -no-git-sync) says not to.
 	var gs *gitsync.Hygiene
@@ -686,14 +788,14 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	}
 	// -answers: the user's own answers file stands in for the person a
 	// headless run cannot ask, so the run may ask questions.
-	observe := tlog.Observe
+	observe := withEvents(tlog.Observe, em)
 	allowClarify := false
 	if answersPath != "" {
 		script, err := loadAnswerScript(answersPath, os.Stderr)
 		if err != nil {
-			return run.Result{}, err
+			return agentOutcome{}, err
 		}
-		observe = script.observe(tlog.Observe)
+		observe = script.observe(observe)
 		allowClarify = true
 	}
 	// A2A: the run broadcasts its work, hears matching broadcasts, and
@@ -703,17 +805,17 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	defer link.Close()
 	sess, err := newCLISessionLinked(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false, allowClarify, gs, link)
 	if err != nil {
-		return run.Result{}, err
+		return agentOutcome{}, err
 	}
 	defer flushKanban(settings, workdir)
 	// An explicit -mode is the user's choice and outranks the classifier,
 	// exactly as a mode picked in the TUI does.
-	res, err := sess.RunInputObserved(ctx, nil, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode}, observe)
+	out, err := runWithSchema(ctx, sess, history, userPrompt, forceMode, planMode, ho.Schema, observe)
 	tlog.Flush()
 	if err == nil {
-		postEndTests(ctx, cfg, client, pol, workdir, settings, planMode, sess, res, tlog)
+		postEndTests(ctx, cfg, client, pol, workdir, settings, planMode, sess, out.Res, tlog)
 	}
-	return res, err
+	return out, err
 }
 
 // postEndTests runs the post-end test pass for a finished headless run when
@@ -862,20 +964,7 @@ func pruneSessions(settings config.Settings, skipKey session.Key, skipID string)
 // -continue / -c entry point. AllSessions sorts each group's sessions by
 // ModTime desc, so the first entry of the current group is the newest.
 func continueLatest(store *session.Store, cur session.Key) (session.Key, string, error) {
-	groups, err := store.AllSessions(cur)
-	if err != nil {
-		return "", "", err
-	}
-	for _, g := range groups {
-		if g.Key != cur {
-			continue
-		}
-		if len(g.Sessions) == 0 {
-			return "", "", errors.New("no sessions to continue for this project")
-		}
-		return g.Key, g.Sessions[0].ID, nil
-	}
-	return "", "", errors.New("no sessions to continue for this project")
+	return headless.LatestInProject(store, cur)
 }
 
 // usageJSONPath is the -usage-json flag: where a headless -prompt run writes

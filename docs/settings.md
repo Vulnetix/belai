@@ -310,6 +310,14 @@ file: `instructions.enabled`, `instructions.nested`, `instructions.max_files`,
 its range; a project file can only turn a switch off or lower a number. See
 [Instruction files](instruction-files.md).
 
+## Headless output
+
+The `headless` block has no row on a settings screen. It is a block in the settings
+file: `headless.output_format` (`text`, `json` or `stream-json`),
+`headless.max_stdin_bytes` and `headless.event_text_cap`. Only your own layers read
+it; a project file cannot change what a script that runs Belai receives. See
+[Headless structured output](headless.md).
+
 ## Permissions
 
 Rules are grouped **Deny**, **Allow**, **Ask** in that order (the order the list is

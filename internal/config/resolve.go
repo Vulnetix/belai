@@ -194,7 +194,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 func ValidateSettings(s Settings) error {
 	for _, v := range []func(Settings) error{
 		ValidateProviders, ValidateLSP, ValidateTokenBudgets, ValidateRouting, ValidateCodeModel, ValidateJev, ValidateVoice,
-		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
+		ValidateTTS, ValidateKnowledge, ValidateCompaction, ValidateInstructions, ValidateRunCaps, ValidateHeadless, ValidateBashRewrite, ValidateHazard, ValidateVulnetix, ValidateFirewall, ValidateMCP, ValidateHooks,
 		ValidateForges,
 	} {
 		if err := v(s); err != nil {
@@ -389,6 +389,17 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Knowledge.merge(s.Knowledge)
 		e.Origin["knowledge"] = src
+	}
+	if s.Headless != nil && src != SourceProject {
+		// What a script that runs Belai receives, and how much it may feed in,
+		// is the caller's contract: a repository cannot change either.
+		if e.Settings.Headless == nil {
+			e.Settings.Headless = &HeadlessSettings{}
+		}
+		e.Settings.Headless.merge(s.Headless)
+		e.Origin["headless"] = src
+	} else if s.Headless != nil {
+		e.Notes = append(e.Notes, "project headless ignored (it is a user setting)")
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.

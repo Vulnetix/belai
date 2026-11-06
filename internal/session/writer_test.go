@@ -38,3 +38,23 @@ func TestWriterChainsEntries(t *testing.T) {
 		t.Fatal("tool result not capped")
 	}
 }
+
+func TestResumeWriterChainsFromTheLastEntry(t *testing.T) {
+	store := NewStoreAt(t.TempDir())
+	key := Key("proj-aaaaaaaa")
+	w, err := NewWriter(store, key, "s1", Meta{Cwd: "/w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.User("one")
+	before, _ := store.ReadFrom(key, "s1")
+	rw := ResumeWriter(store, key, "s1", before[len(before)-1].ID)
+	rw.User("two")
+	after, err := store.ReadFrom(key, "s1")
+	if err != nil || len(after) != len(before)+1 {
+		t.Fatalf("entries %d -> %d, %v", len(before), len(after), err)
+	}
+	if after[len(after)-1].ParentID != before[len(before)-1].ID {
+		t.Fatal("the resumed entry does not chain from the old tail")
+	}
+}

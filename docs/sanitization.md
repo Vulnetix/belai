@@ -19,6 +19,8 @@ the sanitiser sits in the tool-result pipeline.
 | Delimiter markup in any text | `internal/sanitize` | `Sanitize` | Repairs (removes the tag) |
 | Free text for a model or transcript | `internal/sanitize` | `Text`, `TextN` | Repairs |
 | Dictated speech, before and after the `voice_cleanup` role | `internal/sanitize` | `Text` | Repairs |
+| Headless protocol output: every string of an event or result, a stdin prompt, a schema's descriptions and the structured value | `internal/headless` | `Text`, `Line`, `Ident` (then the vault scrub) | Repairs |
+| Headless schema path, before it is opened | `internal/headless` | `PathText` | Refuses |
 | One line of UI, log or notification text | `internal/sanitize` | `Line`, `Clip` | Repairs |
 | An HTML error body shown on one line (an MCP 403 page) | `internal/sanitize` | `PlainText` | Repairs |
 | Identifier or label | `internal/sanitize` | `Ident` | Repairs |

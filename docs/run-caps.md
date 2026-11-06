@@ -20,7 +20,8 @@ session, day or month, a cap bounds one run.
   counters), `internal/config/runcaps.go` (settings), `internal/agent/runcaps.go`
   (what the agent does with a verdict), `internal/fleet/budget.go` (the worker's
   meter), `internal/tui/runcaps.go` (`/caps` and the footer chip),
-  `cmd/belai/runcaps.go` (flags and the exit code).
+  `cmd/belai/runcaps.go` (flags and the exit code). Exit code 3 sits among the
+  other codes of a scripted run in [Headless structured output](headless.md#exit-codes).
 
 Every rule (**R**) and edge case (**E**) below is pinned by a test named after
 it, `TestRunCapsRule7_…` or `TestRunCapsEdge4_…`, and `TestRunCapsDocParity`

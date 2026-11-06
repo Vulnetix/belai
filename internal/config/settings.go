@@ -134,6 +134,11 @@ type Settings struct {
 	// preference: the project layer is dropped, so a repository cannot make a
 	// host index or return more.
 	Knowledge *KnowledgeSettings `json:"knowledge,omitempty"`
+	// Headless is the contract of a noninteractive -prompt run with its caller:
+	// the default -output-format and the caps on a stdin prompt and on one
+	// event's text (docs/headless.md). A per-user block: the project layer is
+	// dropped, so a repository cannot change what a script receives.
+	Headless *HeadlessSettings `json:"headless,omitempty"`
 	// A2A configures agent-to-agent messaging between sessions (docs/a2a.md).
 	// A project layer may turn it off and narrow the filter, never the
 	// reverse.

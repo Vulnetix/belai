@@ -35,6 +35,13 @@ func NewWriter(store *Store, key Key, id string, meta Meta) (*Writer, error) {
 	return w, w.Err()
 }
 
+// ResumeWriter continues an existing transcript: entries chain from last, the id
+// of the file's final entry, so the file keeps one root. The session must
+// already exist; nothing is written until the first entry.
+func ResumeWriter(store *Store, key Key, id, last string) *Writer {
+	return &Writer{store: store, key: key, id: id, last: last}
+}
+
 // ID is the session id.
 func (w *Writer) ID() string { return w.id }
 
