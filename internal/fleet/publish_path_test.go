@@ -132,7 +132,7 @@ func TestCardPRsListsTheItemsOpenPullRequests(t *testing.T) {
 	testEnv(t)
 	ws, _ := githubWorktree(t)
 	ghShim(t, `"pr list")
-    echo '[{"number":11,"title":"first","state":"OPEN","url":"https://github.com/acme/app/pull/11","isDraft":true,"headRefName":"` + ws.Branch + `"},{"number":12,"title":"other","state":"OPEN","url":"https://github.com/acme/app/pull/12","isDraft":false,"headRefName":"someones-branch"}]' ;;`)
+    echo '[{"number":11,"title":"first","state":"OPEN","url":"https://github.com/acme/app/pull/11","isDraft":true,"headRefName":"`+ws.Branch+`"},{"number":12,"title":"other","state":"OPEN","url":"https://github.com/acme/app/pull/12","isDraft":false,"headRefName":"someones-branch"}]' ;;`)
 	prs, err := ws.CardPRs(context.Background())
 	if err != nil {
 		t.Fatalf("card PRs: %v", err)
@@ -171,7 +171,7 @@ func TestCloseDuplicatePRClosesTheNamedOneAndKeepsTheOther(t *testing.T) {
 		t.Fatalf("commit on the second branch: %d %v", n, err)
 	}
 	ghShim(t, `"pr list")
-    echo '[{"number":21,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/21","isDraft":true,"headRefName":"` + branch + `"},{"number":22,"title":"b","state":"OPEN","url":"https://github.com/acme/app/pull/22","isDraft":true,"headRefName":"` + other.Branch + `"}]' ;;
+    echo '[{"number":21,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/21","isDraft":true,"headRefName":"`+branch+`"},{"number":22,"title":"b","state":"OPEN","url":"https://github.com/acme/app/pull/22","isDraft":true,"headRefName":"`+other.Branch+`"}]' ;;
   "pr close")
     exit 0 ;;
   "pr comment")
@@ -195,7 +195,7 @@ func TestCloseDuplicatePRRefusesOtherNumbers(t *testing.T) {
 	testEnv(t)
 	ws, _ := githubWorktree(t)
 	ghShim(t, `"pr list")
-    echo '[{"number":31,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/31","isDraft":true,"headRefName":"` + ws.Branch + `"}]' ;;`)
+    echo '[{"number":31,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/31","isDraft":true,"headRefName":"`+ws.Branch+`"}]' ;;`)
 	if _, _, err := ws.CloseDuplicatePR(context.Background(), 31, 31, "r"); err == nil || !strings.Contains(err.Error(), "cannot be a duplicate of itself") {
 		t.Fatalf("self duplicate: %v", err)
 	}
@@ -369,7 +369,7 @@ func TestItemPublisherCloseDuplicatePRCoversTheWorkerWrapper(t *testing.T) {
 		t.Fatalf("commit: %d %v", n, err)
 	}
 	ghShim(t, `"pr list")
-    echo '[{"number":51,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/51","isDraft":true,"headRefName":"` + branch + `"},{"number":52,"title":"b","state":"OPEN","url":"https://github.com/acme/app/pull/52","isDraft":true,"headRefName":"` + other.Branch + `"}]' ;;
+    echo '[{"number":51,"title":"a","state":"OPEN","url":"https://github.com/acme/app/pull/51","isDraft":true,"headRefName":"`+branch+`"},{"number":52,"title":"b","state":"OPEN","url":"https://github.com/acme/app/pull/52","isDraft":true,"headRefName":"`+other.Branch+`"}]' ;;
   "pr close")
     exit 0 ;;
   "pr comment")
