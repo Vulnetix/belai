@@ -1,0 +1,14 @@
+# Gremlins mutation testing config (github.com/go-gremlins/gremlins).
+# Read by gremlins v0.6.0 from the module root; also serves as the marker
+# internal/quality's tooling detection looks for (quality.go mutationMarkers).
+# Baseline at 5cfad8f6 on ./internal/quality: efficacy 72.41%, mutant coverage
+# 96.67%. Thresholds sit below the baseline so a test-strength regression fails
+# CI, while timing variance (timed-out mutants flipping to lived) does not.
+unleash:
+  # v0.6.0 derives the per-mutant test timeout from the baseline run and
+  # multiplies it by this coefficient; the default of 3 is too short for cold
+  # per-mutant compiles and every mutant timed out (efficacy 0.00%) without it.
+  timeout-coefficient: 10
+  threshold:
+    efficacy: 70
+    mutant-coverage: 90

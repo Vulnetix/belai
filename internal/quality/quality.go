@@ -183,6 +183,7 @@ func NoTestFiles(output string) []string {
 var mutationMarkers = []string{
 	"stryker.conf.js", "stryker.conf.json", "stryker.conf.mjs", "stryker.config.json", "stryker.config.mjs",
 	"mutants.toml", ".cargo/mutants.toml", "mutmut_config.py", ".mutmut-cache", "cosmic-ray.toml", "pitest.xml",
+	".gremlins.yaml",
 }
 
 // DetectTooling reads marker-file presence for the suites at root.
