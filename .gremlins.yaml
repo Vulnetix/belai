@@ -6,5 +6,5 @@
 # CI, while timing variance (timed-out mutants flipping to lived) does not.
 unleash:
   threshold:
-    efficacy: 65
+    efficacy: 99
     mutant-coverage: 90
