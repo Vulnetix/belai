@@ -2,6 +2,7 @@ package kbgate
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -27,7 +28,14 @@ type jobsRater struct{ jobs *jev.Jobs }
 func (r jobsRater) Limits() (int, int) { return r.jobs.Client.TopicLimits() }
 func (r jobsRater) Local() bool        { return r.jobs.Client.Local() }
 func (r jobsRater) Rate(ctx context.Context, chunks []string, topics []jev.TopicItem) (jev.ScoreResult, error) {
-	return r.jobs.RateTopics(ctx, chunks, topics)
+	res, err := r.jobs.RateTopics(ctx, chunks, topics)
+	// A batch failure with no answer leaves every item unknown and the error
+	// nil; the tagger must not mistake that for a scored pass (its budget and
+	// failure count follow this return).
+	if err == nil && res.FailClass != "" && len(res.Scores) == 0 {
+		return res, errors.New("decision backend scored nothing")
+	}
+	return res, err
 }
 
 // Tuning of the topic call. A document is asked about at most once per
