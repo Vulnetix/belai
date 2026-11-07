@@ -73,9 +73,27 @@ func WithoutGitEnv(env []string) []string {
 // exports them, and a git subprocess that inherits one operates on that
 // foreign repository instead of the test's own fixture directory.
 func UnsetGitEnv() {
-	for _, e := range WithoutGitEnv(os.Environ()) {
-		if key, _, ok := strings.Cut(e, "="); ok {
+	for _, e := range os.Environ() {
+		if key, _, ok := strings.Cut(e, "="); ok && gitEnvName(key) {
 			os.Unsetenv(key)
 		}
 	}
+}
+
+// gitEnvName reports whether an environment variable name is one of the
+// locator variables that pin git to a foreign repository.
+func gitEnvName(key string) bool {
+	switch key {
+	case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_KEY_2",
+		"GIT_CONFIG_KEY_3", "GIT_CONFIG_KEY_4", "GIT_CONFIG_KEY_5", "GIT_CONFIG_KEY_6",
+		"GIT_CONFIG_KEY_7", "GIT_CONFIG_KEY_8", "GIT_CONFIG_KEY_9",
+		"GIT_CONFIG_VALUE_0", "GIT_CONFIG_VALUE_1", "GIT_CONFIG_VALUE_2",
+		"GIT_CONFIG_VALUE_3", "GIT_CONFIG_VALUE_4", "GIT_CONFIG_VALUE_5",
+		"GIT_CONFIG_VALUE_6", "GIT_CONFIG_VALUE_7", "GIT_CONFIG_VALUE_8",
+		"GIT_CONFIG_VALUE_9":
+		return true
+	}
+	return false
 }

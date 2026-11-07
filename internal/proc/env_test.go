@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -72,4 +73,42 @@ func TestScrubEnvOfKeepsTheCommitterIdentity(t *testing.T) {
 			t.Fatalf("%q was scrubbed: %q", want, got)
 		}
 	}
+}
+
+// UnsetGitEnv removes only the git locator variables: a PATH that happens to
+// contain a GIT_* name must survive, because the test process still needs it
+// to find git. (The old implementation had the condition inverted and emptied
+// the whole environment.)
+func TestUnsetGitEnvKeepsTheRestOfTheEnvironment(t *testing.T) {
+	t.Setenv("GIT_DIR", "/foreign/repo")
+	t.Setenv("GIT_WORK_TREE", "/foreign/worktree")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "gc.auto")
+	t.Setenv("GIT_CONFIG_VALUE_0", "0")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/test")
+	t.Setenv("GIT_COMMITTER_NAME", "Test")
+
+	UnsetGitEnv()
+
+	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"} {
+		if v, ok := lookEnv(key); ok {
+			t.Fatalf("%s survived UnsetGitEnv: %q", key, v)
+		}
+	}
+	for key, want := range map[string]string{"PATH": "/usr/bin:/bin", "HOME": "/home/test", "GIT_COMMITTER_NAME": "Test"} {
+		if v, ok := lookEnv(key); !ok || v != want {
+			t.Fatalf("%s = %q %v, want %q", key, v, ok, want)
+		}
+	}
+}
+
+// lookEnv is os.LookupEnv: a variable set to the empty string is still set.
+func lookEnv(key string) (string, bool) {
+	for _, e := range os.Environ() {
+		if k, v, ok := strings.Cut(e, "="); ok && k == key {
+			return v, true
+		}
+	}
+	return "", false
 }
