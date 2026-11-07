@@ -21,6 +21,9 @@ func enforceNoMatchPostureForTest() posture.Policy {
 // ---------------------------------------------------------------------------
 
 func TestSettingsReadOnlyRowRendersOffByDefault(t *testing.T) {
+	// An isolated home keeps a read_only=true another test persisted globally
+	// out of this default.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -95,6 +98,9 @@ func TestSettingsReadOnlySpaceTogglesAndPersists(t *testing.T) {
 }
 
 func TestSettingsReadOnlyGlobalScope(t *testing.T) {
+	// A home of its own keeps this test's global read_only=true write from
+	// leaking into another test's defaults.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -148,6 +154,9 @@ func TestNewInitialisesPlanModeFromRestoredMode(t *testing.T) {
 }
 
 func TestModeChipDrivesAgentPlanMode(t *testing.T) {
+	// An isolated home keeps a mode another test cycled or persisted out of
+	// this New().
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 

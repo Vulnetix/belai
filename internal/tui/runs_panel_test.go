@@ -314,6 +314,9 @@ func TestProcessesTabStopKey(t *testing.T) {
 
 func TestProcessesTabRestartKey(t *testing.T) {
 	dir := t.TempDir()
+	// An isolated home keeps another test's auto-started process or persisted
+	// mode out of this New().
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: dir})
 	_ = a.handleProcess("!!sleep 30")
 	time.Sleep(50 * time.Millisecond)

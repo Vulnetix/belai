@@ -181,6 +181,10 @@ func TestAutoCommitPartialGoalMakesNoCommit(t *testing.T) {
 }
 
 func TestLegacyAutoCommitPerTaskMeansAuto(t *testing.T) {
+	// Pin outside the sandbox attribution file: attribution.Message appends
+	// trailers when the machine running the tests carries one, and these
+	// tests script the exact git argv.
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	f := quietRepo(t)
 	a := commitTestApp(t, "", f)
 	on := true
@@ -325,6 +329,7 @@ func TestAutoCommitUnreadableStartSnapshotRefuses(t *testing.T) {
 }
 
 func TestPreExistingAndUnrelatedPathsAreLeftAlone(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	f := quietRepo(t)
 	// Before the turn: notes.txt was already modified. After: a.go is new,
 	// notes.txt still modified, extra.go appeared outside the tools.
@@ -352,6 +357,7 @@ func TestPreExistingAndUnrelatedPathsAreLeftAlone(t *testing.T) {
 }
 
 func TestCredentialAndStatePathsAreWithheld(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	f := quietRepo(t)
 	f.on(cmdStatus, "", "?? a.go\x00?? .env\x00?? config/id_rsa\x00?? .vulnetix/belai/credentials.json\x00?? notes.log\x00")
 	a := commitTestApp(t, "auto", f)
@@ -370,6 +376,7 @@ func TestCredentialAndStatePathsAreWithheld(t *testing.T) {
 }
 
 func TestAskModeAsksThenCommitsOnYes(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	f := quietRepo(t)
 	a := commitTestApp(t, "ask", f)
 	startTurn(t, a, "a.go")
@@ -530,6 +537,7 @@ func TestCommitCommandInAskModeAsksFirst(t *testing.T) {
 }
 
 func TestCommitDraftFallsBackOnBadOutput(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	cases := []struct {
 		name string
 		raw  string
@@ -613,6 +621,7 @@ func TestCommitOutcomesAreAClosedSet(t *testing.T) {
 }
 
 func TestCommitRecordIsWrittenWithoutTheMessage(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	f := quietRepo(t)
 	a := commitTestApp(t, "auto", f)
 	a.workdir = t.TempDir()
@@ -747,6 +756,7 @@ func TestRealRepoFailingHookLeavesTheTreeUntouched(t *testing.T) {
 }
 
 func TestRealRepoCommitsOnlyTaskPaths(t *testing.T) {
+	t.Setenv(attribution.FileEnv, os.DevNull)
 	dir := realRepo(t)
 	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
