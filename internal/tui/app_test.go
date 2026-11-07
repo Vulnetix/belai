@@ -252,6 +252,9 @@ func TestClassifyModeChangeIsAnnounced(t *testing.T) {
 }
 
 func TestClassifyModeGoalOverLimitDefaultsToAgent(t *testing.T) {
+	// An isolated home keeps the mode another test may have persisted out of
+	// this one.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := NewApp(t.TempDir(), "")
 	a.SetClassifier(&fakeClassifier{raw: "GOAL"})
 
@@ -270,6 +273,7 @@ func TestClassifyModeGoalOverLimitDefaultsToAgent(t *testing.T) {
 }
 
 func TestClassifyModeNamedAgent(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := NewApp(t.TempDir(), "")
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
 
@@ -517,6 +521,9 @@ func (f *fakeCredentialSource) Lookup(provider, field string) (value, origin str
 }
 
 func TestAssistantTurnsAccumulate(t *testing.T) {
+	// An isolated home keeps a summary another test may have persisted out of
+	// buildTurns' turn count.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	srv := newAgentSSEServer(t, "pong")
 	defer srv.Close()
 

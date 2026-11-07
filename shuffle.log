@@ -1,0 +1,1660 @@
+-test.shuffle 1794028892353794166
+=== RUN   TestReviewRefusals
+--- PASS: TestReviewRefusals (0.08s)
+=== RUN   TestFirewallCardCoalescesAndQuotes
+--- PASS: TestFirewallCardCoalescesAndQuotes (0.00s)
+=== RUN   TestAgentCommandWithSubcommandDoesNotOpenPicker
+--- PASS: TestAgentCommandWithSubcommandDoesNotOpenPicker (0.00s)
+=== RUN   TestPersistNothingPastStillRunningTool
+--- PASS: TestPersistNothingPastStillRunningTool (0.00s)
+=== RUN   TestEverySettingsRowHasANamedGroup
+--- PASS: TestEverySettingsRowHasANamedGroup (0.01s)
+=== RUN   TestRoutedModelCount
+--- PASS: TestRoutedModelCount (0.00s)
+=== RUN   TestReviewPromptPersistsOnceInOrder
+--- PASS: TestReviewPromptPersistsOnceInOrder (0.00s)
+=== RUN   TestHelpCommandOpensTheScreenAndAddsNoMessage
+--- PASS: TestHelpCommandOpensTheScreenAndAddsNoMessage (0.00s)
+=== RUN   TestKnowledgeProjectTabListsDocumentsWithTheirTags
+--- PASS: TestKnowledgeProjectTabListsDocumentsWithTheirTags (0.01s)
+=== RUN   TestFooterRouterSegmentFollowsRoutingKind
+--- PASS: TestFooterRouterSegmentFollowsRoutingKind (0.03s)
+=== RUN   TestAutocompleteTypingDropsHighlight
+--- PASS: TestAutocompleteTypingDropsHighlight (0.03s)
+=== RUN   TestCustomCommandWaitsForTheRunningTurn
+--- PASS: TestCustomCommandWaitsForTheRunningTurn (0.10s)
+=== RUN   TestIdlePaneSettingRowCyclesAndUnsets
+--- PASS: TestIdlePaneSettingRowCyclesAndUnsets (0.00s)
+=== RUN   TestPersistTailIdempotent
+--- PASS: TestPersistTailIdempotent (0.00s)
+=== RUN   TestControlRoomEditsTheScope
+--- PASS: TestControlRoomEditsTheScope (0.05s)
+=== RUN   TestKanbanRoutingBadges
+--- PASS: TestKanbanRoutingBadges (0.00s)
+=== RUN   TestModelEffortsUsesCatalog
+--- PASS: TestModelEffortsUsesCatalog (0.00s)
+=== RUN   TestContentPosFollowsScrollOffset
+--- PASS: TestContentPosFollowsScrollOffset (0.00s)
+=== RUN   TestHistoryCycleBackspaceLeavesCycleAndEdits
+--- PASS: TestHistoryCycleBackspaceLeavesCycleAndEdits (0.00s)
+=== RUN   TestTTSCardClicks
+--- PASS: TestTTSCardClicks (0.04s)
+=== RUN   TestAgentTurnCompleted
+--- PASS: TestAgentTurnCompleted (0.00s)
+=== RUN   TestRecommendedRowIsCaseInsensitive
+--- PASS: TestRecommendedRowIsCaseInsensitive (0.00s)
+=== RUN   TestEditorUnsetFallsBackToInline
+--- PASS: TestEditorUnsetFallsBackToInline (0.01s)
+=== RUN   TestUnknownCommandIsStillUnknown
+--- PASS: TestUnknownCommandIsStillUnknown (0.10s)
+=== RUN   TestTabSwitchesRunsTabs
+--- PASS: TestTabSwitchesRunsTabs (0.00s)
+=== RUN   TestReviewCloseCountsIssuesOnly
+--- PASS: TestReviewCloseCountsIssuesOnly (0.00s)
+=== RUN   TestAgentViewModeDisabledWhenDerived
+--- PASS: TestAgentViewModeDisabledWhenDerived (0.06s)
+=== RUN   TestKanbanTabQuickActions
+--- PASS: TestKanbanTabQuickActions (0.07s)
+=== RUN   TestReviewCardsPerScanner
+--- PASS: TestReviewCardsPerScanner (0.00s)
+=== RUN   TestAutoCommitUnreadableStartSnapshotRefuses
+--- PASS: TestAutoCommitUnreadableStartSnapshotRefuses (0.06s)
+=== RUN   TestHelpScreenScrollsAndShowsPosition
+--- PASS: TestHelpScreenScrollsAndShowsPosition (0.01s)
+=== RUN   TestChromeHeightMatchesRenderedView
+--- PASS: TestChromeHeightMatchesRenderedView (0.01s)
+=== RUN   TestRehydrateClampsAHostileCompactionState
+--- PASS: TestRehydrateClampsAHostileCompactionState (0.00s)
+=== RUN   TestManualCompactClosesTheBreakerInTheFork
+--- PASS: TestManualCompactClosesTheBreakerInTheFork (0.00s)
+=== RUN   TestModeCycleKeyFromAnyView
+--- PASS: TestModeCycleKeyFromAnyView (0.01s)
+=== RUN   TestCtrlCOnAssistantCopiesReplyNotPrompt
+]52;c;dGhlIGZ1bGwgcmVwbHk=--- PASS: TestCtrlCOnAssistantCopiesReplyNotPrompt (0.00s)
+=== RUN   TestHandleDepCheckQuietOutcomes
+--- PASS: TestHandleDepCheckQuietOutcomes (0.01s)
+=== RUN   TestModelKeyTogglesAgentGuardrails
+--- PASS: TestModelKeyTogglesAgentGuardrails (0.00s)
+=== RUN   TestLocalDecisionSelectionPlansTheLocalLadder
+--- PASS: TestLocalDecisionSelectionPlansTheLocalLadder (0.00s)
+=== RUN   TestModelRowsReflectSettings
+--- PASS: TestModelRowsReflectSettings (0.01s)
+=== RUN   TestBeginCheckpointTurnInvalidatesAnAgentBuiltWithoutTheTracker
+--- PASS: TestBeginCheckpointTurnInvalidatesAnAgentBuiltWithoutTheTracker (0.01s)
+=== RUN   TestGettingStartedEscSkipsAndIsRemembered
+--- PASS: TestGettingStartedEscSkipsAndIsRemembered (0.01s)
+=== RUN   TestWakeWordIsStrippedBeforeAnythingElse
+--- PASS: TestWakeWordIsStrippedBeforeAnythingElse (0.00s)
+=== RUN   TestSlashAgentEngagesProfileFromPlanMode
+--- PASS: TestSlashAgentEngagesProfileFromPlanMode (0.12s)
+=== RUN   TestEnterDuringPreSendDoesNotSendOrSteer
+--- PASS: TestEnterDuringPreSendDoesNotSendOrSteer (0.00s)
+=== RUN   TestSettingsReadOnlyRowRendersOffByDefault
+--- PASS: TestSettingsReadOnlyRowRendersOffByDefault (0.00s)
+=== RUN   TestTTSOffOrNotAgreedSendsNothing
+--- PASS: TestTTSOffOrNotAgreedSendsNothing (0.00s)
+=== RUN   TestSettingsSliderArrowsStillNudge
+--- PASS: TestSettingsSliderArrowsStillNudge (0.01s)
+=== RUN   TestPersonaColoursFollowAgentMode
+--- PASS: TestPersonaColoursFollowAgentMode (0.00s)
+=== RUN   TestGlBodyUsesRailOnlyWhenWide
+--- PASS: TestGlBodyUsesRailOnlyWhenWide (0.00s)
+=== RUN   TestOfferCompactionSkippedBelowThreshold
+--- PASS: TestOfferCompactionSkippedBelowThreshold (0.00s)
+=== RUN   TestDirAttachmentMeta
+--- PASS: TestDirAttachmentMeta (0.00s)
+=== RUN   TestToolCallDeltaDoesNotLeakIntoPreviousToolRow
+--- PASS: TestToolCallDeltaDoesNotLeakIntoPreviousToolRow (0.00s)
+=== RUN   TestHistoryResultsMatchOnName
+--- PASS: TestHistoryResultsMatchOnName (0.01s)
+=== RUN   TestKittyEnabled
+=== RUN   TestKittyEnabled/default_on
+=== RUN   TestKittyEnabled/explicit_setting_wins
+=== RUN   TestKittyEnabled/BELAI_NO_KITTY=1_overrides_an_explicit_true
+=== RUN   TestKittyEnabled/only_the_exact_value_1_disables_it
+--- PASS: TestKittyEnabled (0.00s)
+    --- PASS: TestKittyEnabled/default_on (0.00s)
+    --- PASS: TestKittyEnabled/explicit_setting_wins (0.00s)
+    --- PASS: TestKittyEnabled/BELAI_NO_KITTY=1_overrides_an_explicit_true (0.00s)
+    --- PASS: TestKittyEnabled/only_the_exact_value_1_disables_it (0.00s)
+=== RUN   TestFlushTestPassGoalLevelRunsAndReportsAPass
+--- PASS: TestFlushTestPassGoalLevelRunsAndReportsAPass (0.06s)
+=== RUN   TestReviewCardWithheldAndAgentLines
+--- PASS: TestReviewCardWithheldAndAgentLines (0.00s)
+=== RUN   TestOnFailOffOnlyReports
+--- PASS: TestOnFailOffOnlyReports (0.06s)
+=== RUN   TestEmptyComposerNeverArmsThePendingSubmit
+--- PASS: TestEmptyComposerNeverArmsThePendingSubmit (0.00s)
+=== RUN   TestDroppedImageFileAttachesThroughTheNormalPath
+--- PASS: TestDroppedImageFileAttachesThroughTheNormalPath (0.00s)
+=== RUN   TestAutoCommitOffMakesNoCommit
+--- PASS: TestAutoCommitOffMakesNoCommit (0.04s)
+=== RUN   TestVulnHitRefusesAForgedCard
+--- PASS: TestVulnHitRefusesAForgedCard (0.00s)
+=== RUN   TestNoImageOnClipboardFallsBackToTextPaste
+--- PASS: TestNoImageOnClipboardFallsBackToTextPaste (0.00s)
+=== RUN   TestRelayUnusableDraftFailsClosed
+--- PASS: TestRelayUnusableDraftFailsClosed (0.01s)
+=== RUN   TestCleanupFailureMidStreamPutsTheRawWordsBack
+--- PASS: TestCleanupFailureMidStreamPutsTheRawWordsBack (0.14s)
+=== RUN   TestVoiceArtStatesAreDistinctWithoutColour
+--- PASS: TestVoiceArtStatesAreDistinctWithoutColour (0.00s)
+=== RUN   TestCacheTTLAndKeepaliveWriteTheUserFile
+--- PASS: TestCacheTTLAndKeepaliveWriteTheUserFile (0.02s)
+=== RUN   TestStreamDoneUsageClearsStale
+--- PASS: TestStreamDoneUsageClearsStale (0.00s)
+=== RUN   TestRecordedRowsRoundTripThroughResume
+--- PASS: TestRecordedRowsRoundTripThroughResume (0.00s)
+=== RUN   TestInitRefusesWhenAnInstructionFileExists
+--- PASS: TestInitRefusesWhenAnInstructionFileExists (0.00s)
+=== RUN   TestFirewallPermissionSettingsRows
+--- PASS: TestFirewallPermissionSettingsRows (0.00s)
+=== RUN   TestRemotePromptForAnotherSessionIsRefused
+--- PASS: TestRemotePromptForAnotherSessionIsRefused (0.01s)
+=== RUN   TestForgeCreatePRPushesFirstWithoutUpstream
+--- PASS: TestForgeCreatePRPushesFirstWithoutUpstream (0.00s)
+=== RUN   TestKnowledgeSearchFindsDocumentsByLabel
+--- PASS: TestKnowledgeSearchFindsDocumentsByLabel (0.02s)
+=== RUN   TestEnterInAgentModeWithoutAgentOpensPicker
+--- PASS: TestEnterInAgentModeWithoutAgentOpensPicker (0.00s)
+=== RUN   TestCredentialClearRefreshesProvider
+--- PASS: TestCredentialClearRefreshesProvider (0.00s)
+=== RUN   TestVoiceFrameWavesWhenHeardAndTurnsPurpleWhenWorking
+--- PASS: TestVoiceFrameWavesWhenHeardAndTurnsPurpleWhenWorking (0.00s)
+=== RUN   TestProviderPickerEscKeepsCommittedProvider
+--- PASS: TestProviderPickerEscKeepsCommittedProvider (0.00s)
+=== RUN   TestRetryLineShowsLayerBudget
+--- PASS: TestRetryLineShowsLayerBudget (0.00s)
+=== RUN   TestBudgetEdge26_IntelOffRemovesTheSlotTheTabAndTheKey
+--- PASS: TestBudgetEdge26_IntelOffRemovesTheSlotTheTabAndTheKey (0.07s)
+=== RUN   TestModelKeyUnsetAgentRows
+--- PASS: TestModelKeyUnsetAgentRows (0.00s)
+=== RUN   TestAFlatProfileWearsTheDefinitionOfTheSameName
+--- PASS: TestAFlatProfileWearsTheDefinitionOfTheSameName (0.00s)
+=== RUN   TestModelRowsPhasesNoClassifier
+--- PASS: TestModelRowsPhasesNoClassifier (0.00s)
+=== RUN   TestTev1OfferedWhenItsProviderIsConfigured
+--- PASS: TestTev1OfferedWhenItsProviderIsConfigured (0.00s)
+=== RUN   TestUnknownLocalModelFailsBeforeTesting
+--- PASS: TestUnknownLocalModelFailsBeforeTesting (0.00s)
+=== RUN   TestPaneOpensTheKanbanTabOnItsSelection
+--- PASS: TestPaneOpensTheKanbanTabOnItsSelection (0.03s)
+=== RUN   TestHistoryCycleEnterAccepts
+--- PASS: TestHistoryCycleEnterAccepts (0.00s)
+=== RUN   TestBudgetEdge29_StoreOffWritesNothing
+--- PASS: TestBudgetEdge29_StoreOffWritesNothing (0.00s)
+=== RUN   TestNewAliasMatchesClear
+--- PASS: TestNewAliasMatchesClear (0.00s)
+=== RUN   TestVulnRowCapsPerTurn
+--- PASS: TestVulnRowCapsPerTurn (0.00s)
+=== RUN   TestFileAttachmentMeta
+--- PASS: TestFileAttachmentMeta (0.00s)
+=== RUN   TestHelpTextListsGlobalAndChatKeys
+--- PASS: TestHelpTextListsGlobalAndChatKeys (0.00s)
+=== RUN   TestNotifyWanted
+--- PASS: TestNotifyWanted (0.00s)
+=== RUN   TestFirewallScreenAddsAndActivatesCustom
+--- PASS: TestFirewallScreenAddsAndActivatesCustom (0.01s)
+=== RUN   TestChangedOnlyOnTheRailMarksGroupsAndDefaultsAreQuiet
+--- PASS: TestChangedOnlyOnTheRailMarksGroupsAndDefaultsAreQuiet (0.00s)
+=== RUN   TestIdlePaneNeverClosesAPanelTheUserOpened
+--- PASS: TestIdlePaneNeverClosesAPanelTheUserOpened (0.00s)
+=== RUN   TestMeterBar
+--- PASS: TestMeterBar (0.00s)
+=== RUN   TestFilePickerAgentSchemeIsNotAgentPicker
+--- PASS: TestFilePickerAgentSchemeIsNotAgentPicker (0.00s)
+=== RUN   TestReviewTriageWaitsWhileScannerAgentWithinTimeout
+--- PASS: TestReviewTriageWaitsWhileScannerAgentWithinTimeout (0.00s)
+=== RUN   TestBudgetRule22_SettingsScreenTogglesBothKeys
+--- PASS: TestBudgetRule22_SettingsScreenTogglesBothKeys (0.05s)
+=== RUN   TestModelScreenFastTierRows
+--- PASS: TestModelScreenFastTierRows (0.00s)
+=== RUN   TestRunsPanelTabCyclesThroughProcesses
+--- PASS: TestRunsPanelTabCyclesThroughProcesses (0.05s)
+=== RUN   TestChatViewEditorOnOwnLine
+--- PASS: TestChatViewEditorOnOwnLine (0.00s)
+=== RUN   TestHelpScreenFollowsTheMacHintSetting
+--- PASS: TestHelpScreenFollowsTheMacHintSetting (0.01s)
+=== RUN   TestWorktreeUpdateIsOffByDefaultAndConfirms
+--- PASS: TestWorktreeUpdateIsOffByDefaultAndConfirms (0.09s)
+=== RUN   TestSandboxReportNamesTheProxy
+--- PASS: TestSandboxReportNamesTheProxy (0.01s)
+=== RUN   TestVoiceKeyDoesNothingWhenNotReady
+--- PASS: TestVoiceKeyDoesNothingWhenNotReady (0.02s)
+=== RUN   TestHelpScreenJumpsBetweenSections
+--- PASS: TestHelpScreenJumpsBetweenSections (0.00s)
+=== RUN   TestRefusedImageIsRejectedNotSent
+--- PASS: TestRefusedImageIsRejectedNotSent (0.00s)
+=== RUN   TestSliderRefusesAStepThatBreaksARule
+--- PASS: TestSliderRefusesAStepThatBreaksARule (0.01s)
+=== RUN   TestResumeCompactEnterCallsCompact
+--- PASS: TestResumeCompactEnterCallsCompact (0.00s)
+=== RUN   TestStopInterruptsARunningTurnOnly
+--- PASS: TestStopInterruptsARunningTurnOnly (0.00s)
+=== RUN   TestRecomputeHoverNone
+--- PASS: TestRecomputeHoverNone (0.00s)
+=== RUN   TestSessionTogglesPersistToProjectPrefsAndReopen
+--- PASS: TestSessionTogglesPersistToProjectPrefsAndReopen (0.01s)
+=== RUN   TestQuitRunsTheSessionEndPassOnlyWhenDueAndThenExits
+--- PASS: TestQuitRunsTheSessionEndPassOnlyWhenDueAndThenExits (0.09s)
+=== RUN   TestReviewNothingToTriage
+--- PASS: TestReviewNothingToTriage (0.00s)
+=== RUN   TestShellInputRunsOnTheFirstEnterInAgentMode
+--- PASS: TestShellInputRunsOnTheFirstEnterInAgentMode (0.00s)
+=== RUN   TestHistoryCycleSeedsFromComposer
+--- PASS: TestHistoryCycleSeedsFromComposer (0.00s)
+=== RUN   TestEnterAlsoCancelsVoice
+--- PASS: TestEnterAlsoCancelsVoice (0.00s)
+=== RUN   TestCompleteCommandFuzzy
+--- PASS: TestCompleteCommandFuzzy (0.00s)
+=== RUN   TestIntentLabelDoesNotHideEngagedAgent
+--- PASS: TestIntentLabelDoesNotHideEngagedAgent (0.00s)
+=== RUN   TestRecomputeHoverCollapsedPanel
+--- PASS: TestRecomputeHoverCollapsedPanel (0.00s)
+=== RUN   TestDictationRecordIsBounded
+--- PASS: TestDictationRecordIsBounded (0.00s)
+=== RUN   TestHistoryCycleNoResultsKeepsTypedText
+--- PASS: TestHistoryCycleNoResultsKeepsTypedText (0.00s)
+=== RUN   TestGlFilterKeyEditsAndEscClears
+--- PASS: TestGlFilterKeyEditsAndEscClears (0.00s)
+=== RUN   TestLosingTheComposerMidStreamCutsTheTidyUpButKeepsTheWords
+--- PASS: TestLosingTheComposerMidStreamCutsTheTidyUpButKeepsTheWords (0.00s)
+=== RUN   TestBtwAnswerForAnotherSessionIsDropped
+--- PASS: TestBtwAnswerForAnotherSessionIsDropped (0.00s)
+=== RUN   TestRehydrateWebRecords
+--- PASS: TestRehydrateWebRecords (0.00s)
+=== RUN   TestTTSAfterSettingTurnOffStops
+--- PASS: TestTTSAfterSettingTurnOffStops (0.00s)
+=== RUN   TestAgentCreateInvalidNameShortCircuits
+--- PASS: TestAgentCreateInvalidNameShortCircuits (0.04s)
+=== RUN   TestPastedImageBecomesAnAttachment
+--- PASS: TestPastedImageBecomesAnAttachment (0.01s)
+=== RUN   TestContentChangeClearsSelection
+--- PASS: TestContentChangeClearsSelection (0.00s)
+=== RUN   TestEachTurnFixLoopIsBoundedAndNotRetriggered
+--- PASS: TestEachTurnFixLoopIsBoundedAndNotRetriggered (0.05s)
+=== RUN   TestHandleAgentReadyDropsCancelledBuild
+--- PASS: TestHandleAgentReadyDropsCancelledBuild (0.00s)
+=== RUN   TestIdlePaneRunsTabOpensAndClosesWithTheComposer
+--- PASS: TestIdlePaneRunsTabOpensAndClosesWithTheComposer (0.00s)
+=== RUN   TestExportCommandWritesMarkdown
+--- PASS: TestExportCommandWritesMarkdown (0.00s)
+=== RUN   TestTrustedListsAndRevokesAfterConfirm
+--- PASS: TestTrustedListsAndRevokesAfterConfirm (0.03s)
+=== RUN   TestPlanReviewDecisionBelowTheBarLeavesTheReview
+--- PASS: TestPlanReviewDecisionBelowTheBarLeavesTheReview (0.00s)
+=== RUN   TestSettingsDependentRowsDim
+--- PASS: TestSettingsDependentRowsDim (0.00s)
+=== RUN   TestHandleProcessCreatesLibraryEntry
+    processes_test.go:32: expected a command from handleProcess
+--- FAIL: TestHandleProcessCreatesLibraryEntry (0.00s)
+=== RUN   TestNewWithResumeSessionLoadsTranscript
+--- PASS: TestNewWithResumeSessionLoadsTranscript (0.00s)
+=== RUN   TestCacheStatusDefaultsOff
+--- PASS: TestCacheStatusDefaultsOff (0.00s)
+=== RUN   TestBudgetRule21_PaneKeys
+--- PASS: TestBudgetRule21_PaneKeys (0.04s)
+=== RUN   TestPlanRouteNote
+--- PASS: TestPlanRouteNote (0.00s)
+=== RUN   TestPrefetchCatalogCmdResolvesTargetOffThread
+--- PASS: TestPrefetchCatalogCmdResolvesTargetOffThread (0.00s)
+=== RUN   TestProvidersCompletionIncludesReport
+--- PASS: TestProvidersCompletionIncludesReport (0.00s)
+=== RUN   TestComposerBadgeMarksGlobalAndAbsentForHistory
+--- PASS: TestComposerBadgeMarksGlobalAndAbsentForHistory (0.00s)
+=== RUN   TestVoiceArtIsAMicrophone
+--- PASS: TestVoiceArtIsAMicrophone (0.00s)
+=== RUN   TestNewAppView
+--- PASS: TestNewAppView (0.00s)
+=== RUN   TestPersistShellPanelWritesACheckRun
+--- PASS: TestPersistShellPanelWritesACheckRun (0.00s)
+=== RUN   TestToolResultStoresContentAndSetsWithheldStatus
+--- PASS: TestToolResultStoresContentAndSetsWithheldStatus (0.00s)
+=== RUN   TestResumeCancelsRunningTurn
+--- PASS: TestResumeCancelsRunningTurn (0.00s)
+=== RUN   TestEscReturnsFromAFollowedThread
+--- PASS: TestEscReturnsFromAFollowedThread (0.00s)
+=== RUN   TestARoleManagerRowArrivingLateIsPlacedByTime
+--- PASS: TestARoleManagerRowArrivingLateIsPlacedByTime (0.00s)
+=== RUN   TestAttachmentPreviewForSafeFile
+--- PASS: TestAttachmentPreviewForSafeFile (0.00s)
+=== RUN   TestAutocompleteEscClearsHighlightFirst
+--- PASS: TestAutocompleteEscClearsHighlightFirst (0.00s)
+=== RUN   TestRunCapsRule16_CapsCommand
+--- PASS: TestRunCapsRule16_CapsCommand (0.00s)
+=== RUN   TestCompleteArgFuzzy
+--- PASS: TestCompleteArgFuzzy (0.00s)
+=== RUN   TestAvailableProvidersNeverEmpty
+=== RUN   TestAvailableProvidersNeverEmpty/probe_not_landed
+=== RUN   TestAvailableProvidersNeverEmpty/nothing_configured
+--- PASS: TestAvailableProvidersNeverEmpty (0.00s)
+    --- PASS: TestAvailableProvidersNeverEmpty/probe_not_landed (0.00s)
+    --- PASS: TestAvailableProvidersNeverEmpty/nothing_configured (0.00s)
+=== RUN   TestToggleAskMovesLive
+--- PASS: TestToggleAskMovesLive (0.03s)
+=== RUN   TestHistoryCycleIncludesLocalInputsInOrder
+--- PASS: TestHistoryCycleIncludesLocalInputsInOrder (0.00s)
+=== RUN   TestProcessBlockedInPlanMode
+--- PASS: TestProcessBlockedInPlanMode (0.10s)
+=== RUN   TestHistoryCycleTypingEditsLoadedPrompt
+--- PASS: TestHistoryCycleTypingEditsLoadedPrompt (0.00s)
+=== RUN   TestTTSCommandOffStopsAndDropsTheClip
+--- PASS: TestTTSCommandOffStopsAndDropsTheClip (0.01s)
+=== RUN   TestRebuiltSessionKeepsNoncePool
+--- PASS: TestRebuiltSessionKeepsNoncePool (2.37s)
+=== RUN   TestHelpTextListsEveryCommand
+--- PASS: TestHelpTextListsEveryCommand (0.00s)
+=== RUN   TestAutoCommitPerTaskToggleAlwaysGlobal
+--- PASS: TestAutoCommitPerTaskToggleAlwaysGlobal (0.01s)
+=== RUN   TestSymbolsRowsAreEphemeral
+--- PASS: TestSymbolsRowsAreEphemeral (0.00s)
+=== RUN   TestModelSwapSchedulesAndAppliesOnNextTurn
+--- PASS: TestModelSwapSchedulesAndAppliesOnNextTurn (0.00s)
+=== RUN   TestTreeForkOpensANewSessionAndKeepsTheOriginal
+--- PASS: TestTreeForkOpensANewSessionAndKeepsTheOriginal (0.00s)
+=== RUN   TestPlaceholderIsShorterWhileVoiceRuns
+--- PASS: TestPlaceholderIsShorterWhileVoiceRuns (0.00s)
+=== RUN   TestPromptPickerHintShownWithNamedPrompts
+--- PASS: TestPromptPickerHintShownWithNamedPrompts (0.00s)
+=== RUN   TestVulnCopyActionsCopyTheLinkAndTheCommand
+--- PASS: TestVulnCopyActionsCopyTheLinkAndTheCommand (0.00s)
+=== RUN   TestSlashPopupOffersCustomCommandsAndBuiltinsWin
+--- PASS: TestSlashPopupOffersCustomCommandsAndBuiltinsWin (0.10s)
+=== RUN   TestSettingsViewRendersAndEscapes
+--- PASS: TestSettingsViewRendersAndEscapes (0.01s)
+=== RUN   TestClassifyModeSelectsPlan
+--- PASS: TestClassifyModeSelectsPlan (0.00s)
+=== RUN   TestAPlacedRowNeverCrossesAUserPrompt
+--- PASS: TestAPlacedRowNeverCrossesAUserPrompt (0.00s)
+=== RUN   TestPromptEditedReloadsAndReenablesMouse
+--- PASS: TestPromptEditedReloadsAndReenablesMouse (0.01s)
+=== RUN   TestLSPKeySpaceThenEsc
+--- PASS: TestLSPKeySpaceThenEsc (0.00s)
+=== RUN   TestPermissionsViewEmptyStateAllows
+--- PASS: TestPermissionsViewEmptyStateAllows (0.00s)
+=== RUN   TestHelpScreenEscReturnsToChat
+--- PASS: TestHelpScreenEscReturnsToChat (0.00s)
+=== RUN   TestTTSSettingsRowCannotGiveConsent
+--- PASS: TestTTSSettingsRowCannotGiveConsent (0.00s)
+=== RUN   TestClassifyModeSameModeIsSilent
+--- PASS: TestClassifyModeSameModeIsSilent (0.00s)
+=== RUN   TestRecomputeHoverCollapsedFilePanelOffersBoth
+--- PASS: TestRecomputeHoverCollapsedFilePanelOffersBoth (0.00s)
+=== RUN   TestPersistInterleavedGoalTurn
+--- PASS: TestPersistInterleavedGoalTurn (0.00s)
+=== RUN   TestSavePromptModeEmptyNameCancels
+--- PASS: TestSavePromptModeEmptyNameCancels (0.00s)
+=== RUN   TestSubmitDeliveryBlocksCommandsAndAttachments
+--- PASS: TestSubmitDeliveryBlocksCommandsAndAttachments (0.00s)
+=== RUN   TestEscUnfocusesPanel
+--- PASS: TestEscUnfocusesPanel (0.00s)
+=== RUN   TestContextUnknownWindowAndPrice
+--- PASS: TestContextUnknownWindowAndPrice (0.04s)
+=== RUN   TestReviewCardShowsSnapshots
+--- PASS: TestReviewCardShowsSnapshots (0.00s)
+=== RUN   TestMicVerdict
+--- PASS: TestMicVerdict (0.00s)
+=== RUN   TestToolProgressNeverReachesTheModel
+--- PASS: TestToolProgressNeverReachesTheModel (0.01s)
+=== RUN   TestPermissionsViewGroupsByDecisionAndFitsATerminal
+--- PASS: TestPermissionsViewGroupsByDecisionAndFitsATerminal (0.04s)
+=== RUN   TestGettingStartedNextOnTheCLIStepSaysItChecksTheNetwork
+--- PASS: TestGettingStartedNextOnTheCLIStepSaysItChecksTheNetwork (0.00s)
+=== RUN   TestRehydrateDropsEmptyReasoningAndSystem
+--- PASS: TestRehydrateDropsEmptyReasoningAndSystem (0.00s)
+=== RUN   TestCompleteAlias
+--- PASS: TestCompleteAlias (0.00s)
+=== RUN   TestClassifierCatalogForOpenRouterOnlyJev
+--- PASS: TestClassifierCatalogForOpenRouterOnlyJev (0.00s)
+=== RUN   TestContentPos
+--- PASS: TestContentPos (0.00s)
+=== RUN   TestProvidersMasterListHasAddNewRow
+--- PASS: TestProvidersMasterListHasAddNewRow (0.00s)
+=== RUN   TestControlRoomTrustsADirectoryOnlyWhenConfirmed
+--- PASS: TestControlRoomTrustsADirectoryOnlyWhenConfirmed (0.04s)
+=== RUN   TestOverlayVoiceIcon
+--- PASS: TestOverlayVoiceIcon (0.00s)
+=== RUN   TestAnInOrderRoleManagerRowStaysPut
+--- PASS: TestAnInOrderRoleManagerRowStaysPut (0.00s)
+=== RUN   TestPastedImageIsAdmittedLikeAnyOther
+--- PASS: TestPastedImageIsAdmittedLikeAnyOther (0.00s)
+=== RUN   TestFwPermOfferIsRecordedAndShownAsARenderOnlyCard
+--- PASS: TestFwPermOfferIsRecordedAndShownAsARenderOnlyCard (0.00s)
+=== RUN   TestVoiceLogOnShowsThem
+--- PASS: TestVoiceLogOnShowsThem (0.00s)
+=== RUN   TestForgeAddWorktreeOutsideRootsRefused
+--- PASS: TestForgeAddWorktreeOutsideRootsRefused (0.00s)
+=== RUN   TestInitProbesLSPImmediately
+--- PASS: TestInitProbesLSPImmediately (0.00s)
+=== RUN   TestModelScopedSavesLandInTheirFiles
+=== RUN   TestModelScopedSavesLandInTheirFiles/agent_effort_global
+=== RUN   TestModelScopedSavesLandInTheirFiles/classifier_tier_global
+=== RUN   TestModelScopedSavesLandInTheirFiles/routing_kind_and_fast_tier_global
+=== RUN   TestModelScopedSavesLandInTheirFiles/agent_effort_project
+=== RUN   TestModelScopedSavesLandInTheirFiles/classifier_tier_project
+=== RUN   TestModelScopedSavesLandInTheirFiles/routing_kind_and_fast_tier_project
+=== RUN   TestModelScopedSavesLandInTheirFiles/agent_effort_session
+=== RUN   TestModelScopedSavesLandInTheirFiles/posture_goes_to_project_prefs
+--- PASS: TestModelScopedSavesLandInTheirFiles (0.02s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/agent_effort_global (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/classifier_tier_global (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/routing_kind_and_fast_tier_global (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/agent_effort_project (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/classifier_tier_project (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/routing_kind_and_fast_tier_project (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/agent_effort_session (0.00s)
+    --- PASS: TestModelScopedSavesLandInTheirFiles/posture_goes_to_project_prefs (0.00s)
+=== RUN   TestIntelScreenShowsTheContextWindow
+--- PASS: TestIntelScreenShowsTheContextWindow (0.03s)
+=== RUN   TestDisplayRowsShownHiddenAndBehaviourRowsOnOff
+--- PASS: TestDisplayRowsShownHiddenAndBehaviourRowsOnOff (0.00s)
+=== RUN   TestHelpScreenWrapsToTheWidthWithAHangingIndent
+--- PASS: TestHelpScreenWrapsToTheWidthWithAHangingIndent (0.00s)
+=== RUN   TestPlanReviewHeightFloor
+--- PASS: TestPlanReviewHeightFloor (0.00s)
+=== RUN   TestDiffPaneScrollsLongDiff
+--- PASS: TestDiffPaneScrollsLongDiff (0.07s)
+=== RUN   TestCommitDraftIsClassifiedBeforeAndAfter
+--- PASS: TestCommitDraftIsClassifiedBeforeAndAfter (0.11s)
+=== RUN   TestCustomCommandNeverShadowsABuiltin
+--- PASS: TestCustomCommandNeverShadowsABuiltin (0.10s)
+=== RUN   TestClassifierProposedAgentLoadsTools
+--- PASS: TestClassifierProposedAgentLoadsTools (0.02s)
+=== RUN   TestCleanLayoutLeavesNoticesInArrivalOrder
+--- PASS: TestCleanLayoutLeavesNoticesInArrivalOrder (0.00s)
+=== RUN   TestComposerFrameWavesAndTurnsPurple
+    voice_view_test.go:117: first body row: "│                                                                                        ⢠⢻⣿⡟⡄   │"
+--- PASS: TestComposerFrameWavesAndTurnsPurple (0.00s)
+=== RUN   TestAttachedImageFlowsToTheTurnAsPixels
+--- PASS: TestAttachedImageFlowsToTheTurnAsPixels (0.00s)
+=== RUN   TestMacKeyHintsRowShowsTheEffectiveValue
+--- PASS: TestMacKeyHintsRowShowsTheEffectiveValue (0.00s)
+=== RUN   TestVoiceOnWithoutTheModelOffersItAndWaits
+--- PASS: TestVoiceOnWithoutTheModelOffersItAndWaits (0.02s)
+=== RUN   TestKeySectionsWellFormed
+--- PASS: TestKeySectionsWellFormed (0.00s)
+=== RUN   TestKanbanTabHiddenWhenBoardOff
+--- PASS: TestKanbanTabHiddenWhenBoardOff (0.04s)
+=== RUN   TestRMQueue
+--- PASS: TestRMQueue (0.00s)
+=== RUN   TestReadOnlyNoticeNamesSourceAndScope
+--- PASS: TestReadOnlyNoticeNamesSourceAndScope (0.01s)
+=== RUN   TestSettingsMaxAgentsResizesLivePool
+--- PASS: TestSettingsMaxAgentsResizesLivePool (0.00s)
+=== RUN   TestAgentArgumentPickerShowsOutsideAgentMode
+--- PASS: TestAgentArgumentPickerShowsOutsideAgentMode (0.00s)
+=== RUN   TestNextPromptContinuesSentHistory
+--- PASS: TestNextPromptContinuesSentHistory (0.85s)
+=== RUN   TestInitRefusesADanglingLink
+--- PASS: TestInitRefusesADanglingLink (0.00s)
+=== RUN   TestCtrlCOnFileCopiesFileNotPrompt
+]52;c;cGFja2FnZSBtYWluCgpmdW5jIG1haW4oKSB7fQo=--- PASS: TestCtrlCOnFileCopiesFileNotPrompt (0.00s)
+=== RUN   TestEverySlashCommandIsDocumented
+--- PASS: TestEverySlashCommandIsDocumented (0.01s)
+=== RUN   TestBelaiUpdateSilentWhenCurrent
+--- PASS: TestBelaiUpdateSilentWhenCurrent (0.00s)
+=== RUN   TestPersistAssistantCarriesCacheTokensAndCost
+--- PASS: TestPersistAssistantCarriesCacheTokensAndCost (0.00s)
+=== RUN   TestUndoAndRewindAreRefusedWhileATurnRuns
+--- PASS: TestUndoAndRewindAreRefusedWhileATurnRuns (0.00s)
+=== RUN   TestHoverSaveName
+--- PASS: TestHoverSaveName (0.00s)
+=== RUN   TestBudgetRule21_ScreenSwitcherListsIntel
+--- PASS: TestBudgetRule21_ScreenSwitcherListsIntel (0.04s)
+=== RUN   TestPermissionAskIsRecorded
+--- PASS: TestPermissionAskIsRecorded (0.03s)
+=== RUN   TestHelpTextCoversEveryHandledKey
+--- PASS: TestHelpTextCoversEveryHandledKey (0.01s)
+=== RUN   TestModelPickerEmptyCatalogEnterCloses
+--- PASS: TestModelPickerEmptyCatalogEnterCloses (0.00s)
+=== RUN   TestModelRowsPhasesForModelsVanilla
+--- PASS: TestModelRowsPhasesForModelsVanilla (0.00s)
+=== RUN   TestSubmitDeliverySendsThroughEnter
+--- PASS: TestSubmitDeliverySendsThroughEnter (0.00s)
+=== RUN   TestModelAgentProviderProjectScopePersistsToSettings
+--- PASS: TestModelAgentProviderProjectScopePersistsToSettings (0.01s)
+=== RUN   TestResumeCursorSkipsHeaders
+--- PASS: TestResumeCursorSkipsHeaders (0.00s)
+=== RUN   TestHitSessionGeometry
+--- PASS: TestHitSessionGeometry (0.00s)
+=== RUN   TestRMActivityLabelsTheServedModel
+--- PASS: TestRMActivityLabelsTheServedModel (0.00s)
+=== RUN   TestDiffCommandRegistered
+--- PASS: TestDiffCommandRegistered (0.00s)
+=== RUN   TestReviewRefusesASecondRun
+--- PASS: TestReviewRefusesASecondRun (0.00s)
+=== RUN   TestSubmitInputClassifiesAsyncThenSends
+--- PASS: TestSubmitInputClassifiesAsyncThenSends (1.19s)
+=== RUN   TestAnAgentWithNoPersonaWearsTheBrandColours
+--- PASS: TestAnAgentWithNoPersonaWearsTheBrandColours (0.01s)
+=== RUN   TestCommitOutcomesAreAClosedSet
+--- PASS: TestCommitOutcomesAreAClosedSet (0.00s)
+=== RUN   TestLegacyNoticeFiresOnceAndNeverTouchesPromptsJson
+--- PASS: TestLegacyNoticeFiresOnceAndNeverTouchesPromptsJson (0.00s)
+=== RUN   TestProcessesTabOnlyListsLibraryProcesses
+--- PASS: TestProcessesTabOnlyListsLibraryProcesses (0.05s)
+=== RUN   TestAgentPickerTypingPreservesHighlight
+--- PASS: TestAgentPickerTypingPreservesHighlight (0.00s)
+=== RUN   TestAuditTrailIsBounded
+--- PASS: TestAuditTrailIsBounded (0.00s)
+=== RUN   TestCurrentAssistantBubbleAttachesConsecutiveToolCalls
+--- PASS: TestCurrentAssistantBubbleAttachesConsecutiveToolCalls (0.00s)
+=== RUN   TestResumeViewEmptyState
+--- PASS: TestResumeViewEmptyState (0.00s)
+=== RUN   TestHoverHintOverAssistantPanel
+--- PASS: TestHoverHintOverAssistantPanel (0.00s)
+=== RUN   TestContextBeforeAndAfterACall
+--- PASS: TestContextBeforeAndAfterACall (0.04s)
+=== RUN   TestManualCompactAdmitsTheSummaryBeforeApplying
+--- PASS: TestManualCompactAdmitsTheSummaryBeforeApplying (0.00s)
+=== RUN   TestFilePickerAcceptAtCursorMidPrompt
+--- PASS: TestFilePickerAcceptAtCursorMidPrompt (0.00s)
+=== RUN   TestSavePromptModeEmptyPromptWarns
+--- PASS: TestSavePromptModeEmptyPromptWarns (0.00s)
+=== RUN   TestFooterAndComposerIcon
+--- PASS: TestFooterAndComposerIcon (0.00s)
+=== RUN   TestAtMostEightImagesPerPrompt
+--- PASS: TestAtMostEightImagesPerPrompt (0.01s)
+=== RUN   TestSaveFileEmptyPathCancels
+--- PASS: TestSaveFileEmptyPathCancels (0.00s)
+=== RUN   TestHistoryCycleLeftArrowKeepsLoadedPrompt
+--- PASS: TestHistoryCycleLeftArrowKeepsLoadedPrompt (0.00s)
+=== RUN   TestWorktreeDropConfirmsWithTheArgvThenRuns
+--- PASS: TestWorktreeDropConfirmsWithTheArgvThenRuns (0.08s)
+=== RUN   TestListDirectoriesOnlyReturnsDirectories
+--- PASS: TestListDirectoriesOnlyReturnsDirectories (0.00s)
+=== RUN   TestRealRepoFailingHookLeavesTheTreeUntouched
+--- PASS: TestRealRepoFailingHookLeavesTheTreeUntouched (0.08s)
+=== RUN   TestClarifyNoteOpensAndCommits
+--- PASS: TestClarifyNoteOpensAndCommits (0.00s)
+=== RUN   TestChipOverridesNeverHideThePersonaColours
+--- PASS: TestChipOverridesNeverHideThePersonaColours (0.00s)
+=== RUN   TestAutocompleteEnterSelectsHighlight
+--- PASS: TestAutocompleteEnterSelectsHighlight (0.00s)
+=== RUN   TestLSPViewRowCount
+--- PASS: TestLSPViewRowCount (0.00s)
+=== RUN   TestRehydrateDropsEmptyAssistant
+--- PASS: TestRehydrateDropsEmptyAssistant (0.00s)
+=== RUN   TestTypedPromptIsNotTaggedAndEditedDictationIsNot
+--- PASS: TestTypedPromptIsNotTaggedAndEditedDictationIsNot (0.00s)
+=== RUN   TestModelRailNamesEachSaveTarget
+--- PASS: TestModelRailNamesEachSaveTarget (0.00s)
+=== RUN   TestSaveFileWritesAbsolutePath
+--- PASS: TestSaveFileWritesAbsolutePath (0.00s)
+=== RUN   TestCommitCommandInAskModeAsksFirst
+--- PASS: TestCommitCommandInAskModeAsksFirst (0.04s)
+=== RUN   TestNextChoiceNilOpts
+--- PASS: TestNextChoiceNilOpts (0.00s)
+=== RUN   TestPermissionAskEnterAllowSendsReplyAndRearmsPump
+--- PASS: TestPermissionAskEnterAllowSendsReplyAndRearmsPump (0.00s)
+=== RUN   TestTreeRejectsBadTargets
+--- PASS: TestTreeRejectsBadTargets (0.00s)
+=== RUN   TestModelPickerRoutingLeavesOutJev
+--- PASS: TestModelPickerRoutingLeavesOutJev (0.00s)
+=== RUN   TestOutsideRootAncestorRefusedWithoutPrompt
+--- PASS: TestOutsideRootAncestorRefusedWithoutPrompt (0.00s)
+=== RUN   TestProviderDetailServerLaunchOpensEditorAndParsesArgs
+--- PASS: TestProviderDetailServerLaunchOpensEditorAndParsesArgs (0.00s)
+=== RUN   TestAgentPickerNotOpenedByAtPrefix
+--- PASS: TestAgentPickerNotOpenedByAtPrefix (0.00s)
+=== RUN   TestScopeTarget
+--- PASS: TestScopeTarget (0.00s)
+=== RUN   TestSendReviewEngagesReviewProfile
+--- PASS: TestSendReviewEngagesReviewProfile (0.01s)
+=== RUN   TestAliasCanonical
+--- PASS: TestAliasCanonical (0.00s)
+=== RUN   TestSettingsKnowledgeRowsDefaultAndGrouped
+--- PASS: TestSettingsKnowledgeRowsDefaultAndGrouped (0.00s)
+=== RUN   TestCtrlDEscDisarms
+--- PASS: TestCtrlDEscDisarms (0.00s)
+=== RUN   TestControlRoomSetsModels
+--- PASS: TestControlRoomSetsModels (0.03s)
+=== RUN   TestModelScopeKeyCyclesRoleScopes
+--- PASS: TestModelScopeKeyCyclesRoleScopes (0.00s)
+=== RUN   TestTypingWithNothingHappeningLeavesVoiceAlone
+--- PASS: TestTypingWithNothingHappeningLeavesVoiceAlone (0.00s)
+=== RUN   TestHistoryCycleRightAccepts
+--- PASS: TestHistoryCycleRightAccepts (0.00s)
+=== RUN   TestANewTurnDropsAnOpenQuestion
+--- PASS: TestANewTurnDropsAnOpenQuestion (0.03s)
+=== RUN   TestAgentFieldsCoverEveryProfileField
+--- PASS: TestAgentFieldsCoverEveryProfileField (0.03s)
+=== RUN   TestVulnRowIsRenderOnly
+--- PASS: TestVulnRowIsRenderOnly (0.00s)
+=== RUN   TestTTSKeepsTheMicrophoneOpenForStopWhilePlaying
+--- PASS: TestTTSKeepsTheMicrophoneOpenForStopWhilePlaying (0.03s)
+=== RUN   TestFilterResumeRows
+--- PASS: TestFilterResumeRows (0.00s)
+=== RUN   TestRelayIsUserOnly
+--- PASS: TestRelayIsUserOnly (0.00s)
+=== RUN   TestVoiceStopClearsEverything
+--- PASS: TestVoiceStopClearsEverything (0.00s)
+=== RUN   TestEditorHeightClamps
+--- PASS: TestEditorHeightClamps (0.00s)
+=== RUN   TestRelayRedraftRunsAgainAndKeepsTheDirection
+--- PASS: TestRelayRedraftRunsAgainAndKeepsTheDirection (0.00s)
+=== RUN   TestSettingsReadOnlyGlobalScope
+--- PASS: TestSettingsReadOnlyGlobalScope (0.01s)
+=== RUN   TestDiffReadDeniedMatchesRelativeAndAbsolute
+--- PASS: TestDiffReadDeniedMatchesRelativeAndAbsolute (0.00s)
+=== RUN   TestPermissionAskEscDeniesWithoutCancellingTurn
+--- PASS: TestPermissionAskEscDeniesWithoutCancellingTurn (0.00s)
+=== RUN   TestLinkAtColumn
+--- PASS: TestLinkAtColumn (0.00s)
+=== RUN   TestMCPCleanDropsHTMLFromAServerError
+--- PASS: TestMCPCleanDropsHTMLFromAServerError (0.00s)
+=== RUN   TestBareWakeWordArmsTheNextUtteranceOnce
+--- PASS: TestBareWakeWordArmsTheNextUtteranceOnce (0.00s)
+=== RUN   TestTrustedAddAsksThenGrantsDirectoryOnly
+--- PASS: TestTrustedAddAsksThenGrantsDirectoryOnly (0.04s)
+=== RUN   TestModelSearchLineRenders
+--- PASS: TestModelSearchLineRenders (0.00s)
+=== RUN   TestForgeTabCycleShowsCIOnlyWithPR
+--- PASS: TestForgeTabCycleShowsCIOnlyWithPR (0.00s)
+=== RUN   TestFirewallKeySyncOnlyWhileFirewallOn
+--- PASS: TestFirewallKeySyncOnlyWhileFirewallOn (0.00s)
+=== RUN   TestCatalogPrefetchFailureIsSilent
+--- PASS: TestCatalogPrefetchFailureIsSilent (0.00s)
+=== RUN   TestVoiceIsOnByDefaultWhenTheModelIsBuiltIn
+--- PASS: TestVoiceIsOnByDefaultWhenTheModelIsBuiltIn (0.00s)
+=== RUN   TestRenderPickerHighlightsOnlyTheSelectedRow
+--- PASS: TestRenderPickerHighlightsOnlyTheSelectedRow (0.00s)
+=== RUN   TestABurstOfDecisionsLosesNone
+--- PASS: TestABurstOfDecisionsLosesNone (0.22s)
+=== RUN   TestRunCapsRule4_KeysExtendAndEnterStops
+--- PASS: TestRunCapsRule4_KeysExtendAndEnterStops (0.00s)
+=== RUN   TestForgeNoProbeWhilePanelClosed
+--- PASS: TestForgeNoProbeWhilePanelClosed (0.00s)
+=== RUN   TestJevRowsAreHiddenWithoutADecisionBackend
+--- PASS: TestJevRowsAreHiddenWithoutADecisionBackend (0.00s)
+=== RUN   TestRelayDraftOpensReviewAndAcceptStartsAFreshSession
+--- PASS: TestRelayDraftOpensReviewAndAcceptStartsAFreshSession (0.00s)
+=== RUN   TestCommitRecordIsWrittenWithoutTheMessage
+--- PASS: TestCommitRecordIsWrittenWithoutTheMessage (0.06s)
+=== RUN   TestNamedAgentEmptyImpliesToolsNil
+--- PASS: TestNamedAgentEmptyImpliesToolsNil (0.01s)
+=== RUN   TestAvailableProvidersTreatsKindCustomAsLocal
+--- PASS: TestAvailableProvidersTreatsKindCustomAsLocal (0.00s)
+=== RUN   TestSendRetriesCredentialResolutionOnStartup
+--- PASS: TestSendRetriesCredentialResolutionOnStartup (0.00s)
+=== RUN   TestBudgetEdge14_AllowanceInput
+--- PASS: TestBudgetEdge14_AllowanceInput (0.00s)
+=== RUN   TestIdlePaneClosedByTheUserStaysClosed
+--- PASS: TestIdlePaneClosedByTheUserStaysClosed (0.00s)
+=== RUN   TestControlRoomShowsTheRun
+--- PASS: TestControlRoomShowsTheRun (0.07s)
+=== RUN   TestPathTokenDotShowsHidden
+--- PASS: TestPathTokenDotShowsHidden (0.00s)
+=== RUN   TestShellFailureLandsOnThePanel
+--- PASS: TestShellFailureLandsOnThePanel (0.00s)
+=== RUN   TestClearStartsNewSession
+--- PASS: TestClearStartsNewSession (0.00s)
+=== RUN   TestBudgetsScreenReachableFromF1AndSettings
+--- PASS: TestBudgetsScreenReachableFromF1AndSettings (0.05s)
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/plan_mode
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/goal_mode
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/code_mode
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/goal_turn
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/already_running
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/setting_off
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/no_edit
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/plan_sentinel
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/approved_plan_executing
+=== RUN   TestEachTurnStartsNothingWhenGuardsFail/auto_picked_goal
+--- PASS: TestEachTurnStartsNothingWhenGuardsFail (0.43s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/plan_mode (0.06s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/goal_mode (0.06s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/code_mode (0.04s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/goal_turn (0.05s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/already_running (0.06s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/setting_off (0.04s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/no_edit (0.03s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/plan_sentinel (0.03s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/approved_plan_executing (0.03s)
+    --- PASS: TestEachTurnStartsNothingWhenGuardsFail/auto_picked_goal (0.04s)
+=== RUN   TestModelViewScenarioRemoteOpenRouterJev
+--- PASS: TestModelViewScenarioRemoteOpenRouterJev (0.00s)
+=== RUN   TestAskOffDoesNotAnswerAHazardAsk
+--- PASS: TestAskOffDoesNotAnswerAHazardAsk (0.05s)
+=== RUN   TestSlashPromptChipPrefillsComposer
+--- PASS: TestSlashPromptChipPrefillsComposer (0.11s)
+=== RUN   TestSafeAttachmentsKeepFilesDirectoriesAndImagesApart
+--- PASS: TestSafeAttachmentsKeepFilesDirectoriesAndImagesApart (0.00s)
+=== RUN   TestShellResultReplacesTheLiveTail
+--- PASS: TestShellResultReplacesTheLiveTail (0.00s)
+=== RUN   TestAutocompleteTabCyclesWithoutTouchingThePrompt
+--- PASS: TestAutocompleteTabCyclesWithoutTouchingThePrompt (0.00s)
+=== RUN   TestAgentFieldScrollKeepsSelectionVisible
+--- PASS: TestAgentFieldScrollKeepsSelectionVisible (0.04s)
+=== RUN   TestAgentHubTabsAreDocumented
+--- PASS: TestAgentHubTabsAreDocumented (0.00s)
+=== RUN   TestPermissionAskAllowAlwaysWritesScopedRule
+--- PASS: TestPermissionAskAllowAlwaysWritesScopedRule (0.00s)
+=== RUN   TestParseTokens
+=== RUN   TestParseTokens/plain_file
+=== RUN   TestParseTokens/quoted_spaces
+=== RUN   TestParseTokens/user@host_ignored
+=== RUN   TestParseTokens/agent_reference_ignored
+=== RUN   TestParseTokens/trailing_incomplete
+=== RUN   TestParseTokens/multiple
+=== RUN   TestParseTokens/bare_at
+--- PASS: TestParseTokens (0.00s)
+    --- PASS: TestParseTokens/plain_file (0.00s)
+    --- PASS: TestParseTokens/quoted_spaces (0.00s)
+    --- PASS: TestParseTokens/user@host_ignored (0.00s)
+    --- PASS: TestParseTokens/agent_reference_ignored (0.00s)
+    --- PASS: TestParseTokens/trailing_incomplete (0.00s)
+    --- PASS: TestParseTokens/multiple (0.00s)
+    --- PASS: TestParseTokens/bare_at (0.00s)
+=== RUN   TestRunCapsRule2_FooterChip
+--- PASS: TestRunCapsRule2_FooterChip (0.00s)
+=== RUN   TestPersistTruncatesOversizeToolResult
+--- PASS: TestPersistTruncatesOversizeToolResult (0.00s)
+=== RUN   TestClassifierProviderListOpenRouterWithResolver
+--- PASS: TestClassifierProviderListOpenRouterWithResolver (0.00s)
+=== RUN   TestCwdResetEventSaysItWasReset
+--- PASS: TestCwdResetEventSaysItWasReset (0.00s)
+=== RUN   TestForgeCreatePRAlwaysConfirms
+--- PASS: TestForgeCreatePRAlwaysConfirms (0.00s)
+=== RUN   TestModelKeyTabCyclesRoutingKind
+--- PASS: TestModelKeyTabCyclesRoutingKind (0.01s)
+=== RUN   TestBtwLeavesHistoryAndSessionFileUnchanged
+--- PASS: TestBtwLeavesHistoryAndSessionFileUnchanged (0.00s)
+=== RUN   TestClassifyModeGoalOverLimitDefaultsToAgent
+    app_test.go:265: mode = "plan", want agent (goal length exceeded)
+--- FAIL: TestClassifyModeGoalOverLimitDefaultsToAgent (0.00s)
+=== RUN   TestVulnetixArtifactsViewLoadsOnOpen
+--- PASS: TestVulnetixArtifactsViewLoadsOnOpen (0.02s)
+=== RUN   TestClassifyAndSendUsesFreshContextAfterCancel
+--- PASS: TestClassifyAndSendUsesFreshContextAfterCancel (0.00s)
+=== RUN   TestProcessesTabStopKey
+--- PASS: TestProcessesTabStopKey (0.15s)
+=== RUN   TestParseReviewRequest
+--- PASS: TestParseReviewRequest (0.00s)
+=== RUN   TestEgressReportCleansHostsAndShowsRefusals
+--- PASS: TestEgressReportCleansHostsAndShowsRefusals (0.00s)
+=== RUN   TestAgentDeleteProfileInEditor
+--- PASS: TestAgentDeleteProfileInEditor (0.05s)
+=== RUN   TestPatchToleranceIsRegistered
+--- PASS: TestPatchToleranceIsRegistered (0.00s)
+=== RUN   TestFilePickerEscDismissesAndTypingReopens
+--- PASS: TestFilePickerEscDismissesAndTypingReopens (0.00s)
+=== RUN   TestGlBodyFitsAnyTerminal
+--- PASS: TestGlBodyFitsAnyTerminal (0.02s)
+=== RUN   TestVulnetixListViewSmoke
+--- PASS: TestVulnetixListViewSmoke (0.00s)
+=== RUN   TestPathTokenHomeExpands
+--- PASS: TestPathTokenHomeExpands (0.00s)
+=== RUN   TestEscEscClearsComposer
+--- PASS: TestEscEscClearsComposer (0.00s)
+=== RUN   TestTTSHelpAndHint
+--- PASS: TestTTSHelpAndHint (0.00s)
+=== RUN   TestTranscriptInsertsAtTheCursorOnlyWhenReady
+--- PASS: TestTranscriptInsertsAtTheCursorOnlyWhenReady (0.00s)
+=== RUN   TestEachTurnDoesNotOverrideAnAutoAgentChoice
+--- PASS: TestEachTurnDoesNotOverrideAnAutoAgentChoice (0.06s)
+=== RUN   TestDiffStaleLoadIsDropped
+--- PASS: TestDiffStaleLoadIsDropped (0.06s)
+=== RUN   TestRunsPanelTabSwitches
+--- PASS: TestRunsPanelTabSwitches (0.00s)
+=== RUN   TestModelMCPScopeIsFixed
+--- PASS: TestModelMCPScopeIsFixed (0.00s)
+=== RUN   TestToolProgressLandsOnItsOwnRow
+--- PASS: TestToolProgressLandsOnItsOwnRow (0.01s)
+=== RUN   TestTTSCardNeverReachesTheSessionRecordOrAModel
+--- PASS: TestTTSCardNeverReachesTheSessionRecordOrAModel (0.00s)
+=== RUN   TestAgentCreateSuccessForcesRequestedName
+--- PASS: TestAgentCreateSuccessForcesRequestedName (0.06s)
+=== RUN   TestAgentPickerEscCloses
+--- PASS: TestAgentPickerEscCloses (0.00s)
+=== RUN   TestSetTodosIgnoresNil
+--- PASS: TestSetTodosIgnoresNil (0.01s)
+=== RUN   TestPersistTrailingEmptyAssistantNotWritten
+--- PASS: TestPersistTrailingEmptyAssistantNotWritten (0.00s)
+=== RUN   TestBuildTurnsNormalisesTrailingDanglingUser
+--- PASS: TestBuildTurnsNormalisesTrailingDanglingUser (0.01s)
+=== RUN   TestFooterRendersMovedDirectory
+--- PASS: TestFooterRendersMovedDirectory (0.00s)
+=== RUN   TestShellPanelPersistsAndRehydrates
+--- PASS: TestShellPanelPersistsAndRehydrates (0.00s)
+=== RUN   TestBudgetRule24_WritesOnChangeOnly
+--- PASS: TestBudgetRule24_WritesOnChangeOnly (0.01s)
+=== RUN   TestDeciderLeadsSystemOneWhenDetected
+--- PASS: TestDeciderLeadsSystemOneWhenDetected (0.00s)
+=== RUN   TestLegacyAutoCommitPerTaskMeansAuto
+--- PASS: TestLegacyAutoCommitPerTaskMeansAuto (0.09s)
+=== RUN   TestWorktreeNewFilesALabelledCard
+--- PASS: TestWorktreeNewFilesALabelledCard (0.07s)
+=== RUN   TestFlushTestPassDoesNotOverlap
+--- PASS: TestFlushTestPassDoesNotOverlap (0.03s)
+=== RUN   TestHandleDepReportQueues
+--- PASS: TestHandleDepReportQueues (0.00s)
+=== RUN   TestBudgetRule15_IntelIsTheOnlySlotWithoutBudgetsAndWhenRouted
+--- PASS: TestBudgetRule15_IntelIsTheOnlySlotWithoutBudgetsAndWhenRouted (0.08s)
+=== RUN   TestReleaseWithButtonNoneEndsDrag
+--- PASS: TestReleaseWithButtonNoneEndsDrag (0.00s)
+=== RUN   TestLSPViewRendersWindowsUnsupported
+--- PASS: TestLSPViewRendersWindowsUnsupported (0.00s)
+=== RUN   TestCrossProjectResumeForks
+--- PASS: TestCrossProjectResumeForks (0.00s)
+=== RUN   TestDepAttachmentsSanitizeWhenUnguarded
+--- PASS: TestDepAttachmentsSanitizeWhenUnguarded (0.00s)
+=== RUN   TestModelKeyEnterCyclesAgentEffort
+--- PASS: TestModelKeyEnterCyclesAgentEffort (0.00s)
+=== RUN   TestCacheCommandRefusesBadInput
+--- PASS: TestCacheCommandRefusesBadInput (0.00s)
+=== RUN   TestRemotePromptMovesToAutoWithoutAgentCarrier
+--- PASS: TestRemotePromptMovesToAutoWithoutAgentCarrier (0.04s)
+=== RUN   TestHandoffWithoutPathPrintsUsage
+--- PASS: TestHandoffWithoutPathPrintsUsage (0.00s)
+=== RUN   TestClassifierCatalogForHuggingFaceOnlyCuratedBERT
+--- PASS: TestClassifierCatalogForHuggingFaceOnlyCuratedBERT (0.00s)
+=== RUN   TestTTSCommandSpeedAppliesToThePlayingClip
+--- PASS: TestTTSCommandSpeedAppliesToThePlayingClip (0.01s)
+=== RUN   TestSettingsPageDocumentsEveryGroupRowAndSection
+--- PASS: TestSettingsPageDocumentsEveryGroupRowAndSection (0.00s)
+=== RUN   TestApplyLiveModeDecisionRespectsStickyWithoutUserChosen
+--- PASS: TestApplyLiveModeDecisionRespectsStickyWithoutUserChosen (0.00s)
+=== RUN   TestSideRowsAreNeverSent
+--- PASS: TestSideRowsAreNeverSent (0.00s)
+=== RUN   TestSettingsReadOnlySpaceTogglesAndPersists
+--- PASS: TestSettingsReadOnlySpaceTogglesAndPersists (0.00s)
+=== RUN   TestFilePickerWindowScrollsPastFive
+--- PASS: TestFilePickerWindowScrollsPastFive (0.00s)
+=== RUN   TestDoneAddsCompletionPanelInAgentModeOnly
+--- PASS: TestDoneAddsCompletionPanelInAgentModeOnly (0.01s)
+=== RUN   TestVoiceMatchableBoundsAndSwitches
+--- PASS: TestVoiceMatchableBoundsAndSwitches (0.00s)
+=== RUN   TestKnowledgeCorruptIndexIsListedAndLeftAlone
+--- PASS: TestKnowledgeCorruptIndexIsListedAndLeftAlone (0.01s)
+=== RUN   TestSettingsProviderUnsetSyncs
+--- PASS: TestSettingsProviderUnsetSyncs (0.01s)
+=== RUN   TestTranscriptsKeepTheirOrderThroughCleanup
+--- PASS: TestTranscriptsKeepTheirOrderThroughCleanup (0.14s)
+=== RUN   TestAgentCommandWithTrailingSpaceOpensPicker
+--- PASS: TestAgentCommandWithTrailingSpaceOpensPicker (0.00s)
+=== RUN   TestOneClearTargetRunsAndNothingIsDictated
+--- PASS: TestOneClearTargetRunsAndNothingIsDictated (0.00s)
+=== RUN   TestJevRowTogglesPersistsAndUnsets
+--- PASS: TestJevRowTogglesPersistsAndUnsets (0.05s)
+=== RUN   TestFwPermCardRehydratesWithItsApplies
+--- PASS: TestFwPermCardRehydratesWithItsApplies (0.00s)
+=== RUN   TestAskModeAsksThenCommitsOnYes
+--- PASS: TestAskModeAsksThenCommitsOnYes (0.03s)
+=== RUN   TestHelpScreenWheelScrolls
+--- PASS: TestHelpScreenWheelScrolls (0.00s)
+=== RUN   TestModelAgentScopeCanBeCycled
+--- PASS: TestModelAgentScopeCanBeCycled (0.00s)
+=== RUN   TestAutocompleteHighlightSurvivesRefresh
+--- PASS: TestAutocompleteHighlightSurvivesRefresh (0.00s)
+=== RUN   TestNewInitialisesPlanModeFromRestoredMode
+--- PASS: TestNewInitialisesPlanModeFromRestoredMode (0.00s)
+=== RUN   TestEscCancelsRequestBeforeClearingComposer
+--- PASS: TestEscCancelsRequestBeforeClearingComposer (0.00s)
+=== RUN   TestModelClassifierProviderChangeClearsModel
+--- PASS: TestModelClassifierProviderChangeClearsModel (0.00s)
+=== RUN   TestGlobalToggleKeysFireFromAnyView
+=== RUN   TestGlobalToggleKeysFireFromAnyView/f2
+=== RUN   TestGlobalToggleKeysFireFromAnyView/f3
+=== RUN   TestGlobalToggleKeysFireFromAnyView/f4
+--- PASS: TestGlobalToggleKeysFireFromAnyView (0.00s)
+    --- PASS: TestGlobalToggleKeysFireFromAnyView/f2 (0.00s)
+    --- PASS: TestGlobalToggleKeysFireFromAnyView/f3 (0.00s)
+    --- PASS: TestGlobalToggleKeysFireFromAnyView/f4 (0.00s)
+=== RUN   TestGlNavigationSkipsHeadersAndStaysInGroup
+--- PASS: TestGlNavigationSkipsHeadersAndStaysInGroup (0.00s)
+=== RUN   TestModelAgentProviderGlobalScopePersistsToSettings
+--- PASS: TestModelAgentProviderGlobalScopePersistsToSettings (0.01s)
+=== RUN   TestDebugTickTracksTheLevelAndStopsWhenTheScreenIsLeft
+--- PASS: TestDebugTickTracksTheLevelAndStopsWhenTheScreenIsLeft (0.00s)
+=== RUN   TestVulnetixConfigKeyNavigation
+--- PASS: TestVulnetixConfigKeyNavigation (0.00s)
+=== RUN   TestPersistErrorPathWritesStreamedReply
+--- PASS: TestPersistErrorPathWritesStreamedReply (0.00s)
+=== RUN   TestAgentEffortOptsDefaultFallback
+--- PASS: TestAgentEffortOptsDefaultFallback (0.00s)
+=== RUN   TestBudgetRule14_TUIImportsHistoryAtStart
+--- PASS: TestBudgetRule14_TUIImportsHistoryAtStart (0.03s)
+=== RUN   TestTranscriptIsSanitizedAndEmptyIsIgnored
+--- PASS: TestTranscriptIsSanitizedAndEmptyIsIgnored (0.00s)
+=== RUN   TestEchoUserForceFlushesAbortedTurn
+--- PASS: TestEchoUserForceFlushesAbortedTurn (0.00s)
+=== RUN   TestDetectMIMETypeByExtension
+--- PASS: TestDetectMIMETypeByExtension (0.00s)
+=== RUN   TestSettingsPageListsEveryGlobalOnlyRow
+--- PASS: TestSettingsPageListsEveryGlobalOnlyRow (0.00s)
+=== RUN   TestTTSAnimationStopsWhenNothingMoves
+--- PASS: TestTTSAnimationStopsWhenNothingMoves (0.03s)
+=== RUN   TestEditingTheLiveTextTakesItOverAndTheFinalGoesAfterIt
+--- PASS: TestEditingTheLiveTextTakesItOverAndTheFinalGoesAfterIt (0.00s)
+=== RUN   TestDictatedTurnIsTaggedWithItsRawTranscript
+--- PASS: TestDictatedTurnIsTaggedWithItsRawTranscript (0.14s)
+=== RUN   TestOnlyChatKeysCancelAndTheVoiceKeyDoesNot
+--- PASS: TestOnlyChatKeysCancelAndTheVoiceKeyDoesNot (0.00s)
+=== RUN   TestAgentEditViewDoesNotPanicOnEnter
+--- PASS: TestAgentEditViewDoesNotPanicOnEnter (0.05s)
+=== RUN   TestGlobalOnlyRowsWriteGlobalWhateverTheScope
+--- PASS: TestGlobalOnlyRowsWriteGlobalWhateverTheScope (0.01s)
+=== RUN   TestWebDraftDone
+--- PASS: TestWebDraftDone (0.01s)
+=== RUN   TestAttachmentPreviewForRejectedFile
+--- PASS: TestAttachmentPreviewForRejectedFile (0.00s)
+=== RUN   TestModelSwapForgetsAReplacedModel
+--- PASS: TestModelSwapForgetsAReplacedModel (0.00s)
+=== RUN   TestKanbanPaneFallsBackToAllProjects
+--- PASS: TestKanbanPaneFallsBackToAllProjects (0.01s)
+=== RUN   TestSettingsCommitModeIsGlobalOnly
+--- PASS: TestSettingsCommitModeIsGlobalOnly (0.00s)
+=== RUN   TestCompletionSummaryCountsThisTurnOnly
+--- PASS: TestCompletionSummaryCountsThisTurnOnly (0.00s)
+=== RUN   TestTTSKeyOnTheHoveredReplyReadsThatOne
+--- PASS: TestTTSKeyOnTheHoveredReplyReadsThatOne (0.00s)
+=== RUN   TestProviderPickerReachesEveryProviderDespiteFailedTests
+--- PASS: TestProviderPickerReachesEveryProviderDespiteFailedTests (0.00s)
+=== RUN   TestProcessesEnterOpensOutputView
+--- PASS: TestProcessesEnterOpensOutputView (0.21s)
+=== RUN   TestSettingsPageListsEachCutOffUnderItsSection
+--- PASS: TestSettingsPageListsEachCutOffUnderItsSection (0.00s)
+=== RUN   TestEveryDecisionIsRecordedAtEveryDisplayLevel
+=== RUN   TestEveryDecisionIsRecordedAtEveryDisplayLevel/hidden
+=== RUN   TestEveryDecisionIsRecordedAtEveryDisplayLevel/decisions
+=== RUN   TestEveryDecisionIsRecordedAtEveryDisplayLevel/security
+=== RUN   TestEveryDecisionIsRecordedAtEveryDisplayLevel/all
+--- PASS: TestEveryDecisionIsRecordedAtEveryDisplayLevel (0.02s)
+    --- PASS: TestEveryDecisionIsRecordedAtEveryDisplayLevel/hidden (0.00s)
+    --- PASS: TestEveryDecisionIsRecordedAtEveryDisplayLevel/decisions (0.01s)
+    --- PASS: TestEveryDecisionIsRecordedAtEveryDisplayLevel/security (0.00s)
+    --- PASS: TestEveryDecisionIsRecordedAtEveryDisplayLevel/all (0.00s)
+=== RUN   TestDecisionsRecordedWithFacts
+--- PASS: TestDecisionsRecordedWithFacts (0.00s)
+=== RUN   TestPlanReviewApproveSeedsExecutionTodos
+--- PASS: TestPlanReviewApproveSeedsExecutionTodos (0.02s)
+=== RUN   TestTurnEndClosesOpenAsks
+--- PASS: TestTurnEndClosesOpenAsks (0.03s)
+=== RUN   TestTTSKeyReadsTheLastReplyAndDrawsACard
+--- PASS: TestTTSKeyReadsTheLastReplyAndDrawsACard (0.00s)
+=== RUN   TestResumeRestoresTranscriptNameAndTodos
+--- PASS: TestResumeRestoresTranscriptNameAndTodos (0.00s)
+=== RUN   TestProvidersReportCommandDoesNotPushView
+--- PASS: TestProvidersReportCommandDoesNotPushView (0.00s)
+=== RUN   TestDebugTranscriptThenLiveCleanup
+--- PASS: TestDebugTranscriptThenLiveCleanup (0.00s)
+=== RUN   TestEveryAgentFieldPersists
+=== RUN   TestEveryAgentFieldPersists/file_name
+=== RUN   TestEveryAgentFieldPersists/description
+=== RUN   TestEveryAgentFieldPersists/system_prompt
+=== RUN   TestEveryAgentFieldPersists/tools
+=== RUN   TestEveryAgentFieldPersists/mode
+=== RUN   TestEveryAgentFieldPersists/schedule
+=== RUN   TestEveryAgentFieldPersists/monitor_condition
+=== RUN   TestEveryAgentFieldPersists/provider
+=== RUN   TestEveryAgentFieldPersists/model
+=== RUN   TestEveryAgentFieldPersists/effort
+=== RUN   TestEveryAgentFieldPersists/autonomy
+=== RUN   TestEveryAgentFieldPersists/guardrails
+=== RUN   TestEveryAgentFieldPersists/ask_permission
+=== RUN   TestEveryAgentFieldPersists/reflection
+=== RUN   TestEveryAgentFieldPersists/max_iterations
+--- PASS: TestEveryAgentFieldPersists (0.72s)
+    --- PASS: TestEveryAgentFieldPersists/file_name (0.04s)
+    --- PASS: TestEveryAgentFieldPersists/description (0.04s)
+    --- PASS: TestEveryAgentFieldPersists/system_prompt (0.03s)
+    --- PASS: TestEveryAgentFieldPersists/tools (0.03s)
+    --- PASS: TestEveryAgentFieldPersists/mode (0.03s)
+    --- PASS: TestEveryAgentFieldPersists/schedule (0.05s)
+    --- PASS: TestEveryAgentFieldPersists/monitor_condition (0.04s)
+    --- PASS: TestEveryAgentFieldPersists/provider (0.06s)
+    --- PASS: TestEveryAgentFieldPersists/model (0.05s)
+    --- PASS: TestEveryAgentFieldPersists/effort (0.05s)
+    --- PASS: TestEveryAgentFieldPersists/autonomy (0.06s)
+    --- PASS: TestEveryAgentFieldPersists/guardrails (0.05s)
+    --- PASS: TestEveryAgentFieldPersists/ask_permission (0.07s)
+    --- PASS: TestEveryAgentFieldPersists/reflection (0.07s)
+    --- PASS: TestEveryAgentFieldPersists/max_iterations (0.04s)
+=== RUN   TestTTSMouseHitsComeFromTheRenderedCard
+--- PASS: TestTTSMouseHitsComeFromTheRenderedCard (0.03s)
+=== RUN   TestTTSReplayComesFromTheCacheWithNoRequest
+--- PASS: TestTTSReplayComesFromTheCacheWithNoRequest (0.03s)
+=== RUN   TestHistoryResultsRankLibraryFirstAndDedupe
+--- PASS: TestHistoryResultsRankLibraryFirstAndDedupe (0.01s)
+=== RUN   TestVulnRemediateRefusesWhileATurnRuns
+--- PASS: TestVulnRemediateRefusesWhileATurnRuns (0.00s)
+=== RUN   TestNewSessionResetsTheBreaker
+--- PASS: TestNewSessionResetsTheBreaker (0.00s)
+=== RUN   TestBudgetEdge32_ResumeAndExportIgnoreSnapshots
+--- PASS: TestBudgetEdge32_ResumeAndExportIgnoreSnapshots (0.00s)
+=== RUN   TestBudgetRule9_FooterGaugeOnlyForSelectedModelUnderDefined
+--- PASS: TestBudgetRule9_FooterGaugeOnlyForSelectedModelUnderDefined (0.05s)
+=== RUN   TestActivityKillRoutingInPanel
+--- PASS: TestActivityKillRoutingInPanel (0.00s)
+=== RUN   TestImportViewMasksSecrets
+--- PASS: TestImportViewMasksSecrets (0.01s)
+=== RUN   TestPickerAndNoticeUseThePersona
+--- PASS: TestPickerAndNoticeUseThePersona (0.06s)
+=== RUN   TestProcessesTabListsOnlyRunning
+--- PASS: TestProcessesTabListsOnlyRunning (0.16s)
+=== RUN   TestForgeCacheSharedWithPanel
+--- PASS: TestForgeCacheSharedWithPanel (0.00s)
+=== RUN   TestPersistAbortedTrailingToolCallNotWritten
+--- PASS: TestPersistAbortedTrailingToolCallNotWritten (0.00s)
+=== RUN   TestAgentViewEditDescription
+--- PASS: TestAgentViewEditDescription (0.06s)
+=== RUN   TestATurnInFlightKeepsTheComposerReady
+--- PASS: TestATurnInFlightKeepsTheComposerReady (0.00s)
+=== RUN   TestParseLocalModelArgs
+--- PASS: TestParseLocalModelArgs (0.00s)
+=== RUN   TestVulnTriageNeedsABackgroundManager
+--- PASS: TestVulnTriageNeedsABackgroundManager (0.00s)
+=== RUN   TestAttachmentDirectoryLists
+--- PASS: TestAttachmentDirectoryLists (0.00s)
+=== RUN   TestSaveAsOntoExistingNameConfirms
+--- PASS: TestSaveAsOntoExistingNameConfirms (0.04s)
+=== RUN   TestDiffPaneShowsChangesAndNavigates
+--- PASS: TestDiffPaneShowsChangesAndNavigates (0.04s)
+=== RUN   TestHazardsReport
+--- PASS: TestHazardsReport (0.00s)
+=== RUN   TestInboxRejectNeedsAReasonAndBlocksTheCard
+--- PASS: TestInboxRejectNeedsAReasonAndBlocksTheCard (0.01s)
+=== RUN   TestFilePickerAcceptQuotesPathsWithSpaces
+--- PASS: TestFilePickerAcceptQuotesPathsWithSpaces (0.00s)
+=== RUN   TestPlanEstimateFromTheLastMainTurnCall
+--- PASS: TestPlanEstimateFromTheLastMainTurnCall (0.00s)
+=== RUN   TestStagedClassifierIsWrittenOnlyAfterPass
+--- PASS: TestStagedClassifierIsWrittenOnlyAfterPass (0.02s)
+=== RUN   TestWakeWordDropsUnmatchedSpeechUnheard
+--- PASS: TestWakeWordDropsUnmatchedSpeechUnheard (0.01s)
+=== RUN   TestModelViewScenarioRemoteHF
+--- PASS: TestModelViewScenarioRemoteHF (0.00s)
+=== RUN   TestTrustGateUntrustedDefaultIsDecline
+--- PASS: TestTrustGateUntrustedDefaultIsDecline (0.00s)
+=== RUN   TestPromptPickerHiddenWithoutNamedPrompts
+--- PASS: TestPromptPickerHiddenWithoutNamedPrompts (0.00s)
+=== RUN   TestKnobsStillWriteImmediately
+--- PASS: TestKnobsStillWriteImmediately (0.01s)
+=== RUN   TestClarifySkipMarksGroupSkipped
+--- PASS: TestClarifySkipMarksGroupSkipped (0.01s)
+=== RUN   TestDocsNameOnlyRealSlashCommands
+--- PASS: TestDocsNameOnlyRealSlashCommands (0.01s)
+=== RUN   TestShellPlanModeRejectsRmRf
+--- PASS: TestShellPlanModeRejectsRmRf (0.00s)
+=== RUN   TestClassifierProviderPickerKeepsInheritEntry
+--- PASS: TestClassifierProviderPickerKeepsInheritEntry (0.04s)
+=== RUN   TestRunsPanelGolden
+--- PASS: TestRunsPanelGolden (0.00s)
+=== RUN   TestTTSStatusLines
+--- PASS: TestTTSStatusLines (0.00s)
+=== RUN   TestToggleCavemanOverridesGlobalDefault
+--- PASS: TestToggleCavemanOverridesGlobalDefault (0.00s)
+=== RUN   TestOutsideRootAttachmentSessionOnly
+--- PASS: TestOutsideRootAttachmentSessionOnly (0.00s)
+=== RUN   TestFwPermDismissWritesNothing
+--- PASS: TestFwPermDismissWritesNothing (0.00s)
+=== RUN   TestToolDurationFallsBackToTheRowSpan
+--- PASS: TestToolDurationFallsBackToTheRowSpan (0.00s)
+=== RUN   TestCompactHappyPath
+--- PASS: TestCompactHappyPath (0.00s)
+=== RUN   TestCwdMoveAndResetAreSavedToTheSession
+--- PASS: TestCwdMoveAndResetAreSavedToTheSession (0.00s)
+=== RUN   TestCwdEventBackToRoot
+--- PASS: TestCwdEventBackToRoot (0.00s)
+=== RUN   TestContextWorksWithIntelOff
+--- PASS: TestContextWorksWithIntelOff (0.04s)
+=== RUN   TestModelChangeModelRowDisabledNoop
+--- PASS: TestModelChangeModelRowDisabledNoop (0.00s)
+=== RUN   TestTapToggles
+--- PASS: TestTapToggles (0.00s)
+=== RUN   TestProviderErrorBecomesSystemMessage
+--- PASS: TestProviderErrorBecomesSystemMessage (0.00s)
+=== RUN   TestShiftTabIntoAgentClearsProfileAndShowsCtrlP
+--- PASS: TestShiftTabIntoAgentClearsProfileAndShowsCtrlP (0.01s)
+=== RUN   TestKnowledgeProjectScopeAppliesReadDenyRules
+--- PASS: TestKnowledgeProjectScopeAppliesReadDenyRules (0.01s)
+=== RUN   TestPlanReviewViewShowsStructuredSections
+--- PASS: TestPlanReviewViewShowsStructuredSections (0.00s)
+=== RUN   TestKanbanTabHandsAnItemToTheCrew
+--- PASS: TestKanbanTabHandsAnItemToTheCrew (0.05s)
+=== RUN   TestCommitCommandCommitsTheSessionsPathsInAutoMode
+--- PASS: TestCommitCommandCommitsTheSessionsPathsInAutoMode (0.04s)
+=== RUN   TestResumeCLIFlagBeatsSessionRecord
+--- PASS: TestResumeCLIFlagBeatsSessionRecord (0.00s)
+=== RUN   TestModelMCPVulnetixToggleWritesTheSwitch
+--- PASS: TestModelMCPVulnetixToggleWritesTheSwitch (0.01s)
+=== RUN   TestAutoCommitErrorIsReportedAndIndexRestored
+--- PASS: TestAutoCommitErrorIsReportedAndIndexRestored (0.03s)
+=== RUN   TestImportEscReturnsToProviders
+--- PASS: TestImportEscReturnsToProviders (0.00s)
+=== RUN   TestProcessesTabRestartKey
+--- PASS: TestProcessesTabRestartKey (0.11s)
+=== RUN   TestReviewScanStatus
+--- PASS: TestReviewScanStatus (0.00s)
+=== RUN   TestNormaliseTurnsMergesAdjacentUsers
+--- PASS: TestNormaliseTurnsMergesAdjacentUsers (0.00s)
+=== RUN   TestTTSRefreshCardCopiesThePlayersState
+--- PASS: TestTTSRefreshCardCopiesThePlayersState (0.03s)
+=== RUN   TestCwdEventIgnoresNoOpMove
+--- PASS: TestCwdEventIgnoresNoOpMove (0.00s)
+=== RUN   TestDecisionLocalIsOfferedAndOpensPicker
+--- PASS: TestDecisionLocalIsOfferedAndOpensPicker (0.00s)
+=== RUN   TestCtrlCWithoutFileStillCopiesPrompt
+]52;c;aGVsbG8=--- PASS: TestCtrlCWithoutFileStillCopiesPrompt (0.00s)
+=== RUN   TestReviewEscCancels
+--- PASS: TestReviewEscCancels (0.00s)
+=== RUN   TestVulnetixConfigViewSmoke
+--- PASS: TestVulnetixConfigViewSmoke (0.00s)
+=== RUN   TestModelClassifierScopeWritesGlobalSettings
+--- PASS: TestModelClassifierScopeWritesGlobalSettings (0.01s)
+=== RUN   TestWorktreeListShowsTheHarnessMadeWorktrees
+--- PASS: TestWorktreeListShowsTheHarnessMadeWorktrees (0.06s)
+=== RUN   TestDraftForWebAdmitsFirst
+--- PASS: TestDraftForWebAdmitsFirst (0.00s)
+=== RUN   TestAddDirTypingFallsThroughToComposer
+--- PASS: TestAddDirTypingFallsThroughToComposer (0.00s)
+=== RUN   TestInitIsADocumentedCommand
+--- PASS: TestInitIsADocumentedCommand (0.00s)
+=== RUN   TestVoicePageListsEveryVoiceCommand
+--- PASS: TestVoicePageListsEveryVoiceCommand (0.00s)
+=== RUN   TestPersistHoldsInFlightBubble
+--- PASS: TestPersistHoldsInFlightBubble (0.00s)
+=== RUN   TestBtwFailureShowsAFixedLine
+--- PASS: TestBtwFailureShowsAFixedLine (0.01s)
+=== RUN   TestAgentArgumentPickerNeverOffersTheNoneRow
+--- PASS: TestAgentArgumentPickerNeverOffersTheNoneRow (0.00s)
+=== RUN   TestAddDirEscCloses
+--- PASS: TestAddDirEscCloses (0.00s)
+=== RUN   TestTreeContinuesFromAnEarlierReplyAndBranches
+--- PASS: TestTreeContinuesFromAnEarlierReplyAndBranches (0.00s)
+=== RUN   TestHistoryCycleTabCyclesNamedPrompts
+--- PASS: TestHistoryCycleTabCyclesNamedPrompts (0.01s)
+=== RUN   TestModelSwapSecondPressCancels
+--- PASS: TestModelSwapSecondPressCancels (0.00s)
+=== RUN   TestHazardAskViewNamesTheRail
+--- PASS: TestHazardAskViewNamesTheRail (0.00s)
+=== RUN   TestGettingStartedWelcomeTeachesThreeIdeas
+--- PASS: TestGettingStartedWelcomeTeachesThreeIdeas (0.00s)
+=== RUN   TestSideTailIsByteBounded
+--- PASS: TestSideTailIsByteBounded (0.00s)
+=== RUN   TestCompactFailureLeavesSessionIntact
+--- PASS: TestCompactFailureLeavesSessionIntact (0.00s)
+=== RUN   TestWorktreeActionsRefuseUnknownAndMalformedIDs
+--- PASS: TestWorktreeActionsRefuseUnknownAndMalformedIDs (0.05s)
+=== RUN   TestPermissionAskViewRendersToolAndDiff
+--- PASS: TestPermissionAskViewRendersToolAndDiff (0.00s)
+=== RUN   TestPersistSkipsOrphanedEmptyAssistant
+--- PASS: TestPersistSkipsOrphanedEmptyAssistant (0.00s)
+=== RUN   TestAgentEditDispatchDoesNotPanicOnEnter
+--- PASS: TestAgentEditDispatchDoesNotPanicOnEnter (0.04s)
+=== RUN   TestCheckBelaiUpdateCmdRespectsOptOut
+--- PASS: TestCheckBelaiUpdateCmdRespectsOptOut (0.00s)
+=== RUN   TestResumeUnconfiguredProviderWarnsAndKeepsCurrent
+--- PASS: TestResumeUnconfiguredProviderWarnsAndKeepsCurrent (0.00s)
+=== RUN   TestFilePickerOffersAttachableImagesOnly
+--- PASS: TestFilePickerOffersAttachableImagesOnly (0.00s)
+=== RUN   TestPublishSessionIDNilManagers
+--- PASS: TestPublishSessionIDNilManagers (0.00s)
+=== RUN   TestModelRowsPhase1NoHFDefaultWithToken
+--- PASS: TestModelRowsPhase1NoHFDefaultWithToken (0.00s)
+=== RUN   TestChooserOffersOnlyAttachableImages
+--- PASS: TestChooserOffersOnlyAttachableImages (0.00s)
+=== RUN   TestPersistWritesReasoningAndSystem
+--- PASS: TestPersistWritesReasoningAndSystem (0.00s)
+=== RUN   TestToggleFirewallOffPersistsPref
+--- PASS: TestToggleFirewallOffPersistsPref (0.01s)
+=== RUN   TestAutoNamingMarksRequested
+--- PASS: TestAutoNamingMarksRequested (0.00s)
+=== RUN   TestResumeCarrierNamesRestored
+--- PASS: TestResumeCarrierNamesRestored (0.00s)
+=== RUN   TestSavePromptModeEscCancels
+--- PASS: TestSavePromptModeEscCancels (0.00s)
+=== RUN   TestKeylessCustomProviderNeedsLiveness
+=== RUN   TestKeylessCustomProviderNeedsLiveness/live_endpoint
+=== RUN   TestKeylessCustomProviderNeedsLiveness/dead_endpoint
+--- PASS: TestKeylessCustomProviderNeedsLiveness (0.01s)
+    --- PASS: TestKeylessCustomProviderNeedsLiveness/live_endpoint (0.00s)
+    --- PASS: TestKeylessCustomProviderNeedsLiveness/dead_endpoint (0.00s)
+=== RUN   TestKanbanPaneRendersColourCodedRows
+--- PASS: TestKanbanPaneRendersColourCodedRows (0.02s)
+=== RUN   TestRMCaptionSubPhases
+--- PASS: TestRMCaptionSubPhases (0.00s)
+=== RUN   TestWebPlanAnswerPicksAnOfferedModel
+--- PASS: TestWebPlanAnswerPicksAnOfferedModel (0.04s)
+=== RUN   TestBudgetEdge25_ShortTerminalKeepsTheTabBarAndOneRow
+--- PASS: TestBudgetEdge25_ShortTerminalKeepsTheTabBarAndOneRow (0.08s)
+=== RUN   TestHistoryTabReturnsFromUnnamedTail
+--- PASS: TestHistoryTabReturnsFromUnnamedTail (0.00s)
+=== RUN   TestCustomCommandRunsAsAModelTurn
+--- PASS: TestCustomCommandRunsAsAModelTurn (0.10s)
+=== RUN   TestClassifyModeSyncsPlanMode
+--- PASS: TestClassifyModeSyncsPlanMode (0.00s)
+=== RUN   TestNoteTaskEditMarksTheSessionEdited
+--- PASS: TestNoteTaskEditMarksTheSessionEdited (0.03s)
+=== RUN   TestPlanReviewStaleDecisionIsDropped
+--- PASS: TestPlanReviewStaleDecisionIsDropped (0.00s)
+=== RUN   TestBtwClearHidesTheRows
+--- PASS: TestBtwClearHidesTheRows (0.00s)
+=== RUN   TestResumedMarkerRowIsACardWithoutPixels
+--- PASS: TestResumedMarkerRowIsACardWithoutPixels (0.00s)
+=== RUN   TestVoiceArtIsThreeRowsOfNineCells
+--- PASS: TestVoiceArtIsThreeRowsOfNineCells (0.00s)
+=== RUN   TestFlushPendingReviewFirst
+--- PASS: TestFlushPendingReviewFirst (0.02s)
+=== RUN   TestResumeViewShowsProjectPath
+--- PASS: TestResumeViewShowsProjectPath (0.00s)
+=== RUN   TestPermissionsPreviewDefaultAllowRespectsPosture
+--- PASS: TestPermissionsPreviewDefaultAllowRespectsPosture (0.00s)
+=== RUN   TestAutocompleteRightArrowAcceptsFirst
+--- PASS: TestAutocompleteRightArrowAcceptsFirst (0.00s)
+=== RUN   TestModeChoicePanelStartsOnRecommended
+--- PASS: TestModeChoicePanelStartsOnRecommended (0.00s)
+=== RUN   TestOnlyKeywordsPassWhileAnAskIsOpen
+--- PASS: TestOnlyKeywordsPassWhileAnAskIsOpen (0.00s)
+=== RUN   TestScreenSwitcherJumpsAndKeepsTheDraft
+--- PASS: TestScreenSwitcherJumpsAndKeepsTheDraft (0.00s)
+=== RUN   TestMCPScreenAddsALocalServer
+--- PASS: TestMCPScreenAddsALocalServer (0.01s)
+=== RUN   TestEveryJevJobHasALabelAndHelp
+--- PASS: TestEveryJevJobHasALabelAndHelp (0.00s)
+=== RUN   TestPickerShowsLoadingAndErrors
+--- PASS: TestPickerShowsLoadingAndErrors (0.00s)
+=== RUN   TestApproveNewDropsTheSummary
+--- PASS: TestApproveNewDropsTheSummary (0.00s)
+=== RUN   TestTruncateUTF8KeepsRunes
+--- PASS: TestTruncateUTF8KeepsRunes (0.00s)
+=== RUN   TestFilterModels
+--- PASS: TestFilterModels (0.00s)
+=== RUN   TestModelKeyEnterOpensClassifierPicker
+--- PASS: TestModelKeyEnterOpensClassifierPicker (0.00s)
+=== RUN   TestDetectMIMETypeByContent
+--- PASS: TestDetectMIMETypeByContent (0.00s)
+=== RUN   TestTapLatchesAndEndsWhenTheEngineStops
+--- PASS: TestTapLatchesAndEndsWhenTheEngineStops (0.00s)
+=== RUN   TestCtrlOTogglesExpandAll
+--- PASS: TestCtrlOTogglesExpandAll (0.00s)
+=== RUN   TestToolResultStoresContentAndSetsErrorStatus
+--- PASS: TestToolResultStoresContentAndSetsErrorStatus (0.00s)
+=== RUN   TestLSPViewFitsATerminalAndGroupsByDetection
+--- PASS: TestLSPViewFitsATerminalAndGroupsByDetection (0.01s)
+=== RUN   TestProviderDetailCredentialsShowsBackend
+--- PASS: TestProviderDetailCredentialsShowsBackend (0.00s)
+=== RUN   TestLSPRowsContainGo
+--- PASS: TestLSPRowsContainGo (0.00s)
+=== RUN   TestKeywordWithNothingOpenIsOrdinarySpeech
+--- PASS: TestKeywordWithNothingOpenIsOrdinarySpeech (0.00s)
+=== RUN   TestForgeTabsGolden
+=== RUN   TestForgeTabsGolden/git_80
+=== RUN   TestForgeTabsGolden/git_40
+=== RUN   TestForgeTabsGolden/ci_80
+--- PASS: TestForgeTabsGolden (0.00s)
+    --- PASS: TestForgeTabsGolden/git_80 (0.00s)
+    --- PASS: TestForgeTabsGolden/git_40 (0.00s)
+    --- PASS: TestForgeTabsGolden/ci_80 (0.00s)
+=== RUN   TestRoleManagerRowsCarryTheirDuration
+--- PASS: TestRoleManagerRowsCarryTheirDuration (0.00s)
+=== RUN   TestInitArmsStartupChecks
+--- PASS: TestInitArmsStartupChecks (0.00s)
+=== RUN   TestNextAgentCoalescesProgress
+--- PASS: TestNextAgentCoalescesProgress (0.00s)
+=== RUN   TestVoiceIconsByLook
+--- PASS: TestVoiceIconsByLook (0.00s)
+=== RUN   TestFilePrefixAtCursorMidPrompt
+--- PASS: TestFilePrefixAtCursorMidPrompt (0.00s)
+=== RUN   TestCompletionPanelRoundTripsThroughSession
+--- PASS: TestCompletionPanelRoundTripsThroughSession (0.00s)
+=== RUN   TestFirewallKeySyncSendsTheKeyOnStdin
+--- PASS: TestFirewallKeySyncSendsTheKeyOnStdin (0.01s)
+=== RUN   TestClassifierPickerWarningBroadProvider
+--- PASS: TestClassifierPickerWarningBroadProvider (0.00s)
+=== RUN   TestDebugExplainsWhyItCannotListen
+--- PASS: TestDebugExplainsWhyItCannotListen (0.00s)
+=== RUN   TestMouseWheelDoesNotAnchorSelection
+--- PASS: TestMouseWheelDoesNotAnchorSelection (0.00s)
+=== RUN   TestInboxListsWhatWaitsOnYouAndApproves
+--- PASS: TestInboxListsWhatWaitsOnYouAndApproves (0.02s)
+=== RUN   TestReviewTriageProceedsWhenScannerAgentTimesOut
+--- PASS: TestReviewTriageProceedsWhenScannerAgentTimesOut (0.00s)
+=== RUN   TestWorkingHintRendersAboveTheComposer
+--- PASS: TestWorkingHintRendersAboveTheComposer (0.00s)
+=== RUN   TestModelPickerUpDownWrap
+--- PASS: TestModelPickerUpDownWrap (0.00s)
+=== RUN   TestAgentEditCommandOpensView
+--- PASS: TestAgentEditCommandOpensView (0.04s)
+=== RUN   TestAgentPulseTicksOnlyWhileWorking
+--- PASS: TestAgentPulseTicksOnlyWhileWorking (0.00s)
+=== RUN   TestHoldToTalkFollowsKeyRepeat
+--- PASS: TestHoldToTalkFollowsKeyRepeat (0.00s)
+=== RUN   TestDebugStopWithNothingOpenIsANoOp
+--- PASS: TestDebugStopWithNothingOpenIsANoOp (0.00s)
+=== RUN   TestPatchToleranceCommand
+--- PASS: TestPatchToleranceCommand (0.00s)
+=== RUN   TestFwPermApplyRunsTheCLIAndRecordsEachRule
+--- PASS: TestFwPermApplyRunsTheCLIAndRecordsEachRule (0.01s)
+=== RUN   TestRunsPanelHeightClosedZero
+--- PASS: TestRunsPanelHeightClosedZero (0.00s)
+=== RUN   TestReportCardsNeverReachTheModel
+--- PASS: TestReportCardsNeverReachTheModel (0.00s)
+=== RUN   TestReviewScanShowsCardImmediately
+--- PASS: TestReviewScanShowsCardImmediately (0.00s)
+=== RUN   TestControlRoomStopRunConfirms
+--- PASS: TestControlRoomStopRunConfirms (0.04s)
+=== RUN   TestRehydrateTextOnlyExcludesNewerRows
+--- PASS: TestRehydrateTextOnlyExcludesNewerRows (0.00s)
+=== RUN   TestComposerIdleMetaAdvertisesMappings
+--- PASS: TestComposerIdleMetaAdvertisesMappings (0.00s)
+=== RUN   TestBudgetFormatting
+--- PASS: TestBudgetFormatting (0.00s)
+=== RUN   TestConfirmationShowsOnlyCleanedText
+--- PASS: TestConfirmationShowsOnlyCleanedText (0.00s)
+=== RUN   TestAddDirFilterable
+--- PASS: TestAddDirFilterable (0.00s)
+=== RUN   TestAgentArgumentPickerClosesWhenTheLineChanges
+--- PASS: TestAgentArgumentPickerClosesWhenTheLineChanges (0.00s)
+=== RUN   TestTodoPanelHeightCountsTowardChrome
+--- PASS: TestTodoPanelHeightCountsTowardChrome (0.00s)
+=== RUN   TestAgentsEnterFollowsTheThread
+--- PASS: TestAgentsEnterFollowsTheThread (0.00s)
+=== RUN   TestRehydrateTodosWithoutEntryIsNoop
+--- PASS: TestRehydrateTodosWithoutEntryIsNoop (0.00s)
+=== RUN   TestSettingsSourceShownOnlyWhenNotDefault
+--- PASS: TestSettingsSourceShownOnlyWhenNotDefault (0.00s)
+=== RUN   TestCwdResetOfAnUnmovedSessionSaysNothing
+--- PASS: TestCwdResetOfAnUnmovedSessionSaysNothing (0.00s)
+=== RUN   TestHistoryCycleDownArrowRestoresOriginal
+--- PASS: TestHistoryCycleDownArrowRestoresOriginal (0.00s)
+=== RUN   TestBudgetRule10_FooterCyclesThroughTheModelsBudgets
+--- PASS: TestBudgetRule10_FooterCyclesThroughTheModelsBudgets (0.04s)
+=== RUN   TestRehydrateTodosTakesTheLatestEntry
+--- PASS: TestRehydrateTodosTakesTheLatestEntry (0.00s)
+=== RUN   TestRehydrateDropsOrphanCallAndResult
+--- PASS: TestRehydrateDropsOrphanCallAndResult (0.00s)
+=== RUN   TestReviewTriageWaitsForScannerAgents
+--- PASS: TestReviewTriageWaitsForScannerAgents (0.00s)
+=== RUN   TestResumeEnterLoadsAndPops
+--- PASS: TestResumeEnterLoadsAndPops (0.00s)
+=== RUN   TestClassifyModeSkippedWithoutClassifier
+--- PASS: TestClassifyModeSkippedWithoutClassifier (0.00s)
+=== RUN   TestEveryThresholdIsInExactlyOneSection
+--- PASS: TestEveryThresholdIsInExactlyOneSection (0.00s)
+=== RUN   TestLintLoopProjectFileCannotSwitchItOn
+--- PASS: TestLintLoopProjectFileCannotSwitchItOn (0.00s)
+=== RUN   TestRewindBothRestoresFilesAndBranchesTheConversation
+--- PASS: TestRewindBothRestoresFilesAndBranchesTheConversation (0.00s)
+=== RUN   TestVulnetixArtifactsViewSmoke
+--- PASS: TestVulnetixArtifactsViewSmoke (0.00s)
+=== RUN   TestNewAppStartsWithItsOwnPersona
+--- PASS: TestNewAppStartsWithItsOwnPersona (0.00s)
+=== RUN   TestEscCancelsRunningTestAndStaleResultIsDropped
+--- PASS: TestEscCancelsRunningTestAndStaleResultIsDropped (0.00s)
+=== RUN   TestTTSAutoReadNeedsBothSettings
+--- PASS: TestTTSAutoReadNeedsBothSettings (0.01s)
+=== RUN   TestModelViewListsCustomProviderAfterBuiltins
+--- PASS: TestModelViewListsCustomProviderAfterBuiltins (0.03s)
+=== RUN   TestDebugCleanupFailureAndNoFastModel
+--- PASS: TestDebugCleanupFailureAndNoFastModel (0.00s)
+=== RUN   TestCustomCommandInAgentModeWithoutAnAgentOpensThePicker
+--- PASS: TestCustomCommandInAgentModeWithoutAnAgentOpensThePicker (0.10s)
+=== RUN   TestModelViewRendersRolesAndWarning
+--- PASS: TestModelViewRendersRolesAndWarning (0.00s)
+=== RUN   TestResumeBackfillsSchema1
+--- PASS: TestResumeBackfillsSchema1 (0.00s)
+=== RUN   TestF8OpensRunsPanelSubagents
+--- PASS: TestF8OpensRunsPanelSubagents (0.00s)
+=== RUN   TestTTSCommandStatusAndStopAndCache
+--- PASS: TestTTSCommandStatusAndStopAndCache (0.03s)
+=== RUN   TestF9OpensRunsPanelActivity
+--- PASS: TestF9OpensRunsPanelActivity (0.00s)
+=== RUN   TestSymbolsCommandAnswersStatusNameAndPath
+--- PASS: TestSymbolsCommandAnswersStatusNameAndPath (0.00s)
+=== RUN   TestImageIsNotSteeredIntoARunningTurn
+--- PASS: TestImageIsNotSteeredIntoARunningTurn (0.00s)
+=== RUN   TestKanbanWrapUpEventLines
+--- PASS: TestKanbanWrapUpEventLines (0.00s)
+=== RUN   TestBannerPresentAfterManyMessages
+--- PASS: TestBannerPresentAfterManyMessages (0.00s)
+=== RUN   TestClassifyModeNamedAgent
+--- PASS: TestClassifyModeNamedAgent (0.01s)
+=== RUN   TestTTSCommandValidation
+--- PASS: TestTTSCommandValidation (0.00s)
+=== RUN   TestBudgetRule21_PaneWithoutALimitSaysSo
+--- PASS: TestBudgetRule21_PaneWithoutALimitSaysSo (0.02s)
+=== RUN   TestTurnStateBracketsTheTurn
+--- PASS: TestTurnStateBracketsTheTurn (0.00s)
+=== RUN   TestWorkingHintShowsMacFormForAnFKeyTip
+--- PASS: TestWorkingHintShowsMacFormForAnFKeyTip (0.00s)
+=== RUN   TestComposerReadyPredicate
+--- PASS: TestComposerReadyPredicate (0.01s)
+=== RUN   TestModelDownloadFailureIsReported
+--- PASS: TestModelDownloadFailureIsReported (0.00s)
+=== RUN   TestResumeDropsThePendingSubmit
+--- PASS: TestResumeDropsThePendingSubmit (0.00s)
+=== RUN   TestPersistTrailingReasoningAfterMaterialise
+--- PASS: TestPersistTrailingReasoningAfterMaterialise (0.00s)
+=== RUN   TestKeyAnalysisLogsOtherKeysWithoutAnalysingThem
+--- PASS: TestKeyAnalysisLogsOtherKeysWithoutAnalysingThem (0.00s)
+=== RUN   TestResumeABAConsistentFiles
+--- PASS: TestResumeABAConsistentFiles (0.00s)
+=== RUN   TestPlanReviewViewContainsPathAndOptions
+--- PASS: TestPlanReviewViewContainsPathAndOptions (0.00s)
+=== RUN   TestClampPos
+--- PASS: TestClampPos (0.00s)
+=== RUN   TestBudgetRule11_WarningsForTheSelectedModelOnly
+--- PASS: TestBudgetRule11_WarningsForTheSelectedModelOnly (0.06s)
+=== RUN   TestSavePromptKeyIsChatScoped
+--- PASS: TestSavePromptKeyIsChatScoped (0.00s)
+=== RUN   TestReportEventAddsSystemLine
+--- PASS: TestReportEventAddsSystemLine (0.00s)
+=== RUN   TestPlanModeStickySurvivesClassifierRegression
+--- PASS: TestPlanModeStickySurvivesClassifierRegression (0.02s)
+=== RUN   TestImportNotImportableRowCannotBeChosen
+--- PASS: TestImportNotImportableRowCannotBeChosen (0.00s)
+=== RUN   TestJevProviderRefusesPlainHTTPOffLoopback
+--- PASS: TestJevProviderRefusesPlainHTTPOffLoopback (0.00s)
+=== RUN   TestAgentsCommandPicksTheUsefulTab
+--- PASS: TestAgentsCommandPicksTheUsefulTab (0.00s)
+=== RUN   TestControlRoomShowsThePoolAsleep
+--- PASS: TestControlRoomShowsThePoolAsleep (0.05s)
+=== RUN   TestVulnetixFirewallCommandActivatesVulnetix
+--- PASS: TestVulnetixFirewallCommandActivatesVulnetix (0.02s)
+=== RUN   TestTTSVoiceRowKeepsACustomVoice
+--- PASS: TestTTSVoiceRowKeepsACustomVoice (0.00s)
+=== RUN   TestDirSummaryEmpty
+--- PASS: TestDirSummaryEmpty (0.00s)
+=== RUN   TestClarifyEscCancelsTurn
+--- PASS: TestClarifyEscCancelsTurn (0.00s)
+=== RUN   TestNormaliseTurnsKeepsImagesFromBothTurns
+--- PASS: TestNormaliseTurnsKeepsImagesFromBothTurns (0.00s)
+=== RUN   TestEachTurnProjectLayerCannotEnableIt
+--- PASS: TestEachTurnProjectLayerCannotEnableIt (0.07s)
+=== RUN   TestGettingStartedPasswordNeverLingers
+--- PASS: TestGettingStartedPasswordNeverLingers (0.00s)
+=== RUN   TestChromeHeightDecomposition
+=== RUN   TestChromeHeightDecomposition/bare
+=== RUN   TestChromeHeightDecomposition/banner
+=== RUN   TestChromeHeightDecomposition/no_banner
+=== RUN   TestChromeHeightDecomposition/autocomplete
+=== RUN   TestChromeHeightDecomposition/attachment
+=== RUN   TestChromeHeightDecomposition/everything
+--- PASS: TestChromeHeightDecomposition (0.01s)
+    --- PASS: TestChromeHeightDecomposition/bare (0.00s)
+    --- PASS: TestChromeHeightDecomposition/banner (0.00s)
+    --- PASS: TestChromeHeightDecomposition/no_banner (0.00s)
+    --- PASS: TestChromeHeightDecomposition/autocomplete (0.00s)
+    --- PASS: TestChromeHeightDecomposition/attachment (0.00s)
+    --- PASS: TestChromeHeightDecomposition/everything (0.00s)
+=== RUN   TestTTSNothingReadableSendsNothing
+--- PASS: TestTTSNothingReadableSendsNothing (0.00s)
+=== RUN   TestRemotePromptLeavesAnEngagedAgentAlone
+--- PASS: TestRemotePromptLeavesAnEngagedAgentAlone (0.04s)
+=== RUN   TestSettingsLSPSubmenuDispatches
+--- PASS: TestSettingsLSPSubmenuDispatches (0.00s)
+=== RUN   TestBannerSettingFalseHidesBanner
+--- PASS: TestBannerSettingFalseHidesBanner (0.00s)
+=== RUN   TestResumeWearsTheRecordedAgentOrNone
+--- PASS: TestResumeWearsTheRecordedAgentOrNone (0.02s)
+=== RUN   TestBudgetRule21_PanelHeightMatchesWhatIsDrawn
+--- PASS: TestBudgetRule21_PanelHeightMatchesWhatIsDrawn (0.16s)
+=== RUN   TestVulnetixListEnterOpensArtifactsForProject
+--- PASS: TestVulnetixListEnterOpensArtifactsForProject (0.00s)
+=== RUN   TestCommitDraftFallsBackOnBadOutput
+--- PASS: TestCommitDraftFallsBackOnBadOutput (0.13s)
+=== RUN   TestRunCapsEdge8_WebAndVoiceNeverExtend
+--- PASS: TestRunCapsEdge8_WebAndVoiceNeverExtend (0.04s)
+=== RUN   TestAskModeRefusesWhenTheTreeChangedMeanwhile
+--- PASS: TestAskModeRefusesWhenTheTreeChangedMeanwhile (0.05s)
+=== RUN   TestGlScrollKeepsTheCursorAndMarksTheRest
+--- PASS: TestGlScrollKeepsTheCursorAndMarksTheRest (0.00s)
+=== RUN   TestModelKeyUnsetClassifierRows
+--- PASS: TestModelKeyUnsetClassifierRows (0.03s)
+=== RUN   TestBudgetRule21_F12TogglesTheIntelTab
+--- PASS: TestBudgetRule21_F12TogglesTheIntelTab (0.03s)
+=== RUN   TestFinishReviewProjectFileCannotSwitchItOff
+--- PASS: TestFinishReviewProjectFileCannotSwitchItOff (0.00s)
+=== RUN   TestParseMCPPairs
+--- PASS: TestParseMCPPairs (0.00s)
+=== RUN   TestKanbanCommandAndScreenEntry
+--- PASS: TestKanbanCommandAndScreenEntry (0.01s)
+=== RUN   TestSaveFileWritesRelativePath
+--- PASS: TestSaveFileWritesRelativePath (0.00s)
+=== RUN   TestInterleavedGoalTurnRehydratesWithoutDrops
+--- PASS: TestInterleavedGoalTurnRehydratesWithoutDrops (0.00s)
+=== RUN   TestDraftRefusalReason
+--- PASS: TestDraftRefusalReason (0.00s)
+=== RUN   TestSlashPopupFuzzyMatchesLibraries
+--- PASS: TestSlashPopupFuzzyMatchesLibraries (0.10s)
+=== RUN   TestRelayDiscardLeavesTheSessionUntouched
+--- PASS: TestRelayDiscardLeavesTheSessionUntouched (0.00s)
+=== RUN   TestCompleteAgentSubcommands
+--- PASS: TestCompleteAgentSubcommands (0.00s)
+=== RUN   TestActionBarDeleteConfirm
+--- PASS: TestActionBarDeleteConfirm (0.02s)
+=== RUN   TestReviewProfileIsBuiltin
+--- PASS: TestReviewProfileIsBuiltin (0.00s)
+=== RUN   TestAcceptingAgentArgumentRunsTheCommand
+--- PASS: TestAcceptingAgentArgumentRunsTheCommand (0.02s)
+=== RUN   TestReviewSteerYieldsToARunningTurn
+--- PASS: TestReviewSteerYieldsToARunningTurn (0.00s)
+=== RUN   TestGettingStartedHeaderShowsEscHintAndCount
+--- PASS: TestGettingStartedHeaderShowsEscHintAndCount (0.00s)
+=== RUN   TestEachTurnSkippedPassStartsNoFixBranch
+--- PASS: TestEachTurnSkippedPassStartsNoFixBranch (0.05s)
+=== RUN   TestLibraryCommandUnknownNamesChangeNothing
+--- PASS: TestLibraryCommandUnknownNamesChangeNothing (0.10s)
+=== RUN   TestReviewRunsEveryScannerByDefault
+--- PASS: TestReviewRunsEveryScannerByDefault (0.00s)
+=== RUN   TestHistoryCycleUpArrow
+--- PASS: TestHistoryCycleUpArrow (0.00s)
+=== RUN   TestVoiceErrorsAreShownSanitized
+--- PASS: TestVoiceErrorsAreShownSanitized (0.00s)
+=== RUN   TestAdmitImageFilePNGAndJPEG
+--- PASS: TestAdmitImageFilePNGAndJPEG (0.00s)
+=== RUN   TestAgentToolsPickerCommitsSortedSelection
+--- PASS: TestAgentToolsPickerCommitsSortedSelection (0.04s)
+=== RUN   TestLayoutRowCyclesAndUnsets
+--- PASS: TestLayoutRowCyclesAndUnsets (0.00s)
+=== RUN   TestKanbanTabReleasesAClaim
+--- PASS: TestKanbanTabReleasesAClaim (0.03s)
+=== RUN   TestProviderNewAcceptsSecondInstanceOfSameKind
+--- PASS: TestProviderNewAcceptsSecondInstanceOfSameKind (0.00s)
+=== RUN   TestWebDraftRefusals
+--- PASS: TestWebDraftRefusals (0.03s)
+=== RUN   TestKeepAliveIsHeldWhereAPingMustNotRun
+--- PASS: TestKeepAliveIsHeldWhereAPingMustNotRun (0.00s)
+=== RUN   TestModelRowsPhase2ExplicitDisabled
+--- PASS: TestModelRowsPhase2ExplicitDisabled (0.00s)
+=== RUN   TestGlFilterAndChangedOnly
+--- PASS: TestGlFilterAndChangedOnly (0.00s)
+=== RUN   TestConfiguredKeyIsHonoured
+--- PASS: TestConfiguredKeyIsHonoured (0.02s)
+=== RUN   TestManualCompactFocusRidesTheUserSideOnly
+--- PASS: TestManualCompactFocusRidesTheUserSideOnly (0.00s)
+=== RUN   TestRehydrateSchema1Fixture
+--- PASS: TestRehydrateSchema1Fixture (0.00s)
+=== RUN   TestCtrlTCyclesToolDisplayStates
+--- PASS: TestCtrlTCyclesToolDisplayStates (0.00s)
+=== RUN   TestVoiceCommandDebugOpensTheScreen
+--- PASS: TestVoiceCommandDebugOpensTheScreen (0.00s)
+=== RUN   TestBareClickClearsSelection
+--- PASS: TestBareClickClearsSelection (0.00s)
+=== RUN   TestVoiceKeyWhileOffExplainsItselfOnce
+--- PASS: TestVoiceKeyWhileOffExplainsItselfOnce (0.00s)
+=== RUN   TestA2AReplyIsDeliveredAsAnAttachmentTiedToTheQuestion
+--- PASS: TestA2AReplyIsDeliveredAsAnAttachmentTiedToTheQuestion (0.01s)
+=== RUN   TestGuessIsIgnoredWhenTheComposerCannotTakeItOrTheModelIsBusy
+--- PASS: TestGuessIsIgnoredWhenTheComposerCannotTakeItOrTheModelIsBusy (0.00s)
+=== RUN   TestTrustGateUntrustedAcceptGrantsTrust
+--- PASS: TestTrustGateUntrustedAcceptGrantsTrust (0.01s)
+=== RUN   TestAgentEditGolden
+--- PASS: TestAgentEditGolden (2.03s)
+=== RUN   TestProviderPickerEmptyOptsNoop
+--- PASS: TestProviderPickerEmptyOptsNoop (0.00s)
+=== RUN   TestRCFooterAndCommand
+--- PASS: TestRCFooterAndCommand (0.00s)
+=== RUN   TestTypingStopsSubmitDeliverySendingThePrompt
+--- PASS: TestTypingStopsSubmitDeliverySendingThePrompt (0.01s)
+=== RUN   TestLibraryProjectOverridesGlobal
+--- PASS: TestLibraryProjectOverridesGlobal (0.01s)
+=== RUN   TestWebAnswerAllowAlways
+--- PASS: TestWebAnswerAllowAlways (0.04s)
+=== RUN   TestWebAnswerRejectsUnknownDecisionAndWrongKind
+--- PASS: TestWebAnswerRejectsUnknownDecisionAndWrongKind (0.03s)
+=== RUN   TestRewindPolicyConfinesRestoresToTheSessionRoots
+--- PASS: TestRewindPolicyConfinesRestoresToTheSessionRoots (0.00s)
+=== RUN   TestFilePrefixMultiLine
+--- PASS: TestFilePrefixMultiLine (0.00s)
+=== RUN   TestA2ARowsPersistAndRehydrateAsRenderOnly
+--- PASS: TestA2ARowsPersistAndRehydrateAsRenderOnly (0.00s)
+=== RUN   TestFilePickerRenderContainsCounter
+--- PASS: TestFilePickerRenderContainsCounter (0.00s)
+=== RUN   TestIdlePaneTakenByDownStaysOpenWhileTyping
+--- PASS: TestIdlePaneTakenByDownStaysOpenWhileTyping (0.00s)
+=== RUN   TestModelPickerNavigationAndSelect
+--- PASS: TestModelPickerNavigationAndSelect (0.00s)
+=== RUN   TestNoAltKeyBindings
+--- PASS: TestNoAltKeyBindings (0.01s)
+=== RUN   TestIdlePaneDefaultsToNone
+--- PASS: TestIdlePaneDefaultsToNone (0.03s)
+=== RUN   TestEchoUserDuringRunningTurnKeepsOrder
+--- PASS: TestEchoUserDuringRunningTurnKeepsOrder (0.00s)
+=== RUN   TestInterruptedTurnResetsTheDirectoryAndSaysSo
+--- PASS: TestInterruptedTurnResetsTheDirectoryAndSaysSo (0.00s)
+=== RUN   TestClassifierProviderList
+--- PASS: TestClassifierProviderList (0.01s)
+=== RUN   TestBackgroundErrorIsCountedAndReported
+--- PASS: TestBackgroundErrorIsCountedAndReported (0.00s)
+=== RUN   TestResumeStickyPlanModeRestored
+--- PASS: TestResumeStickyPlanModeRestored (0.00s)
+=== RUN   TestDownloadConfirmYesAndNo
+--- PASS: TestDownloadConfirmYesAndNo (0.01s)
+=== RUN   TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions
+--- PASS: TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions (0.00s)
+=== RUN   TestSourceIndexFollowsTheSettingAndReindexExplainsWhenOff
+--- PASS: TestSourceIndexFollowsTheSettingAndReindexExplainsWhenOff (0.01s)
+=== RUN   TestObserveTaskDiffDedupesAndSkipsUnavailableOnly
+--- PASS: TestObserveTaskDiffDedupesAndSkipsUnavailableOnly (0.00s)
+=== RUN   TestBuiltInModelIsReportedAndNeverDownloaded
+--- PASS: TestBuiltInModelIsReportedAndNeverDownloaded (0.01s)
+=== RUN   TestKanbanCommandFocusesAnItem
+--- PASS: TestKanbanCommandFocusesAnItem (0.00s)
+=== RUN   TestCatalogPrefetchFillsFooterContextLimit
+--- PASS: TestCatalogPrefetchFillsFooterContextLimit (0.00s)
+=== RUN   TestAgentPickerTabCyclesThroughNone
+--- PASS: TestAgentPickerTabCyclesThroughNone (0.00s)
+=== RUN   TestProcessProgressAppendsToActivityRegistry
+--- FAIL: TestProcessProgressAppendsToActivityRegistry (0.00s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x1b51166]
+
+goroutine 5778 [running]:
+testing.tRunner.func1.2({0x1ea4fa0, 0x399e130})
+	/home/pix/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/src/testing/testing.go:1974 +0x232
+testing.tRunner.func1()
+	/home/pix/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/src/testing/testing.go:1977 +0x349
+panic({0x1ea4fa0?, 0x399e130?})
+	/home/pix/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/src/runtime/panic.go:860 +0x13a
+github.com/vulnetix/belai/internal/tui.TestProcessProgressAppendsToActivityRegistry(0x2b7fc153c488)
+	/workspace/worktrees/belai-e3db55a4/K-93646e-245c9f/internal/tui/processes_test.go:103 +0xa6
+testing.tRunner(0x2b7fc153c488, 0x24b4180)
+	/home/pix/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/src/testing/testing.go:2036 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/pix/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.10.linux-amd64/src/testing/testing.go:2101 +0x4c5
+FAIL	github.com/vulnetix/belai/internal/tui	17.225s
+FAIL

@@ -112,9 +112,15 @@ func TestCwdEventInvalidatesFooterHeightCache(t *testing.T) {
 // The rendered footer actually shows the new directory, home-shortened the
 // same way the starting directory is.
 func TestFooterRendersMovedDirectory(t *testing.T) {
+	// A long default cwd from the ambient home would be truncated out of the
+	// rendered row; pin the home so the footer is deterministic.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	root := t.TempDir()
 	a := New(Options{Workdir: root})
-	a.width = 120
+	// Wide enough that the row holds the whole moved directory on any
+	// machine: tmpdir prefixes differ in length and the budget gauge
+	// truncates the row's tail at narrow widths.
+	a.width = 200
 	sub := filepath.Join(root, "internal")
 
 	a.handleAgentEvent(agentEventMsg{Kind: agent.EventCwdKind, Cwd: "internal", CwdDir: sub})

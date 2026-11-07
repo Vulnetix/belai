@@ -50,6 +50,9 @@ func TestBannerPresentAfterManyMessages(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.width = 120
 	a.height = 40
+	// The test's comment pins the compact header, which is the banner of a
+	// returning session, not a first run.
+	a.firstRun = false
 	for i := 0; i < 6; i++ {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: "message"})
 	}

@@ -22,6 +22,9 @@ func TestIsProcessInput(t *testing.T) {
 }
 
 func TestHandleProcessCreatesLibraryEntry(t *testing.T) {
+	// An isolated home keeps the mode and permissions state another test may
+	// have written out of this one.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	a := New(Options{Workdir: dir})
 	cmd := "echo hello"
@@ -97,6 +100,7 @@ func TestProcessProgressAppendsToToolRow(t *testing.T) {
 }
 
 func TestProcessProgressAppendsToActivityRegistry(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	a := New(Options{Workdir: dir})
 	cmd := "echo activity line"
