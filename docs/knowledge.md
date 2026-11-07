@@ -549,6 +549,8 @@ test files is not named here, so this table and the code move together.
 | K69 | The three source settings have defaults and ranges, name the key when out of range, and are the user's alone: a project layer cannot turn the index on or raise a limit | `TestKnowledgeSourceDefaultsAndOverride`, `TestValidateKnowledgeSourceBounds`, `TestKnowledgeSourceIndexIsPerUser` |
 | K70 | `/settings` has the three source rows in the Knowledge group, always saved to the global file | `TestSettingsKnowledgeSourceRowsAndToggle` |
 | K71 | A source document is tagged by the fixed tables only | `TestSourceTagsStayDeterministic` |
+| K72 | A knowledge gate opens no store when the setup names no root and no profile | `TestOpenWithoutRootOrProfileIsNil` |
+| K73 | The topic rater wraps the Jev client: limits and the local flag follow the backend, `Rate` runs the client's `Score`, and a batch that answered nothing is an error, not a scored pass | `TestJobsRaterWrapsTheJevClient` |
 
 ## Edge cases
 
