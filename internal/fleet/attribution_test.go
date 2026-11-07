@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
@@ -65,6 +66,10 @@ func TestEnsureAttributionRewritesOnlyWhatLacksIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This machine may carry a sandbox attribution file, which would add
+	// trailers to the commits below and defeat the test. Pin it away for the
+	// commit phase; sandboxFile replaces it for the rewrite.
+	t.Setenv(attribution.FileEnv, filepath.Join(t.TempDir(), "absent"))
 	// Two commits made with no attribution file in view, as a repository with its own hooks path would make them.
 	for _, name := range []string{"a.txt", "b.txt"} {
 		os.WriteFile(filepath.Join(ws.Dir, name), []byte(name+"\n"), 0o644)
