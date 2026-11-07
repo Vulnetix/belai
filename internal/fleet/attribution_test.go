@@ -66,6 +66,7 @@ func TestEnsureAttributionRewritesOnlyWhatLacksIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Two commits made with no attribution file in view, as a repository with its own hooks path would make them.
+	t.Setenv("PIX_ATTRIBUTION_FILE", filepath.Join(t.TempDir(), "absent"))
 	for _, name := range []string{"a.txt", "b.txt"} {
 		os.WriteFile(filepath.Join(ws.Dir, name), []byte(name+"\n"), 0o644)
 		if n, err := ws.Commit(ctx, "feat: add "+name); err != nil || n != 1 {

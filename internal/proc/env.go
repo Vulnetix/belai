@@ -53,14 +53,23 @@ func inList(key string, list []string) bool {
 
 // WithoutGitEnv drops ambient variables that point git at another repository
 // (a wrapper, worktree or hook the process was started from), so a git command
-// operates on the directory it is run in.
+// operates on the directory it is run in. GIT_CONFIG_COUNT/KEY/VALUE are in the
+// list because a sandbox exports `credential.<url>.helper` there: kept, it
+// would answer every git fetch and push outside the vault's control.
 func WithoutGitEnv(env []string) []string {
 	var out []string
 	for _, e := range env {
 		key, _, _ := strings.Cut(e, "=")
 		switch key {
 		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE":
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE",
+			"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_KEY_2",
+			"GIT_CONFIG_KEY_3", "GIT_CONFIG_KEY_4", "GIT_CONFIG_KEY_5", "GIT_CONFIG_KEY_6",
+			"GIT_CONFIG_KEY_7", "GIT_CONFIG_KEY_8", "GIT_CONFIG_KEY_9",
+			"GIT_CONFIG_VALUE_0", "GIT_CONFIG_VALUE_1", "GIT_CONFIG_VALUE_2",
+			"GIT_CONFIG_VALUE_3", "GIT_CONFIG_VALUE_4", "GIT_CONFIG_VALUE_5",
+			"GIT_CONFIG_VALUE_6", "GIT_CONFIG_VALUE_7", "GIT_CONFIG_VALUE_8",
+			"GIT_CONFIG_VALUE_9":
 			continue
 		}
 		out = append(out, e)
@@ -73,9 +82,23 @@ func WithoutGitEnv(env []string) []string {
 // exports them, and a git subprocess that inherits one operates on that
 // foreign repository instead of the test's own fixture directory.
 func UnsetGitEnv() {
-	for _, e := range WithoutGitEnv(os.Environ()) {
-		if key, _, ok := strings.Cut(e, "="); ok {
-			os.Unsetenv(key)
-		}
+	for _, key := range gitEnvNames() {
+		os.Unsetenv(key)
+	}
+}
+
+// gitEnvNames lists the git locator variables WithoutGitEnv drops, the same
+// set UnsetGitEnv removes from the process environment.
+func gitEnvNames() []string {
+	return []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_NAMESPACE",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_KEY_1", "GIT_CONFIG_KEY_2",
+		"GIT_CONFIG_KEY_3", "GIT_CONFIG_KEY_4", "GIT_CONFIG_KEY_5", "GIT_CONFIG_KEY_6",
+		"GIT_CONFIG_KEY_7", "GIT_CONFIG_KEY_8", "GIT_CONFIG_KEY_9",
+		"GIT_CONFIG_VALUE_0", "GIT_CONFIG_VALUE_1", "GIT_CONFIG_VALUE_2",
+		"GIT_CONFIG_VALUE_3", "GIT_CONFIG_VALUE_4", "GIT_CONFIG_VALUE_5",
+		"GIT_CONFIG_VALUE_6", "GIT_CONFIG_VALUE_7", "GIT_CONFIG_VALUE_8",
+		"GIT_CONFIG_VALUE_9",
 	}
 }
