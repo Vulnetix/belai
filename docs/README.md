@@ -160,10 +160,10 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Searching profile documents and project scanner output by meaning | [Knowledge](knowledge.md) | alpha-20261001 |
 | A row for each vulnerability identifier, with a console link and a triage launch | [Vulnerability row](vuln-row.md) | alpha-20261002 |
 | Source index: declaration-aware passages of the repository's own files, ranked by similarity and by identifier, classified at ingestion, off by default | [Knowledge](knowledge.md#source-index) | alpha-20261106 |
-| Stuck-loop detection inside a pass | [Resilience](resilience.md) | Roadmap |
+| Stuck-loop detection inside a pass | [Resilience](resilience.md) | alpha-20261106 |
 | Tolerant, uniqueness-checked Edit matching with near-miss diagnostics | [Tolerant Edit matching](edit.md) | alpha-20261106 |
 | Configurable compaction: thresholds, keep counts, a summary circuit breaker, `/compact` focus and status | [Compaction settings](compaction.md) | alpha-20261106 |
-| Hierarchical instruction files on agent turns, delivered when a tool touches their directory, and `/init` | [Instruction files](instruction-files.md) | Roadmap |
+| Hierarchical instruction files on agent turns, delivered when a tool touches their directory, and `/init` | [Instruction files](instruction-files.md) | alpha-20261106 |
 | Run caps: spend, token and wall-clock limits with a finalise warning and an extend-or-stop ask | [Run caps](run-caps.md) | alpha-20261106 |
 | Headless structured output: `-output-format`, `-json-schema`, stdin prompt and headless resume | [Headless structured output](headless.md) | alpha-20261106 |
 | Atomic multi-hunk, multi-file `apply_patch` with tolerant anchoring | [Patch tool](patch-tool.md) | alpha-20261106 |
@@ -172,16 +172,16 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Hazard rails: an always-ask floor for destructive commands and protected paths that no allow rule can waive | [Hazard rails](hazard-rails.md) | alpha-20261106 |
 | Egress allowlist proxy for sandboxed commands | [Sandbox](sandbox.md#egress-proxy) | alpha-20261106 |
 | Reviewing the working tree's staged, unstaged and untracked changes read-only | [Workspace changes (`/diff`)](diff.md) | alpha-20261001 |
-| Finish review: a harness check of the working tree for scratch files, weakened tests, unverified changes and unread files before a goal is accepted | [Finish review](finish-review.md) | Roadmap |
-| Test-until-pass on plain agent turns: `tests.each_turn` runs the detected suites after a turn that edited files | [Testing](testing.md#when-the-pass-runs) | Roadmap |
-| CLI jobs: a card labelled `cli-job:<id>` makes the harness run one fixed Vulnetix CLI job and record ids, counts, findings and signals on the card, with mutating jobs behind a write profile, met gates and a harness-verified branch, and five fixer workers for what the jobs find | [CLI jobs](cli-jobs.md) | Roadmap |
-| Per-edit lint loop: the detected linter runs on each edited file and its classified, bounded findings ride back on the tool result | [Lint](lint.md#per-edit-loop) | Roadmap |
-| `/context` token breakdown against the model's window, and an optional per-call cost line | [Context and reply cost](token-budgets.md#context-and-reply-cost) | Roadmap |
+| Finish review: a harness check of the working tree for scratch files, weakened tests, unverified changes and unread files before a goal is accepted | [Finish review](finish-review.md) | alpha-20261106 |
+| Test-until-pass on plain agent turns: `tests.each_turn` runs the detected suites after a turn that edited files | [Testing](testing.md#when-the-pass-runs) | alpha-20261106 |
+| CLI jobs: a card labelled `cli-job:<id>` makes the harness run one fixed Vulnetix CLI job and record ids, counts, findings and signals on the card, with mutating jobs behind a write profile, met gates and a harness-verified branch, and five fixer workers for what the jobs find | [CLI jobs](cli-jobs.md) | alpha-20261106 |
+| Per-edit lint loop: the detected linter runs on each edited file and its classified, bounded findings ride back on the tool result | [Lint](lint.md#per-edit-loop) | alpha-20261106 |
+| `/context` token breakdown against the model's window, and an optional per-call cost line | [Context and reply cost](token-budgets.md#context-and-reply-cost) | alpha-20261106 |
 | Prompt cache: a one hour lifetime, opt-in keep-alive pings, a prefix-change notice and `/cache` | [Prompt cache](prompt-cache.md) | alpha-20261106 |
 | File checkpoints: a copy of each file before a prompt changes it, `/undo` and `/rewind` to restore code, conversation or both | [File checkpoints](checkpoints.md) | alpha-20261106 |
 | Commit workflow: the harness separates the session's files from yours, commits them in `ask` or `auto` mode or on `/commit`, and a model may draft only the words | [Commit workflow](commit-workflow.md) | alpha-20261106 |
 | Code review: `/review` and `belai review` judge a change against a closed rubric with structured findings the harness checks against the diff, and post a comment only after a yes | [Code review](review.md) | alpha-20261106 |
-| Symbol index with `Outline` and `Symbol` tools: declarations parsed by the harness, served as classified, bounded results | [Symbol map](symbol-map.md) | Roadmap |
+| Symbol index with `Outline` and `Symbol` tools: declarations parsed by the harness, served as classified, bounded results | [Symbol map](symbol-map.md) | alpha-20261106 |
 | Best-of-N attempts: a worker runs 2 to 4 independent candidates of a card in separate worktrees, the harness runs the gates on each and picks the winner by a fixed rule, and a model never chooses | [Agent fleet](fleet.md#best-of-n-attempts) | alpha-20261106 |
 | Worktree sessions: `worktrees.setup` and `worktrees.teardown` argv, `worktrees.update_mode`, `/worktree` and `belai worktree` | [Worktree sessions](worktrees.md) | alpha-20261106 |
 
