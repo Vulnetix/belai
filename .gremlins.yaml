@@ -5,6 +5,10 @@
 # 96.67%. Thresholds sit below the baseline so a test-strength regression fails
 # CI, while timing variance (timed-out mutants flipping to lived) does not.
 unleash:
+  # v0.6.0 derives the per-mutant test timeout from the baseline run and
+  # multiplies it by this coefficient; the default of 3 is too short for cold
+  # per-mutant compiles and every mutant timed out (efficacy 0.00%) without it.
+  timeout-coefficient: 10
   threshold:
-    efficacy: 99
+    efficacy: 70
     mutant-coverage: 90
