@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,6 +52,15 @@ func TestApplyLandlockSkipsARuleForAMissingPath(t *testing.T) {
 	}
 	if err := unix.Prctl(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0); err != nil {
 		t.Fatalf("no_new_privs was not set: %v", err)
+	}
+}
+
+// Status must read "on" once a backend works here: this test makes one itself
+// (withLandlock) rather than trusting the machine to already have one.
+func TestStatusIsOnWhenTheTestMadeTheBackend(t *testing.T) {
+	withLandlock(t)
+	if got := Status(&config.SandboxSettings{Mode: ModeRequired}, posture.Defaults()); got != "on" {
+		t.Fatalf("required mode with a backend the test set up: %q", got)
 	}
 }
 
