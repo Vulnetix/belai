@@ -19,6 +19,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/attribution"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/gittest"
@@ -68,6 +69,12 @@ func TestMain(m *testing.M) {
 	// (workdiff runs git with proc.ScrubbedEnv, which keeps GIT_*) must see
 	// only the repositories these tests build.
 	gittest.IsolateProcess()
+	// A Pix sandbox writes the attribution file under HOME, and the commit
+	// path appends its trailers to every message it builds. The scripted
+	// fixtures match exact command lines and no test here asserts sandbox
+	// trailers, so pin the whole package outside the file (two autocommit
+	// tests pin it per test for the same reason).
+	os.Setenv(attribution.FileEnv, os.DevNull)
 	os.Exit(m.Run())
 }
 

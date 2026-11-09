@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -71,5 +72,26 @@ func TestScrubEnvOfKeepsTheCommitterIdentity(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("%q was scrubbed: %q", want, got)
 		}
+	}
+}
+
+// UnsetGitEnv must unset the git locator variables and leave the rest of the
+// environment alone: fleet's TestMain runs it for the whole package, so
+// unsetting the complement would take PATH away from every git subprocess.
+func TestUnsetGitEnvDropsOnlyTheGitLocators(t *testing.T) {
+	t.Setenv("GIT_DIR", "/elsewhere/.git")
+	t.Setenv("GIT_WORK_TREE", "/elsewhere")
+	t.Setenv("GIT_INDEX_FILE", "/elsewhere/.git/index")
+	t.Setenv("PATH", "/kept:/bin")
+
+	UnsetGitEnv()
+
+	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
+		if _, ok := os.LookupEnv(key); ok {
+			t.Errorf("%s survived UnsetGitEnv", key)
+		}
+	}
+	if got := os.Getenv("PATH"); got != "/kept:/bin" {
+		t.Errorf("PATH = %q, want it kept", got)
 	}
 }
