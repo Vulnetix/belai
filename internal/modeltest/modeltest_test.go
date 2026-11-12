@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/wire"
 )
 
@@ -232,10 +233,7 @@ func chatServer(t *testing.T, h func(w http.ResponseWriter, body map[string]any)
 }
 
 func reply(w http.ResponseWriter, text string) {
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"id": "c", "object": "chat.completion",
-		"choices": []map[string]any{{"index": 0, "message": map[string]string{"role": "assistant", "content": text}, "finish_reason": "stop"}},
-	})
+	testutil.WriteChat(w, text)
 }
 
 func chatCfg(url string) run.Config {

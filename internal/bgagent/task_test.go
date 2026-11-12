@@ -1,7 +1,6 @@
 package bgagent
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // A task's prompt and attachments reach the agent's first turn, after the
@@ -30,10 +30,7 @@ func TestStartTaskCarriesPromptAndAttachments(t *testing.T) {
 		mu.Lock()
 		bodies = append(bodies, string(raw))
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{"message": map[string]any{"content": "SAFE", "role": "assistant"}, "finish_reason": "stop"}},
-		})
+		testutil.WriteChat(w, "SAFE")
 	}))
 	defer srv.Close()
 	m := NewManager(t.TempDir(), run.Config{Provider: "openai", BaseURL: srv.URL + "/v1", APIKey: "k", Model: "m"}, srv.Client(), config.Settings{}, posture.Defaults())

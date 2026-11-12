@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // TestKanbanWrapUpFilesReportedOpenWork drives the built binary through a work
@@ -59,9 +60,9 @@ func TestKanbanWrapUpFilesReportedOpenWork(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, securitySentinelFor(user))
+			testutil.WriteChat(w, securitySentinelFor(user))
 		case wrap >= 0:
 			mu.Lock()
 			wrapUps++
@@ -70,11 +71,11 @@ func TestKanbanWrapUpFilesReportedOpenWork(t *testing.T) {
 				writeToolCallChat(w, "KanbanAdd", adds[toolsAfterWrap])
 				return
 			}
-			writeChat(w, "KANBAN_DONE")
+			testutil.WriteChat(w, "KANBAN_DONE")
 		case tools == 0:
 			writeToolCallChat(w, "Read", map[string]any{"path": "safe.txt"})
 		default:
-			writeChat(w, report)
+			testutil.WriteChat(w, report)
 		}
 	}))
 	defer srv.Close()

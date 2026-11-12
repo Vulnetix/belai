@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/turnlog"
 )
@@ -75,10 +76,7 @@ func newEchoProvider(marks ...string) *echoProvider {
 			w.Write([]byte("data: " + string(chunk) + "\n\ndata: [DONE]\n\n"))
 			return
 		}
-		b, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion",
-			"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(b)
+		testutil.WriteChat(w, content)
 	}))
 	return p
 }

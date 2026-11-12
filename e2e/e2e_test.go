@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/gittest"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 var belaiBin string
@@ -118,18 +119,18 @@ func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 		case strings.Contains(system, "security classifier"):
 			mp.securityUser = append(mp.securityUser, user)
 			mp.securitySys = append(mp.securitySys, system)
-			writeChat(w, securitySentinelFor(user))
+			testutil.WriteChat(w, securitySentinelFor(user))
 		case strings.Contains(system, "operating-mode classifier"):
 			mp.modeUser = append(mp.modeUser, user)
-			writeChat(w, modeSentinelFor(user))
+			testutil.WriteChat(w, modeSentinelFor(user))
 		case strings.Contains(system, "clarification questionnaire"):
 			mp.clarifierUser = append(mp.clarifierUser, user)
 			mp.clarifierSys = append(mp.clarifierSys, system)
-			writeChat(w, `{"groups":[]}`)
+			testutil.WriteChat(w, `{"groups":[]}`)
 		default:
 			mp.chatUser = append(mp.chatUser, user)
 			mp.chatSys = append(mp.chatSys, system)
-			writeChat(w, "mock reply")
+			testutil.WriteChat(w, "mock reply")
 		}
 	}))
 	return srv, mp
@@ -155,22 +156,6 @@ func modeSentinelFor(user string) string {
 	default:
 		return "UNDETERMINED"
 	}
-}
-
-func writeChat(w http.ResponseWriter, content string) {
-	b, _ := json.Marshal(map[string]any{
-		"id":     "x",
-		"object": "chat.completion",
-		"choices": []any{
-			map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": content},
-				"finish_reason": "stop",
-			},
-		},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
 }
 
 // runBelai runs the built binary noninteractively against baseURL. It
@@ -533,25 +518,7 @@ func writeToolCallChat(w http.ResponseWriter, name string, args map[string]any, 
 		msgContent = content[0]
 	}
 	argsJSON, _ := json.Marshal(args)
-	b, _ := json.Marshal(map[string]any{
-		"id":     "x",
-		"object": "chat.completion",
-		"choices": []any{map[string]any{
-			"index": 0,
-			"message": map[string]any{
-				"role":    "assistant",
-				"content": msgContent,
-				"tool_calls": []any{map[string]any{
-					"id":       "call_1",
-					"type":     "function",
-					"function": map[string]any{"name": name, "arguments": string(argsJSON)},
-				}},
-			},
-			"finish_reason": "tool_calls",
-		}},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
+	testutil.WriteToolCallWithContent(w, name, string(argsJSON), msgContent)
 }
 
 type toolMock struct {
@@ -611,16 +578,16 @@ func newToolMockServerFor(t *testing.T, toolName string, toolArgs map[string]any
 		defer tm.mu.Unlock()
 		switch {
 		case wrapUp:
-			writeChat(w, "KANBAN_DONE")
+			testutil.WriteChat(w, "KANBAN_DONE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		case strings.Contains(system, "security classifier"):
 			tm.securityUsers = append(tm.securityUsers, user)
-			writeChat(w, securitySentinelFor(user))
+			testutil.WriteChat(w, securitySentinelFor(user))
 		default:
 			tm.chatUsers = append(tm.chatUsers, user)
 			if hasTool {
-				writeChat(w, "done")
+				testutil.WriteChat(w, "done")
 			} else {
 				writeToolCallChat(w, toolName, toolArgs)
 			}
@@ -1064,9 +1031,9 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "GOAL")
+			testutil.WriteChat(w, "GOAL")
 		case strings.Contains(system, "goal-progress evaluator"):
 			mu.Lock()
 			i := idx
@@ -1076,9 +1043,9 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 			gm.goalEvalCalls++
 			gm.mu.Unlock()
 			if i < len(evalSentinels) {
-				writeChat(w, evalSentinels[i])
+				testutil.WriteChat(w, evalSentinels[i])
 			} else {
-				writeChat(w, "GOAL_PARTIAL")
+				testutil.WriteChat(w, "GOAL_PARTIAL")
 			}
 		default:
 			gm.mu.Lock()
@@ -1304,28 +1271,28 @@ func newExploreMockServer(t *testing.T, toolPath string) (*httptest.Server, *exp
 		switch {
 		case strings.Contains(system, "security classifier"):
 			em.securityUsers = append(em.securityUsers, user)
-			writeChat(w, securitySentinelFor(user))
+			testutil.WriteChat(w, securitySentinelFor(user))
 		case strings.Contains(system, "operating-mode classifier"):
 			em.modeUsers = append(em.modeUsers, user)
-			writeChat(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "clarification questionnaire"):
 			em.clarifierUsers = append(em.clarifierUsers, user)
-			writeChat(w, `{"groups":[]}`)
+			testutil.WriteChat(w, `{"groups":[]}`)
 		case strings.Contains(system, "plan-mode exploration"):
 			// Explore subagent: issue one read-only tool call, then report.
 			if !hasToolResult {
 				em.subagentToolCalls++
 				writeToolCallChat(w, "Read", map[string]any{"path": toolPath})
 			} else {
-				writeChat(w, "found: repo has "+toolPath)
+				testutil.WriteChat(w, "found: repo has "+toolPath)
 			}
 		case strings.Contains(system, "plan-progress evaluator"):
 			// Plan-mode pass boundary: the plan is complete on the first pass.
-			writeChat(w, "PLAN_COMPLETE")
+			testutil.WriteChat(w, "PLAN_COMPLETE")
 		default:
 			// Parent final model turn.
 			em.parentChatUsers = append(em.parentChatUsers, userContents...)
-			writeChat(w, "mock reply")
+			testutil.WriteChat(w, "mock reply")
 		}
 	}))
 	return srv, em
@@ -1543,12 +1510,12 @@ func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
 		resubmit := strings.Contains(lastTool, "call ExitPlanMode again")
 		switch {
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		default:
 			if hasTool && !resubmit {
-				writeChat(w, "done")
+				testutil.WriteChat(w, "done")
 			} else {
 				writeToolCallChat(w, "ExitPlanMode", map[string]any{
 					"plan": "# Refactor the parser\n\n## Summary\n\nSplit it.\n\n## Steps\n\n1. Extract a lexer\n   - Files: parser/lex.go\n   - Verify: go test ./parser\n\n## Test Plan\n\n- go test ./...\n",
@@ -1604,12 +1571,12 @@ func TestPlanModeExitPlanModeEmptyPlanErrors(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		default:
 			if hasTool {
-				writeChat(w, "done")
+				testutil.WriteChat(w, "done")
 			} else {
 				writeToolCallChat(w, "ExitPlanMode", map[string]any{"plan": "   "})
 			}
@@ -1700,21 +1667,21 @@ func TestPlanHandoffAttachmentEndToEnd(t *testing.T) {
 
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
 			if strings.Contains(user, "@plan.md") || strings.Contains(user, "plan.md") {
-				writeChat(w, "HANDOFF")
+				testutil.WriteChat(w, "HANDOFF")
 			} else {
-				writeChat(w, "AGENT")
+				testutil.WriteChat(w, "AGENT")
 			}
 		case strings.Contains(system, "clarification questionnaire"):
-			writeChat(w, `{"groups":[]}`)
+			testutil.WriteChat(w, `{"groups":[]}`)
 		default:
 			// Tool-result classification requests reuse the chat endpoint with a
 			// classifier system prompt; admit them as SAFE so attachments and
 			// explore findings can be promoted.
 			if strings.Contains(system, "classifier") {
-				writeChat(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 				return
 			}
 			// Scripted parent-agent replies.
@@ -1733,13 +1700,13 @@ func TestPlanHandoffAttachmentEndToEnd(t *testing.T) {
 			}
 			switch {
 			case !hasUpdatePlan:
-				writeToolCall(w, "update_plan", updatePlanArgs)
+				testutil.WriteToolCall(w, "update_plan", updatePlanArgs)
 			case !hasRead:
-				writeToolCall(w, "Read", `{"file_path":"feature.go"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"feature.go"}`)
 			case !hasEdit:
-				writeToolCall(w, "Edit", editArgs)
+				testutil.WriteToolCall(w, "Edit", editArgs)
 			default:
-				writeChat(w, "done")
+				testutil.WriteChat(w, "done")
 			}
 		}
 	}))
@@ -1783,22 +1750,6 @@ func TestPlanHandoffAttachmentEndToEnd(t *testing.T) {
 	if !strings.Contains(string(body), "func main") {
 		t.Fatalf("Edit did not change feature.go: %q", body)
 	}
-}
-
-func writeToolCall(w http.ResponseWriter, name, args string) {
-	b, _ := json.Marshal(map[string]any{
-		"id":     "tc",
-		"object": "chat.completion",
-		"choices": []any{
-			map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "tc1", "type": "function", "function": map[string]any{"name": name, "arguments": args}}}},
-				"finish_reason": "tool_calls",
-			},
-		},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
 }
 
 func truncate(s string, n int) string {

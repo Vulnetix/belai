@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // fleetAnswer is what the scripted model says to one request: plain text, or a
@@ -95,7 +96,7 @@ func fleetMock(t *testing.T) *httptest.Server {
 		return
 	}, func(w http.ResponseWriter, a fleetAnswer) {
 		if a.tool == "" {
-			writeChat(w, a.text)
+			testutil.WriteChat(w, a.text)
 			return
 		}
 		writeToolCallChat(w, a.tool, a.args, a.text)

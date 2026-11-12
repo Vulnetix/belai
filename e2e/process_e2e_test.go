@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // lockedBuffer is a bytes.Buffer safe for concurrent writes and reads.
@@ -93,22 +94,22 @@ func newProcessMockServer(t *testing.T) (*httptest.Server, *processMock) {
 
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		case strings.Contains(system, "clarification questionnaire"):
-			writeChat(w, `{"groups":[]}`)
+			testutil.WriteChat(w, `{"groups":[]}`)
 		case !strings.Contains(user, "supervised process"):
 			// The startup model test ladder sends its own probes ("Reply OK."
 			// and others). They are not recovery turns and are not counted.
-			writeChat(w, "OK")
+			testutil.WriteChat(w, "OK")
 		default:
 			pm.mu.Lock()
 			pm.chatUsers = append(pm.chatUsers, user)
 			pm.mu.Unlock()
 			// A prose-only response: the subagent should not call any tool,
 			// so this recovery turn is exactly one model request.
-			writeChat(w, "restart the process with the same command")
+			testutil.WriteChat(w, "restart the process with the same command")
 		}
 	}))
 	return srv, pm

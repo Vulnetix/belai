@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // A2A messaging end to end (docs/a2a.md): two headless runs on one host and
@@ -57,15 +59,15 @@ func a2aMock(t *testing.T, script func(all string) (tool string, args map[string
 		system, all := req.text()
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 			return
 		case !strings.Contains(system, `nonce="`):
 			// Any other role-manager call (naming, evaluators): only the
 			// agent's own turns carry a sealed system prompt.
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		tool, args, text := script(all)
@@ -73,7 +75,7 @@ func a2aMock(t *testing.T, script func(all string) (tool string, args map[string
 			writeToolCallChat(w, tool, args, text)
 			return
 		}
-		writeChat(w, text)
+		testutil.WriteChat(w, text)
 	}))
 	t.Cleanup(srv.Close)
 	return srv

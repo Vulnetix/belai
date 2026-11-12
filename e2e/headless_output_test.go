@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // replyServer is a mock provider whose main-model replies come from a queue
@@ -49,9 +51,9 @@ func newReplyServer(t *testing.T, replies ...string) (*httptest.Server, *replySe
 		defer rs.mu.Unlock()
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "UNDETERMINED")
+			testutil.WriteChat(w, "UNDETERMINED")
 		default:
 			rs.users = append(rs.users, all)
 			rs.systems = append(rs.systems, system)
@@ -60,7 +62,7 @@ func newReplyServer(t *testing.T, replies ...string) (*httptest.Server, *replySe
 				i = len(rs.replies) - 1
 			}
 			rs.calls++
-			writeChat(w, rs.replies[i])
+			testutil.WriteChat(w, rs.replies[i])
 		}
 	}))
 	return srv, rs

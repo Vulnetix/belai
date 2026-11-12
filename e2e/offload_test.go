@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // TestOffloadedBashOutputReadsBack drives the built binary through a Bash
@@ -45,14 +47,14 @@ func TestOffloadedBashOutputReadsBack(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 			return
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, securitySentinelFor(user))
+			testutil.WriteChat(w, securitySentinelFor(user))
 			return
 		case !strings.Contains(system, "Belai"):
 			// Any other role-manager call.
-			writeChat(w, "OK")
+			testutil.WriteChat(w, "OK")
 			return
 		}
 		mu.Lock()
@@ -66,7 +68,7 @@ func TestOffloadedBashOutputReadsBack(t *testing.T) {
 		case 2:
 			writeToolCallChat(w, "ReadResult", map[string]any{"ref": "r1", "pattern": "^1999[89]$", "context": 0})
 		default:
-			writeChat(w, "done")
+			testutil.WriteChat(w, "done")
 		}
 	}))
 	defer srv.Close()
