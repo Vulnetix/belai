@@ -530,7 +530,7 @@ jobs:
       # release's .sig and .pem would never be written.
       - name: Install cosign
         if: hashFiles('belai.cdx.json') != ''
-        uses: sigstore/cosign-installer@v3.9.1
+        uses: sigstore/cosign-installer@v3.10.1
 
       # cosign rather than actions/attest-build-provenance, which persists
       # through GitHub's plan-gated attestation store. Fulcio and Rekor are
