@@ -151,43 +151,20 @@ func TestAgentRefusesUnsafePrompt(t *testing.T) {
 	}
 }
 
-func newDualMockServer(t *testing.T, finalReply string) *httptest.Server {
+// newDualMockServer answers the classifiers and replies finalReply to every
+// other turn, streamed when the request asks for a stream.
+func newDualMockServer(t *testing.T, finalReply string) *testutil.ChatServer {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusNotFound)
-			return
+	return testutil.NewChatServer(t, func(req testutil.ChatRequest) string {
+		system, _ := req.Text()
+		switch {
+		case strings.Contains(system, "security classifier"):
+			return "SAFE"
+		case strings.Contains(system, "operating-mode classifier"):
+			return "AGENT"
 		}
-		var req struct {
-			Stream   bool `json:"stream"`
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		var system string
-		for _, m := range req.Messages {
-			if m.Role == "system" {
-				system = m.Content
-			}
-		}
-		reply := finalReply
-		if strings.Contains(system, "security classifier") {
-			reply = "SAFE"
-		} else if strings.Contains(system, "operating-mode classifier") {
-			reply = "AGENT"
-		}
-		if req.Stream {
-			w.Header().Set("Content-Type", "text/event-stream")
-			flusher, _ := w.(http.Flusher)
-			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", reply)
-			fmt.Fprint(w, "data: [DONE]\n\n")
-			flusher.Flush()
-			return
-		}
-		testutil.WriteChat(w, reply)
-	}))
+		return finalReply
+	})
 }
 
 func TestRunAndRunStreamEquivalent(t *testing.T) {
