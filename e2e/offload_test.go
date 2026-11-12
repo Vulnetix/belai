@@ -73,16 +73,13 @@ func TestOffloadedBashOutputReadsBack(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	home := newHome(t, "")
 	usage := filepath.Join(t.TempDir(), "usage.json")
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, "-trust-dir", "-ask-permission=false", "-provider", "openai", "-model", "test",
 		"-mode", "agent", "-usage-json", usage, "-prompt", "count to 20000")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(srv.URL, home)
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("run: %v (stderr %q)", err, errb.String())

@@ -56,15 +56,11 @@ func TestStrandsDeciderAnswersTheGuard(t *testing.T) {
 	srv, mp := newMockServer(t)
 	defer srv.Close()
 
-	home := filepath.Join(t.TempDir(), "belai-home")
+	home := newHome(t, `{"classifier":{"kind":"systemone","provider":"strands-decider","model":"decider-2b"}}`)
 	if err := os.MkdirAll(filepath.Join(home, "run"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(home, "run", "strands-decider.json"), []byte(`{"port":`+port+`,"model":"decider-2b"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	settings := `{"classifier":{"kind":"systemone","provider":"strands-decider","model":"decider-2b"}}`
-	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(settings), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("BELAI_HOME", home)

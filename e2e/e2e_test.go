@@ -159,6 +159,32 @@ func modeSentinelFor(user string) string {
 	}
 }
 
+// belaiEnv is the environment for running the built binary against the mock
+// provider at baseURL with its state under home: the test process's own
+// environment, the base URL, a placeholder OpenAI key and BELAI_HOME. extra is
+// appended last, so an entry there overrides any of these (exec keeps the
+// last value of a repeated key).
+func belaiEnv(baseURL, home string, extra ...string) []string {
+	env := append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	return append(env, extra...)
+}
+
+// newHome makes an empty BELAI_HOME under the test's temp dir, writing
+// settings as its settings.json when set.
+func newHome(t *testing.T, settings string) string {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "belai-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if settings != "" {
+		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(settings), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home
+}
+
 // runBelai runs the built binary noninteractively against baseURL. It
 // isolates BELAI_HOME unless the test has already set one, so a developer's
 // persisted classifier verdict cache cannot leak into the run.
@@ -166,15 +192,11 @@ func runBelai(t *testing.T, baseURL string, args ...string) (stdout, stderr stri
 	t.Helper()
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, append([]string{"-trust-dir"}, args...)...)
-	env := append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test")
-	if os.Getenv("BELAI_HOME") == "" {
-		home := filepath.Join(t.TempDir(), "belai-home")
-		if err := os.MkdirAll(home, 0o700); err != nil {
-			t.Fatalf("mkdir home: %v", err)
-		}
-		env = append(env, "BELAI_HOME="+home)
+	home := os.Getenv("BELAI_HOME")
+	if home == "" {
+		home = newHome(t, "")
 	}
-	cmd.Env = env
+	cmd.Env = belaiEnv(baseURL, home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	err := cmd.Run()
@@ -223,17 +245,14 @@ func TestUntrustedDirFailsClosed(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatalf("mkdir home: %v", err)
-	}
+	home := newHome(t, "")
 
 	run := func(extra ...string) (string, string, int) {
 		var out, errb bytes.Buffer
 		args := append([]string{"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hi"}, extra...)
 		cmd := exec.Command(belaiBin, args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+		cmd.Env = belaiEnv(srv.URL, home)
 		cmd.Stdout = &out
 		cmd.Stderr = &errb
 		code := 0
@@ -439,15 +458,12 @@ func TestCustomProviderFromProjectSettings(t *testing.T) {
 	// Isolate BELAI_HOME: without it the run reads the developer's real
 	// global settings, and a global classifier provider there resolves ahead
 	// of the project provider under test and fails on its missing key.
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatalf("mkdir home: %v", err)
-	}
+	home := newHome(t, "")
 
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, "-trust-dir", "-provider", "my-llm", "-model", "m1", "-prompt", "hello")
 	cmd.Dir = workdir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "MY_LLM_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(srv.URL, home, "MY_LLM_KEY=test")
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
@@ -468,20 +484,15 @@ func TestFirewallOnRoutesThroughStubGateway(t *testing.T) {
 	srv, mp := newMockServer(t)
 	defer srv.Close()
 
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatalf("mkdir home: %v", err)
-	}
+	home := newHome(t, "")
 
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin,
 		"-trust-dir", "-provider", "openai", "-model", "test", "-prompt", "firewall on", "--firewall")
-	cmd.Env = append(os.Environ(),
-		"BELAI_BASE_URL="+srv.URL,
+	cmd.Env = belaiEnv(srv.URL, home,
 		"OPENAI_API_KEY=provider-key",
 		"VULNETIX_API_KEY=vulnetix-key",
 		"VULNETIX_ORG_ID=00000000-0000-0000-0000-000000000001",
-		"BELAI_HOME="+home,
 	)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -614,16 +625,8 @@ func runBelaiDirWithGlobal(t *testing.T, dir, baseURL, globalSettings string, ar
 	cmd.Dir = dir
 	// Isolate global state so the developer's (or CI's) local settings cannot
 	// change the posture/policy under test.
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatalf("mkdir home: %v", err)
-	}
-	if globalSettings != "" {
-		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(globalSettings), 0o600); err != nil {
-			t.Fatalf("write settings.json: %v", err)
-		}
-	}
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	home := newHome(t, globalSettings)
+	cmd.Env = belaiEnv(baseURL, home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	code = 0
@@ -1111,14 +1114,8 @@ func TestGoalModePassLoopSIGINT(t *testing.T) {
 
 	cmd := exec.Command(belaiBin, "-trust-dir", "-tools", "-allow-ask-without-tty", "-provider", "openai", "-model", "test", "-prompt", "ship the thing")
 	cmd.Dir = dir
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatalf("mkdir home: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(global), 0o600); err != nil {
-		t.Fatalf("write settings: %v", err)
-	}
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	home := newHome(t, global)
+	cmd.Env = belaiEnv(srv.URL, home)
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Start(); err != nil {
@@ -1767,7 +1764,7 @@ func runBelaiHome(t *testing.T, dir, home, baseURL string, args ...string) (stdo
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, append([]string{"-trust-dir"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(baseURL, home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
@@ -1796,10 +1793,7 @@ func TestHeadlessPromptKeepsATranscript(t *testing.T) {
 	srv, _ := newMockServer(t)
 	defer srv.Close()
 	dir := t.TempDir()
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	home := newHome(t, "")
 	out, code := runBelaiHome(t, dir, home, srv.URL, "-tools", "-provider", "openai", "-model", "test", "-prompt", "what model is this")
 	if code != 0 || !strings.Contains(out, "mock reply") {
 		t.Fatalf("exit %d, stdout %q", code, out)
@@ -1835,10 +1829,7 @@ func TestHeadlessPromptKeepsATranscript(t *testing.T) {
 		t.Fatalf("transcript entry types = %v", types)
 	}
 
-	home2 := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home2, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	home2 := newHome(t, "")
 	if _, code := runBelaiHome(t, dir, home2, srv.URL, "-no-transcript", "-tools", "-provider", "openai", "-model", "test", "-prompt", "what model is this"); code != 0 {
 		t.Fatalf("exit %d with -no-transcript", code)
 	}

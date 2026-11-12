@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -15,7 +14,7 @@ func runHelpCmd(t *testing.T, args ...string) (stdout, stderr string, code int) 
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, args...)
 	cmd.Dir = t.TempDir()
-	cmd.Env = append(os.Environ(), "BELAI_HOME="+filepath.Join(t.TempDir(), "belai-home"))
+	cmd.Env = append(os.Environ(), "BELAI_HOME="+newHome(t, ""))
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
 		ee, ok := err.(*exec.ExitError)
