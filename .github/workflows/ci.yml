@@ -37,6 +37,9 @@ jobs:
       - name: go test -race (Pix Sandbox build)
         run: go test -race -tags belai_sandbox ./...
 
+      - name: gremlins mutation testing (internal/quality)
+        run: go run github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0 unleash ./internal/quality
+
       - name: cross-compile (windows)
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
 

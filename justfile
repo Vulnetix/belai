@@ -174,6 +174,13 @@ test-sandbox *ARGS:
 test-pkg PKG *ARGS:
     go test -race {{ PKG }} {{ ARGS }}
 
+# Run gremlins mutation testing on internal/quality; extra args pass through,
+# e.g. `just mutate -d` for a dry run. The tool version is pinned, so the
+# first run downloads it. TMPDIR is pinned so the scratch workdir behaves as
+# on CI instead of following an inherited TMPDIR that may point at a full disk.
+mutate *ARGS:
+    TMPDIR=/tmp go run github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0 unleash ./internal/quality {{ ARGS }}
+
 # Run the end-to-end suite: builds the binary, drives it against a mock provider.
 e2e *ARGS:
     go test -race ./e2e {{ ARGS }}
