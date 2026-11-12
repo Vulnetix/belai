@@ -25,9 +25,7 @@ func serversFor(t *testing.T) (chat, so *httptest.Server, chatN, soN *atomic.Int
 			return
 		}
 		chatN.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "x", "object": "chat.completion", "choices": []any{
-			map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "SAFE"}, "finish_reason": "stop"}}})
+		writeChatJSON(w, "SAFE")
 	}))
 	so = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		soN.Add(1)

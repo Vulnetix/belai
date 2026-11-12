@@ -85,15 +85,9 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			var req struct {
-				Messages []struct {
-					Role    string `json:"role"`
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&req)
+			msgs := decodeMessages(r.Body)
 			var system string
-			for _, m := range req.Messages {
+			for _, m := range msgs {
 				if m.Role == "system" {
 					system = m.Content
 				}

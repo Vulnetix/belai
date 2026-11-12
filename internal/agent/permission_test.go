@@ -85,17 +85,11 @@ func newToolRecordingServer(t *testing.T, path string) *toolRecordingServer {
 	t.Helper()
 	trs := &toolRecordingServer{}
 	trs.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 
 		var system string
 		toolMsgs := []string{}
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -128,17 +122,7 @@ func newToolRecordingServer(t *testing.T, path string) *toolRecordingServer {
 		if toolCalls != nil {
 			msg["tool_calls"] = toolCalls
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id":     "x",
-			"object": "chat.completion",
-			"choices": []any{map[string]any{
-				"index":         0,
-				"message":       msg,
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeCompletion(w, msg, "stop")
 	}))
 	t.Cleanup(trs.srv.Close)
 	return trs

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -69,15 +68,9 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system, lastUser string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -195,30 +188,6 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 		}
 	}))
 	return srv, &mu, &mainSystems
-}
-
-// writeLengthRepairJSON returns a tool call with finish_reason "length", which
-// the loop treats as truncated and withholds — an unproductive iteration.
-func writeLengthRepairJSON(w http.ResponseWriter, name, args string) {
-	b, _ := json.Marshal(map[string]any{
-		"id":     "x",
-		"object": "chat.completion",
-		"choices": []any{map[string]any{
-			"index": 0,
-			"message": map[string]any{
-				"role":    "assistant",
-				"content": "",
-				"tool_calls": []any{map[string]any{
-					"id":       "call_1",
-					"type":     "function",
-					"function": map[string]any{"name": name, "arguments": args},
-				}},
-			},
-			"finish_reason": "length",
-		}},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
 }
 
 func newGoalPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, maxIter int) *Session {
@@ -1254,15 +1223,9 @@ func TestGoalPassLoopReportsObservedWritesToTheEvaluator(t *testing.T) {
 	var evalUsers []string
 	evalIdx := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system, user string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content

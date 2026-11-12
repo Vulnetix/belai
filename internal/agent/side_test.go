@@ -69,10 +69,7 @@ func (f *sideServer) handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	b, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion",
-		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}}})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
+	writeChatJSON(w, content)
 }
 
 func newSideSession(t *testing.T, f *sideServer) *Session {

@@ -49,32 +49,12 @@ func mockSecurityServer(toolName, toolArgs, finalReply string) *httptest.Server 
 		}
 
 		if contains(system, "security classifier") {
-			b, _ := json.Marshal(map[string]any{
-				"id":     "x",
-				"object": "chat.completion",
-				"choices": []any{map[string]any{
-					"index":         0,
-					"message":       map[string]any{"role": "assistant", "content": "SAFE"},
-					"finish_reason": "stop",
-				}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			writeChatJSON(w, "SAFE")
 			return
 		}
 
 		if contains(system, "operating-mode classifier") {
-			b, _ := json.Marshal(map[string]any{
-				"id":     "x",
-				"object": "chat.completion",
-				"choices": []any{map[string]any{
-					"index":         0,
-					"message":       map[string]any{"role": "assistant", "content": "AGENT"},
-					"finish_reason": "stop",
-				}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			writeChatJSON(w, "AGENT")
 			return
 		}
 
@@ -98,13 +78,7 @@ func mockSecurityServer(toolName, toolArgs, finalReply string) *httptest.Server 
 			msg["content"] = finalReply
 		}
 
-		b, _ := json.Marshal(map[string]any{
-			"id":      "x",
-			"object":  "chat.completion",
-			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeCompletion(w, msg, "stop")
 	}))
 }
 
@@ -147,28 +121,12 @@ func TestAgentRunsToolAndReturnsReply(t *testing.T) {
 
 func TestAgentRefusesUnsafePrompt(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		for _, m := range req.Messages {
+		msgs := decodeMessages(r.Body)
+		for _, m := range msgs {
 			if m.Role == "system" && m.Content != "" {
 				continue
 			}
-			b, _ := json.Marshal(map[string]any{
-				"id":     "x",
-				"object": "chat.completion",
-				"choices": []any{map[string]any{
-					"index":         0,
-					"message":       map[string]any{"role": "assistant", "content": "PROMPT_INJECTION"},
-					"finish_reason": "stop",
-				}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			writeChatJSON(w, "PROMPT_INJECTION")
 			return
 		}
 	}))
@@ -227,17 +185,7 @@ func newDualMockServer(t *testing.T, finalReply string) *httptest.Server {
 			flusher.Flush()
 			return
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id":     "x",
-			"object": "chat.completion",
-			"choices": []any{map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeChatJSON(w, reply)
 	}))
 }
 
@@ -290,20 +238,6 @@ func TestRunAndRunStreamEquivalent(t *testing.T) {
 	if res1.SanitizedPrompt != res2.SanitizedPrompt {
 		t.Fatalf("sanitized mismatch: %q vs %q", res1.SanitizedPrompt, res2.SanitizedPrompt)
 	}
-}
-
-func writeChatJSON(w http.ResponseWriter, content string) {
-	b, _ := json.Marshal(map[string]any{
-		"id":     "x",
-		"object": "chat.completion",
-		"choices": []any{map[string]any{
-			"index":         0,
-			"message":       map[string]any{"role": "assistant", "content": content},
-			"finish_reason": "stop",
-		}},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
 }
 
 // TestClassifierErrorEmitsWarningNotStderr verifies that a classifier failure
@@ -367,13 +301,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 			} else {
 				msg["content"] = "done"
 			}
-			b, _ := json.Marshal(map[string]any{
-				"id":      "x",
-				"object":  "chat.completion",
-				"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			writeCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()
@@ -424,15 +352,9 @@ func TestRunMaxIterationsBound(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -472,15 +394,9 @@ func TestRunMaxIterationsBound(t *testing.T) {
 
 func TestForceAgentOverridesModeDecision(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -515,15 +431,9 @@ func TestForceAgentOverridesModeDecision(t *testing.T) {
 
 func TestHasReferencesReachesModeInput(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -614,32 +524,6 @@ func TestAttachmentsReachTheUserTurn(t *testing.T) {
 	if !found {
 		t.Fatalf("expected a user turn containing a sealed <attachment> block; got bodies %s", bodies)
 	}
-}
-
-func writeToolCallJSON(w http.ResponseWriter, name, args string) {
-	writeToolCallWithContentJSON(w, name, args, "")
-}
-
-func writeToolCallWithContentJSON(w http.ResponseWriter, name, args, content string) {
-	b, _ := json.Marshal(map[string]any{
-		"id":     "x",
-		"object": "chat.completion",
-		"choices": []any{map[string]any{
-			"index": 0,
-			"message": map[string]any{
-				"role":    "assistant",
-				"content": content,
-				"tool_calls": []any{map[string]any{
-					"id":       "call_1",
-					"type":     "function",
-					"function": map[string]any{"name": name, "arguments": args},
-				}},
-			},
-			"finish_reason": "tool_calls",
-		}},
-	})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(b)
 }
 
 func TestParseToolArgsValidAndSalvage(t *testing.T) {
@@ -735,15 +619,9 @@ func TestSteerReachesNextIteration(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -758,7 +636,7 @@ func TestSteerReachesNextIteration(t *testing.T) {
 			providerCalls++
 			call := providerCalls
 			if call == 2 {
-				for _, m := range req.Messages {
+				for _, m := range msgs {
 					if m.Role == "user" {
 						secondCallUserContents = append(secondCallUserContents, m.Content)
 					}
@@ -1018,15 +896,9 @@ func TestTurnInputModeSkipsSelect(t *testing.T) {
 	var modeCalls int32
 	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -1073,15 +945,9 @@ func TestForcedModeSkipsSelect(t *testing.T) {
 	var modeCalls int32
 	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -1125,15 +991,9 @@ func TestPlanModeSessionSkipsSelect(t *testing.T) {
 	var modeCalls int32
 	var mu sync.Mutex
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -1239,13 +1099,7 @@ func TestConcurrentReadOnlyToolsPreserveOrder(t *testing.T) {
 				mu.Unlock()
 				msg["content"] = "all read"
 			}
-			b, _ := json.Marshal(map[string]any{
-				"id":      "x",
-				"object":  "chat.completion",
-				"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			writeCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()

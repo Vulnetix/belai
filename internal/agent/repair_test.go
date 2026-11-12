@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,59 +29,30 @@ func TestLengthStopReasonRefusesTools(t *testing.T) {
 			return
 		}
 
-		var req struct {
-			Messages []struct {
-				Role       string `json:"role"`
-				Content    string `json:"content"`
-				ToolCalls  []any  `json:"tool_calls,omitempty"`
-				ToolCallID string `json:"tool_call_id,omitempty"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 
 		// Security classifier.
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" && strings.Contains(m.Content, "security classifier") {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`))
+				writeChatJSON(w, "SAFE")
 				return
 			}
 			if m.Role == "system" && strings.Contains(m.Content, "operating-mode") {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"AGENT"},"finish_reason":"stop"}]}`))
+				writeChatJSON(w, "AGENT")
 				return
 			}
 		}
 
 		// If a tool result is already present, finish with plain text.
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "tool" {
-				b, _ := json.Marshal(map[string]any{
-					"choices": []any{map[string]any{
-						"message":       map[string]any{"role": "assistant", "content": "done"},
-						"finish_reason": "stop",
-					}},
-				})
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(b)
+				writeChatJSON(w, "done")
 				return
 			}
 		}
 
 		// Model turn: emit one tool call with stop_reason length.
-		b, _ := json.Marshal(map[string]any{
-			"choices": []any{map[string]any{
-				"message": map[string]any{
-					"role":          "assistant",
-					"content":       "",
-					"tool_calls":    []any{map[string]any{"id": "call_1", "type": "function", "function": map[string]any{"name": "Read", "arguments": "{}"}}},
-					"finish_reason": "length",
-				},
-				"finish_reason": "length",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeLengthRepairJSON(w, "Read", "{}")
 	}))
 	defer srv.Close()
 
