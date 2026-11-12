@@ -516,7 +516,15 @@ func TestStoreSourceCorruptIndexIsUsedForNothing(t *testing.T) {
 
 func TestSourceDirIsPerProjectAndOutsideTheRepository(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
-	a, b := t.TempDir(), t.TempDir()
+	// The project needs a name that cannot turn up by chance: t.TempDir's own
+	// base is a three-digit sequence number ("002"), which a 64-hex-digit
+	// directory hash contains about one run in seventy.
+	a, b := filepath.Join(t.TempDir(), "project-alpha"), filepath.Join(t.TempDir(), "project-beta")
+	for _, dir := range []string{a, b} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	da, err := config.ProjectSourceDir(a)
 	if err != nil {
 		t.Fatal(err)
