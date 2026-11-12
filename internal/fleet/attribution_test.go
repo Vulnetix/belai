@@ -59,6 +59,10 @@ func TestWorkspaceCommitCarriesTheSession(t *testing.T) {
 
 func TestEnsureAttributionRewritesOnlyWhatLacksIt(t *testing.T) {
 	testEnv(t)
+	// The commits below must be made with no attribution file in view; a
+	// sandbox's own file under HOME would put its trailers on them and leave
+	// nothing for the rewrite to add.
+	t.Setenv("PIX_ATTRIBUTION_FILE", filepath.Join(t.TempDir(), "absent"))
 	repo := gitRepo(t)
 	ctx := context.Background()
 	ws, err := PrepareWorktree(ctx, repo, kanban.Item{ID: "3f9a2c00-0000-4000-8000-000000000001", Title: "t"}, "")
