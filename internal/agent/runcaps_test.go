@@ -439,8 +439,25 @@ func TestRunCapsRule15_AuditEventIsEnumsOnly(t *testing.T) {
 			t.Fatalf("audit lacks %s:\n%s", want, text)
 		}
 	}
+	// The leak check reads the event fields only: the chain hashes and the
+	// timestamp are hex and digits, so a cap value such as "2000" can turn up
+	// in them by chance.
+	var fields strings.Builder
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		var e audit.Event
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("audit line %q: %v", line, err)
+		}
+		e.Seq, e.At, e.Prev, e.Hash = 0, 0, "", ""
+		b, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields.Write(b)
+		fields.WriteByte('\n')
+	}
 	for _, leak := range []string{"f1.txt", "go through every file", "2000"} {
-		if strings.Contains(text, leak) {
+		if strings.Contains(fields.String(), leak) {
 			t.Fatalf("the audit carries %q:\n%s", leak, text)
 		}
 	}
