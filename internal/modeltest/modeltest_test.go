@@ -16,18 +16,16 @@ import (
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/wire"
 )
 
 func isolate(t *testing.T) {
 	t.Helper()
-	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("BELAI_MODELS_DIR", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
+	testenv.Isolate(t)
 	t.Setenv("HF_HOME", "")
 	t.Setenv("HF_HUB_CACHE", "")
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
 }
 
 func TestRunStopsAtFirstFailureAndRecoversPanics(t *testing.T) {

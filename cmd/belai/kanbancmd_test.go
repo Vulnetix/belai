@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // Inside Belai's OS sandbox the state directory is hidden, so the board would
@@ -29,7 +30,7 @@ func TestKanbanCLIRefusesInsideTheSandbox(t *testing.T) {
 
 func TestKanbanImportFilesGatesAndRefusesUnsafeOnes(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	file := func(lines ...string) *strings.Reader { return strings.NewReader(strings.Join(lines, "\n") + "\n") }
 	var out, errOut bytes.Buffer
 	code := runKanbanCLI([]string{"import", "-"}, file(

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // TestLiveLocalDecisionLadder runs the whole local ladder against the real
@@ -24,7 +25,7 @@ func TestLiveLocalDecisionLadder(t *testing.T) {
 		t.Fatalf("unknown model %s", id)
 	}
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 	var lastPct int64 = -1

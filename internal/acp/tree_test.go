@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/turnlog"
@@ -103,7 +104,7 @@ type treeRig struct {
 func newTreeRig(t *testing.T) *treeRig {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1") // never reach a real account
+	testenv.Offline(t) // never reach a real account
 	prov := newEchoProvider("first", "second", "third")
 	t.Cleanup(prov.Close)
 	root := t.TempDir()

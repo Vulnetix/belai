@@ -12,6 +12,7 @@ import (
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modeltest"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // flowScreen is a /model screen whose tests run in the background through a
@@ -20,7 +21,7 @@ func flowScreen(t *testing.T, tester modelTester) *App {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("BELAI_MODELS_DIR", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	t.Setenv("OPENAI_API_KEY", "sk-test")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.classifierScope = "project"

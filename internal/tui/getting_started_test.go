@@ -15,20 +15,20 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/vulnetixcli"
 	"github.com/vulnetix/belai/internal/vulnetixenroll"
 )
 
-// isolate points Belai's state and the Vulnetix CLI's home at temp dirs.
+// isolate points Belai's state and the Vulnetix CLI's home at temp dirs and
+// clears any Vulnetix credential the environment carries.
 func isolate(t *testing.T) (home, workdir string) {
 	t.Helper()
-	t.Setenv("BELAI_HOME", t.TempDir())
-	home = t.TempDir()
-	t.Setenv("HOME", home)
+	e := testenv.Isolate(t)
 	for _, k := range []string{"VULNETIX_API_KEY", "VULNETIX_ORG_ID", "VULNETIX_API_TOKEN", "VVD_ORG", "VVD_SECRET", "VULNETIX_CREDENTIALS_DIR"} {
 		t.Setenv(k, "")
 	}
-	return home, t.TempDir()
+	return e.Home, e.WorkDir
 }
 
 func TestGettingStartedOnlyOnFirstInteractiveLaunch(t *testing.T) {

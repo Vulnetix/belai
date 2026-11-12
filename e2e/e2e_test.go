@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/gittest"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/testutil"
 )
 
@@ -45,7 +46,7 @@ func TestMain(m *testing.M) {
 	// default: without this a test's kanban items and sessions are pushed to
 	// the developer's live account and pulled into their real board by the
 	// next TUI. A closed loopback port is an allowed origin that never answers.
-	os.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	os.Setenv("VULNETIX_WEB_URL", testenv.OfflineWebURL)
 	// The e2e subprocesses inherit os.Environ(); scrub the sandbox marker so
 	// the binary exercises its outside-the-sandbox path when `go test` runs
 	// inside a Belai sandbox.

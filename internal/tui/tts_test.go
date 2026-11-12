@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/tts"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
@@ -101,7 +102,7 @@ const ttsReply = "Here is the final report.\n\n```go\nx := 1\n```\n\nThe build p
 func ttsApp(t *testing.T) (*App, *ttsFakeEngine, *ttsSink) {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	a := New(Options{Workdir: t.TempDir()})
 	a.classifier = nil
 	a.settings.TTS = &config.TTSSettings{Enabled: on(), Consented: on()}
