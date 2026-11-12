@@ -3,7 +3,6 @@ package run
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/proserules"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 func TestResolveFastDefaultsToTheProviderFastModel(t *testing.T) {
@@ -85,8 +85,7 @@ func roleServer(t *testing.T) (*httptest.Server, func() map[string][]string) {
 		mu.Lock()
 		seen[key] = append(seen[key], req.Model)
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)
+		testutil.WriteChat(w, "SAFE")
 	}))
 	return srv, func() map[string][]string {
 		mu.Lock()

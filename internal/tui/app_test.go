@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/transcript"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
@@ -466,17 +467,7 @@ func newAgentSSEServerMode(t *testing.T, finalReply, mode string) *httptest.Serv
 			flusher.Flush()
 			return
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id":     "x",
-			"object": "chat.completion",
-			"choices": []any{map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteChat(w, reply)
 	}))
 }
 

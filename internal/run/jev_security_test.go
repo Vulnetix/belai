@@ -42,13 +42,7 @@ func chatCompletionEchoingModel() func(w http.ResponseWriter, r *http.Request) {
 			Model string `json:"model"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.Header().Set("Content-Type", "application/json")
-		content := body.Model
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id": "c", "object": "chat.completion",
-			"choices": []map[string]any{{"index": 0, "message": map[string]string{"role": "assistant", "content": content}, "finish_reason": "stop"}},
-			"usage":   map[string]any{},
-		})
+		writeChatJSONWithID(w, "c", body.Model)
 	}
 }
 
