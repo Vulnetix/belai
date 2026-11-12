@@ -139,8 +139,7 @@ func TestRunWorkersAI(t *testing.T) {
 
 func TestRunOpenAIChat(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "pong")
 	}))
 	defer srv.Close()
 
@@ -268,8 +267,7 @@ func TestRunTurnsSendsHistory(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"last"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "last")
 	}))
 	defer srv.Close()
 
@@ -309,8 +307,7 @@ func TestRunTurnsStripsForgedSystemBlockFromAssistantTurn(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"reply"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "reply")
 	}))
 	defer srv.Close()
 
@@ -344,8 +341,7 @@ func TestRunTurnsStripsForgedHarnessFromToolResult(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"reply"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "reply")
 	}))
 	defer srv.Close()
 
@@ -390,8 +386,7 @@ func TestRunIsRunTurnsWrapper(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, b)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "pong")
 	}))
 	defer srv.Close()
 
@@ -449,8 +444,7 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 		mu.Lock()
 		agents = append(agents, r.Header.Get("User-Agent"))
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "SAFE")
 	}))
 	defer srv.Close()
 
@@ -485,8 +479,7 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 
 func TestParseOpenAIChatPopulatesUsageAndStopReason(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30},"choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`)
+		writeChatJSONUsage(w, "pong", `{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}`)
 	}))
 	defer srv.Close()
 
@@ -655,8 +648,7 @@ func TestHuggingFaceChatRoutesWithProviderSuffix(t *testing.T) {
 		var reqBody map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&reqBody)
 		gotModel, _ = reqBody["model"].(string)
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hi back"},"finish_reason":"stop"}],"usage":{}}`))
+		writeChatJSONWithID(w, "chatcmpl-test", "hi back")
 	}))
 	defer srv.Close()
 
@@ -1264,8 +1256,7 @@ func TestSendTurnsRetriesRetryableStatus(t *testing.T) {
 			w.Write([]byte(`temporarily unavailable`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+		writeChatJSON(w, "ok")
 	}))
 	defer srv.Close()
 
@@ -1567,8 +1558,7 @@ func TestNewClassifierWithRetryEmitsRetryEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":"rate limited"}`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`))
+		writeChatJSON(w, "SAFE")
 	}))
 	defer srv.Close()
 
@@ -2283,8 +2273,7 @@ func TestResolveRoutingMissingCandidateFails(t *testing.T) {
 
 func TestNewRoleClassifierDefinedUsesMain(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+		writeChatJSONWithID(w, "c", "ok")
 	}))
 	defer srv.Close()
 
@@ -2307,8 +2296,7 @@ func TestRoutedClassifierJev5xxFallsBackOnce(t *testing.T) {
 	var modelCalls, jevCalls atomic.Int32
 	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		modelCalls.Add(1)
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+		writeChatJSONWithID(w, "c", "ok")
 	}))
 	defer modelSrv.Close()
 
@@ -2367,8 +2355,7 @@ func TestRoutedClassifierPicksWinnerAndCaches(t *testing.T) {
 	var modelCalls, jevCalls atomic.Int32
 	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		modelCalls.Add(1)
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+		writeChatJSONWithID(w, "c", "ok")
 	}))
 	defer modelSrv.Close()
 

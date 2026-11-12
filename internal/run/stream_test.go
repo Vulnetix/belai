@@ -356,8 +356,7 @@ func TestStreamAndRunTurnsSealIdentically(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, b)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "pong")
 	}))
 	defer srv.Close()
 

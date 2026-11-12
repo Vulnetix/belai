@@ -466,18 +466,24 @@ func newAgentSSEServerMode(t *testing.T, finalReply, mode string) *httptest.Serv
 			flusher.Flush()
 			return
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id":     "x",
-			"object": "chat.completion",
-			"choices": []any{map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeChatJSON(w, reply)
 	}))
+}
+
+// writeChatJSON answers a fake chat-completions request with plain assistant
+// text in one non-streaming "stop" choice.
+func writeChatJSON(w http.ResponseWriter, content string) {
+	b, _ := json.Marshal(map[string]any{
+		"id":     "x",
+		"object": "chat.completion",
+		"choices": []any{map[string]any{
+			"index":         0,
+			"message":       map[string]any{"role": "assistant", "content": content},
+			"finish_reason": "stop",
+		}},
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(b)
 }
 
 func drainAgent(t *testing.T, a *App, cmd tea.Cmd) *App {

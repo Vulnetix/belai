@@ -3,7 +3,6 @@ package run
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -32,8 +31,7 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 		mu.Lock()
 		maxTokens = append(maxTokens, body.MaxTokens)
 		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "SAFE")
 	}))
 	defer srv.Close()
 
@@ -69,8 +67,7 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 // content-only parsing).
 func TestClassifierReasoningFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning_content":"GOAL_COMPLETE"},"finish_reason":"stop"}]}`)
+		writeChatJSONReasoning(w, "", "GOAL_COMPLETE")
 	}))
 	defer srv.Close()
 

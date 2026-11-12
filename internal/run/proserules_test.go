@@ -3,7 +3,6 @@ package run
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,8 +31,7 @@ func classifierSystem(t *testing.T, payload rolemanager.ClassifierPayload) strin
 				system = m.Content
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)
+		writeChatJSON(w, "SAFE")
 	}))
 	defer srv.Close()
 

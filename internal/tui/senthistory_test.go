@@ -45,10 +45,7 @@ func TestNextPromptContinuesSentHistory(t *testing.T) {
 			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\ndata: [DONE]\n\n", reply)
 			return
 		}
-		b, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion", "choices": []any{map[string]any{
-			"index": 0, "message": map[string]any{"role": "assistant", "content": reply}, "finish_reason": "stop"}}})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		writeChatJSON(w, reply)
 	}))
 	defer srv.Close()
 
