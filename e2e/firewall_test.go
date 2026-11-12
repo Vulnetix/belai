@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // TestFirewallHeadless routes a headless run through a custom header-mode
@@ -42,10 +44,10 @@ func TestFirewallHeadless(t *testing.T) {
 			w.Header().Set("X-Vulnetix-Firewall-Request-Id", "req-e2e-1")
 		}
 		if strings.Contains(body, "security classifier") {
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
-		writeChat(w, "mock reply")
+		testutil.WriteChat(w, "mock reply")
 	}))
 	defer srv.Close()
 

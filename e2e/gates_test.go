@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // gatesMock is fleetMock with a reviewer that records a manual gate: the
@@ -47,13 +48,13 @@ func gatesMock(t *testing.T) *httptest.Server {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "goal-progress evaluator"):
-			writeChat(w, "GOAL_COMPLETE")
+			testutil.WriteChat(w, "GOAL_COMPLETE")
 		case strings.Contains(lastUser, "reviewing a coding agent"):
-			writeChat(w, "- gated cards are verified by the harness")
+			testutil.WriteChat(w, "- gated cards are verified by the harness")
 		case strings.Contains(lastUser, "final report") || strings.Contains(lastUser, "Write a report"):
-			writeChat(w, "Done.")
+			testutil.WriteChat(w, "Done.")
 		default:
 			mu.Lock()
 			calls++

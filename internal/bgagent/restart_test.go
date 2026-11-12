@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // newLoopMockServer scripts the security, mode, and loop-evaluator classifiers
@@ -64,13 +65,7 @@ func newLoopMockServer(t *testing.T, verdicts []string) *httptest.Server {
 }
 
 func writeLoopJSON(w http.ResponseWriter, content string) {
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"choices": []any{map[string]any{
-			"message":       map[string]any{"content": content, "role": "assistant"},
-			"finish_reason": "stop",
-		}},
-		"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-	})
+	testutil.WriteChatWithUsage(w, content, 1, 1)
 }
 
 // writeLoopSSE emits a minimal OpenAI-style SSE stream carrying one content

@@ -1,7 +1,6 @@
 package bgagent
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 func TestManagerStartStop(t *testing.T) {
@@ -167,20 +167,7 @@ func newMockServer(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		case "/v1/chat/completions":
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"choices": []any{
-					map[string]any{
-						"message":       map[string]any{"content": "SAFE", "role": "assistant"},
-						"finish_reason": "stop",
-					},
-				},
-				"usage": map[string]any{
-					"prompt_tokens":     1,
-					"completion_tokens": 1,
-					"total_tokens":      2,
-				},
-			})
+			testutil.WriteChatWithUsage(w, "SAFE", 1, 1)
 		default:
 			if strings.Contains(r.URL.Path, "/nonces") {
 				w.WriteHeader(http.StatusNotFound)

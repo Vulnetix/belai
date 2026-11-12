@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // testPassRepo is a throwaway git repository with one untracked file, so the
@@ -58,11 +60,11 @@ func testPassMock(t *testing.T) (*httptest.Server, func() []string) {
 		mu.Unlock()
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChat(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChat(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
-			writeChat(w, "mock reply")
+			testutil.WriteChat(w, "mock reply")
 		}
 	}))
 	t.Cleanup(srv.Close)

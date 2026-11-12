@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/testrun"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/turnlog"
 )
@@ -73,10 +74,7 @@ func mockProvider() *httptest.Server {
 			w.Write([]byte("data: " + string(chunk) + "\n\ndata: [DONE]\n\n"))
 			return
 		}
-		b, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion",
-			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}}})
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(b)
+		testutil.WriteCompletion(w, msg, "stop")
 	}))
 }
 
