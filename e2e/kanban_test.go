@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,13 +32,7 @@ func TestKanbanWrapUpFilesReportedOpenWork(t *testing.T) {
 	var mu sync.Mutex
 	var wrapUps int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system, user string
 		wrap, toolsAfterWrap, tools := -1, 0, 0
 		for i, m := range req.Messages {

@@ -30,13 +30,8 @@ func newReplyServer(t *testing.T, replies ...string) (*httptest.Server, *replySe
 	t.Helper()
 	rs := &replyServer{replies: replies}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := testutil.DecodeChat(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

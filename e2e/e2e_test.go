@@ -94,13 +94,8 @@ func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 	t.Helper()
 	mp := &mockProvider{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := testutil.DecodeChat(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -554,13 +549,7 @@ func newToolMockServerFor(t *testing.T, toolName string, toolArgs map[string]any
 	t.Helper()
 	tm := &toolMock{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system, user string
 		hasTool := false
 		// The kanban wrap-up after a work turn re-sends the history; it is
@@ -815,21 +804,8 @@ func newWorkersAIMockServer(t *testing.T, model string) (*httptest.Server, *work
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var req struct {
-			Messages []struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function struct {
-						Name      string          `json:"name"`
-						Arguments json.RawMessage `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls,omitempty"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := testutil.DecodeChat(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -907,18 +883,7 @@ type workersAIMock struct {
 	haveSeenToolResult bool
 }
 
-func extractUserMsg(messages []struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	ToolCalls []struct {
-		ID       string `json:"id"`
-		Type     string `json:"type"`
-		Function struct {
-			Name      string          `json:"name"`
-			Arguments json.RawMessage `json:"arguments"`
-		} `json:"function"`
-	} `json:"tool_calls,omitempty"`
-}) string {
+func extractUserMsg(messages []testutil.ChatMessage) string {
 	for _, m := range messages {
 		if m.Role == "user" {
 			return m.Content
@@ -1017,13 +982,8 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 	var mu sync.Mutex
 	idx := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := testutil.DecodeChat(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -1240,13 +1200,8 @@ func newExploreMockServer(t *testing.T, toolPath string) (*httptest.Server, *exp
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := testutil.DecodeChat(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -1485,13 +1440,7 @@ func TestGuardrailsSettingIgnoresEveryGate(t *testing.T) {
 func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
 	dir := t.TempDir()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system, lastTool string
 		hasTool := false
 		for _, m := range req.Messages {
@@ -1550,13 +1499,7 @@ func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
 func TestPlanModeExitPlanModeEmptyPlanErrors(t *testing.T) {
 	dir := t.TempDir()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system string
 		hasTool := false
 		for _, m := range req.Messages {
@@ -1635,20 +1578,7 @@ func TestPlanHandoffAttachmentEndToEnd(t *testing.T) {
 
 	var toolCalls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Function struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system, user string
 		for _, m := range req.Messages {
 			switch m.Role {
