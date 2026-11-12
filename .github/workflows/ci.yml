@@ -46,6 +46,41 @@ jobs:
       - name: cross-compile (darwin)
         run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./...
 
+  # Coverage is reported, not gated: the percentage is a proxy, not a target.
+  # It runs as its own job because a full coverage run takes over ten minutes
+  # and would otherwise lengthen the race job above. Same command as `just cover`.
+  coverage:
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go test -coverprofile
+        run: go test -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Coverage summary
+        run: |
+          {
+            echo '## Go coverage'
+            echo
+            echo '```'
+            go tool cover -func=coverage.txt | tail -30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: coverage
+          path: coverage.txt
+          if-no-files-found: error
+
   # The embedded-model path is exercised here so a drift in the modelprep tool,
   # the attack-label orientation, or the tagged build fails CI before a release.
   models:
