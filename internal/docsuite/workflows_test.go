@@ -30,7 +30,7 @@ func jobNames(t *testing.T, workflow string) []string {
 func TestDevelopmentPageDescribesTheWorkflows(t *testing.T) {
 	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/development.md")), " ")
 	ci := jobNames(t, ".github/workflows/ci.yml")
-	if len(ci) != 3 {
+	if len(ci) != 4 {
 		t.Fatalf("ci.yml has %d jobs %v; update the page and this test together", len(ci), ci)
 	}
 	for _, j := range ci {
@@ -38,8 +38,8 @@ func TestDevelopmentPageDescribesTheWorkflows(t *testing.T) {
 			t.Errorf("docs/development.md does not name the CI job `%s`", j)
 		}
 	}
-	if !strings.Contains(doc, "as three jobs") {
-		t.Error("docs/development.md does not say CI has three jobs")
+	if !strings.Contains(doc, "as four jobs") {
+		t.Error("docs/development.md does not say CI has four jobs")
 	}
 	ciSrc := docparity.Read(t, ".github/workflows/ci.yml")
 	for _, want := range []string{"go vet ./...", "go test -race ./...", "go test -tags belai_bert ./internal/mlclassify/...", "go test -tags belai_bert_jailbreak ./internal/mlclassify/...", "go test -tags belai_voice ./internal/voice/..."} {
