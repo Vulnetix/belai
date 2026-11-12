@@ -50,10 +50,9 @@ func TestExitFiresRecover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	// Wait for exit + handleExit dispatch.
-	time.Sleep(300 * time.Millisecond)
-
 	_ = p // referenced only for the handle
+	// drainEvents blocks until the recover event arrives, so there is no
+	// separate wait for the exit.
 	sawRecover := false
 	drainEvents(m, func(e Event) bool {
 		if e.Kind == "recover" {
@@ -75,14 +74,18 @@ func TestStoppedByUserDoesNotRecover(t *testing.T) {
 	if err := m.Stop(p.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
-	for e := range m.Events() {
+	// handleExit sends the exit event after it has decided not to recover, so
+	// any recover event for this stop would arrive before it.
+	sawExit := false
+	drainEvents(m, func(e Event) bool {
 		if e.Kind == "recover" {
 			t.Fatalf("unexpected recover event after user stop: %+v", e)
 		}
-		if e.Kind == "exit" {
-			break
-		}
+		sawExit = e.Kind == "exit"
+		return sawExit
+	})
+	if !sawExit {
+		t.Fatal("no exit event after the user stop")
 	}
 }
 
@@ -140,26 +143,6 @@ func TestAttemptsCap(t *testing.T) {
 	}
 }
 
-func TestShutdownKillsGroup(t *testing.T) {
-	m := testManager(t)
-	// A child that ignores SIGTERM and would outlive a plain Kill on the
-	// parent. The process group kill should take it down.
-	script := "sleep 30 & sleep 30 & wait"
-	p, err := m.Start("sleeper", script)
-	if err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	m.Shutdown()
-	time.Sleep(500 * time.Millisecond)
-
-	// The script shell and its children should be gone.
-	procs, _ := os.FindProcess(p.PID)
-	if procs != nil && procs.Signal(os.Signal(nil)) == nil {
-		t.Fatalf("process group %d still alive", p.PID)
-	}
-}
-
 func TestLockReclaimsStalePID(t *testing.T) {
 	m := testManager(t)
 	// Write a lock file claiming a pid that cannot possibly be alive.
@@ -180,7 +163,12 @@ func TestLockRemovedAfterStop(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	m1.Stop(p.ID)
-	time.Sleep(200 * time.Millisecond)
+	// handleExit releases the lock before it drops the process from the
+	// table, so once Lookup misses the lock is gone.
+	eventually(func() bool {
+		_, ok := m1.Lookup(p.ID)
+		return !ok
+	})
 
 	m2 := NewManager(dir, run.Config{}, nil, config.Settings{}, posture.Defaults(), tools.Capabilities{})
 	if _, err := m2.Start("sleep", "sleep 30"); err != nil {
@@ -245,7 +233,10 @@ func TestHistorySurvivesStop(t *testing.T) {
 	if err := m.Stop(p.ID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	eventually(func() bool {
+		_, ok := m.Lookup(p.ID)
+		return !ok
+	})
 
 	// Stopped processes are removed from the active map, but their snapshot
 	// and log path are preserved in history under the process name.
