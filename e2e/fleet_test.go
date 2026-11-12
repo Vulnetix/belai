@@ -70,17 +70,76 @@ func fleetServer(decode func(*http.Request) (system, lastUser string, wrote bool
 	}))
 }
 
+// anthropicRequest is an Anthropic messages request as fleetMockAnthropic reads
+// it: the system prompt and each message's content stay raw for anthropicText.
+type anthropicRequest struct {
+	System   json.RawMessage `json:"system"`
+	Messages []struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	} `json:"messages"`
+}
+
+// decodeAnthropic reads an Anthropic messages request body.
+func decodeAnthropic(r *http.Request) (anthropicRequest, error) {
+	var req anthropicRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	return req, err
+}
+
+// anthropicText joins the text of an Anthropic content field: a plain string, or
+// an array of blocks of which only the text blocks count. toolResult reports a
+// tool_result block in it.
+func anthropicText(raw json.RawMessage) (text string, toolResult bool) {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s, false
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return "", false
+	}
+	var parts []string
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			parts = append(parts, b.Text)
+		case "tool_result":
+			toolResult = true
+		}
+	}
+	return strings.Join(parts, "\n"), toolResult
+}
+
+// writeAnthropic answers a in the Anthropic messages shape: a text block, and a
+// tool_use block when a calls a tool.
+func writeAnthropic(w http.ResponseWriter, a fleetAnswer) {
+	content := []any{}
+	if a.text != "" {
+		content = append(content, map[string]any{"type": "text", "text": a.text})
+	}
+	stop := "end_turn"
+	if a.tool != "" {
+		content = append(content, map[string]any{"type": "tool_use", "id": "toolu_1", "name": a.tool, "input": a.args})
+		stop = "tool_use"
+	}
+	b, _ := json.Marshal(map[string]any{
+		"id": "msg_1", "type": "message", "role": "assistant", "content": content, "stop_reason": stop,
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5},
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(b)
+}
+
 // fleetMock is the scripted model in the OpenAI chat shape.
 func fleetMock(t *testing.T) *httptest.Server {
 	t.Helper()
 	return fleetServer(func(r *http.Request) (system, lastUser string, wrote bool, err error) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req testutil.ChatRequest
+		if req, err = testutil.DecodeChat(r); err != nil {
 			return
 		}
 		for _, m := range req.Messages {

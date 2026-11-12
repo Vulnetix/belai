@@ -26,13 +26,7 @@ func TestOffloadedBashOutputReadsBack(t *testing.T) {
 	var mu sync.Mutex
 	var toolTurns [][]string // per main request, the tool messages' content
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		req, _ := testutil.DecodeChat(r)
 		var system, user string
 		var tools []string
 		for _, m := range req.Messages {

@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,13 +41,7 @@ func testPassMock(t *testing.T) (*httptest.Server, func() []string) {
 	var bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.Unmarshal(raw, &req)
+		req, _ := testutil.ParseChat(raw)
 		system := ""
 		for _, m := range req.Messages {
 			if m.Role == "system" {

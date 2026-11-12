@@ -27,36 +27,13 @@ import (
 // still running; B receives the reply as a2a_reply_in tied to its question.
 // No Vulnetix login: same-host messaging needs none.
 
-// a2aChat is one chat request's messages and tools.
-type a2aChat struct {
-	Messages []struct {
-		Role    string `json:"role"`
-		Content any    `json:"content"`
-	} `json:"messages"`
-	Tools []json.RawMessage `json:"tools"`
-}
-
-func (c a2aChat) text() (system, all string) {
-	var b strings.Builder
-	for _, m := range c.Messages {
-		s := fmt.Sprint(m.Content)
-		if m.Role == "system" {
-			system = s
-		}
-		b.WriteString(s)
-		b.WriteString("\n")
-	}
-	return system, b.String()
-}
-
 // a2aMock is a provider that answers the classifiers and hands each chat
 // request to script.
 func a2aMock(t *testing.T, script func(all string) (tool string, args map[string]any, text string)) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req a2aChat
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		system, all := req.text()
+		req, _ := testutil.DecodeChat(r)
+		system, all := req.Text()
 		switch {
 		case strings.Contains(system, "security classifier"):
 			testutil.WriteChat(w, "SAFE")

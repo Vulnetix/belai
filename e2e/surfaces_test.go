@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,33 +10,6 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 )
 
-// anthropicText joins the text of an Anthropic content field: a plain string, or
-// an array of blocks of which only the text blocks count. toolResult reports a
-// tool_result block in it.
-func anthropicText(raw json.RawMessage) (text string, toolResult bool) {
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return s, false
-	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(raw, &blocks) != nil {
-		return "", false
-	}
-	var parts []string
-	for _, b := range blocks {
-		switch b.Type {
-		case "text":
-			parts = append(parts, b.Text)
-		case "tool_result":
-			toolResult = true
-		}
-	}
-	return strings.Join(parts, "\n"), toolResult
-}
-
 // fleetMockAnthropic is the scripted model in the Anthropic messages shape:
 // the system prompt is a string or a list of blocks (the prompt cache), tool
 // results come back as blocks of a user message, and a tool call is a tool_use
@@ -45,18 +17,12 @@ func anthropicText(raw json.RawMessage) (text string, toolResult bool) {
 func fleetMockAnthropic(t *testing.T) *httptest.Server {
 	t.Helper()
 	return fleetServer(func(r *http.Request) (system, lastUser string, wrote bool, err error) {
-		var req struct {
-			System   json.RawMessage `json:"system"`
-			Messages []struct {
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-			} `json:"messages"`
-		}
 		if !strings.HasSuffix(r.URL.Path, "/v1/messages") {
 			err = fmt.Errorf("not the Anthropic messages endpoint: %s", r.URL.Path)
 			return
 		}
-		if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req anthropicRequest
+		if req, err = decodeAnthropic(r); err != nil {
 			return
 		}
 		system, _ = anthropicText(req.System)
@@ -68,23 +34,7 @@ func fleetMockAnthropic(t *testing.T) *httptest.Server {
 			}
 		}
 		return
-	}, func(w http.ResponseWriter, a fleetAnswer) {
-		content := []any{}
-		if a.text != "" {
-			content = append(content, map[string]any{"type": "text", "text": a.text})
-		}
-		stop := "end_turn"
-		if a.tool != "" {
-			content = append(content, map[string]any{"type": "tool_use", "id": "toolu_1", "name": a.tool, "input": a.args})
-			stop = "tool_use"
-		}
-		b, _ := json.Marshal(map[string]any{
-			"id": "msg_1", "type": "message", "role": "assistant", "content": content, "stop_reason": stop,
-			"usage": map[string]any{"input_tokens": 10, "output_tokens": 5},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
-	})
+	}, writeAnthropic)
 }
 
 // surface is one wire format the same scripted model is served in.
