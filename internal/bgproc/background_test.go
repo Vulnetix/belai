@@ -85,7 +85,8 @@ func TestBackgroundExitIsNeverRecovered(t *testing.T) {
 	if got.ExitCode != 3 {
 		t.Fatalf("exit code = %d", got.ExitCode)
 	}
-	time.Sleep(200 * time.Millisecond)
+	// drainEvents watches the whole window, so no extra sleep is needed
+	// before it for a late recover or fail event to be seen.
 	drainEvents(m, func(e Event) bool {
 		if e.Kind == "recover" || e.Kind == "fail" {
 			t.Fatalf("model-started process must not be recovered: %s", e.Kind)
