@@ -74,7 +74,7 @@ func runBelaiStdin(t *testing.T, dir, home, baseURL, stdin string, args ...strin
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, append([]string{"-trust-dir"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(baseURL, home)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -88,20 +88,6 @@ func runBelaiStdin(t *testing.T, dir, home, baseURL, stdin string, args ...strin
 		code = ee.ExitCode()
 	}
 	return out.String(), errb.String(), code
-}
-
-func newHome(t *testing.T, settings string) string {
-	t.Helper()
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if settings != "" {
-		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(settings), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return home
 }
 
 func jsonLines(t *testing.T, out string) []map[string]any {

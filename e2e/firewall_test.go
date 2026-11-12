@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -54,20 +52,13 @@ func TestFirewallHeadless(t *testing.T) {
 	global := `{"firewall":{"enabled":true,"active":"corp","instances":{"corp":{"adapter":"custom","url":"https://gw.example/v1","mode":"header","header":"X-Gw-Key"}}}}`
 	run := func(prompt string) (string, string, int) {
 		dir := t.TempDir()
-		home := filepath.Join(t.TempDir(), "belai-home")
-		if err := os.MkdirAll(home, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(global), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		home := newHome(t, global)
 		var out, errb bytes.Buffer
 		cmd := exec.Command(belaiBin, "-trust-dir", "-tools=false", "-provider", "openai", "-model", "test", "-prompt", prompt)
 		cmd.Dir = dir
 		// BELAI_BASE_URL points the route at the mock; the route's headers
 		// still apply.
-		cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=sk-provider-secret",
-			"BELAI_FIREWALL_CORP_API_KEY=fw-secret", "BELAI_HOME="+home)
+		cmd.Env = belaiEnv(srv.URL, home, "OPENAI_API_KEY=sk-provider-secret", "BELAI_FIREWALL_CORP_API_KEY=fw-secret")
 		cmd.Stdout, cmd.Stderr = &out, &errb
 		code := 0
 		if err := cmd.Run(); err != nil {

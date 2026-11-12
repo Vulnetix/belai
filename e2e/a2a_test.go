@@ -147,7 +147,7 @@ func startBelai(t *testing.T, home, dir, base string, extraEnv []string, prompt 
 	var out bytes.Buffer
 	cmd := exec.Command(belaiBin, "-trust-dir", "-allow-ask-without-tty", "-no-git-sync", "-mode", "agent", "-provider", "openai", "-model", "test", "-prompt", prompt)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), "BELAI_BASE_URL="+base, "OPENAI_API_KEY=test", "BELAI_HOME="+home), extraEnv...)
+	cmd.Env = belaiEnv(base, home, extraEnv...)
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

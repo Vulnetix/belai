@@ -80,17 +80,11 @@ func TestKanbanWrapUpFilesReportedOpenWork(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"permissions":{"allow":["Read"]}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	home := newHome(t, `{"permissions":{"allow":["Read"]}}`)
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, "-trust-dir", "-provider", "openai", "-model", "test", "-prompt", "read safe.txt")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(srv.URL, home)
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("run: %v (stderr %q)", err, errb.String())

@@ -80,15 +80,7 @@ func testPassMock(t *testing.T) (*httptest.Server, func() []string) {
 // exit code.
 func runTestPass(t *testing.T, srv *httptest.Server, dir, globalSettings, projectSettings string) (string, string, int) {
 	t.Helper()
-	home := filepath.Join(t.TempDir(), "belai-home")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if globalSettings != "" {
-		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(globalSettings), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	home := newHome(t, globalSettings)
 	if projectSettings != "" {
 		if err := os.MkdirAll(filepath.Join(dir, ".vulnetix"), 0o700); err != nil {
 			t.Fatal(err)
@@ -100,7 +92,7 @@ func runTestPass(t *testing.T, srv *httptest.Server, dir, globalSettings, projec
 	var out, errb bytes.Buffer
 	cmd := exec.Command(belaiBin, "-trust-dir", "-provider", "openai", "-model", "test", "-prompt", "hi")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Env = belaiEnv(srv.URL, home)
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	code := 0
 	if err := cmd.Run(); err != nil {
