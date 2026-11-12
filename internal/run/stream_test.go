@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/transcript"
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -356,7 +357,7 @@ func TestStreamAndRunTurnsSealIdentically(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, b)
-		writeChatJSON(w, "pong")
+		testutil.WriteChat(w, "pong")
 	}))
 	defer srv.Close()
 

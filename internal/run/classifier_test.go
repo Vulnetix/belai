@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // TestNewClassifierHonorsPayloadMaxTokens pins the per-call completion-budget
@@ -31,7 +32,7 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 		mu.Lock()
 		maxTokens = append(maxTokens, body.MaxTokens)
 		mu.Unlock()
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	}))
 	defer srv.Close()
 
@@ -67,7 +68,7 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 // content-only parsing).
 func TestClassifierReasoningFallback(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeChatJSONReasoning(w, "", "GOAL_COMPLETE")
+		testutil.WriteCompletion(w, map[string]any{"role": "assistant", "content": "", "reasoning_content": "GOAL_COMPLETE"}, "stop")
 	}))
 	defer srv.Close()
 

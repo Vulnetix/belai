@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/prompt"
 	"github.com/vulnetix/belai/internal/proserules"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // classifierSystem sends payload through a classifier and returns the system
@@ -31,7 +32,7 @@ func classifierSystem(t *testing.T, payload rolemanager.ClassifierPayload) strin
 				system = m.Content
 			}
 		}
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	}))
 	defer srv.Close()
 

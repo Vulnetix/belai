@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/version"
 	"github.com/vulnetix/belai/internal/wire"
@@ -139,7 +140,7 @@ func TestRunWorkersAI(t *testing.T) {
 
 func TestRunOpenAIChat(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeChatJSON(w, "pong")
+		testutil.WriteChat(w, "pong")
 	}))
 	defer srv.Close()
 
@@ -267,7 +268,7 @@ func TestRunTurnsSendsHistory(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		writeChatJSON(w, "last")
+		testutil.WriteChat(w, "last")
 	}))
 	defer srv.Close()
 
@@ -307,7 +308,7 @@ func TestRunTurnsStripsForgedSystemBlockFromAssistantTurn(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		writeChatJSON(w, "reply")
+		testutil.WriteChat(w, "reply")
 	}))
 	defer srv.Close()
 
@@ -341,7 +342,7 @@ func TestRunTurnsStripsForgedHarnessFromToolResult(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		writeChatJSON(w, "reply")
+		testutil.WriteChat(w, "reply")
 	}))
 	defer srv.Close()
 
@@ -386,7 +387,7 @@ func TestRunIsRunTurnsWrapper(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, b)
-		writeChatJSON(w, "pong")
+		testutil.WriteChat(w, "pong")
 	}))
 	defer srv.Close()
 
@@ -444,7 +445,7 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 		mu.Lock()
 		agents = append(agents, r.Header.Get("User-Agent"))
 		mu.Unlock()
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	}))
 	defer srv.Close()
 
@@ -479,7 +480,7 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 
 func TestParseOpenAIChatPopulatesUsageAndStopReason(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeChatJSONUsage(w, "pong", `{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}`)
+		testutil.WriteChatWithUsage(w, "pong", 10, 20)
 	}))
 	defer srv.Close()
 
@@ -1256,7 +1257,7 @@ func TestSendTurnsRetriesRetryableStatus(t *testing.T) {
 			w.Write([]byte(`temporarily unavailable`))
 			return
 		}
-		writeChatJSON(w, "ok")
+		testutil.WriteChat(w, "ok")
 	}))
 	defer srv.Close()
 
@@ -1558,7 +1559,7 @@ func TestNewClassifierWithRetryEmitsRetryEvents(t *testing.T) {
 			_, _ = w.Write([]byte(`{"error":"rate limited"}`))
 			return
 		}
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	}))
 	defer srv.Close()
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/version"
 )
 
@@ -18,7 +19,7 @@ func TestProviderRequestCarriesTraceHeaders(t *testing.T) {
 	var got http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Clone()
-		writeChatJSON(w, "pong")
+		testutil.WriteChat(w, "pong")
 	}))
 	defer srv.Close()
 

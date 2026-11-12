@@ -12,6 +12,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -45,7 +46,7 @@ func TestNextPromptContinuesSentHistory(t *testing.T) {
 			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\ndata: [DONE]\n\n", reply)
 			return
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 	defer srv.Close()
 
