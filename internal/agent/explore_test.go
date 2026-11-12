@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -85,27 +86,21 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			var req struct {
-				Messages []struct {
-					Role    string `json:"role"`
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&req)
+			msgs := decodeMessages(r.Body)
 			var system string
-			for _, m := range req.Messages {
+			for _, m := range msgs {
 				if m.Role == "system" {
 					system = m.Content
 				}
 			}
 			switch {
 			case strings.Contains(system, "security classifier"):
-				writeChatJSON(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 			default:
 				mu.Lock()
 				calls++
 				mu.Unlock()
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 			}
 		}))
 		return srv, &calls
@@ -386,10 +381,10 @@ func TestExploreSubagentReportsOnceWhenSpent(t *testing.T) {
 		}
 		mu.Unlock()
 		if len(req.Tools) == 0 {
-			writeChatJSON(w, "REPORT: f.txt holds x")
+			testutil.WriteChat(w, "REPORT: f.txt holds x")
 			return
 		}
-		writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+		testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 	}))
 	defer srv.Close()
 
@@ -442,7 +437,7 @@ func TestGoalExploreIsOptIn(t *testing.T) {
 					explored = true
 					mu.Unlock()
 				}
-				writeChatJSON(w, "done")
+				testutil.WriteChat(w, "done")
 			}))
 			defer srv.Close()
 			sess, err := NewSession(Options{
@@ -486,13 +481,13 @@ func TestReviewFansOutPerScanner(t *testing.T) {
 			raw, _ := io.ReadAll(r.Body)
 			body := string(raw)
 			if strings.Contains(body, "security classifier") {
-				writeChatJSON(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 				return
 			}
 			mu.Lock()
 			bodies = append(bodies, body)
 			mu.Unlock()
-			writeChatJSON(w, "a.go:1 — S1 — real — fix: validate input")
+			testutil.WriteChat(w, "a.go:1 — S1 — real — fix: validate input")
 		}))
 
 		sess, err := NewSession(Options{
@@ -571,13 +566,13 @@ func TestReviewFindingsSkipTheirSubagent(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		body := string(raw)
 		if strings.Contains(body, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
 		bodies = append(bodies, body)
 		mu.Unlock()
-		writeChatJSON(w, "b.go:2 | K1 | real | fix: rotate the key")
+		testutil.WriteChat(w, "b.go:2 | K1 | real | fix: rotate the key")
 	}))
 	defer srv.Close()
 

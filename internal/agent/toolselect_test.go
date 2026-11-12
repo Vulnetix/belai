@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -368,7 +369,7 @@ func TestSystemBlockListsOnlyTheRelevantSkills(t *testing.T) {
 			}
 		}
 		if strings.Contains(sys, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
@@ -378,7 +379,7 @@ func TestSystemBlockListsOnlyTheRelevantSkills(t *testing.T) {
 			advertised = append(advertised, tl.Function.Name)
 		}
 		mu.Unlock()
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	defer srv.Close()
 
@@ -439,13 +440,13 @@ func TestWithoutABackendEverySkillIsListed(t *testing.T) {
 			}
 		}
 		if strings.Contains(sys, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
 		system = sys
 		mu.Unlock()
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	defer srv.Close()
 	root := t.TempDir()
@@ -489,13 +490,13 @@ func TestSystemBlockListsOnlyTheProfilesSkills(t *testing.T) {
 				}
 			}
 			if strings.Contains(sys, "security classifier") {
-				writeChatJSON(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 				return
 			}
 			mu.Lock()
 			system = sys
 			mu.Unlock()
-			writeChatJSON(w, "done")
+			testutil.WriteChat(w, "done")
 		}))
 		defer srv.Close()
 		root := t.TempDir()

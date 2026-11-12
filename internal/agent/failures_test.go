@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -73,7 +74,7 @@ func scriptedServer(t *testing.T, step func(n int, w http.ResponseWriter)) *http
 		// Only chat completions advance the script; the nonce fetch is not a
 		// model turn.
 		if r.URL.Path != "/chat/completions" {
-			writeChatJSON(w, "")
+			testutil.WriteChat(w, "")
 			return
 		}
 		mu.Lock()
@@ -99,7 +100,7 @@ func runPass(t *testing.T, sess *Session, mode modes.Mode) (passOutcome, []run.T
 // withheld streak, never counted as work, and bounded.
 func TestRepairableFailuresAreFedBackAndBounded(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
-		writeToolCallJSON(w, "Todo", `{"todos":[{"status":"pending"}]}`)
+		testutil.WriteToolCall(w, "Todo", `{"todos":[{"status":"pending"}]}`)
 	})
 	defer srv.Close()
 	sess := todoSession(t, srv, 10, false)
@@ -133,11 +134,11 @@ func TestRepairableFailureThenCorrectedCallRecovers(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
 		switch n {
 		case 1:
-			writeToolCallJSON(w, "Todo", `{"todos":[{"explanation":"","status":"pending"}]}`)
+			testutil.WriteToolCall(w, "Todo", `{"todos":[{"explanation":"","status":"pending"}]}`)
 		case 2:
-			writeToolCallJSON(w, "Todo", `{"todos":[{"content":"ship it","status":"completed"}]}`)
+			testutil.WriteToolCall(w, "Todo", `{"todos":[{"content":"ship it","status":"completed"}]}`)
 		default:
-			writeChatJSON(w, "All done.")
+			testutil.WriteChat(w, "All done.")
 		}
 	})
 	defer srv.Close()
@@ -157,10 +158,10 @@ func TestRepairableFailureThenCorrectedCallRecovers(t *testing.T) {
 func TestUnofferedToolIsFedBackNotFatal(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
 		if n == 1 {
-			writeToolCallJSON(w, "Rea", `{"path":"f.txt"}`)
+			testutil.WriteToolCall(w, "Rea", `{"path":"f.txt"}`)
 			return
 		}
-		writeChatJSON(w, "Recovered.")
+		testutil.WriteChat(w, "Recovered.")
 	})
 	defer srv.Close()
 	sess := todoSession(t, srv, 10, false)
@@ -183,7 +184,7 @@ func TestUnofferedToolIsFedBackNotFatal(t *testing.T) {
 // The abort policy still ends a model that keeps naming tools it was not given.
 func TestUnofferedToolStillAbortsAfterRepeatedFeedback(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
-		writeToolCallJSON(w, "Nope", `{}`)
+		testutil.WriteToolCall(w, "Nope", `{}`)
 	})
 	defer srv.Close()
 	sess := todoSession(t, srv, 10, false)
@@ -207,7 +208,7 @@ func (panicTool) Execute(context.Context, map[string]any) (tools.Result, error) 
 
 // A panic in a tool is an execution error the model can read, never a crash.
 func TestToolPanicBecomesExecutionError(t *testing.T) {
-	srv := scriptedServer(t, func(n int, w http.ResponseWriter) { writeChatJSON(w, "x") })
+	srv := scriptedServer(t, func(n int, w http.ResponseWriter) { testutil.WriteChat(w, "x") })
 	defer srv.Close()
 	sess := todoSession(t, srv, 3, false)
 	sess.registry = sess.registry.With(panicTool{})
@@ -224,13 +225,13 @@ func TestOpenTodosSendTheTurnBack(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
 		switch n {
 		case 1:
-			writeToolCallJSON(w, "Todo", `{"todos":[{"content":"a","status":"in_progress"},{"content":"b","status":"pending"}]}`)
+			testutil.WriteToolCall(w, "Todo", `{"todos":[{"content":"a","status":"in_progress"},{"content":"b","status":"pending"}]}`)
 		case 2:
-			writeChatJSON(w, "I am done.")
+			testutil.WriteChat(w, "I am done.")
 		case 3:
-			writeToolCallJSON(w, "Todo", `{"todos":[{"content":"a","status":"completed"},{"content":"b","status":"completed"}]}`)
+			testutil.WriteToolCall(w, "Todo", `{"todos":[{"content":"a","status":"completed"},{"content":"b","status":"completed"}]}`)
 		default:
-			writeChatJSON(w, "Final report: a and b are done.")
+			testutil.WriteChat(w, "Final report: a and b are done.")
 		}
 	})
 	defer srv.Close()
@@ -258,10 +259,10 @@ func TestOpenTodosSendTheTurnBack(t *testing.T) {
 func TestOpenTodoSendBackIsBounded(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
 		if n == 1 {
-			writeToolCallJSON(w, "Todo", `{"todos":[{"content":"a","status":"pending"}]}`)
+			testutil.WriteToolCall(w, "Todo", `{"todos":[{"content":"a","status":"pending"}]}`)
 			return
 		}
-		writeChatJSON(w, "Stopping here.")
+		testutil.WriteChat(w, "Stopping here.")
 	})
 	defer srv.Close()
 	sess := todoSession(t, srv, 20, true)
@@ -300,7 +301,7 @@ func TestOpenTodoGuardSkips(t *testing.T) {
 // An agent turn that did work and ended on a fragment is asked for its report.
 func TestAgentTurnEndsWithAReport(t *testing.T) {
 	srv := scriptedServer(t, func(n int, w http.ResponseWriter) {
-		writeChatJSON(w, "Changed a.go to return the sum; go test passes.")
+		testutil.WriteChat(w, "Changed a.go to return the sum; go test passes.")
 	})
 	defer srv.Close()
 	sess := todoSession(t, srv, 3, true)
@@ -326,7 +327,7 @@ func TestAgentTurnThatChangedNothingKeepsItsAnswer(t *testing.T) {
 
 // A report that cannot be written leaves a harness-composed line of facts.
 func TestAgentReportFallsBackToHarnessFacts(t *testing.T) {
-	srv := scriptedServer(t, func(n int, w http.ResponseWriter) { writeChatJSON(w, "") })
+	srv := scriptedServer(t, func(n int, w http.ResponseWriter) { testutil.WriteChat(w, "") })
 	defer srv.Close()
 	sess := todoSession(t, srv, 3, true)
 	sess.turnToolRuns = 2

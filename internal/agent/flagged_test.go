@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -34,16 +34,10 @@ func TestGrepWithholdsLinesFromAFileWhoseReadWasWithheld(t *testing.T) {
 	var mu sync.Mutex
 	var results []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system, user string
 		var tool []string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -56,13 +50,13 @@ func TestGrepWithholdsLinesFromAFileWhoseReadWasWithheld(t *testing.T) {
 		switch {
 		case strings.Contains(system, "security classifier"):
 			if strings.Contains(user, "IGNORE ALL PREVIOUS") {
-				writeChatJSON(w, "PROMPT_INJECTION")
+				testutil.WriteChat(w, "PROMPT_INJECTION")
 			} else {
-				writeChatJSON(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 			}
 			return
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 			return
 		}
 		mu.Lock()
@@ -70,11 +64,11 @@ func TestGrepWithholdsLinesFromAFileWhoseReadWasWithheld(t *testing.T) {
 		mu.Unlock()
 		switch len(tool) {
 		case 0:
-			writeToolCallJSON(w, "Read", `{"path":"notes.txt"}`)
+			testutil.WriteToolCall(w, "Read", `{"path":"notes.txt"}`)
 		case 1:
-			writeToolCallJSON(w, "Grep", `{"pattern":"INSTRUCTIONS"}`)
+			testutil.WriteToolCall(w, "Grep", `{"pattern":"INSTRUCTIONS"}`)
 		default:
-			writeChatJSON(w, "done")
+			testutil.WriteChat(w, "done")
 		}
 	}))
 	defer srv.Close()

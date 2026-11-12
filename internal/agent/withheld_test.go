@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -58,7 +59,7 @@ func TestClassifierWithheldKeepsShortError(t *testing.T) {
 func withheldPassServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeToolCallJSON(w, "Write", `{"file_path":"f.txt","content":"x"}`)
+		testutil.WriteToolCall(w, "Write", `{"file_path":"f.txt","content":"x"}`)
 	}))
 	return srv
 }

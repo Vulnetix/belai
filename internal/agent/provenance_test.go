@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -24,16 +24,10 @@ func provenanceServer(t *testing.T, unsafe string) (*httptest.Server, func() (sy
 	var mu sync.Mutex
 	var systems, users []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system, lastUser string
 		var us []string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -44,10 +38,10 @@ func provenanceServer(t *testing.T, unsafe string) (*httptest.Server, func() (sy
 		}
 		if strings.Contains(system, "security classifier") {
 			if unsafe != "" && strings.Contains(lastUser, unsafe) {
-				writeChatJSON(w, "PROMPT_INJECTION")
+				testutil.WriteChat(w, "PROMPT_INJECTION")
 				return
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		if !strings.Contains(system, "classifier") && !strings.Contains(system, "evaluator") {
@@ -56,7 +50,7 @@ func provenanceServer(t *testing.T, unsafe string) (*httptest.Server, func() (sy
 			users = append(users, us...)
 			mu.Unlock()
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	t.Cleanup(srv.Close)
 	return srv, func() ([]string, []string) {

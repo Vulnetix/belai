@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -34,17 +34,11 @@ func (p *classifyProbe) snapshot() (int, []string) {
 func newClassifyProbeServer(toolName, toolArgs string) (*httptest.Server, *classifyProbe) {
 	probe := &classifyProbe{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 
 		var system string
 		hasTool := false
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -61,9 +55,9 @@ func newClassifyProbeServer(toolName, toolArgs string) (*httptest.Server, *class
 			probe.mu.Lock()
 			probe.securityCalls++
 			probe.mu.Unlock()
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			msg := map[string]any{"role": "assistant", "content": ""}
 			if hasTool {
@@ -75,13 +69,7 @@ func newClassifyProbeServer(toolName, toolArgs string) (*httptest.Server, *class
 					"function": map[string]any{"name": toolName, "arguments": toolArgs},
 				}}
 			}
-			b, _ := json.Marshal(map[string]any{
-				"id":      "x",
-				"object":  "chat.completion",
-				"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	return srv, probe

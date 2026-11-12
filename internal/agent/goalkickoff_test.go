@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -79,16 +80,16 @@ func (k *kickoffServer) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(req.Messages) == 0 {
-		writeChatJSON(w, "")
+		testutil.WriteChat(w, "")
 		return
 	}
 	switch {
 	case strings.Contains(system, "security classifier"):
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	case strings.Contains(system, "operating-mode classifier"):
-		writeChatJSON(w, "GOAL")
+		testutil.WriteChat(w, "GOAL")
 	case strings.Contains(system, "clarification questionnaire"):
-		writeChatJSON(w, `{"groups":[{"context":"Which output format?","options":[{"label":"Plain text"},{"label":"JSON"}]}]}`)
+		testutil.WriteChat(w, `{"groups":[{"context":"Which output format?","options":[{"label":"Plain text"},{"label":"JSON"}]}]}`)
 	case strings.Contains(system, "goal-progress evaluator"):
 		k.mu.Lock()
 		k.evals = append(k.evals, lastUser)
@@ -97,9 +98,9 @@ func (k *kickoffServer) handler(w http.ResponseWriter, r *http.Request) {
 		if verdict == "" {
 			verdict = "GOAL_COMPLETE"
 		}
-		writeChatJSON(w, verdict)
+		testutil.WriteChat(w, verdict)
 	case strings.Contains(system, "goal-contract writer"):
-		writeChatJSON(w, "unusable")
+		testutil.WriteChat(w, "unusable")
 	case strings.Contains(firstUser, "Goal: ship the thing"):
 		// A research subagent: one report, no tools.
 		task := "research"
@@ -111,9 +112,9 @@ func (k *kickoffServer) handler(w http.ResponseWriter, r *http.Request) {
 		// Research is slower than the kickoff pass, as it is in practice, so
 		// the pass starts before the reports land.
 		time.Sleep(k.researchDelay)
-		writeChatJSON(w, "REPORT from "+task)
+		testutil.WriteChat(w, "REPORT from "+task)
 	case isReportTurn(lastUser):
-		writeChatJSON(w, "Final report: shipped.")
+		testutil.WriteChat(w, "Final report: shipped.")
 	default:
 		k.mu.Lock()
 		k.mainLast = append(k.mainLast, allUsers)
@@ -128,11 +129,11 @@ func (k *kickoffServer) handler(w http.ResponseWriter, r *http.Request) {
 		reply := k.replyAfterWrite && n%2 == 0
 		k.mu.Unlock()
 		if reply {
-			writeChatJSON(w, "Done: the thing is shipped.")
+			testutil.WriteChat(w, "Done: the thing is shipped.")
 			return
 		}
 		args := fmt.Sprintf(`{"path":"f.txt","content":%q}`, fmt.Sprintf("pass %d\n", n))
-		writeToolCallWithContentJSON(w, "Write", args, "Plan:\n1. Ship\n[DONE:1]\n")
+		testutil.WriteToolCallWithContent(w, "Write", args, "Plan:\n1. Ship\n[DONE:1]\n")
 	}
 }
 

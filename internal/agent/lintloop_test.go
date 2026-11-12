@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -31,9 +31,7 @@ func classifierServer(t *testing.T, verdict string) (*httptest.Server, *atomic.I
 			return
 		}
 		n.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "x", "object": "chat.completion", "choices": []any{
-			map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": verdict}, "finish_reason": "stop"}}})
+		testutil.WriteChat(w, verdict)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, n

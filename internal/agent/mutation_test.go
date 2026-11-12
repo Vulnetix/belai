@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -242,27 +242,21 @@ func TestPlanModeWriteWithheldAndUntouched(t *testing.T) {
 func TestClassifierModePlanLatchesPerTurn(t *testing.T) {
 	root := t.TempDir()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		var system string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
 		}
 		switch {
 		case contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		default:
 			hasToolResult := false
-			for _, m := range req.Messages {
+			for _, m := range msgs {
 				if m.Role == "tool" {
 					hasToolResult = true
 				}
@@ -277,17 +271,7 @@ func TestClassifierModePlanLatchesPerTurn(t *testing.T) {
 			} else {
 				msg["content"] = "done"
 			}
-			b, _ := json.Marshal(map[string]any{
-				"id":     "x",
-				"object": "chat.completion",
-				"choices": []any{map[string]any{
-					"index":         0,
-					"message":       msg,
-					"finish_reason": "stop",
-				}},
-			})
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()

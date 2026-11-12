@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -50,10 +51,10 @@ func offloadServer(t *testing.T, verdict string) (*httptest.Server, *[]string) {
 		_ = json.Unmarshal(raw, &req)
 		if len(req.Messages) > 0 && contains(req.Messages[0].Content, "security classifier") {
 			if contains(string(raw), "step 0001 ok") {
-				writeChatJSON(w, verdict)
+				testutil.WriteChat(w, verdict)
 				return
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
@@ -62,11 +63,11 @@ func offloadServer(t *testing.T, verdict string) (*httptest.Server, *[]string) {
 		mu.Unlock()
 		switch n {
 		case 1:
-			writeToolCallJSON(w, "Spew", `{}`)
+			testutil.WriteToolCall(w, "Spew", `{}`)
 		case 2:
-			writeToolCallJSON(w, "ReadResult", `{"ref":"r1","pattern":"FAIL","context":0}`)
+			testutil.WriteToolCall(w, "ReadResult", `{"ref":"r1","pattern":"FAIL","context":0}`)
 		default:
-			writeChatJSON(w, "done")
+			testutil.WriteChat(w, "done")
 		}
 	}))
 	return srv, &bodies
@@ -207,14 +208,14 @@ func webFetchServer(t *testing.T, roleReply, args string) (*httptest.Server, *[]
 				http.Error(w, "down", http.StatusBadRequest)
 				return
 			}
-			writeChatJSON(w, roleReply)
+			testutil.WriteChat(w, roleReply)
 			return
 		}
 		if len(req.Messages) > 0 && contains(req.Messages[0].Content, "security classifier") {
 			mu.Lock()
 			classified = append(classified, string(raw))
 			mu.Unlock()
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
@@ -222,10 +223,10 @@ func webFetchServer(t *testing.T, roleReply, args string) (*httptest.Server, *[]
 		n := len(bodies)
 		mu.Unlock()
 		if n == 1 {
-			writeToolCallJSON(w, "WebFetch", args)
+			testutil.WriteToolCall(w, "WebFetch", args)
 			return
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	return srv, &bodies, &classified
 }

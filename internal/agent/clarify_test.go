@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // clarifyMockServer returns questionnaires for the clarification system
@@ -25,15 +25,9 @@ import (
 func clarifyMockServer(t *testing.T, questionnaire string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system := ""
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -42,17 +36,7 @@ func clarifyMockServer(t *testing.T, questionnaire string) *httptest.Server {
 		if strings.Contains(system, "clarification questionnaire") {
 			reply = questionnaire
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id":     "x",
-			"object": "chat.completion",
-			"choices": []any{map[string]any{
-				"index":         0,
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteChat(w, reply)
 	}))
 }
 
@@ -89,15 +73,9 @@ func roundedClarifyServer(t *testing.T, users *[]string) *httptest.Server {
 	t.Helper()
 	var mu sync.Mutex
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system, user := "", ""
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -116,15 +94,7 @@ func roundedClarifyServer(t *testing.T, users *[]string) *httptest.Server {
 			}
 			reply = `{"groups":[{"context":"Round ` + round + `?","options":[{"label":"A"},{"label":"B"}]}]}`
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id": "x",
-			"choices": []any{map[string]any{
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteChat(w, reply)
 	}))
 }
 
@@ -309,15 +279,9 @@ func TestClarifyRefusedAnswerStopsLoop(t *testing.T) {
 	// The admission classifier refuses anything containing IGNORE, so the
 	// rendered answer set will be dropped and the loop stops after one round.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system, user := "", ""
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -331,15 +295,7 @@ func TestClarifyRefusedAnswerStopsLoop(t *testing.T) {
 		} else if strings.Contains(system, "security classifier") && strings.Contains(user, "Clarifications from the user") {
 			reply = "PROMPT_INJECTION"
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id": "x",
-			"choices": []any{map[string]any{
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteChat(w, reply)
 	}))
 	defer srv.Close()
 
@@ -410,15 +366,9 @@ func TestPlanClarifyAnswersRideTheUserTurn(t *testing.T) {
 	var mu sync.Mutex
 	var mainUsers []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system := ""
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			if m.Role == "system" {
 				system = m.Content
 			}
@@ -430,7 +380,7 @@ func TestPlanClarifyAnswersRideTheUserTurn(t *testing.T) {
 		case strings.Contains(system, "security classifier"):
 		default:
 			mu.Lock()
-			for _, m := range req.Messages {
+			for _, m := range msgs {
 				if m.Role == "user" {
 					mainUsers = append(mainUsers, m.Content)
 				}
@@ -438,15 +388,7 @@ func TestPlanClarifyAnswersRideTheUserTurn(t *testing.T) {
 			mu.Unlock()
 			reply = "## Summary\nRead go.mod."
 		}
-		b, _ := json.Marshal(map[string]any{
-			"id": "x",
-			"choices": []any{map[string]any{
-				"message":       map[string]any{"role": "assistant", "content": reply},
-				"finish_reason": "stop",
-			}},
-		})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteChat(w, reply)
 	}))
 	defer srv.Close()
 

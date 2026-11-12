@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -60,14 +61,14 @@ func newScriptServer(t *testing.T, calls [][2]string, verdict func(raw string) s
 		}
 		_ = json.Unmarshal(raw, &req)
 		if len(req.Messages) > 0 && contains(req.Messages[0].Content, "fetched web page") {
-			writeChatJSON(w, "The limit is set by RETRY_LIMIT.")
+			testutil.WriteChat(w, "The limit is set by RETRY_LIMIT.")
 			return
 		}
 		if len(req.Messages) > 0 && contains(req.Messages[0].Content, "security classifier") {
 			s.mu.Lock()
 			s.classified = append(s.classified, string(raw))
 			s.mu.Unlock()
-			writeChatJSON(w, verdict(string(raw)))
+			testutil.WriteChat(w, verdict(string(raw)))
 			return
 		}
 		s.mu.Lock()
@@ -78,10 +79,10 @@ func newScriptServer(t *testing.T, calls [][2]string, verdict func(raw string) s
 			before(n)
 		}
 		if n <= len(calls) {
-			writeToolCallJSON(w, calls[n-1][0], calls[n-1][1])
+			testutil.WriteToolCall(w, calls[n-1][0], calls[n-1][1])
 			return
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	t.Cleanup(s.Close)
 	return s

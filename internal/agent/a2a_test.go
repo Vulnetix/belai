@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -71,10 +72,7 @@ func TestSideReplyHasOnlyRepoMemoryTools(t *testing.T) {
 		if calls != nil {
 			msg["tool_calls"] = calls
 		}
-		b, _ := json.Marshal(map[string]any{"id": "x", "object": "chat.completion",
-			"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}}})
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		testutil.WriteCompletion(w, msg, "stop")
 	}))
 	defer srv.Close()
 

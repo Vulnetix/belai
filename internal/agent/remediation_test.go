@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/vulnid"
 )
@@ -82,7 +83,7 @@ func TestRemediationPassRefusesAReportWithNoEdit(t *testing.T) {
 		mu.Lock()
 		bodies = append(bodies, string(raw))
 		mu.Unlock()
-		writeChatJSON(w, "Here is the report.")
+		testutil.WriteChat(w, "Here is the report.")
 	}))
 	defer srv.Close()
 
@@ -139,7 +140,7 @@ func TestRemediationTurnSkipsModeSelection(t *testing.T) {
 		mu.Lock()
 		bodies = append(bodies, string(raw))
 		mu.Unlock()
-		writeChatJSON(w, "I quote go.mod line 7: golang.org/x/net v0.59.0 is already the fixed version.")
+		testutil.WriteChat(w, "I quote go.mod line 7: golang.org/x/net v0.59.0 is already the fixed version.")
 	}))
 	defer srv.Close()
 

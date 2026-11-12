@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -30,16 +31,10 @@ func runRewrite(t *testing.T, command string, perms permissions.Settings, settin
 	var seen []string
 	step := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system := ""
 		var toolMsgs []string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -50,17 +45,17 @@ func runRewrite(t *testing.T, command string, perms permissions.Settings, settin
 		mu.Lock()
 		defer mu.Unlock()
 		if strings.Contains(system, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		seen = toolMsgs
 		if step == 0 {
 			step++
 			b, _ := json.Marshal(map[string]any{"command": command})
-			writeToolCallJSON(w, "Bash", string(b))
+			testutil.WriteToolCall(w, "Bash", string(b))
 			return
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	t.Cleanup(srv.Close)
 	root := t.TempDir()

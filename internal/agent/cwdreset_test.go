@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -44,7 +45,7 @@ func cwdSession(t *testing.T, root string, dirs []string) *Session {
 			}
 		}
 		if strings.Contains(system, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
@@ -79,7 +80,7 @@ func cwdSession(t *testing.T, root string, dirs []string) *Session {
 // for one (RunStream does) and as plain JSON otherwise.
 func cwdToolCall(w http.ResponseWriter, stream bool, args string) {
 	if !stream {
-		writeToolCallJSON(w, "Cd", args)
+		testutil.WriteToolCall(w, "Cd", args)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -94,7 +95,7 @@ func cwdToolCall(w http.ResponseWriter, stream bool, args string) {
 
 func cwdAnswer(w http.ResponseWriter, stream bool) {
 	if !stream {
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")

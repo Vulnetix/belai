@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -83,7 +84,7 @@ func TestGoalPassNudgesAReadOnlyStreak(t *testing.T) {
 		mu.Lock()
 		bodies = append(bodies, string(raw))
 		mu.Unlock()
-		writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+		testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 	}))
 	defer srv.Close()
 

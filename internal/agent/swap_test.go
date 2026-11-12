@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/belai/internal/repoindex"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -119,10 +120,10 @@ func runSwapWith(t *testing.T, commands []string, replan string, scores map[stri
 			if strings.Contains(lastUser, "needle") {
 				h.classify["needle"]++
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "reconsider a shell command"):
 			h.replans++
-			writeChatJSON(w, replan)
+			testutil.WriteChat(w, replan)
 		default:
 			h.replies = toolMsgs
 			h.callIDs, h.resultIDs = callIDs, resultIDs
@@ -130,10 +131,10 @@ func runSwapWith(t *testing.T, commands []string, replan string, scores map[stri
 				c := commands[step]
 				step++
 				b, _ := json.Marshal(map[string]any{"command": c})
-				writeToolCallJSON(w, "Bash", string(b))
+				testutil.WriteToolCall(w, "Bash", string(b))
 				return
 			}
-			writeChatJSON(w, "done")
+			testutil.WriteChat(w, "done")
 		}
 	}))
 	t.Cleanup(srv.Close)

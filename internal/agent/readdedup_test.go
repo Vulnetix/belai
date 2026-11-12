@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/readindex"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -39,16 +39,10 @@ func TestRepeatedReadIsAnsweredFromTheIndexUntilTheFileChanges(t *testing.T) {
 	var toolResults []string
 	classified := map[string]int{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		msgs := decodeMessages(r.Body)
 		system, lastUser := "", ""
 		var tools []string
-		for _, m := range req.Messages {
+		for _, m := range msgs {
 			switch m.Role {
 			case "system":
 				system = m.Content
@@ -66,17 +60,17 @@ func TestRepeatedReadIsAnsweredFromTheIndexUntilTheFileChanges(t *testing.T) {
 					classified[marker]++
 				}
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		toolResults = tools
 		if step < len(script) {
 			c := script[step]
 			step++
-			writeToolCallJSON(w, c.name, c.args)
+			testutil.WriteToolCall(w, c.name, c.args)
 			return
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	defer srv.Close()
 
