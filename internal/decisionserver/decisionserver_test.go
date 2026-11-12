@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // TestMain doubles the test binary as a fake llama-server serving /health
@@ -60,14 +61,6 @@ func testModel() decisions.LocalModel {
 	return m
 }
 
-func isolate(t *testing.T) {
-	t.Helper()
-	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("BELAI_MODELS_DIR", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
-}
-
 func modelServer(t *testing.T, alias string) (*httptest.Server, int) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +75,7 @@ func modelServer(t *testing.T, alias string) (*httptest.Server, int) {
 }
 
 func TestEnsureReusesServerWithMatchingAlias(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	m := testModel()
 	_, port := modelServer(t, m.Alias)
 	writeState(state{Port: port, Alias: m.Alias})
@@ -100,7 +93,7 @@ func TestEnsureReusesServerWithMatchingAlias(t *testing.T) {
 }
 
 func TestEnsureIgnoresForeignServerAndNeedsWeights(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	m := testModel()
 	_, port := modelServer(t, "someone-elses-model")
 	writeState(state{Port: port, Alias: m.Alias})
@@ -127,7 +120,7 @@ func fakeLlamaOnPath(t *testing.T) string {
 }
 
 func TestEnsureLaunchesOnceAcrossRacingCallers(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	launches := fakeLlamaOnPath(t)
 	m := testModel()
 	gguf := filepath.Join(t.TempDir(), m.File)
@@ -165,7 +158,7 @@ func TestEnsureLaunchesOnceAcrossRacingCallers(t *testing.T) {
 }
 
 func TestEnsureWithoutBinary(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	t.Setenv("PATH", t.TempDir())
 	m := testModel()
 	gguf := filepath.Join(t.TempDir(), m.File)
@@ -176,7 +169,7 @@ func TestEnsureWithoutBinary(t *testing.T) {
 }
 
 func TestSupervisorRecoverIsRateLimited(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	s := &Supervisor{Model: testModel()}
 	s.Recover()
 	first := s.last
@@ -190,7 +183,7 @@ func TestSupervisorRecoverIsRateLimited(t *testing.T) {
 // launch, with the build in the reason; a new enough one starts with the whole
 // context as one batch.
 func TestEnsureRefusesAnOldBuildForClef(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	launches := fakeLlamaOnPath(t)
 	m, _ := decisions.LocalModelByID("clef-flash")
 	weights := filepath.Join(t.TempDir(), "clef.gguf")
@@ -233,7 +226,7 @@ func TestServingReadsTheAliasFromProps(t *testing.T) {
 
 // TestReadStateRejectsInvalidPort covers the validation branch in readState.
 func TestReadStateRejectsInvalidPort(t *testing.T) {
-	isolate(t)
+	testenv.Isolate(t)
 	dir, _ := RunDir()
 	dir2, _ := RunDir()
 	_ = dir2

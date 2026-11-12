@@ -8,12 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // treeApp seeds and resumes a four-message session: u1 a1 u2 a2.
 func treeApp(t *testing.T) (*App, session.Key) {
 	t.Helper()
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1") // never reach a real account
+	testenv.Offline(t) // never reach a real account
 	workdir := t.TempDir()
 	a := newResumeApp(t, workdir)
 	key, _ := session.KeyFor(workdir)

@@ -15,21 +15,19 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/localinfer"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // isolate points every model cache at a temp dir so no host file can satisfy
 // a lookup.
 func isolate(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
-	t.Setenv("HF_HOME", filepath.Join(dir, "hf"))
-	t.Setenv("HUGGINGFACE_HUB_CACHE", filepath.Join(dir, "hub"))
-	t.Setenv("LLAMA_CACHE", filepath.Join(dir, "llama"))
-	models := filepath.Join(dir, "models")
-	t.Setenv("BELAI_MODELS_DIR", models)
-	return models
+	e := testenv.Isolate(t)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(e.Home, "cache"))
+	t.Setenv("HF_HOME", filepath.Join(e.Home, "hf"))
+	t.Setenv("HUGGINGFACE_HUB_CACHE", filepath.Join(e.Home, "hub"))
+	t.Setenv("LLAMA_CACHE", filepath.Join(e.Home, "llama"))
+	return e.ModelsDir
 }
 
 // hfServer serves the API listing and the file for payload.

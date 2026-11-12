@@ -14,6 +14,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/docparity"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/voice"
 )
 
@@ -51,7 +52,7 @@ func (r *tuiRec) Transcribe(context.Context, []float32) (string, error) {
 func voiceApp(t *testing.T, v config.VoiceSettings) (*App, *tuiMic) {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	a := New(Options{Workdir: t.TempDir()})
 	a.classifier = nil
 	mic := &tuiMic{}

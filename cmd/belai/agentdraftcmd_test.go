@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 const draftCmdReply = `{"fields": {
@@ -31,7 +32,7 @@ const draftCmdReply = `{"fields": {
 func draftCmdSetup(t *testing.T, reply string) *[]rolemanager.ClassifierPayload {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	t.Chdir(t.TempDir())
 	var seen []rolemanager.ClassifierPayload
 	old := draftClassifier

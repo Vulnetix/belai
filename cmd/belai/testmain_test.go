@@ -6,6 +6,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/gittest"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/testenv"
 )
 
 // TestMain keeps every test in this package off the developer's live
@@ -18,7 +19,7 @@ import (
 func TestMain(m *testing.M) {
 	// The binary is also the Landlock helper for the commands its tests sandbox.
 	sandbox.HelperMain()
-	os.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	os.Setenv("VULNETIX_WEB_URL", testenv.OfflineWebURL)
 	// These tests exercise the CLI's outside-the-sandbox path; the marker
 	// leaks in when `go test` itself runs inside a Belai sandbox.
 	os.Unsetenv(sandbox.EnvMarker)

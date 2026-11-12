@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/testenv"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -37,7 +38,7 @@ func testEnv(t *testing.T) (*kanban.Store, *Registry) {
 	t.Setenv("BELAI_HOME", home)
 	t.Setenv("BELAI_WORKTREES_DIR", t.TempDir())
 	// Never reach a real account: an unroutable site and sync off.
-	t.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	testenv.Offline(t)
 	store := kanban.Open(filepath.Join(home, "kanban"))
 	return store, NewRegistry(filepath.Join(home, "agents", "run"), store)
 }
