@@ -3,8 +3,11 @@
 package sandbox
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,28 +16,54 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// onThrowawayThread runs fn on an OS thread that is never handed back to the
+// Go scheduler. applyLandlock restricts the calling thread for good, so it
+// must not run on a thread other tests' goroutines (or the runtime's own
+// subprocess spawns) are later scheduled on: the goroutine locks its thread,
+// never unlocks it, and the runtime terminates the thread when it exits.
+func onThrowawayThread(fn func() error) error {
+	done := make(chan error, 1)
+	go func() {
+		runtime.LockOSThread()
+		// No UnlockOSThread: the restricted thread dies with this goroutine.
+		done <- fn()
+	}()
+	return <-done
+}
+
 // applyLandlock is the syscall layer the helper runs: build the ruleset,
 // add the plan's rules, and restrict this thread to them. It is covered here
 // directly because the helper's calls land in a subprocess, outside the test
 // binary's coverage map.
 func TestApplyLandlockRestrictsTheCallingThread(t *testing.T) {
 	withLandlock(t)
-	// A plan with one writable directory: /tmp stays writable, the test
-	// process's temp dirs live there and the kernel's runtime needs are met.
-	// A read-only plan (the ruleset's rights are "everything else is denied")
-	// would make the test process unable to finish.
-	dir := t.TempDir()
-	if err := applyLandlock(llPlan{
-		Rules: []llRule{{Path: dir, Access: llRW(4)}},
-		Net:   false,
-	}, 4); err != nil {
-		t.Fatalf("applyLandlock: %v", err)
+	granted := t.TempDir()
+	// A file outside the plan, written before the restriction lands.
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "x"), []byte("x"), 0o600); err != nil {
-		t.Fatalf("the granted path is not writable: %v", err)
+	err := onThrowawayThread(func() error {
+		if err := applyLandlock(llPlan{
+			Rules: []llRule{{Path: granted, Access: llRW(4)}},
+			Net:   false,
+		}, 4); err != nil {
+			return fmt.Errorf("applyLandlock: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(granted, "x"), []byte("x"), 0o600); err != nil {
+			return fmt.Errorf("the granted path is not writable: %w", err)
+		}
+		if _, err := os.ReadFile(outside); !errors.Is(err, os.ErrPermission) {
+			return fmt.Errorf("a path outside the plan was readable (err = %v)", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Open("/proc/self/status"); err != nil {
-		t.Fatalf("restricted thread cannot read its own /proc: %v", err)
+	// The test's own thread was never restricted.
+	if _, err := os.ReadFile(outside); err != nil {
+		t.Fatalf("the restriction leaked out of its thread: %v", err)
 	}
 }
 
@@ -42,16 +71,25 @@ func TestApplyLandlockRestrictsTheCallingThread(t *testing.T) {
 // the rest of the plan still lands.
 func TestApplyLandlockSkipsARuleForAMissingPath(t *testing.T) {
 	withLandlock(t)
-	if err := applyLandlock(llPlan{
-		Rules: []llRule{
-			{Path: filepath.Join(t.TempDir(), "does-not-exist"), Access: llRW(4)},
-		},
-		Net: false,
-	}, 4); err != nil {
-		t.Fatalf("applyLandlock: %v", err)
-	}
-	if err := unix.Prctl(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0); err != nil {
-		t.Fatalf("no_new_privs was not set: %v", err)
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	err := onThrowawayThread(func() error {
+		if err := applyLandlock(llPlan{
+			Rules: []llRule{{Path: missing, Access: llRW(4)}},
+			Net:   false,
+		}, 4); err != nil {
+			return fmt.Errorf("applyLandlock: %w", err)
+		}
+		nnp, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)
+		if err != nil {
+			return fmt.Errorf("PR_GET_NO_NEW_PRIVS: %w", err)
+		}
+		if nnp != 1 {
+			return fmt.Errorf("no_new_privs = %d, want 1", nnp)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -72,11 +110,14 @@ func TestApplyLandlockFailsCleanlyWithoutTheSyscall(t *testing.T) {
 	if _, err := landlockABI(); err == nil {
 		t.Skip("this kernel offers Landlock; the success-path tests cover it")
 	}
-	err := applyLandlock(llPlan{Rules: []llRule{{Path: t.TempDir(), Access: llRW(4)}}}, 4)
+	dir := t.TempDir()
+	err := onThrowawayThread(func() error {
+		return applyLandlock(llPlan{Rules: []llRule{{Path: dir, Access: llRW(4)}}}, 4)
+	})
 	if err == nil {
 		t.Fatal("a kernel without Landlock applied a ruleset")
 	}
-	if _, e := landlockABI(); e != nil && !strings.Contains(err.Error(), "landlock ruleset") {
+	if !strings.Contains(err.Error(), "landlock ruleset") {
 		t.Fatalf("err = %v, want the ruleset failure", err)
 	}
 }
