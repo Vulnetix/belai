@@ -93,12 +93,7 @@ type mockProvider struct {
 func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 	t.Helper()
 	mp := &mockProvider{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req, err := testutil.DecodeChat(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	srv := testutil.NewChatServer(t, func(req testutil.ChatRequest) string {
 		var system, user string
 		for _, m := range req.Messages {
 			switch m.Role {
@@ -115,21 +110,20 @@ func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 		case strings.Contains(system, "security classifier"):
 			mp.securityUser = append(mp.securityUser, user)
 			mp.securitySys = append(mp.securitySys, system)
-			testutil.WriteChat(w, securitySentinelFor(user))
+			return securitySentinelFor(user)
 		case strings.Contains(system, "operating-mode classifier"):
 			mp.modeUser = append(mp.modeUser, user)
-			testutil.WriteChat(w, modeSentinelFor(user))
+			return modeSentinelFor(user)
 		case strings.Contains(system, "clarification questionnaire"):
 			mp.clarifierUser = append(mp.clarifierUser, user)
 			mp.clarifierSys = append(mp.clarifierSys, system)
-			testutil.WriteChat(w, `{"groups":[]}`)
-		default:
-			mp.chatUser = append(mp.chatUser, user)
-			mp.chatSys = append(mp.chatSys, system)
-			testutil.WriteChat(w, "mock reply")
+			return `{"groups":[]}`
 		}
-	}))
-	return srv, mp
+		mp.chatUser = append(mp.chatUser, user)
+		mp.chatSys = append(mp.chatSys, system)
+		return "mock reply"
+	})
+	return srv.Server, mp
 }
 
 func securitySentinelFor(user string) string {
