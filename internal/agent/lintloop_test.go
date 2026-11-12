@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -30,7 +31,7 @@ func classifierServer(t *testing.T, verdict string) (*httptest.Server, *atomic.I
 			return
 		}
 		n.Add(1)
-		writeChatJSON(w, verdict)
+		testutil.WriteChat(w, verdict)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, n

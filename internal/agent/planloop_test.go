@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -62,9 +63,9 @@ func planPassServer(t *testing.T, opts planPassOpts) (*httptest.Server, *sync.Mu
 
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, opts.mode)
+			testutil.WriteChat(w, opts.mode)
 		case strings.Contains(system, "plan-progress evaluator"):
 			if opts.evalStatus != 0 {
 				w.WriteHeader(opts.evalStatus)
@@ -75,10 +76,10 @@ func planPassServer(t *testing.T, opts planPassOpts) (*httptest.Server, *sync.Mu
 			evalIdx++
 			mu.Unlock()
 			if i >= len(opts.eval) {
-				writeChatJSON(w, "PLAN_PARTIAL")
+				testutil.WriteChat(w, "PLAN_PARTIAL")
 				return
 			}
-			writeChatJSON(w, opts.eval[i])
+			testutil.WriteChat(w, opts.eval[i])
 		default:
 			mu.Lock()
 			mainSystems[system] = true
@@ -87,14 +88,14 @@ func planPassServer(t *testing.T, opts planPassOpts) (*httptest.Server, *sync.Mu
 			case "length":
 				writeLengthRepairJSON(w, "Read", `{"path":"f.txt"}`)
 			case "reply":
-				writeChatJSON(w, opts.reply)
+				testutil.WriteChat(w, opts.reply)
 			case "drafting":
 				// Reads while carrying a plan draft, so the loop's
 				// no-plan-drafted rule does not force the final pass and
 				// the evaluator's verdicts drive it.
-				writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
+				testutil.WriteToolCallWithContent(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
 			default:
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 			}
 		}
 	}))
@@ -375,7 +376,7 @@ func TestPlanPassLoopSendsContextNotGoalToEvaluator(t *testing.T) {
 	pipe := rolemanager.NewPipeline(classifier)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeChatJSON(w, "Plan:\n1. do the thing\n")
+		testutil.WriteChat(w, "Plan:\n1. do the thing\n")
 	}))
 	defer srv.Close()
 
@@ -456,20 +457,20 @@ func TestPlanPassLoopCeilingReturnsAccumulatedPlan(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			mu.Lock()
 			n := mainCalls
 			mainCalls++
 			mu.Unlock()
 			if n == 0 {
-				writeChatJSON(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
+				testutil.WriteChat(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
 			} else {
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 			}
 		}
 	}))
@@ -513,20 +514,20 @@ func TestPlanPassLoopCancellationRecordsPlanFile(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			mu.Lock()
 			n := mainCalls
 			mainCalls++
 			mu.Unlock()
 			if n == 0 {
-				writeChatJSON(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
+				testutil.WriteChat(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
 			} else {
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 			}
 		}
 	}))
@@ -649,11 +650,11 @@ func planFinalPassServer(t *testing.T, eval string) (*httptest.Server, *sync.Mut
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, eval)
+			testutil.WriteChat(w, eval)
 		default:
 			var names []string
 			for _, tl := range req.Tools {
@@ -664,10 +665,10 @@ func planFinalPassServer(t *testing.T, eval string) (*httptest.Server, *sync.Mut
 			lastUser = append(lastUser, user)
 			mu.Unlock()
 			if slices.Contains(names, "Read") {
-				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
-			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"## Summary\nFix the parser.\n## Steps\n1. change the parser\n   - Files: p.go (new), p_test.go (new)\n   - Verify: go build ./...\n2. add the rollback step\n   - Files: p.go\n   - Verify: go build ./...\n## Test Plan\ngo test\n## Assumptions\nnone\n## Risks\nnone"}`)
+			testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"## Summary\nFix the parser.\n## Steps\n1. change the parser\n   - Files: p.go (new), p_test.go (new)\n   - Verify: go build ./...\n2. add the rollback step\n   - Files: p.go\n   - Verify: go build ./...\n## Test Plan\ngo test\n## Assumptions\nnone\n## Risks\nnone"}`)
 		}
 	}))
 	return srv, &mu, &toolSets, &lastUser
@@ -1132,25 +1133,25 @@ func TestPlanSentBackOnTheLastRoundIsCorrectedInTheSamePass(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			var names []string
 			for _, tl := range req.Tools {
 				names = append(names, tl.Function.Name)
 			}
 			if len(names) == 0 {
-				writeChatJSON(w, "name")
+				testutil.WriteChat(w, "name")
 				return
 			}
 			mu.Lock()
 			rounds = append(rounds, names)
 			mu.Unlock()
 			if slices.Contains(names, "Read") {
-				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
 			mu.Lock()
@@ -1159,10 +1160,10 @@ func TestPlanSentBackOnTheLastRoundIsCorrectedInTheSamePass(t *testing.T) {
 			mu.Unlock()
 			if n == 1 {
 				// No Files line: the lint sends this back.
-				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
 				return
 			}
-			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nfixed\n## Key Changes\n1. change it\n   - Files: p.go\n   - Verify: go build ./..."}`)
+			testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nfixed\n## Key Changes\n1. change it\n   - Files: p.go\n   - Verify: go build ./..."}`)
 		}
 	}))
 	defer srv.Close()
@@ -1227,14 +1228,14 @@ func TestRejectedPlanIsRecordedWhenNoCorrectionArrives(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			if len(req.Tools) == 0 {
-				writeChatJSON(w, "name")
+				testutil.WriteChat(w, "name")
 				return
 			}
 			var names []string
@@ -1242,7 +1243,7 @@ func TestRejectedPlanIsRecordedWhenNoCorrectionArrives(t *testing.T) {
 				names = append(names, tl.Function.Name)
 			}
 			if slices.Contains(names, "Read") {
-				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
 			mu.Lock()
@@ -1250,11 +1251,11 @@ func TestRejectedPlanIsRecordedWhenNoCorrectionArrives(t *testing.T) {
 			n := exits
 			mu.Unlock()
 			if n == 1 {
-				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe rejected plan\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe rejected plan\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
 				return
 			}
 			// The correction never comes: a tool the narrowed surface withholds.
-			writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+			testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 		}
 	}))
 	defer srv.Close()
@@ -1313,14 +1314,14 @@ func TestWithheldToolOnTheLastRoundCostsNoPass(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			if len(req.Tools) == 0 {
-				writeChatJSON(w, "name")
+				testutil.WriteChat(w, "name")
 				return
 			}
 			var names []string
@@ -1328,7 +1329,7 @@ func TestWithheldToolOnTheLastRoundCostsNoPass(t *testing.T) {
 				names = append(names, tl.Function.Name)
 			}
 			if slices.Contains(names, "Read") {
-				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
 			mu.Lock()
@@ -1336,10 +1337,10 @@ func TestWithheldToolOnTheLastRoundCostsNoPass(t *testing.T) {
 			n := narrowed
 			mu.Unlock()
 			if n == 1 {
-				writeToolCallJSON(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
+				testutil.WriteToolCall(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
 				return
 			}
-			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
+			testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
 		}
 	}))
 	defer srv.Close()
@@ -1394,14 +1395,14 @@ func TestWithheldToolThenRejectedPlanStillLandsInThePass(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		case strings.Contains(system, "plan-progress evaluator"):
-			writeChatJSON(w, "PLAN_PARTIAL")
+			testutil.WriteChat(w, "PLAN_PARTIAL")
 		default:
 			if len(req.Tools) == 0 {
-				writeChatJSON(w, "name")
+				testutil.WriteChat(w, "name")
 				return
 			}
 			var names []string
@@ -1409,7 +1410,7 @@ func TestWithheldToolThenRejectedPlanStillLandsInThePass(t *testing.T) {
 				names = append(names, tl.Function.Name)
 			}
 			if slices.Contains(names, "Read") {
-				writeToolCallJSON(w, "Read", `{"file_path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"file_path":"f.txt"}`)
 				return
 			}
 			mu.Lock()
@@ -1417,14 +1418,14 @@ func TestWithheldToolThenRejectedPlanStillLandsInThePass(t *testing.T) {
 			n := narrowed
 			mu.Unlock()
 			if n == 2 {
-				writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
+				testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nx\n## Key Changes\n1. change it\n   - Verify: go build ./..."}`)
 				return
 			}
 			if n == 1 {
-				writeToolCallJSON(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
+				testutil.WriteToolCall(w, "update_plan", `{"plan":[{"step":"read","status":"completed"}]}`)
 				return
 			}
-			writeToolCallJSON(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
+			testutil.WriteToolCall(w, "ExitPlanMode", `{"plan":"# T\n## Summary\nthe plan\n## Key Changes\n1. change it\n   - Files: p.go (new)\n   - Verify: go build ./..."}`)
 		}
 	}))
 	defer srv.Close()

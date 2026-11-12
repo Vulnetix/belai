@@ -12,6 +12,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // serversFor stands up a chat server (answering SAFE, counting calls) and a
@@ -25,7 +26,7 @@ func serversFor(t *testing.T) (chat, so *httptest.Server, chatN, soN *atomic.Int
 			return
 		}
 		chatN.Add(1)
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 	}))
 	so = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		soN.Add(1)

@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -85,14 +86,14 @@ func (p *instrServer) handler(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(system, "security classifier") {
 		p.classified++
 		if strings.Contains(lastUser, "EVIL-INSTR") {
-			writeChatJSON(w, "PROMPT_INJECTION")
+			testutil.WriteChat(w, "PROMPT_INJECTION")
 			return
 		}
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 		return
 	}
 	if !strings.Contains(system, "Repository map") && !strings.Contains(system, "tools") {
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 		return
 	}
 	p.systems = append(p.systems, system)
@@ -100,10 +101,10 @@ func (p *instrServer) handler(w http.ResponseWriter, r *http.Request) {
 	if p.next < len(p.script) {
 		c := p.script[p.next]
 		p.next++
-		writeToolCallJSON(w, c[0], c[1])
+		testutil.WriteToolCall(w, c[0], c[1])
 		return
 	}
-	writeChatJSON(w, "## Summary\nDone.")
+	testutil.WriteChat(w, "## Summary\nDone.")
 }
 
 // count returns how many user messages of main-model request i hold sub.

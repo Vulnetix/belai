@@ -12,6 +12,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -44,9 +45,9 @@ func newMultiToolServer(toolName, toolArgs string, nToolCalls int) (*httptest.Se
 			probe.mu.Lock()
 			probe.securityCalls++
 			probe.mu.Unlock()
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			msg := map[string]any{"role": "assistant", "content": ""}
 			if toolResults < nToolCalls {
@@ -58,7 +59,7 @@ func newMultiToolServer(toolName, toolArgs string, nToolCalls int) (*httptest.Se
 			} else {
 				msg["content"] = "done"
 			}
-			writeCompletion(w, msg, "stop")
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	return srv, probe

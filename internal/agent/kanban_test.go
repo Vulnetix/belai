@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -51,10 +52,10 @@ func (k *kanbanScript) server(t *testing.T) *httptest.Server {
 		}
 		switch {
 		case contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		case contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 			return
 		}
 		k.mu.Lock()
@@ -79,17 +80,17 @@ func (k *kanbanScript) server(t *testing.T) *httptest.Server {
 		}
 		if wrap >= 0 {
 			if k.wrapTool == "" || toolAfter(wrap) {
-				writeChatJSON(w, "KANBAN_DONE")
+				testutil.WriteChat(w, "KANBAN_DONE")
 				return
 			}
-			writeToolCallJSON(w, k.wrapTool, k.wrapArgs)
+			testutil.WriteToolCall(w, k.wrapTool, k.wrapArgs)
 			return
 		}
 		if k.loopTool == "" || toolAfter(0) {
-			writeChatJSON(w, k.report)
+			testutil.WriteChat(w, k.report)
 			return
 		}
-		writeToolCallJSON(w, k.loopTool, k.loopArgs)
+		testutil.WriteToolCall(w, k.loopTool, k.loopArgs)
 	}))
 }
 

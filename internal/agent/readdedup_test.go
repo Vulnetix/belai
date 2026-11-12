@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/readindex"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -59,17 +60,17 @@ func TestRepeatedReadIsAnsweredFromTheIndexUntilTheFileChanges(t *testing.T) {
 					classified[marker]++
 				}
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		toolResults = tools
 		if step < len(script) {
 			c := script[step]
 			step++
-			writeToolCallJSON(w, c.name, c.args)
+			testutil.WriteToolCall(w, c.name, c.args)
 			return
 		}
-		writeChatJSON(w, "done")
+		testutil.WriteChat(w, "done")
 	}))
 	defer srv.Close()
 

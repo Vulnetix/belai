@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 // clarifyMockServer returns questionnaires for the clarification system
@@ -35,7 +36,7 @@ func clarifyMockServer(t *testing.T, questionnaire string) *httptest.Server {
 		if strings.Contains(system, "clarification questionnaire") {
 			reply = questionnaire
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 }
 
@@ -93,7 +94,7 @@ func roundedClarifyServer(t *testing.T, users *[]string) *httptest.Server {
 			}
 			reply = `{"groups":[{"context":"Round ` + round + `?","options":[{"label":"A"},{"label":"B"}]}]}`
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 }
 
@@ -294,7 +295,7 @@ func TestClarifyRefusedAnswerStopsLoop(t *testing.T) {
 		} else if strings.Contains(system, "security classifier") && strings.Contains(user, "Clarifications from the user") {
 			reply = "PROMPT_INJECTION"
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 	defer srv.Close()
 
@@ -387,7 +388,7 @@ func TestPlanClarifyAnswersRideTheUserTurn(t *testing.T) {
 			mu.Unlock()
 			reply = "## Summary\nRead go.mod."
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 	defer srv.Close()
 

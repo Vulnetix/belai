@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -69,7 +70,7 @@ func (f *sideServer) handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeChatJSON(w, content)
+	testutil.WriteChat(w, content)
 }
 
 func newSideSession(t *testing.T, f *sideServer) *Session {

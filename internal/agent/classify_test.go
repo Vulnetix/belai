@@ -13,6 +13,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -54,9 +55,9 @@ func newClassifyProbeServer(toolName, toolArgs string) (*httptest.Server, *class
 			probe.mu.Lock()
 			probe.securityCalls++
 			probe.mu.Unlock()
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			msg := map[string]any{"role": "assistant", "content": ""}
 			if hasTool {
@@ -68,7 +69,7 @@ func newClassifyProbeServer(toolName, toolArgs string) (*httptest.Server, *class
 					"function": map[string]any{"name": toolName, "arguments": toolArgs},
 				}}
 			}
-			writeCompletion(w, msg, "stop")
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	return srv, probe

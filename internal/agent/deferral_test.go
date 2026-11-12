@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -42,7 +43,7 @@ func deferralServer(t *testing.T, direct bool) (*httptest.Server, *[][]string) {
 		}
 		_ = json.Unmarshal(raw, &req)
 		if len(req.Messages) > 0 && contains(req.Messages[0].Content, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 		mu.Lock()
@@ -52,11 +53,11 @@ func deferralServer(t *testing.T, direct bool) (*httptest.Server, *[][]string) {
 		mu.Unlock()
 		switch {
 		case n == 1 && !direct:
-			writeToolCallJSON(w, "ToolSearch", `{"query":"select:Frob"}`)
+			testutil.WriteToolCall(w, "ToolSearch", `{"query":"select:Frob"}`)
 		case n == 1 || n == 2 && !direct:
-			writeToolCallJSON(w, "Frob", `{}`)
+			testutil.WriteToolCall(w, "Frob", `{}`)
 		default:
-			writeChatJSON(w, "done")
+			testutil.WriteChat(w, "done")
 		}
 	}))
 	return srv, &seen

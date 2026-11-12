@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -82,7 +83,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 		switch {
 		case strings.Contains(system, "security classifier"):
 			if opts.unsafe != "" && strings.Contains(lastUser, opts.unsafe) {
-				writeChatJSON(w, "PROMPT_INJECTION")
+				testutil.WriteChat(w, "PROMPT_INJECTION")
 				return
 			}
 			if opts.malformed != "" && strings.Contains(lastUser, opts.malformed) {
@@ -91,25 +92,25 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				malformedSeen++
 				mu.Unlock()
 				if opts.malformedTimes < 0 || n < opts.malformedTimes {
-					writeChatJSON(w, "I cannot tell")
+					testutil.WriteChat(w, "I cannot tell")
 					return
 				}
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, opts.mode)
+			testutil.WriteChat(w, opts.mode)
 		case strings.Contains(system, "goal-progress evaluator"):
 			mu.Lock()
 			i := evalIdx
 			evalIdx++
 			mu.Unlock()
 			if i >= len(opts.eval) {
-				writeChatJSON(w, "GOAL_PARTIAL")
+				testutil.WriteChat(w, "GOAL_PARTIAL")
 				return
 			}
-			writeChatJSON(w, opts.eval[i])
+			testutil.WriteChat(w, opts.eval[i])
 		case strings.Contains(system, "goal-contract writer"):
-			writeChatJSON(w, "## Verification surface\nRun the test suite and confirm it passes.\n\n## Constraints\nKeep the repo building and tests green.\n\n## Boundaries\nOnly edit files under the working directory.\n\n## Iteration policy\nMake one concrete change per pass and re-run tests.\n\n## Blocked stop condition\nStop only if a required input is missing.")
+			testutil.WriteChat(w, "## Verification surface\nRun the test suite and confirm it passes.\n\n## Constraints\nKeep the repo building and tests green.\n\n## Boundaries\nOnly edit files under the working directory.\n\n## Iteration policy\nMake one concrete change per pass and re-run tests.\n\n## Blocked stop condition\nStop only if a required input is missing.")
 		default:
 			mu.Lock()
 			mainSystems[system] = true
@@ -120,7 +121,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 					_, _ = w.Write([]byte(`{"error":{"message":"report rejected"}}`))
 					return
 				}
-				writeChatJSON(w, opts.report)
+				testutil.WriteChat(w, opts.report)
 				return
 			}
 			switch opts.main {
@@ -134,12 +135,12 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				n := writeIdx
 				mu.Unlock()
 				if n == 1 {
-					writeToolCallWithContentJSON(w, "Write", `{"path":"f.txt","content":"written\n"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+					testutil.WriteToolCallWithContent(w, "Write", `{"path":"f.txt","content":"written\n"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
 					return
 				}
 				writeLengthRepairJSON(w, "Read", `{"path":"f.txt"}`)
 			case "reply":
-				writeChatJSON(w, opts.reply)
+				testutil.WriteChat(w, opts.reply)
 			default:
 				// Include a completed todo item in the assistant text so
 				// verification has work to check; an all-pending list would
@@ -148,21 +149,21 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				case "scratch":
 					// A pass that leaves a scratch file in the tree, which the
 					// finish review reads at completion.
-					writeToolCallWithContentJSON(w, "Write", `{"path":"scratch.tmp","content":"x\n"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+					testutil.WriteToolCallWithContent(w, "Write", `{"path":"scratch.tmp","content":"x\n"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
 				case "tool-nocontent":
-					writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+					testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 				case "Todo":
 					// A pass whose only successful call is Todo. It
 					// changes no file, but it did execute a tool, so it must
 					// not read as "executed no tools".
-					writeToolCallJSON(w, "Todo", `{"todos":[{"content":"ship it","status":"in_progress"}]}`)
+					testutil.WriteToolCall(w, "Todo", `{"todos":[{"content":"ship it","status":"in_progress"}]}`)
 				case "bad-todo":
 					// A Todo call whose entries have no text: an error in the call.
-					writeToolCallJSON(w, "Todo", `{"todos":[{"status":"pending"}]}`)
+					testutil.WriteToolCall(w, "Todo", `{"todos":[{"status":"pending"}]}`)
 				case "read":
 					// A pass that only reads: the loop observes no file
 					// change, which is what drives the no-write escalation.
-					writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+					testutil.WriteToolCallWithContent(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
 				case "read-varied":
 					// A read-only pass whose read differs every time, so the
 					// repeat detector does not stop a loop a test wants to
@@ -171,7 +172,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 					writeIdx++
 					n := writeIdx
 					mu.Unlock()
-					writeToolCallWithContentJSON(w, "Read", fmt.Sprintf(`{"path":"f.txt","limit":%d}`, n+10), "Plan:\n1. Ship the release\n[DONE:1]\n")
+					testutil.WriteToolCallWithContent(w, "Read", fmt.Sprintf(`{"path":"f.txt","limit":%d}`, n+10), "Plan:\n1. Ship the release\n[DONE:1]\n")
 				default:
 					// The default pass writes a file, because that is what a
 					// goal-mode pass is supposed to do: the pass loop's
@@ -182,7 +183,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 					n := writeIdx
 					mu.Unlock()
 					args := fmt.Sprintf(`{"path":"f.txt","content":%q}`, fmt.Sprintf("pass %d\n", n))
-					writeToolCallWithContentJSON(w, "Write", args, "Plan:\n1. Ship the release\n[DONE:1]\n")
+					testutil.WriteToolCallWithContent(w, "Write", args, "Plan:\n1. Ship the release\n[DONE:1]\n")
 				}
 			}
 		}
@@ -1235,9 +1236,9 @@ func TestGoalPassLoopReportsObservedWritesToTheEvaluator(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "GOAL")
+			testutil.WriteChat(w, "GOAL")
 		case strings.Contains(system, "goal-progress evaluator"):
 			mu.Lock()
 			evalUsers = append(evalUsers, user)
@@ -1245,12 +1246,12 @@ func TestGoalPassLoopReportsObservedWritesToTheEvaluator(t *testing.T) {
 			evalIdx++
 			mu.Unlock()
 			if i == 0 {
-				writeChatJSON(w, "GOAL_COMPLETE")
+				testutil.WriteChat(w, "GOAL_COMPLETE")
 				return
 			}
-			writeChatJSON(w, "GOAL_COMPLETE")
+			testutil.WriteChat(w, "GOAL_COMPLETE")
 		default:
-			writeToolCallWithContentJSON(w, "Write", `{"path":"f.txt","content":"changed\n"}`, "Plan:\n1. Ship it\n")
+			testutil.WriteToolCallWithContent(w, "Write", `{"path":"f.txt","content":"changed\n"}`, "Plan:\n1. Ship it\n")
 		}
 	}))
 	defer srv.Close()

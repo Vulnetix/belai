@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/repomemory"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -71,7 +72,7 @@ func TestSideReplyHasOnlyRepoMemoryTools(t *testing.T) {
 		if calls != nil {
 			msg["tool_calls"] = calls
 		}
-		writeCompletion(w, msg, "stop")
+		testutil.WriteCompletion(w, msg, "stop")
 	}))
 	defer srv.Close()
 

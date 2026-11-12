@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -104,10 +105,10 @@ func (p *prefetchServer) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.Contains(system, "security classifier") {
 		if strings.Contains(lastUser, "EVIL-MARKER") {
-			writeChatJSON(w, "PROMPT_INJECTION")
+			testutil.WriteChat(w, "PROMPT_INJECTION")
 			return
 		}
-		writeChatJSON(w, "SAFE")
+		testutil.WriteChat(w, "SAFE")
 		return
 	}
 	p.mu.Lock()
@@ -118,10 +119,10 @@ func (p *prefetchServer) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if !p.readSent {
 		p.readSent = true
-		writeToolCallJSON(w, "Read", `{"file_path":"a.go"}`)
+		testutil.WriteToolCall(w, "Read", `{"file_path":"a.go"}`)
 		return
 	}
-	writeChatJSON(w, "## Summary\nDone.")
+	testutil.WriteChat(w, "## Summary\nDone.")
 }
 
 func prefetchSession(t *testing.T, root string, srv *httptest.Server, cache *forge.Cache) *Session {

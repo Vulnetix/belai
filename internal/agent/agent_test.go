@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -49,12 +50,12 @@ func mockSecurityServer(toolName, toolArgs, finalReply string) *httptest.Server 
 		}
 
 		if contains(system, "security classifier") {
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 			return
 		}
 
 		if contains(system, "operating-mode classifier") {
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 			return
 		}
 
@@ -78,7 +79,7 @@ func mockSecurityServer(toolName, toolArgs, finalReply string) *httptest.Server 
 			msg["content"] = finalReply
 		}
 
-		writeCompletion(w, msg, "stop")
+		testutil.WriteCompletion(w, msg, "stop")
 	}))
 }
 
@@ -126,7 +127,7 @@ func TestAgentRefusesUnsafePrompt(t *testing.T) {
 			if m.Role == "system" && m.Content != "" {
 				continue
 			}
-			writeChatJSON(w, "PROMPT_INJECTION")
+			testutil.WriteChat(w, "PROMPT_INJECTION")
 			return
 		}
 	}))
@@ -185,7 +186,7 @@ func newDualMockServer(t *testing.T, finalReply string) *httptest.Server {
 			flusher.Flush()
 			return
 		}
-		writeChatJSON(w, reply)
+		testutil.WriteChat(w, reply)
 	}))
 }
 
@@ -281,9 +282,9 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 				_, _ = w.Write([]byte(`{"error":"internal classifier failure"}`))
 				return
 			}
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			hasToolResult := false
 			for _, m := range req.Messages {
@@ -301,7 +302,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 			} else {
 				msg["content"] = "done"
 			}
-			writeCompletion(w, msg, "stop")
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()
@@ -361,12 +362,12 @@ func TestRunMaxIterationsBound(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			calls++
-			writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+			testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 		}
 	}))
 	defer srv.Close()
@@ -403,11 +404,11 @@ func TestForceAgentOverridesModeDecision(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		default:
-			writeChatJSON(w, "profile-reply")
+			testutil.WriteChat(w, "profile-reply")
 		}
 	}))
 	defer srv.Close()
@@ -440,11 +441,11 @@ func TestHasReferencesReachesModeInput(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "GOAL")
+			testutil.WriteChat(w, "GOAL")
 		default:
-			writeChatJSON(w, "goal-reply")
+			testutil.WriteChat(w, "goal-reply")
 		}
 	}))
 	defer srv.Close()
@@ -491,11 +492,11 @@ func TestAttachmentsReachTheUserTurn(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
-			writeChatJSON(w, "ack")
+			testutil.WriteChat(w, "ack")
 		}
 	}))
 	defer srv.Close()
@@ -628,9 +629,9 @@ func TestSteerReachesNextIteration(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			mu.Lock()
 			providerCalls++
@@ -644,9 +645,9 @@ func TestSteerReachesNextIteration(t *testing.T) {
 			}
 			mu.Unlock()
 			if call == 1 {
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				testutil.WriteToolCall(w, "Read", `{"path":"f.txt"}`)
 			} else {
-				writeChatJSON(w, "done")
+				testutil.WriteChat(w, "done")
 			}
 		}
 	}))
@@ -905,14 +906,14 @@ func TestTurnInputModeSkipsSelect(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
 			mu.Lock()
 			modeCalls++
 			mu.Unlock()
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
-			writeChatJSON(w, "reply")
+			testutil.WriteChat(w, "reply")
 		}
 	}))
 	defer srv.Close()
@@ -954,14 +955,14 @@ func TestForcedModeSkipsSelect(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
 			mu.Lock()
 			modeCalls++
 			mu.Unlock()
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		default:
-			writeChatJSON(w, "reply")
+			testutil.WriteChat(w, "reply")
 		}
 	}))
 	defer srv.Close()
@@ -1000,14 +1001,14 @@ func TestPlanModeSessionSkipsSelect(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case strings.Contains(system, "operating-mode classifier"):
 			mu.Lock()
 			modeCalls++
 			mu.Unlock()
-			writeChatJSON(w, "GOAL")
+			testutil.WriteChat(w, "GOAL")
 		default:
-			writeChatJSON(w, "plan-reply")
+			testutil.WriteChat(w, "plan-reply")
 		}
 	}))
 	defer srv.Close()
@@ -1067,9 +1068,9 @@ func TestConcurrentReadOnlyToolsPreserveOrder(t *testing.T) {
 		}
 		switch {
 		case contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "AGENT")
+			testutil.WriteChat(w, "AGENT")
 		default:
 			hasToolResult := false
 			for _, m := range req.Messages {
@@ -1099,7 +1100,7 @@ func TestConcurrentReadOnlyToolsPreserveOrder(t *testing.T) {
 				mu.Unlock()
 				msg["content"] = "all read"
 			}
-			writeCompletion(w, msg, "stop")
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()

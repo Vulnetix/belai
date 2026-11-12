@@ -10,6 +10,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 )
 
 func TestLengthStopReasonRefusesTools(t *testing.T) {
@@ -34,11 +35,11 @@ func TestLengthStopReasonRefusesTools(t *testing.T) {
 		// Security classifier.
 		for _, m := range msgs {
 			if m.Role == "system" && strings.Contains(m.Content, "security classifier") {
-				writeChatJSON(w, "SAFE")
+				testutil.WriteChat(w, "SAFE")
 				return
 			}
 			if m.Role == "system" && strings.Contains(m.Content, "operating-mode") {
-				writeChatJSON(w, "AGENT")
+				testutil.WriteChat(w, "AGENT")
 				return
 			}
 		}
@@ -46,7 +47,7 @@ func TestLengthStopReasonRefusesTools(t *testing.T) {
 		// If a tool result is already present, finish with plain text.
 		for _, m := range msgs {
 			if m.Role == "tool" {
-				writeChatJSON(w, "done")
+				testutil.WriteChat(w, "done")
 				return
 			}
 		}

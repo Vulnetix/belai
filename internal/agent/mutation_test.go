@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -250,9 +251,9 @@ func TestClassifierModePlanLatchesPerTurn(t *testing.T) {
 		}
 		switch {
 		case contains(system, "security classifier"):
-			writeChatJSON(w, "SAFE")
+			testutil.WriteChat(w, "SAFE")
 		case contains(system, "operating-mode classifier"):
-			writeChatJSON(w, "PLAN")
+			testutil.WriteChat(w, "PLAN")
 		default:
 			hasToolResult := false
 			for _, m := range msgs {
@@ -270,7 +271,7 @@ func TestClassifierModePlanLatchesPerTurn(t *testing.T) {
 			} else {
 				msg["content"] = "done"
 			}
-			writeCompletion(w, msg, "stop")
+			testutil.WriteCompletion(w, msg, "stop")
 		}
 	}))
 	defer srv.Close()

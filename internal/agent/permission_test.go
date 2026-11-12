@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/testutil"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -122,7 +123,7 @@ func newToolRecordingServer(t *testing.T, path string) *toolRecordingServer {
 		if toolCalls != nil {
 			msg["tool_calls"] = toolCalls
 		}
-		writeCompletion(w, msg, "stop")
+		testutil.WriteCompletion(w, msg, "stop")
 	}))
 	t.Cleanup(trs.srv.Close)
 	return trs
