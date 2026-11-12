@@ -17,6 +17,14 @@ type fakeSink struct {
 	opens [][]byte
 	gate  chan struct{}
 	err   error
+	// writes records when each write landed and the bytes written in all
+	// by then, so a pacing test reads the writer's own clock.
+	writes []stamp
+}
+
+type stamp struct {
+	at    time.Time
+	total int
 }
 
 func (f *fakeSink) opener() Opener {
@@ -48,6 +56,11 @@ func (w *fakeW) Write(b []byte) (int, error) {
 	}
 	w.f.mu.Lock()
 	w.f.opens[w.i] = append(w.f.opens[w.i], b...)
+	total := len(b)
+	if n := len(w.f.writes); n > 0 {
+		total += w.f.writes[n-1].total
+	}
+	w.f.writes = append(w.f.writes, stamp{at: time.Now(), total: total})
 	w.f.mu.Unlock()
 	return len(b), nil
 }
@@ -94,6 +107,18 @@ func ramp(n int) []byte {
 }
 
 func sample(b []byte, i int) int16 { return int16(uint16(b[2*i]) | uint16(b[2*i+1])<<8) }
+
+// eventually polls cond until it holds, failing after five seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
 
 func waitState(t *testing.T, p *Player, want State) Snapshot {
 	t.Helper()
@@ -204,7 +229,9 @@ func TestPlayerPauseIsImmediateAndResumeLosesNothing(t *testing.T) {
 		f.gate <- struct{}{}
 	}
 	waitState(t, p, Playing)
-	time.Sleep(20 * time.Millisecond)
+	// Pause once the position has moved, so the resume below has a non-zero
+	// sample to restart at.
+	eventually(t, "the position to move", func() bool { return p.Snapshot().Pos > 0 })
 	p.Pause() // the writer is blocked on the gate: pause must not wait for it
 	s := p.Snapshot()
 	if s.State != Paused || s.Pos <= 0 || s.Pos >= s.Dur {
@@ -319,7 +346,10 @@ func TestPlayerLevelsFollowTheLoudness(t *testing.T) {
 		f.gate <- struct{}{}
 	}
 	waitState(t, p, Playing)
-	time.Sleep(20 * time.Millisecond)
+	eventually(t, "a level for the written audio", func() bool {
+		lv := p.Snapshot().Levels
+		return len(lv) == Levels && lv[Levels-1] > 0
+	})
 	lv := p.Snapshot().Levels
 	if len(lv) != Levels || lv[Levels-1] <= 0.2 || lv[Levels-1] > 1 {
 		t.Fatalf("levels %v for a loud tone", lv)
@@ -336,11 +366,28 @@ func TestPlayerHoldsWritesToTheClock(t *testing.T) {
 	p.Append(pcmBytes(sine(220, 2)))
 	p.Finish(nil)
 	p.Play()
-	time.Sleep(120 * time.Millisecond)
-	got := f.total()
-	ceiling := int((lead + 120*time.Millisecond + 50*time.Millisecond).Seconds() * SampleRate * BytesPerSample)
-	if got == 0 || got > ceiling {
-		t.Fatalf("after 120 ms %d bytes were written, want 1..%d: writes must follow the clock", got, ceiling)
+	// Watch at least 120 ms of writing, timed from the first write rather
+	// than from Play, so a slow start on a loaded machine cannot pass for
+	// pacing or fail it.
+	eventually(t, "120 ms of writes", func() bool {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return len(f.writes) > 0 && time.Since(f.writes[0].at) >= 120*time.Millisecond
+	})
+	f.mu.Lock()
+	writes := append([]stamp(nil), f.writes...)
+	f.mu.Unlock()
+	// By each write, no more than the lead plus the time elapsed since the
+	// first write may have been sent, plus the chunk the writer checks the
+	// clock before (chunkSamples) and 50 ms for the gap between the writer's
+	// own start and its first write landing here.
+	slack := samplesToDur(chunkSamples) + 50*time.Millisecond
+	for _, w := range writes {
+		elapsed := w.at.Sub(writes[0].at)
+		ceiling := int((lead + elapsed + slack).Seconds() * SampleRate * BytesPerSample)
+		if w.total > ceiling {
+			t.Fatalf("%d bytes were written %v after the first write, want at most %d: writes must follow the clock", w.total, elapsed, ceiling)
+		}
 	}
 }
 

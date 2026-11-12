@@ -96,6 +96,23 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+// settle waits until the engine's loop has read every chunk sent to src and
+// run every command issued before the call. The loop is one goroutine, so a
+// command that runs after the queue drains also runs after the last chunk's
+// processing. A test that asserts nothing happened uses it in place of a
+// sleep: what it checks has then really been given its chance to happen.
+func settle(t *testing.T, e *Engine, src *fakeSource) {
+	t.Helper()
+	eventually(t, "the engine to read the queued audio", func() bool { return src.queued() == 0 })
+	done := make(chan struct{})
+	e.do(func(*loop) { close(done) })
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the engine loop did not run a command")
+	}
+}
+
 func nextEvent(t *testing.T, e *Engine, kind EventKind) Event {
 	t.Helper()
 	timeout := time.After(5 * time.Second)
@@ -149,7 +166,7 @@ func TestEngineIsOffAndSilentUntilEnabled(t *testing.T) {
 	e := newTestEngine(t, ModeListen, rec, src)
 	e.SetReady(true)
 	e.PTTDown()
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	if e.State() != StateOff {
 		t.Fatalf("state = %v, want off", e.State())
 	}
@@ -266,7 +283,7 @@ func TestPTTIsIgnoredWhenNotReady(t *testing.T) {
 	e.SetReady(false)
 	eventually(t, "paused", func() bool { return e.State() == StatePaused })
 	e.PTTDown()
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	if starts, _ := src.counts(); starts != 0 {
 		t.Fatal("the microphone opened while the composer was unavailable")
 	}
@@ -319,7 +336,7 @@ func TestCaptureFailureTurnsOffUntilReEnabled(t *testing.T) {
 	}
 	eventually(t, "off", func() bool { return e.State() == StateOff })
 	// No retry loop: a failed source is not restarted until the user re-enables.
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	src.mu.Lock()
 	src.err = nil
 	src.mu.Unlock()
@@ -449,7 +466,7 @@ func TestLatchedRecordingEndsWhenTheSpeakerStops(t *testing.T) {
 	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
 	// Under a second of quiet keeps it going.
 	src.send(silence(ms(700)))
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	if _, stops := src.counts(); stops != 0 {
 		t.Fatal("the recording ended before a second of quiet")
 	}
@@ -489,7 +506,7 @@ func TestUnlatchedRecordingNeverEndsOnItsOwn(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		src.send(silence(ms(1000)))
 	}
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	if _, stops := src.counts(); stops != 0 {
 		t.Fatal("a held key was ended by silence: only a latched tap may end itself")
 	}
@@ -502,7 +519,7 @@ func TestPTTLatchWithNoRecordingIsANoOp(t *testing.T) {
 	e := newTestEngine(t, ModePushToTalk, &fakeRec{text: "x"}, src)
 	ready(t, e)
 	e.PTTLatch()
-	time.Sleep(20 * time.Millisecond)
+	settle(t, e, src)
 	if starts, _ := src.counts(); starts != 0 || e.State() != StateIdle {
 		t.Fatalf("a latch with no recording started something: starts=%d state=%v", starts, e.State())
 	}
@@ -517,7 +534,7 @@ func TestSamplesCountsWhatArrives(t *testing.T) {
 	ready(t, e)
 	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
 	// Open but delivering nothing: the count stays at zero.
-	time.Sleep(30 * time.Millisecond)
+	settle(t, e, src)
 	if e.Samples() != 0 {
 		t.Fatal("samples counted with no audio delivered")
 	}
