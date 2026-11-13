@@ -35,6 +35,8 @@ func frames() map[string]func() string {
 		"exit-card":       exitCard,
 		"kanban-pane":     kanbanPane,
 		"kanban-board":    kanbanBoard,
+		"role-manager":    roleManager,
+		"budgets":         budgets,
 	}
 }
 
@@ -126,6 +128,24 @@ func TestFrameContent(t *testing.T) {
 		for _, want := range []string{"approve", "refine", "cancel", "model:", "m change", "new session ≈"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("plan review missing %q", want)
+			}
+		}
+	})
+
+	t.Run("role manager lists each described decision with its model", func(t *testing.T) {
+		got := roleManager()
+		for _, want := range []string{"ran Grep instead of Bash", "found 7", "jev-1.13 412ms", "decider-4b 1.8s", "claude-haiku-4.5 2.1s", "reused the earlier result"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("role manager feed missing %q", want)
+			}
+		}
+	})
+
+	t.Run("budgets lists each scope with its remaining share", func(t *testing.T) {
+		got := budgets()
+		for _, want := range []string{"Token budgets", "esc back", "global", "(selected)", "session", "day", "month", "79% left", "38% left", "  0% left", "88% left", "deepseek-v4-flash"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("budgets screen missing %q", want)
 			}
 		}
 	})
