@@ -38,7 +38,7 @@ func openClock(t *testing.T, path, session string, start time.Time) (*Recorder, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	setNow(r, c.now)
+	r.SetClock(c.now)
 	t.Cleanup(func() { _ = r.Close() })
 	return r, c
 }
