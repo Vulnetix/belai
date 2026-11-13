@@ -265,10 +265,14 @@ func fetchWeights(client *http.Client, spec modelSpec, dir, token string) (bool,
 	return true, nil
 }
 
+// hfBase is the Hugging Face origin files are fetched from; tests point it at
+// a local server.
+var hfBase = "https://huggingface.co"
+
 // fetch downloads one file from the pinned revision. A 404 is a hard error;
 // callers decide whether to fall back to another filename.
 func fetch(client *http.Client, spec modelSpec, file, dir, token string) error {
-	url := fmt.Sprintf("https://huggingface.co/%s/resolve/%s/%s", spec.id, spec.revision, file)
+	url := fmt.Sprintf("%s/%s/resolve/%s/%s", hfBase, spec.id, spec.revision, file)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
