@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/knowledge/tags"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
@@ -127,6 +128,62 @@ func TestTaggerDropsTopicsBeforeStarvingTheDocument(t *testing.T) {
 	}
 	if total == 0 {
 		t.Fatal("no document text was sent")
+	}
+}
+
+// fakeDecider is a decisions.Decider that never answers, enough for the
+// jobsRater wiring: Limits and Local follow the backend kind, Rate would only
+// run when the tagger calls it, which a setter-only rater never does.
+type fakeDecider struct {
+	local bool
+	err   error
+}
+
+func (f fakeDecider) Backend() decisions.Backend {
+	if f.local {
+		return decisions.BackendLocal
+	}
+	return decisions.BackendSystemOne
+}
+func (f fakeDecider) Identity() string { return "fake" }
+func (f fakeDecider) Decide(ctx context.Context, req decisions.Request) (decisions.Result, error) {
+	if f.err != nil {
+		return decisions.Result{}, f.err
+	}
+	ans := map[string]decisions.Answer{}
+	for id := range req.Questions {
+		ans[id] = decisions.Answer{Type: decisions.TypeNoul, Noul: 0.9}
+	}
+	return decisions.Result{Answers: ans}, nil
+}
+
+func TestJobsRaterWrapsTheJevClient(t *testing.T) {
+	remote := jobsRater{jobs: &jev.Jobs{Client: jev.NewWith(fakeDecider{})}}
+	if items, bytes := remote.Limits(); items != 128 || bytes != 38_000 {
+		t.Fatalf("remote limits %d items %d bytes", items, bytes)
+	}
+	local := jobsRater{jobs: &jev.Jobs{Client: jev.NewWith(fakeDecider{local: true})}}
+	if !local.Local() {
+		t.Fatal("a local backend reported remote")
+	}
+	if remote.Local() {
+		t.Fatal("a remote backend reported local")
+	}
+	// Rate goes through the client's Score; an answer per question comes back.
+	items := []jev.TopicItem{{ID: "oauth", Label: "OAuth"}, {ID: "authn", Label: "Authentication"}}
+	res, err := remote.Rate(context.Background(), []string{"document text"}, items)
+	if err != nil || res.Identity != "fake" || len(res.Scores) != 2 {
+		t.Fatalf("Rate = %+v %v", res, err)
+	}
+	if s := res.Scores["oauth"]; s != 0.9 {
+		t.Fatalf("score for oauth = %v", s)
+	}
+	// A failing backend is an error to the tagger, which then falls back. The
+	// cache is nil here, so a nil-safe miss is part of the path.
+	failing := jobsRater{jobs: &jev.Jobs{Client: jev.NewWith(fakeDecider{err: errors.New("down")})}}
+	res, err = failing.Rate(context.Background(), nil, items)
+	if err == nil || res.Scores["oauth"] != 0 {
+		t.Fatalf("a failing backend gave no error: %+v %v", res, err)
 	}
 }
 

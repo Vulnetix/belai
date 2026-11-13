@@ -93,6 +93,19 @@ func TestExchangerConcurrentCallersShareOneRequest(t *testing.T) {
 	}
 }
 
+func TestNewExchangerDefaultsTheClientAndEndpoint(t *testing.T) {
+	e := NewExchanger(nil)
+	if e == nil || e.endpoint != copilotTokenEndpoint {
+		t.Fatalf("NewExchanger(nil) = %+v", e)
+	}
+	// A nil client means the package default (httpclient.Default), which the
+	// exchange would dial; only the wiring is pinned here.
+	c := &http.Client{}
+	if e := NewExchanger(c); e == nil || e.client != c {
+		t.Fatal("NewExchanger did not keep the client")
+	}
+}
+
 func TestExchangerRevokedTokenError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

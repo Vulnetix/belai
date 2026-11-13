@@ -28,6 +28,12 @@ func TestGuardrailsOffNeverCallsTheClassifier(t *testing.T) {
 	}
 }
 
+func TestOpenWithoutRootOrProfileIsNil(t *testing.T) {
+	if s := Open(context.Background(), Setup{}, false); s != nil {
+		t.Fatalf("an empty setup must give no store, got %+v", s)
+	}
+}
+
 func TestNilLevelsIsTheOrdinaryPath(t *testing.T) {
 	g := New(run.Config{}, &http.Client{Transport: &failingTransport{}}, nil, nil, tools.KindRemote)
 	if ok, err := g(context.Background(), "chunk"); ok || err == nil {
