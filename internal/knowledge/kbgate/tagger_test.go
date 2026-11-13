@@ -151,9 +151,6 @@ func (f fakeDecider) Decide(ctx context.Context, req decisions.Request) (decisio
 		return decisions.Result{}, f.err
 	}
 	ans := map[string]decisions.Answer{}
-	for _, q := range req.Questions {
-		_ = q
-	}
 	for id := range req.Questions {
 		ans[id] = decisions.Answer{Type: decisions.TypeNoul, Noul: 0.9}
 	}
