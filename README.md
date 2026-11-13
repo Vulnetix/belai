@@ -69,7 +69,8 @@ plain `belai` build carries it, so voice works with no download. Plain `belai`
 stays small and fetches it only when you run `/voice download`.
 
 `install.sh` accepts `--variant` (or `BELAI_VARIANT`) to pick one of
-`no-classifier`, `bert-guardrails`, or `bert-guardrails-jailbreak`. The on-disk
+`vanilla` (the plain `belai` family), `no-classifier`, `bert-guardrails`, or
+`bert-guardrails-jailbreak`. The on-disk
 command name is `belai` regardless of variant, and a variant binary updates to
 its own family.
 
