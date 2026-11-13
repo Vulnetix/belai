@@ -131,6 +131,16 @@ type Recorder struct {
 	once sync.Once
 }
 
+// SetClock replaces the recorder's clock, for tests. The flusher goroutine Open
+// starts reads it under flushMu and mu, so both are taken to change it.
+func (r *Recorder) SetClock(now func() time.Time) {
+	r.flushMu.Lock()
+	r.mu.Lock()
+	r.now = now
+	r.mu.Unlock()
+	r.flushMu.Unlock()
+}
+
 // DefaultPath returns usage.json under the global state directory.
 func DefaultPath() (string, error) {
 	dir, err := config.GlobalDir()

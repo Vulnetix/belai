@@ -28,7 +28,11 @@ func intelEntries(t *testing.T, workdir, id string) []session.Entry {
 	return out
 }
 
-func intelSyncApp(t *testing.T) (*App, string, func(float64, time.Time)) {
+// intelSyncApp returns the app, its workdir, a limit setter and the fixed noon
+// the usage ledger's clock is pinned to. With the wall clock, a run near
+// midnight records its calls on one day and syncs on the next, and the day's
+// trend then changes between two snapshots that should match.
+func intelSyncApp(t *testing.T) (*App, string, func(float64, time.Time), time.Time) {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
@@ -44,15 +48,15 @@ func intelSyncApp(t *testing.T) (*App, string, func(float64, time.Time)) {
 			Reset: now.Add(2 * time.Hour), ObservedAt: now,
 		}})
 	}
-
-	return a, workdir, limit
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.Local)
+	a.budgets.SetClock(func() time.Time { return now })
+	return a, workdir, limit, now
 }
 
 // R24: the snapshot is written once, then again only when something a reader
 // would notice moves and a minute has passed.
 func TestBudgetRule24_WritesOnChangeOnly(t *testing.T) {
-	a, workdir, limit := intelSyncApp(t)
-	now := time.Now()
+	a, workdir, limit, now := intelSyncApp(t)
 
 	limit(0.2, now)
 	a.syncIntel(now)
@@ -79,8 +83,7 @@ func TestBudgetRule24_WritesOnChangeOnly(t *testing.T) {
 // E30: a snapshot that says what the last one said is not written, however
 // long it has been.
 func TestBudgetEdge30_UnchangedSnapshotIsNotWritten(t *testing.T) {
-	a, workdir, limit := intelSyncApp(t)
-	now := time.Now()
+	a, workdir, limit, now := intelSyncApp(t)
 
 	limit(0.2, now)
 	a.budgets.AddCall("p", "m", "agent", 100) // the pace word reads "active" from here
@@ -94,8 +97,7 @@ func TestBudgetEdge30_UnchangedSnapshotIsNotWritten(t *testing.T) {
 
 // E29: with the session store off nothing is written and nothing panics.
 func TestBudgetEdge29_StoreOffWritesNothing(t *testing.T) {
-	a, _, limit := intelSyncApp(t)
-	now := time.Now()
+	a, _, limit, now := intelSyncApp(t)
 	last := a.lastEntryID
 
 	limit(0.2, now)
