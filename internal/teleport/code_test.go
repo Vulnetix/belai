@@ -60,7 +60,7 @@ func newTrio(t *testing.T) trio {
 	gitIn(t, root, "clone", tr.bare, tr.origin)
 	put(t, tr.origin, "main.go", "package main\n\nfunc main() {}\n")
 	gitIn(t, tr.origin, "add", "-A")
-	gitIn(t, tr.origin, "commit", "-m", "init")
+	gitIn(t, tr.origin, "commit", "--no-gpg-sign", "-m", "init")
 	gitIn(t, tr.origin, "push", "origin", "HEAD:main")
 	gitIn(t, tr.origin, "branch", "--set-upstream-to=origin/main")
 	gitIn(t, root, "clone", tr.bare, tr.target)
@@ -89,7 +89,7 @@ func originWork(t *testing.T, tr trio) {
 	t.Helper()
 	put(t, tr.origin, "feature.go", "package main\n\nfunc feature() {}\n")
 	gitIn(t, tr.origin, "add", "-A")
-	gitIn(t, tr.origin, "commit", "-m", "feature")
+	gitIn(t, tr.origin, "commit", "--no-gpg-sign", "-m", "feature")
 	put(t, tr.origin, "main.go", "package main\n\nfunc main() { feature() }\n")
 }
 

@@ -686,7 +686,7 @@ func realRepo(t *testing.T) string {
 		}
 	}
 	git("add", "-A")
-	git("commit", "-q", "-m", "initial")
+	git("commit", "--no-gpg-sign", "-q", "-m", "initial")
 	return dir
 }
 

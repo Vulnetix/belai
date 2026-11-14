@@ -64,7 +64,7 @@ func newWorld(t *testing.T) world {
 	write(t, w.origin, "main.go", "package main\n\nfunc main() {}\n")
 	write(t, w.origin, "util.go", "package main\n\nfunc util() int { return 1 }\n")
 	git(t, w.origin, "add", "-A")
-	git(t, w.origin, "commit", "-m", "init")
+	git(t, w.origin, "commit", "--no-gpg-sign", "-m", "init")
 	git(t, w.origin, "push", "origin", "HEAD:main")
 	git(t, w.origin, "branch", "--set-upstream-to=origin/main")
 	git(t, root, "clone", bare, w.target)

@@ -48,10 +48,10 @@ func newWSFixture(t *testing.T) *wsFixture {
 		t.Fatal(err)
 	}
 	wsGit(t, seed, "add", "a.txt")
-	wsGit(t, seed, "commit", "-m", "first")
+	wsGit(t, seed, "commit", "--no-gpg-sign", "-m", "first")
 	wsGit(t, seed, "push", "-u", "origin", "main")
 	wsGit(t, seed, "checkout", "-b", "remote-only")
-	wsGit(t, seed, "commit", "--allow-empty", "-m", "remote work")
+	wsGit(t, seed, "commit", "--no-gpg-sign", "--allow-empty", "-m", "remote work")
 	wsGit(t, seed, "push", "origin", "remote-only")
 	wsGit(t, f.origin, "symbolic-ref", "HEAD", "refs/heads/main")
 	wsGit(t, base, "clone", f.origin, f.repo)

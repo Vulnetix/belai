@@ -60,15 +60,15 @@ func conflictRepo(t *testing.T) string {
 	write("list.txt", "alpha\nmiddle\nomega\n")
 	write("notes.txt", "top\nx\nbottom\n")
 	gitIn(t, repo, "add", ".")
-	gitIn(t, repo, "commit", "-q", "-m", "common")
+	gitIn(t, repo, "commit", "--no-gpg-sign", "-q", "-m", "common")
 	gitIn(t, repo, "checkout", "-q", "-b", "feature")
 	write("list.txt", "alpha\nfrom-head\nomega\n")
 	write("notes.txt", "top\nhead\nbottom\n")
-	gitIn(t, repo, "commit", "-q", "-am", "head side")
+	gitIn(t, repo, "commit", "--no-gpg-sign", "-q", "-am", "head side")
 	gitIn(t, repo, "checkout", "-q", "main")
 	write("list.txt", "alpha\nfrom-base\nomega\n")
 	write("notes.txt", "top\nbase\nbottom\n")
-	gitIn(t, repo, "commit", "-q", "-am", "base side")
+	gitIn(t, repo, "commit", "--no-gpg-sign", "-q", "-am", "base side")
 	return repo
 }
 

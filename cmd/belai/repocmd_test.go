@@ -44,7 +44,7 @@ func cliOrigin(t *testing.T) (bare string) {
 	git(work, "remote", "add", "origin", bare)
 	_ = os.WriteFile(filepath.Join(work, "a.txt"), []byte("one\n"), 0o644)
 	git(work, "add", "a.txt")
-	git(work, "commit", "-q", "-m", "first")
+	git(work, "commit", "--no-gpg-sign", "-q", "-m", "first")
 	git(work, "push", "-q", "origin", "main")
 	old := repoOptions
 	repoOptions = func() repos.Options {

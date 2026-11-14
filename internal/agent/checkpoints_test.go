@@ -220,7 +220,7 @@ func TestBashChangesInARepositoryAreRestoredFromTheIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	git("add", ".")
-	git("commit", "-qm", "initial")
+	git("commit", "--no-gpg-sign", "-qm", "initial")
 
 	tr := openTracker(t, root)
 	r := ckptRun(t, root, "Bash", jsonArgs(t, map[string]any{"command": "echo rewritten > tracked.txt && echo new > created.txt"}), tr, Options{})

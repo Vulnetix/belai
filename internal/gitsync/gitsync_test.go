@@ -38,7 +38,7 @@ func commit(t *testing.T, dir, file, body, msg string) {
 	t.Helper()
 	write(t, dir, file, body)
 	g(t, dir, "add", file)
-	g(t, dir, "commit", "-m", msg)
+	g(t, dir, "commit", "--no-gpg-sign", "-m", msg)
 }
 
 // repos builds a bare origin with main, a clone of it to work in, and a second

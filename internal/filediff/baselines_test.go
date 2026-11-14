@@ -67,7 +67,7 @@ func TestBaselinesDeletedFileKeepsItsModeFromGit(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-qm", "script")
+	gitIn(t, dir, "commit", "--no-gpg-sign", "-qm", "script")
 	set := baselinesAround(t, r, "rm run.sh", func() { _ = os.Remove(exe) })
 	b, ok := byBase(set)["run.sh"]
 	if !ok || !b.Known || b.Mode != 0o755 || string(b.Body) != "#!/bin/sh\n" {

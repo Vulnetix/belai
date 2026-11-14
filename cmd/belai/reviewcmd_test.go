@@ -101,7 +101,7 @@ func reviewRepo(t *testing.T) string {
 	dir := t.TempDir()
 	env := append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@x.test", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@x.test")
-	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"commit", "-q", "-m", "base", "--allow-empty"}} {
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"commit", "--no-gpg-sign", "-q", "-m", "base", "--allow-empty"}} {
 		if args[0] == "add" {
 			if err := os.WriteFile(dir+"/a.go", []byte("package a\n"), 0o644); err != nil {
 				t.Fatal(err)

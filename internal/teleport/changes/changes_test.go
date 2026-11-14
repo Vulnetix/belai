@@ -61,7 +61,7 @@ func newPair(t *testing.T) pair {
 	write(t, p.origin, "README.md", "# demo\n")
 	write(t, p.origin, "docs/guide.md", "guide\n")
 	git(t, p.origin, "add", "-A")
-	git(t, p.origin, "commit", "-m", "init")
+	git(t, p.origin, "commit", "--no-gpg-sign", "-m", "init")
 	git(t, p.origin, "push", "origin", "HEAD:main")
 	git(t, p.origin, "branch", "--set-upstream-to=origin/main")
 	git(t, root, "clone", p.bare, p.target)
@@ -93,7 +93,7 @@ func TestCollectReadsUnpushedAndUncommittedChangesAndLeavesTheCheckoutAlone(t *t
 	// An unpushed commit, a tracked edit, a deletion, new files, and things that must not travel.
 	write(t, p.origin, "feature.go", "package main\n\nfunc feature() {}\n")
 	git(t, p.origin, "add", "-A")
-	git(t, p.origin, "commit", "-m", "feature")
+	git(t, p.origin, "commit", "--no-gpg-sign", "-m", "feature")
 	write(t, p.origin, "main.go", "package main\n\nfunc main() { feature() }\n")
 	if err := os.Remove(filepath.Join(p.origin, "README.md")); err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestARepositoryWithNoPushedBaseCannotBeReplayed(t *testing.T) {
 	git(t, dir, "init", "-b", "main")
 	write(t, dir, "a.txt", "a\n")
 	git(t, dir, "add", "-A")
-	git(t, dir, "commit", "-m", "x")
+	git(t, dir, "commit", "--no-gpg-sign", "-m", "x")
 
 	if _, err := Collect(context.Background(), nil, dir); !errors.Is(err, ErrNoBase) {
 		t.Fatalf("no remote: %v, want ErrNoBase", err)
@@ -190,7 +190,7 @@ func TestChangesApplyOnAnotherCloneAndTheTreesMatch(t *testing.T) {
 	p := newPair(t)
 	write(t, p.origin, "feature.go", "package main\n\nfunc feature() {}\n")
 	git(t, p.origin, "add", "-A")
-	git(t, p.origin, "commit", "-m", "feature")
+	git(t, p.origin, "commit", "--no-gpg-sign", "-m", "feature")
 	write(t, p.origin, "main.go", "package main\n\nfunc main() { feature() }\n")
 	if err := os.Remove(filepath.Join(p.origin, "README.md")); err != nil {
 		t.Fatal(err)
@@ -340,7 +340,7 @@ func TestPushPutsOneBranchOnTheForgeHoldingTheFinalState(t *testing.T) {
 	onForge(t, p)
 	write(t, p.origin, "feature.go", "package main\n")
 	git(t, p.origin, "add", "-A")
-	git(t, p.origin, "commit", "-m", "feature")
+	git(t, p.origin, "commit", "--no-gpg-sign", "-m", "feature")
 	write(t, p.origin, "main.go", "package main\n\nfunc main() { feature() }\n")
 	s, err := Collect(context.Background(), allowFile, p.origin)
 	if err != nil {
@@ -407,7 +407,7 @@ func TestPushRefusesWhatItShould(t *testing.T) {
 	git(t, lone, "init", "-b", "main")
 	write(t, lone, "a", "a\n")
 	git(t, lone, "add", "-A")
-	git(t, lone, "commit", "-m", "x")
+	git(t, lone, "commit", "--no-gpg-sign", "-m", "x")
 	ls := Snapshot{Head: git(t, lone, "rev-parse", "HEAD"), Tree: git(t, lone, "rev-parse", "HEAD^{tree}")}
 	if _, err := Push(context.Background(), allowFile, lone, ls, "3f2a9c10-aaaa"); !errors.Is(err, ErrNoRemote) {
 		t.Errorf("no remote: %v, want ErrNoRemote", err)

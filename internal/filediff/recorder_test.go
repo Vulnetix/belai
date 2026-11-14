@@ -34,7 +34,7 @@ func gitRepo(t *testing.T) string {
 	run("init", "-q")
 	write(t, filepath.Join(dir, "tracked.go"), "package main\n\nfunc main() {}\n")
 	run("add", ".")
-	run("commit", "-qm", "initial")
+	run("commit", "--no-gpg-sign", "-qm", "initial")
 	return dir
 }
 
