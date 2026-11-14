@@ -428,7 +428,14 @@ func serveGitDaemon(t *testing.T, dir string) (url string, stop func()) {
 	}
 	parent, base := filepath.Dir(dir), filepath.Base(dir)
 	url = "git://127.0.0.1:" + strconv.Itoa(port) + "/" + base
-	cmd := exec.Command("git", "daemon", "--listen=127.0.0.1", "--port="+strconv.Itoa(port),
+	// Run git-daemon itself, not the "git daemon" wrapper: killing the wrapper
+	// on cleanup left its git-daemon child listening after the test ended.
+	execPath, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		t.Skipf("git --exec-path: %v", err)
+	}
+	daemon := filepath.Join(strings.TrimSpace(string(execPath)), "git-daemon")
+	cmd := exec.Command(daemon, "--listen=127.0.0.1", "--port="+strconv.Itoa(port),
 		"--base-path="+parent, "--export-all", "--forbid-override=receive-pack", "--forbid-override=upload-archive", parent)
 	if err := cmd.Start(); err != nil {
 		t.Skipf("git daemon: %v", err)
