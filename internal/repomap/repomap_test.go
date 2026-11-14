@@ -42,7 +42,7 @@ func fixtureRepo(t *testing.T) string {
 	}
 	run("init", "-q")
 	run("add", ".")
-	run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+	run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--no-gpg-sign", "-qm", "init")
 	return root
 }
 

@@ -290,7 +290,7 @@ func TestCloneWithUsesTheReposEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	git(work, "add", "a.txt")
-	git(work, "commit", "-q", "-m", "first")
+	git(work, "commit", "--no-gpg-sign", "-q", "-m", "first")
 	git(work, "remote", "add", "origin", bare)
 	git(work, "push", "-q", "origin", "trunk")
 	base := filepath.Join(root, "worktrees", "repos")

@@ -243,7 +243,7 @@ func (f *adoptFix) commit(dir, name, body, msg string) string {
 		f.t.Fatal(err)
 	}
 	f.git(dir, "add", name)
-	f.git(dir, "commit", "-q", "-m", msg)
+	f.git(dir, "commit", "--no-gpg-sign", "-q", "-m", msg)
 	return f.git(dir, "rev-parse", "HEAD")
 }
 

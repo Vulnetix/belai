@@ -49,7 +49,7 @@ func TestCollectBranchAgainstTheDefaultBase(t *testing.T) {
 	dir := newRepo(t)
 	gitIn(t, dir, "checkout", "-q", "-b", "feature")
 	write(t, dir, "a.go", "package a\n\nfunc A() int {\n\treturn 2\n}\n")
-	gitIn(t, dir, "commit", "-q", "-am", "change a")
+	gitIn(t, dir, "commit", "--no-gpg-sign", "-q", "-am", "change a")
 	head := gitIn(t, dir, "rev-parse", "HEAD")
 	c, err := Collector{Dir: dir, Limits: Limits{MaxBytes: 1 << 20}}.Collect(context.Background(), Target{Kind: KindBranch})
 	if err != nil {
@@ -130,7 +130,7 @@ func TestCollectPullRequestOnGiteaNeedsTheCheckoutAtHead(t *testing.T) {
 	col := Collector{Dir: dir, Limits: Limits{MaxBytes: 1 << 20}, Provider: func(context.Context) (forge.Provider, error) { return f, nil }}
 	gitIn(t, dir, "checkout", "-q", "-b", "topic")
 	write(t, dir, "a.go", "package a\n")
-	gitIn(t, dir, "commit", "-q", "-am", "x")
+	gitIn(t, dir, "commit", "--no-gpg-sign", "-q", "-am", "x")
 	// HEAD moved off the pull request's head.
 	if _, err := col.Collect(context.Background(), Target{Kind: KindPR, Ref: "3"}); err == nil || !strings.Contains(err.Error(), "check out") {
 		t.Fatalf("err = %v", err)

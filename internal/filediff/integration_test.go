@@ -41,7 +41,7 @@ func repoWithFile(t *testing.T, name, body string) string {
 		t.Fatal(err)
 	}
 	git("add", ".")
-	git("commit", "-qm", "initial")
+	git("commit", "--no-gpg-sign", "-qm", "initial")
 	return dir
 }
 
