@@ -47,7 +47,7 @@ func newRepo(t *testing.T) string {
 	write(t, dir, "a.go", "package a\n\nfunc A() int {\n\treturn 1\n}\n")
 	write(t, dir, "b.go", "package a\n\nfunc B() int {\n\treturn 2\n}\n")
 	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-q", "-m", "base")
+	gitIn(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "base")
 	return dir
 }
 

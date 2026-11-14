@@ -93,7 +93,7 @@ func codeReviewApp(t *testing.T, s config.Settings, reply string) (*App, *tuiRev
 	if err := os.WriteFile(dir+"/a.go", []byte("package a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"commit", "-q", "-m", "base"}} {
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"commit", "--no-gpg-sign", "-q", "-m", "base"}} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir, cmd.Env = dir, env
 		if out, err := cmd.CombinedOutput(); err != nil {

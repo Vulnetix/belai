@@ -34,7 +34,7 @@ func newCommitTestRepo(t *testing.T) string {
 	git("init", "-q")
 	writeFile(t, filepath.Join(dir, "tracked.go"), "package p\n")
 	git("add", "-A")
-	git("commit", "-q", "-m", "initial")
+	git("commit", "--no-gpg-sign", "-q", "-m", "initial")
 	return dir
 }
 
@@ -64,7 +64,7 @@ func TestCommitPathsOnlyListedPaths(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "dirty.txt"), "base\n")
 	writeFile(t, filepath.Join(dir, "staged.txt"), "base\n")
 	gitOut(t, dir, "add", "-A")
-	gitOut(t, dir, "commit", "-q", "-m", "base")
+	gitOut(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "base")
 
 	writeFile(t, filepath.Join(dir, "keep.txt"), "changed keep\n")
 	writeFile(t, filepath.Join(dir, "dirty.txt"), "changed dirty\n")
@@ -98,7 +98,7 @@ func TestCommitPathsDeletedPath(t *testing.T) {
 	dir := newCommitTestRepo(t)
 	writeFile(t, filepath.Join(dir, "gone.txt"), "bye\n")
 	gitOut(t, dir, "add", "-A")
-	gitOut(t, dir, "commit", "-q", "-m", "base")
+	gitOut(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "base")
 	if err := os.Remove(filepath.Join(dir, "gone.txt")); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestCommitPathsIgnoresIgnoredPath(t *testing.T) {
 	dir := newCommitTestRepo(t)
 	writeFile(t, filepath.Join(dir, ".gitignore"), "ignored.txt\n")
 	gitOut(t, dir, "add", "-A")
-	gitOut(t, dir, "commit", "-q", "-m", "gitignore")
+	gitOut(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "gitignore")
 	writeFile(t, filepath.Join(dir, "ignored.txt"), "secret\n")
 
 	before := gitOut(t, dir, "rev-parse", "HEAD")
@@ -159,7 +159,7 @@ func TestCommitPathsDropsOutsidePaths(t *testing.T) {
 	dir := newCommitTestRepo(t)
 	writeFile(t, filepath.Join(dir, "in.txt"), "in\n")
 	gitOut(t, dir, "add", "-A")
-	gitOut(t, dir, "commit", "-q", "-m", "in")
+	gitOut(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "in")
 	writeFile(t, filepath.Join(dir, "in.txt"), "changed in\n")
 
 	// Absolute paths, escaping paths and duplicates are dropped before staging.

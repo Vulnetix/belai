@@ -179,7 +179,7 @@ func repo(t *testing.T, remote string) (string, [2]string) {
 	}
 	var shas [2]string
 	for i := range shas {
-		run("commit", "-q", "--allow-empty", "-m", "c")
+		run("commit", "--no-gpg-sign", "-q", "--allow-empty", "-m", "c")
 		shas[i] = run("rev-parse", "HEAD")
 	}
 	return dir, shas

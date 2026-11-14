@@ -100,7 +100,7 @@ func TestReadRealCommit(t *testing.T) {
 	run(nil, "init", "-q", "-b", "work")
 	run(nil, "config", "commit.gpgsign", "false")
 	run([]string{"GIT_AUTHOR_NAME=Pix [bot]", "GIT_AUTHOR_EMAIL=security@vulnetix.com", "GIT_COMMITTER_NAME=Chris L", "GIT_COMMITTER_EMAIL=chris@vulnetix.com"},
-		"commit", "-q", "--allow-empty", "-m", "feat: x\n\nbody text\n\nSigned-off-by: Pix [bot] <security@vulnetix.com>\nCo-authored-by: Chris L <chris@vulnetix.com>")
+		"commit", "--no-gpg-sign", "-q", "--allow-empty", "-m", "feat: x\n\nbody text\n\nSigned-off-by: Pix [bot] <security@vulnetix.com>\nCo-authored-by: Chris L <chris@vulnetix.com>")
 
 	git := func(ctx context.Context, args ...string) (string, error) {
 		out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
@@ -138,7 +138,7 @@ func TestReadHeadNamesTheBranch(t *testing.T) {
 	for _, args := range [][]string{
 		{"git", "init", "-q", "-b", "belai/k-1"},
 		{"git", "config", "commit.gpgsign", "false"},
-		{"git", "commit", "-q", "--allow-empty", "-m", "x"},
+		{"git", "commit", "--no-gpg-sign", "-q", "--allow-empty", "-m", "x"},
 	} {
 		if _, err := runner(ctx, dir, args...); err != nil {
 			t.Fatalf("%v: %v", args, err)

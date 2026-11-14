@@ -42,7 +42,7 @@ func TestRepoMapBlockNeverCarriesADeclarationName(t *testing.T) {
 		}
 	}
 	if _, err := exec.LookPath("git"); err == nil {
-		for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
+		for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "--no-gpg-sign", "-qm", "init"}} {
 			cmd := exec.Command("git", args...)
 			cmd.Dir = root
 			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")

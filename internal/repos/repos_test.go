@@ -73,7 +73,7 @@ func (o *origin) commit(name, body, msg string) string {
 		o.t.Fatal(err)
 	}
 	o.git(o.work, "add", name)
-	o.git(o.work, "commit", "-q", "-m", msg)
+	o.git(o.work, "commit", "--no-gpg-sign", "-q", "-m", msg)
 	return o.git(o.work, "rev-parse", "HEAD")
 }
 
@@ -169,7 +169,7 @@ func TestSyncNeverResetsADivergedBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.git(dir, "add", "local.txt")
-	o.git(dir, "commit", "-q", "-m", "local")
+	o.git(dir, "commit", "--no-gpg-sign", "-q", "-m", "local")
 	mine := headOf(o, dir)
 	res, err := Sync(context.Background(), r, o.opts(base))
 	if err != nil || res.Action != "current" || len(res.Notes) == 0 || !strings.Contains(strings.Join(res.Notes, " "), "ahead of origin") {
@@ -751,7 +751,7 @@ func TestStatusReadsTheCloneWithoutFetching(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.git(dir, "add", "l.txt")
-	o.git(dir, "commit", "-q", "-m", "local")
+	o.git(dir, "commit", "--no-gpg-sign", "-q", "-m", "local")
 	if st := StatusOf(ctx, r, o.opts(base)); st.State != "diverged" || !strings.Contains(st.Detail, "1 ahead, 1 behind") {
 		t.Fatalf("diverged: %+v", st)
 	}

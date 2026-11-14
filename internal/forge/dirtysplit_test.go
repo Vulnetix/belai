@@ -158,7 +158,7 @@ func TestDirtyPathsAndFailedHookOnARealRepo(t *testing.T) {
 	dir := newCommitTestRepo(t)
 	writeFile(t, filepath.Join(dir, "sub", "keep.txt"), "base\n")
 	gitOut(t, dir, "add", "-A")
-	gitOut(t, dir, "commit", "-q", "-m", "base")
+	gitOut(t, dir, "commit", "--no-gpg-sign", "-q", "-m", "base")
 	hook := filepath.Join(dir, ".git", "hooks", "pre-commit")
 	writeFile(t, hook, "#!/bin/sh\necho no >&2\nexit 1\n")
 	if err := os.Chmod(hook, 0o755); err != nil {
